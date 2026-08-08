@@ -1,0 +1,11 @@
+{
+  "name": "AutoMenu AI",
+  "description": "An intelligent menu creator that automates database management and layout design using Gemini AI. Scan existing menus to import data and styles instantly.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
