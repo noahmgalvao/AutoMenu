@@ -1220,6 +1220,7 @@ const App: React.FC = () => {
           currentUserId={session.user.id}
           currentMenuId={workspaceData.menu.id}
           productsCanChangeCategory={workspaceData.workspace.settings?.productsCanChangeCategory}
+          splitCategoryAcrossPages={workspaceData.workspace.settings.splitCategoryAcrossPages}
           onPrint={requestPrint}
         />
 
