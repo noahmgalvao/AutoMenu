@@ -94,10 +94,6 @@ export interface MenuItem {
   description: string;
   price: number;
   boundingBox?: BoundingBox;
-  nameBoundingBox?: BoundingBox;
-  descriptionBoundingBox?: BoundingBox;
-  priceBoundingBox?: BoundingBox;
-  priceLineCount?: number;
   images?: ExtractedImage[];
 }
 
@@ -106,13 +102,6 @@ export interface MenuCategory {
   name: string;
   products: MenuItem[];
   boundingBox?: BoundingBox;
-  nameBoundingBox?: BoundingBox;
-}
-
-export interface CategoryPosition {
-  pageIndex: number;
-  columnIndex: number;
-  y: number;
 }
 
 export interface FloatingTextItem {
@@ -173,9 +162,7 @@ export interface MenuStyle {
   imageScale?: number;
   columnCount: 1 | 2 | 3;
   categoryColumnCount?: 1 | 2 | 3;
-  categoryColumnWidths?: number[];
   categoryPlacements?: Record<string, { pageIndex: number; columnIndex: number }>;
-  categoryPositions?: Record<string, CategoryPosition>;
   customCategoryOrder?: string[];
   customProductOrder?: Record<string, string[]>;
   hiddenProductIds: string[];
