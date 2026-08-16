@@ -84,16 +84,18 @@ export const fitTextToUnbrokenWords = (
 };
 
 const getElementAvailableWidth = (element: HTMLElement) => {
+  const widthInset = Math.max(0, Number(element.dataset.wordFitWidthInset) || 0);
+  const withInset = (width: number) => Math.max(1, width - widthInset);
   const containerSelector = element.dataset.wordFitContainer;
   if (containerSelector) {
     const container = element.closest<HTMLElement>(containerSelector);
-    if (container) return container.clientWidth;
+    if (container) return withInset(container.clientWidth);
   }
 
   const mode = element.dataset.wordFitWidthMode;
   const parent = element.parentElement;
-  if (!parent || mode === 'self') return element.clientWidth;
-  if (mode === 'parent') return parent.clientWidth;
+  if (!parent || mode === 'self') return withInset(element.clientWidth);
+  if (mode === 'parent') return withInset(parent.clientWidth);
 
   const computedParent = window.getComputedStyle(parent);
   const gap = Number.parseFloat(computedParent.columnGap || computedParent.gap || '0') || 0;
@@ -104,7 +106,7 @@ const getElementAvailableWidth = (element: HTMLElement) => {
     if (flexGrow > 0) return total + (Number.parseFloat(computed.minWidth || '0') || 0);
     return total + sibling.offsetWidth;
   }, 0);
-  return Math.max(1, parent.clientWidth - reservedWidth - (gap * siblings.length));
+  return withInset(parent.clientWidth - reservedWidth - (gap * siblings.length));
 };
 
 const readElementOptions = (element: HTMLElement): MeasureOptions => ({

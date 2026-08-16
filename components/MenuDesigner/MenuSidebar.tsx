@@ -6,7 +6,6 @@ import {
   ElementsSection, 
   TemplatesSection, 
   LayoutSection, 
-  GeneralRulesSection,
   StyleSection, 
   SortingSection 
 } from './SidebarSections';
@@ -133,13 +132,6 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
             style={style}
             setStyle={setStyle}
             handleImageResize={handleImageResize}
-          />
-
-          <hr className="border-slate-100" />
-
-          <GeneralRulesSection
-            style={style}
-            setStyle={setStyle}
           />
 
           <hr className="border-slate-100" />

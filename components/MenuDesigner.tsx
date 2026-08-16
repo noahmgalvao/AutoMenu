@@ -15,7 +15,7 @@ import {
     resolvePdfPageIndexes,
     type PdfDebugEntry,
 } from '../utils/pdfExport';
-import { canIncreaseCanvasFontSize, type WordFitScope } from '../utils/textFit';
+import { canIncreaseCanvasFontSize } from '../utils/textFit';
 import { roundPrice } from '../utils/price';
 
 interface MenuDesignerProps {
@@ -755,17 +755,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     };
 
     const updateGlobalElementStyle = (elementType: keyof MenuStyle['elementStyles'], newStyle: ElementStyle) => {
-        const previousStyle = style.elementStyles[elementType] || {};
-        const nextFontSize = Number(newStyle.fontSize);
-        if (
-            !style.allowSameWordBreak
-            && Number.isFinite(nextFontSize)
-            && nextFontSize > Number(previousStyle.fontSize || 0)
-            && elementType !== 'pageNumber'
-            && !canIncreaseCanvasFontSize(elementType as WordFitScope, nextFontSize)
-        ) {
-            return false;
-        }
         setStyle(prev => {
             const previousStyle = prev.elementStyles[elementType] || {};
             const colorChanged = newStyle.color !== previousStyle.color;

@@ -11,6 +11,7 @@ interface AutoFitTextProps extends React.HTMLAttributes<HTMLElement> {
   fitScope: WordFitScope;
   widthMode?: 'self' | 'parent' | 'flex';
   containerSelector?: string;
+  availableWidthInset?: number;
   showOverflowFeedback?: boolean;
 }
 
@@ -23,6 +24,7 @@ export const AutoFitText: React.FC<AutoFitTextProps> = ({
   fitScope,
   widthMode = 'flex',
   containerSelector,
+  availableWidthInset = 0,
   showOverflowFeedback = false,
   style,
   className = '',
@@ -56,8 +58,9 @@ export const AutoFitText: React.FC<AutoFitTextProps> = ({
     const fontReady = document.fonts?.ready.then(() => evaluate());
     void fontReady;
     return () => observer.disconnect();
-  }, [allowSameWordBreak, evaluate, minimumFontSize, text, style?.fontFamily, style?.fontWeight, style?.fontStyle, style?.letterSpacing, style?.textTransform]);
+  }, [allowSameWordBreak, availableWidthInset, containerSelector, evaluate, minimumFontSize, text, widthMode, style?.fontFamily, style?.fontWeight, style?.fontStyle, style?.letterSpacing, style?.textTransform]);
 
+  const showLimitState = showOverflowFeedback && !fit.fits;
   const componentProps = {
     ...rest,
     ref: (node: HTMLElement | null) => { elementRef.current = node; },
@@ -68,12 +71,13 @@ export const AutoFitText: React.FC<AutoFitTextProps> = ({
     'data-word-fit-allow-break': allowSameWordBreak,
     'data-word-fit-width-mode': widthMode,
     'data-word-fit-container': containerSelector,
+    'data-word-fit-width-inset': availableWidthInset,
     'data-word-fit-font-family': style?.fontFamily,
     'data-word-fit-font-weight': style?.fontWeight,
     'data-word-fit-font-style': style?.fontStyle,
     'data-word-fit-letter-spacing': style?.letterSpacing,
     'data-word-fit-text-transform': style?.textTransform as ElementStyle['textTransform'],
-    className: `${allowSameWordBreak ? '' : 'automenu-word-safe'} ${!fit.fits ? 'automenu-text-limit-exceeded' : ''} ${className}`,
+    className: `${allowSameWordBreak ? '' : 'automenu-word-safe'} ${showLimitState ? 'automenu-text-limit-exceeded' : ''} ${className}`,
     style: { ...style, fontSize: `${fit.fontSize}px` },
     onInput: (event: React.InputEvent<HTMLElement>) => {
       evaluate(event.currentTarget.innerText);
@@ -84,7 +88,7 @@ export const AutoFitText: React.FC<AutoFitTextProps> = ({
   return (
     <>
       {React.createElement(as, componentProps, children ?? text)}
-      {showOverflowFeedback && !fit.fits && (
+      {showLimitState && (
         <span data-character-limit-feedback="true" className="automenu-character-limit-message">
           Limite de caracteres excedido
         </span>

@@ -181,6 +181,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
             return (
                 <ResponsiveMoveButton
                     flowDirection={direction}
+                    controlGroup="category-move"
                     className={`absolute ${getEdgeControlClass(direction, lane)} p-2 bg-white border border-slate-200 shadow-md rounded-full text-slate-500 hover:text-indigo-600 hover:bg-slate-50 ${selectionLayerClasses.controls} transition-all cursor-pointer pointer-events-auto`}
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => handlers.handleGlobalMove?.(
@@ -224,24 +225,28 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 {isCategorySelected && !isCategoryDragged && (
                     <>
                         {categoryAddControls.top && (
-                            <button
+                            <ResponsiveMoveButton
+                                flowDirection={categoryFlowDirections.before}
+                                controlGroup="category-add"
                                 className={`absolute ${getEdgeControlClass(categoryFlowDirections.before)} bg-indigo-600 text-white p-1 rounded-full ${selectionLayerClasses.controls} shadow-md hover:scale-110 hover:bg-indigo-700 transition-transform cursor-pointer pointer-events-auto`}
                                 onPointerDown={(e) => e.stopPropagation()}
                                 onClick={(e) => handlers.handleAddClick?.(e, chunk.category, true, 'before')}
                                 title={`Adicionar categoria ${getDirectionLabel(categoryFlowDirections.before)}`}
                             >
                                 <Plus size={12} />
-                            </button>
+                            </ResponsiveMoveButton>
                         )}
                         {categoryAddControls.bottom && (
-                            <button
+                            <ResponsiveMoveButton
+                                flowDirection={categoryFlowDirections.after}
+                                controlGroup="category-add"
                                 className={`absolute ${getEdgeControlClass(categoryFlowDirections.after)} bg-indigo-600 text-white p-1 rounded-full ${selectionLayerClasses.controls} shadow-md hover:scale-110 hover:bg-indigo-700 transition-transform cursor-pointer pointer-events-auto`}
                                 onPointerDown={(e) => e.stopPropagation()}
                                 onClick={(e) => handlers.handleAddClick?.(e, chunk.category, true, 'after')}
                                 title={`Adicionar categoria ${getDirectionLabel(categoryFlowDirections.after)}`}
                             >
                                 <Plus size={12} />
-                            </button>
+                            </ResponsiveMoveButton>
                         )}
                         {renderCategoryMoveButton(categoryFlowDirections.before, flowIndex > 0)}
                         {renderCategoryMoveButton(

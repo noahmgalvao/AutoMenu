@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { flushSync } from 'react-dom';
 import { CategoryPosition, Product } from '../../types';
 import { InteractionProps } from './types';
-import { A4_HEIGHT_PX, FREE_TEXT_PREFIX, SAFETY_BUFFER, STANDARD_GAP, type CategoryPlacementAssignment } from '../../utils/menuPagination';
+import { A4_HEIGHT_PX, A4_WIDTH_PX, FREE_TEXT_PREFIX, SAFETY_BUFFER, STANDARD_GAP, type CategoryPlacementAssignment } from '../../utils/menuPagination';
 import {
     getCollisionSafeFreeTextTop,
     getNearestRenderedFreeTextTarget,
@@ -227,6 +227,7 @@ export const useDraggableInteractions = (
     const categoryActiveLaneKeyRef = useRef<string | null>(null);
     const categoryPageSwitchOriginXRef = useRef<number | null>(null);
     const categoryPointerOffsetYRef = useRef<number | null>(null);
+    const categoryDraggedHeightRef = useRef<number | null>(null);
     const isDraggingRef = useRef(false);
     const hasDragMutationRef = useRef(false);
     const listenersAttachedRef = useRef(false);
@@ -561,6 +562,7 @@ export const useDraggableInteractions = (
         categoryActiveLaneKeyRef.current = null;
         categoryPageSwitchOriginXRef.current = null;
         categoryPointerOffsetYRef.current = null;
+        categoryDraggedHeightRef.current = null;
         isDraggingRef.current = false;
         hasDragMutationRef.current = false;
     }, [clearTouchCancelCommit, releasePointerCapture]);
@@ -578,24 +580,27 @@ export const useDraggableInteractions = (
     const performCommitAndCleanup = useCallback(() => {
         const shouldCommit = isDraggingRef.current && hasDragMutationRef.current;
         const currentDraggedItem = draggedItemRef.current;
+        const categoryOrderSnapshot = liveCategoryOrderRef.current;
+        const categoryAssignmentsSnapshot = liveCategoryPageAssignmentsRef.current;
+        const categoryPositionsSnapshot = liveCategoryPositionsRef.current;
 
         if (shouldCommit) {
-            if (liveCategoryOrderRef.current && onCommitCategoryOrder) {
-                onCommitCategoryOrder(liveCategoryOrderRef.current);
+            if (categoryOrderSnapshot && onCommitCategoryOrder) {
+                onCommitCategoryOrder(categoryOrderSnapshot);
             }
 
             if (
                 currentDraggedItem?.type === 'category' &&
-                liveCategoryOrderRef.current &&
-                liveCategoryPageAssignmentsRef.current &&
+                categoryOrderSnapshot &&
+                categoryAssignmentsSnapshot &&
                 onStyleUpdate
             ) {
-                const nextPageBreaks = liveCategoryOrderRef.current.reduce<string[]>((breaks, category, index, order) => {
+                const nextPageBreaks = categoryOrderSnapshot.reduce<string[]>((breaks, category, index, order) => {
                     if (index === 0) return breaks;
 
                     const previousCategory = order[index - 1];
-                    const previousPage = liveCategoryPageAssignmentsRef.current?.[previousCategory]?.pageIndex ?? 0;
-                    const currentPage = liveCategoryPageAssignmentsRef.current?.[category]?.pageIndex ?? previousPage;
+                    const previousPage = categoryAssignmentsSnapshot[previousCategory]?.pageIndex ?? 0;
+                    const currentPage = categoryAssignmentsSnapshot[category]?.pageIndex ?? previousPage;
 
                     if (currentPage > previousPage) {
                         breaks.push(category);
@@ -609,9 +614,9 @@ export const useDraggableInteractions = (
                     pageBreaks: nextPageBreaks,
                     categoryPlacements: {
                         ...(prev.categoryPlacements || {}),
-                        ...liveCategoryPageAssignmentsRef.current,
+                        ...categoryAssignmentsSnapshot,
                     },
-                    categoryPositions: { ...(liveCategoryPositionsRef.current || prev.categoryPositions || {}) },
+                    categoryPositions: { ...(categoryPositionsSnapshot || prev.categoryPositions || {}) },
                     name: 'Custom',
                 }));
             }
@@ -990,9 +995,17 @@ export const useDraggableInteractions = (
 
             const currentElement = getRenderedDragElement('category', categoryId);
             const currentRect = currentElement?.getBoundingClientRect();
+            const currentPage = currentElement?.closest<HTMLElement>('[data-drag-page-container="category"]');
+            const currentPageRect = currentPage?.getBoundingClientRect();
+            const currentScale = currentPageRect && currentPageRect.width > 0
+                ? Math.max(0.001, currentPageRect.width / A4_WIDTH_PX)
+                : 1;
             categoryPointerOffsetYRef.current = currentRect
-                ? Math.max(0, Math.min(currentRect.height, pointer.y - currentRect.top))
+                ? Math.max(0, Math.min(currentRect.height, pointer.y - currentRect.top)) / currentScale
                 : 0;
+            categoryDraggedHeightRef.current = currentRect
+                ? currentRect.height / currentScale
+                : null;
             const currentPositions = { ...(style.categoryPositions || {}) };
             setLiveCategoryPositions(currentPositions);
             liveCategoryPositionsRef.current = currentPositions;
@@ -1034,21 +1047,26 @@ export const useDraggableInteractions = (
 
         const pageRect = page.getBoundingClientRect();
         const elementRect = element.getBoundingClientRect();
-        const scale = Math.max(0.001, pageRect.width / 794);
-        const pointerOffset = categoryPointerOffsetYRef.current ?? Math.min(24 * scale, elementRect.height / 2);
+        const scale = Math.max(0.001, pageRect.width / A4_WIDTH_PX);
+        const elementHeight = categoryDraggedHeightRef.current
+            ? categoryDraggedHeightRef.current * scale
+            : elementRect.height;
+        const pointerOffset = categoryPointerOffsetYRef.current !== null
+            ? categoryPointerOffsetYRef.current * scale
+            : Math.min(24 * scale, elementHeight / 2);
         const minimumTop = lane.rect.top;
         const maximumBottom = lane.rect.bottom;
-        if (elementRect.height > maximumBottom - minimumTop) return false;
+        if (elementHeight > maximumBottom - minimumTop) return false;
 
         const desiredTop = Math.max(
             minimumTop,
-            Math.min(maximumBottom - elementRect.height, pointer.y - pointerOffset),
+            Math.min(maximumBottom - elementHeight, pointer.y - pointerOffset),
         );
 
         const obstacles = getOrderedCategoryTargets()
             .filter((target) => target.id !== categoryId && target.laneKey === activeLaneKey)
             .sort((left, right) => left.rect.top - right.rect.top);
-        const desiredBottom = desiredTop + elementRect.height;
+        const desiredBottom = desiredTop + elementHeight;
         const overlapsCategory = obstacles.some((target) => (
             desiredTop < target.rect.bottom - 0.5
             && desiredBottom > target.rect.top + 0.5
@@ -1320,6 +1338,17 @@ export const useDraggableInteractions = (
                 && pointer.y <= target.rect.bottom
             ));
 
+            if (!pointerOverCategoryTarget) {
+                updateDraggedCategoryPosition(
+                    currentDragItem.id,
+                    pointer,
+                    activePageIndex,
+                    activeColumnIndex,
+                    activeLaneKey,
+                );
+                return;
+            }
+
             let desiredInsertionIndex = orderWithoutDragged.length;
             let insideDeadZone = false;
 
@@ -1388,18 +1417,7 @@ export const useDraggableInteractions = (
 
             const newOrder = moveItemToInsertionIndex(currentOrder, currentDragItem.id, desiredInsertionIndex);
             if (areOrdersEqual(newOrder, currentOrder)) {
-                if (pointerOverCategoryTarget) {
-                    clearDraggedCategoryPosition(currentDragItem.id);
-                    return;
-                }
-
-                updateDraggedCategoryPosition(
-                    currentDragItem.id,
-                    pointer,
-                    activePageIndex,
-                    activeColumnIndex,
-                    activeLaneKey,
-                );
+                clearDraggedCategoryPosition(currentDragItem.id);
                 return;
             }
 
@@ -2609,11 +2627,6 @@ export const useDraggableInteractions = (
 
     const updateCategoryAtReleasePointer = useCallback((pointer: { x: number; y: number }) => {
         if (draggedItemRef.current?.type !== 'category') return;
-        const previousPointer = lastPointerRef.current;
-        const positionChanged = !previousPointer
-            || Math.abs(pointer.x - previousPointer.x) > 0.01
-            || Math.abs(pointer.y - previousPointer.y) > 0.01;
-        if (!positionChanged) return;
 
         reorderCategoryByPointer(pointer, { commitImmediately: false });
         lastPointerRef.current = pointer;

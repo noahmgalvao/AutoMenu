@@ -61,8 +61,8 @@ const rectanglesOverlap = (left: DOMRect, right: DOMRect, gap: number = 3) => (
 );
 
 export const ResponsiveMoveButton: React.FC<
-    React.ButtonHTMLAttributes<HTMLButtonElement> & { flowDirection: FlowDirection }
-> = ({ flowDirection, children, ...buttonProps }) => {
+    React.ButtonHTMLAttributes<HTMLButtonElement> & { flowDirection: FlowDirection; controlGroup?: string }
+> = ({ flowDirection, controlGroup = 'move', children, ...buttonProps }) => {
     const buttonRef = React.useRef<HTMLButtonElement>(null);
 
     React.useLayoutEffect(() => {
@@ -75,35 +75,55 @@ export const ResponsiveMoveButton: React.FC<
         const reposition = () => {
             animationFrame = null;
             if (disposed) return;
-            button.style.removeProperty('left');
-            button.style.removeProperty('top');
+            const movesHorizontally = flowDirection === 'top' || flowDirection === 'bottom';
+            const groupedButtons = Array.from(
+                root.querySelectorAll<HTMLButtonElement>('[data-responsive-edge-control="true"]')
+            ).filter((candidate) => {
+                const direction = candidate.dataset.responsiveFlowDirection as FlowDirection;
+                const candidateMovesHorizontally = direction === 'top' || direction === 'bottom';
+                return candidate.dataset.responsiveControlGroup === controlGroup
+                    && candidateMovesHorizontally === movesHorizontally
+                    && candidate.getClientRects().length > 0;
+            });
+            const controls = groupedButtons.length > 0 ? groupedButtons : [button];
+            controls.forEach((control) => {
+                if (movesHorizontally) control.style.removeProperty('left');
+                else control.style.removeProperty('top');
+            });
 
-            const buttonRect = button.getBoundingClientRect();
             const rootRect = root.getBoundingClientRect();
+            const controlSet = new Set(controls);
             const obstacles = Array.from(root.querySelectorAll<HTMLButtonElement>('button'))
-                .filter((candidate) => candidate !== button && candidate.getClientRects().length > 0)
+                .filter((candidate) => !controlSet.has(candidate) && candidate.getClientRects().length > 0)
                 .map((candidate) => candidate.getBoundingClientRect());
+            const controlRects = controls.map((control) => ({
+                control,
+                rect: control.getBoundingClientRect(),
+            }));
 
-            if (!obstacles.some((obstacle) => rectanglesOverlap(buttonRect, obstacle))) return;
+            if (!controlRects.some(({ rect }) => obstacles.some((obstacle) => rectanglesOverlap(rect, obstacle)))) return;
 
-            const horizontalEdge = flowDirection === 'top' || flowDirection === 'bottom';
             const candidateFractions = [0.12, 0.28, 0.72, 0.88];
             const candidate = candidateFractions.find((fraction) => {
                 const centerX = rootRect.left + (rootRect.width * fraction);
                 const centerY = rootRect.top + (rootRect.height * fraction);
-                const candidateRect = horizontalEdge
-                    ? new DOMRect(centerX - (buttonRect.width / 2), buttonRect.top, buttonRect.width, buttonRect.height)
-                    : new DOMRect(buttonRect.left, centerY - (buttonRect.height / 2), buttonRect.width, buttonRect.height);
-                const staysWithinItem = horizontalEdge
-                    ? candidateRect.left >= rootRect.left && candidateRect.right <= rootRect.right
-                    : candidateRect.top >= rootRect.top && candidateRect.bottom <= rootRect.bottom;
+                return controlRects.every(({ rect }) => {
+                    const candidateRect = movesHorizontally
+                        ? new DOMRect(centerX - (rect.width / 2), rect.top, rect.width, rect.height)
+                        : new DOMRect(rect.left, centerY - (rect.height / 2), rect.width, rect.height);
+                    const staysWithinItem = movesHorizontally
+                        ? candidateRect.left >= rootRect.left && candidateRect.right <= rootRect.right
+                        : candidateRect.top >= rootRect.top && candidateRect.bottom <= rootRect.bottom;
 
-                return staysWithinItem && !obstacles.some((obstacle) => rectanglesOverlap(candidateRect, obstacle));
+                    return staysWithinItem && !obstacles.some((obstacle) => rectanglesOverlap(candidateRect, obstacle));
+                });
             });
 
             if (candidate === undefined) return;
-            if (horizontalEdge) button.style.left = `${candidate * 100}%`;
-            else button.style.top = `${candidate * 100}%`;
+            controls.forEach((control) => {
+                if (movesHorizontally) control.style.left = `${candidate * 100}%`;
+                else control.style.top = `${candidate * 100}%`;
+            });
         };
 
         const scheduleReposition = () => {
@@ -113,6 +133,7 @@ export const ResponsiveMoveButton: React.FC<
         };
 
         reposition();
+        scheduleReposition();
         const resizeObserver = new ResizeObserver(scheduleReposition);
         resizeObserver.observe(root);
         root.querySelectorAll<HTMLElement>('button, [id^="product-name-"], [id^="text-"]')
@@ -125,13 +146,20 @@ export const ResponsiveMoveButton: React.FC<
             if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
             resizeObserver.disconnect();
             window.removeEventListener('resize', scheduleReposition);
-            button.style.removeProperty('left');
-            button.style.removeProperty('top');
+            if (flowDirection === 'top' || flowDirection === 'bottom') button.style.removeProperty('left');
+            else button.style.removeProperty('top');
         };
     });
 
     return (
-        <button ref={buttonRef} type="button" {...buttonProps}>
+        <button
+            ref={buttonRef}
+            type="button"
+            data-responsive-edge-control="true"
+            data-responsive-control-group={controlGroup}
+            data-responsive-flow-direction={flowDirection}
+            {...buttonProps}
+        >
             {children}
         </button>
     );
@@ -186,6 +214,7 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
         return (
             <ResponsiveMoveButton
                 flowDirection={flowDirection}
+                controlGroup="move"
                 onClick={(e) => handlers.handleGlobalMove(e, type, id || catName, catName, direction)}
                 className={`absolute ${getEdgeControlClass(flowDirection, 'leading')} ${movePadding} ${pointerEventsClass} bg-white border border-slate-200 shadow-sm rounded-full text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all cursor-pointer`}
                 onPointerDown={(e) => e.stopPropagation()}
@@ -205,24 +234,28 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
         {isSelected && !isDragging && !isFreeText && showAddControls && (
             <>
                 {showTopAddControl && (
-                    <button
+                    <ResponsiveMoveButton
+                        flowDirection={flowDirections.before}
+                        controlGroup="add"
                         className={`absolute ${getEdgeControlClass(flowDirections.before)} text-white p-1 rounded-full ${selectionLayerClasses.controls} transition-transform cursor-pointer ${addControlClass}`}
                         onPointerDown={e => e.stopPropagation()}
                         onClick={(e) => handlers.handleAddClick?.(e, catName, type === 'category', 'before', id)}
                         title={`${type === 'category' ? 'Adicionar categoria' : 'Adicionar item'} ${getDirectionLabel(flowDirections.before)}`}
                     >
                         <Plus size={12}/>
-                    </button>
+                    </ResponsiveMoveButton>
                 )}
                 {showBottomAddControl && (
-                    <button
+                    <ResponsiveMoveButton
+                        flowDirection={flowDirections.after}
+                        controlGroup="add"
                         className={`absolute ${getEdgeControlClass(flowDirections.after)} text-white p-1 rounded-full ${selectionLayerClasses.controls} transition-transform cursor-pointer ${addControlClass}`}
                         onPointerDown={e => e.stopPropagation()}
                         onClick={(e) => handlers.handleAddClick?.(e, catName, type === 'category', 'after', id)}
                         title={`${type === 'category' ? 'Adicionar categoria' : 'Adicionar item'} ${getDirectionLabel(flowDirections.after)}`}
                     >
                         <Plus size={12}/>
-                    </button>
+                    </ResponsiveMoveButton>
                 )}
             </>
         )}
@@ -280,6 +313,7 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
                     {canMoveUp && (
                     <ResponsiveMoveButton
                         flowDirection={flowDirections.before}
+                        controlGroup="move"
                         onClick={(e) => handlers.handleGlobalMove(e, type, id || catName, catName, 'up')}
                         className={`absolute ${getEdgeControlClass(flowDirections.before, 'leading')} ${movePadding} ${pointerEventsClass} bg-white border border-slate-200 shadow-sm rounded-full text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all cursor-pointer`}
                         onPointerDown={(e) => e.stopPropagation()}
@@ -291,6 +325,7 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
                   {canMoveDown && (
                     <ResponsiveMoveButton
                         flowDirection={flowDirections.after}
+                        controlGroup="move"
                         onClick={(e) => handlers.handleGlobalMove(e, type, id || catName, catName, 'down')}
                         className={`absolute ${getEdgeControlClass(flowDirections.after, 'leading')} ${movePadding} ${pointerEventsClass} bg-white border border-slate-200 shadow-sm rounded-full text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all cursor-pointer`}
                         onPointerDown={(e) => e.stopPropagation()}
@@ -440,7 +475,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const compactControls = (style.categoryColumnCount || 1) > 1;
         const categoryAlign = catStyle.textAlign || 'left';
         const renderCategoryDivider = (key: string) => (
-            <div key={key} className="h-px flex-grow opacity-40 min-w-6" style={{ backgroundColor: style.primaryColor }} />
+            <div key={key} className="h-px min-w-0 flex-grow opacity-40" style={{ backgroundColor: style.primaryColor }} />
         );
         
         return (
@@ -465,8 +500,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     }`}
                 />
                 {renderFormattingToolbar('category', item.data, catStyle)}
-                <ProductControls type="category" catName={item.data} isMobileSelected={isSelected} index={idx} total={0} isLastInBlock={false} canMoveUp={false} canMoveDown={false} canMoveLeft={false} canMoveRight={false} hideGeneralControls={false} isPristineNewDefault={isPristineNewDefault} handlers={handlers} isDragging={isBeingDragged} showSelectionOutline={false} showAddControls={false} compactControls={compactControls} showGridMoveControls={false}/>
-                <div className={`flex w-full max-w-full min-w-0 items-center ${compactControls ? 'gap-2 px-1' : 'gap-4 px-2'} ${categoryAlign === 'center' ? 'justify-center' : categoryAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
+                <ProductControls type="category" catName={item.data} isMobileSelected={isSelected} index={idx} total={0} isLastInBlock={false} canMoveUp={false} canMoveDown={false} canMoveLeft={false} canMoveRight={false} hideGeneralControls={false} isPristineNewDefault={isPristineNewDefault} handlers={handlers} onEdit={(e: React.MouseEvent) => handlers.startEditing(e, item.data, elementId, 'category')} isDragging={isBeingDragged} showSelectionOutline={false} showAddControls={false} compactControls={compactControls} showGridMoveControls={false}/>
+                <div className={`flex w-full max-w-full min-w-0 items-center gap-0 ${compactControls ? 'px-1' : 'px-2'} ${categoryAlign === 'center' ? 'justify-center' : categoryAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
                     {(categoryAlign === 'center' || categoryAlign === 'right') && renderCategoryDivider('before')}
                     <AutoFitText
                         as="h2"
@@ -476,6 +511,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                         allowSameWordBreak={allowSameWordBreak}
                         fitScope="category"
                         widthMode="flex"
+                        availableWidthInset={compactControls ? 8 : 16}
                         showOverflowFeedback={handlers.editingId === item.data}
                         id={elementId}
                         className={`min-w-0 max-w-full shrink whitespace-normal break-words [overflow-wrap:anywhere] [word-break:normal] outline-none rounded ${handlers.editingId === item.data ? 'bg-white ring-2 ring-blue-500 z-10 cursor-text px-1' : ''}`}
@@ -492,7 +528,6 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                         }}
                         contentEditable={handlers.editingId === item.data} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'category', item.data)} onKeyDown={handlers.handleKeyDown} onMouseDown={(e) => { if(handlers.editingId !== item.data) e.preventDefault(); }} onPointerDown={(e) => { if (handlers.editingId === item.data) e.stopPropagation(); }}
                     />
-                    <button onClick={(e) => handlers.startEditing(e, item.data, elementId, 'category')} className={`relative flex-shrink-0 ${selectionLayerClasses.controls} ${compactControls ? 'p-1.5' : 'p-2.5'} bg-white border border-slate-200 shadow-sm rounded-md text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all ${isSelected || handlers.editingId === item.data ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'}`} onPointerDown={(e) => e.stopPropagation()}><Edit3 size={compactControls ? 15 : 24} /></button>
                     {(categoryAlign === 'left' || categoryAlign === 'center') && renderCategoryDivider('after')}
                 </div>
             </div>
@@ -524,7 +559,6 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const productColumnCount = style.columnCount || 1;
         const compactControls = categoryColumnCount > 1;
         const stackImage = categoryColumnCount >= 3 && style.showImages && Boolean(product.image);
-        const stackProductMeta = categoryColumnCount >= 3;
         const imageSizePx = (categoryColumnCount >= 3 ? 96 : categoryColumnCount === 2 ? 64 : 96) * imgScale;
         const rawCustomMarginTop = Number(product.customMarginTop);
         const isFreeTextGhost = product.isFreeText && item.category?.startsWith(FREE_TEXT_PREFIX);
@@ -618,10 +652,10 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     )}
                     <div className={`flex-grow min-w-0 ${isNameCentered ? 'text-center' : isNameRight ? 'text-right' : 'text-left'}`}>
                          <div
-                            className={`${stackProductMeta || isNameCentered ? 'flex flex-col' : 'grid items-start grid-cols-[minmax(0,1fr)_auto]'} ${isNameCentered ? 'items-center' : 'items-stretch'}`}
+                            className={`grid grid-cols-[minmax(0,1fr)_auto] ${isNameCentered ? 'items-center' : 'items-start'}`}
                             style={{
                                 marginBottom: contentSpacing.productNameToDescription,
-                                columnGap: stackProductMeta || isNameCentered ? undefined : contentSpacing.productNameToPrice,
+                                columnGap: contentSpacing.productNameToPrice,
                             }}
                          >
                             <div className={`flex items-center gap-2 min-w-0 ${isNameCentered ? 'justify-center w-full' : isNameRight ? 'justify-end' : ''}`}>
@@ -651,7 +685,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 <button data-product-edit-id={product.id} onClick={(e) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name')} className={`relative ${selectionLayerClasses.controls} ${compactControls ? 'hidden' : ''} p-2.5 bg-white border border-slate-200 shadow-sm rounded-md text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all flex-shrink-0 ${isSelected || handlers.editingId === product.id ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'}`} onPointerDown={(e) => e.stopPropagation()}><Edit3 size={24} /></button>
                             </div>
                             <div 
-                              className={`flex shrink-0 items-center gap-1 whitespace-nowrap ${stackProductMeta || isNameCentered ? 'w-full' : 'min-w-0'}`}
+                              className="flex min-w-0 shrink-0 items-center gap-1 whitespace-nowrap"
                               style={{ 
                                 justifyContent: priceStyle.textAlign === 'left' ? 'flex-start' : (priceStyle.textAlign === 'center' ? 'center' : 'flex-end'), 
                                 display: 'flex',
@@ -741,7 +775,6 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 : productColumnCount > 1
                     ? 12
                     : 24;
-        const stackCardMeta = productColumnCount > 1 || categoryColumnCount > 1;
         
         return (
             <div key={`row-${idx}`} className="grid" style={{ gridTemplateColumns: `repeat(${productColumnCount}, minmax(0, 1fr))`, gap: `${productGridGap}px`, marginBottom: contentSpacing.betweenProducts }}>
@@ -798,10 +831,10 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                         )}
                                         <div className={`${isCardLayout ? (categoryColumnCount > 1 || productColumnCount > 2 ? 'p-1.5' : productColumnCount > 1 ? 'p-2' : 'p-4') : 'py-2'} flex min-w-0 flex-col flex-grow ${textAlignClass}`}>
                                             <div
-                                                className={`min-w-0 ${stackCardMeta ? 'flex flex-col' : 'grid items-start grid-cols-[minmax(0,1fr)_auto]'}`}
+                                                className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start"
                                                 style={{
                                                     marginBottom: contentSpacing.productNameToDescription,
-                                                    columnGap: stackCardMeta ? undefined : contentSpacing.productNameToPrice,
+                                                    columnGap: contentSpacing.productNameToPrice,
                                                 }}
                                             >
                                                 <div className={`flex min-w-0 items-center gap-1 ${nameStyle.textAlign === 'center' ? 'justify-center' : nameStyle.textAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
@@ -838,7 +871,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                     </button>
                                                 </div>
                                                 <div
-                                                    className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap ${isCardLayout ? `rounded-full bg-white/90 border border-black/5 shadow-sm ${compactControls ? 'px-1.5 py-0.5' : 'px-2.5 py-1'}` : ''} ${stackCardMeta ? (priceStyle.textAlign === 'left' ? 'self-start' : priceStyle.textAlign === 'center' ? 'self-center' : 'self-end') : 'justify-self-end'}`}
+                                                    className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap justify-self-end ${isCardLayout ? `rounded-full bg-white/90 border border-black/5 shadow-sm ${compactControls ? 'px-1.5 py-0.5' : 'px-2.5 py-1'}` : ''}`}
                                                     style={{ color: priceStyle.color, fontFamily: priceStyle.fontFamily, fontSize: clampFontSize(style, 'productPrice', priceStyle.fontSize, 18), fontWeight: priceStyle.fontWeight, fontStyle: priceStyle.italic ? 'italic' : 'normal', textDecoration: priceStyle.underline ? 'underline' : 'none' }}
                                                 >
                                                     <span className="opacity-70 select-none touch-none">$</span>
