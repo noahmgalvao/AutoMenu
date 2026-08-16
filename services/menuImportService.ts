@@ -20,7 +20,7 @@ import { clampFontSize, resolveFontSizeLimits } from '../utils/styleRules';
 import { FREE_TEXT_PREFIX } from '../utils/menuPagination';
 import { normalizeColumnWidths } from '../utils/categoryColumns';
 
-export interface ProcessMenuImportOptions {
+interface ProcessMenuImportOptions {
   files: File[];
   importMode: MenuImportMode;
   currentProducts: Product[];
@@ -30,8 +30,7 @@ export interface ProcessMenuImportOptions {
   menuId: string;
 }
 
-export interface ProcessedMenuImport {
-  importMode: MenuImportMode;
+interface ProcessedMenuImport {
   products: Product[] | null;
   style: MenuStyle | null;
   orderStyle: Pick<
@@ -43,15 +42,6 @@ export interface ProcessedMenuImport {
   productCount: number;
   imageCount: number;
   pageCount: number;
-  previewProducts: Product[];
-  previewStyle: MenuStyle;
-  importedProducts: Product[];
-  importedProductIds: string[];
-}
-
-export interface FinalizedMenuImport {
-  products: Product[];
-  style: MenuStyle;
 }
 
 type AnalysisResult = Awaited<ReturnType<typeof analyzeMenuImage>>;
@@ -277,7 +267,6 @@ interface MergedImportedProducts {
   customProductOrder: Record<string, string[]>;
   hiddenProductIds: string[];
   categoryNameByKey: Map<string, string>;
-  importedProductIds: string[];
 }
 
 const normalizeEntityName = (value: string) => (
@@ -436,7 +425,6 @@ export const mergeImportedProducts = (
     hiddenProductIds: (currentStyle.hiddenProductIds || [])
       .filter((productId) => retainedProductIds.has(productId)),
     categoryNameByKey,
-    importedProductIds: Array.from(importedProductIdsByCategory.values()).flat(),
   };
 };
 
@@ -912,19 +900,7 @@ export const processMenuImport = async ({
     };
   }
 
-  const previewProducts = importsProducts ? finalProducts : currentProducts;
-  const previewStyle: MenuStyle = importedStyle || {
-    ...currentStyle,
-    ...(orderStyle || {}),
-    name: orderStyle ? 'Custom' : currentStyle.name,
-  };
-  const importedProductIdSet = new Set(mergedImport.importedProductIds);
-  const importedProducts = finalProducts.filter((product) => (
-    !product.isFreeText && importedProductIdSet.has(product.id)
-  ));
-
   return {
-    importMode,
     products: importsProducts ? finalProducts : null,
     style: importedStyle,
     orderStyle,
@@ -941,89 +917,5 @@ export const processMenuImport = async ({
     productCount: extractedProducts.length,
     imageCount: processedImages.length,
     pageCount: analyzedPages.length,
-    previewProducts,
-    previewStyle,
-    importedProducts,
-    importedProductIds: mergedImport.importedProductIds,
-  };
-};
-
-const unique = <T,>(values: T[]) => Array.from(new Set(values));
-
-const getOrderedCategories = (products: Product[], style: MenuStyle) => {
-  const presentCategories = unique(products.map((product) => product.category));
-  return [
-    ...(style.customCategoryOrder || []).filter((category) => presentCategories.includes(category)),
-    ...presentCategories.filter((category) => !(style.customCategoryOrder || []).includes(category)),
-  ];
-};
-
-const getOrderedProductIds = (products: Product[], style: MenuStyle, category: string) => {
-  const categoryProducts = products.filter((product) => product.category === category);
-  const presentIds = categoryProducts.map((product) => product.id);
-  return [
-    ...(style.customProductOrder?.[category] || []).filter((id) => presentIds.includes(id)),
-    ...presentIds.filter((id) => !(style.customProductOrder?.[category] || []).includes(id)),
-  ];
-};
-
-export const createMenuImportEditorStyle = (processed: ProcessedMenuImport): MenuStyle => {
-  const importedIdSet = new Set(processed.importedProductIds);
-  const categories = getOrderedCategories(processed.importedProducts, processed.previewStyle);
-  return {
-    ...processed.previewStyle,
-    customCategoryOrder: categories,
-    customProductOrder: Object.fromEntries(categories.map((category) => [
-      category,
-      getOrderedProductIds(processed.importedProducts, processed.previewStyle, category),
-    ])),
-    hiddenProductIds: (processed.previewStyle.hiddenProductIds || [])
-      .filter((productId) => importedIdSet.has(productId)),
-  };
-};
-
-export const finalizeMenuImport = (
-  processed: ProcessedMenuImport,
-  editedImportedProducts: Product[],
-  editedImportStyle: MenuStyle,
-): FinalizedMenuImport => {
-  if (processed.importMode === 'visual') {
-    return {
-      products: processed.previewProducts,
-      style: processed.previewStyle,
-    };
-  }
-
-  const originalImportedIdSet = new Set(processed.importedProductIds);
-  const retainedProducts = processed.previewProducts.filter((product) => (
-    !originalImportedIdSet.has(product.id)
-  ));
-  const products = [...editedImportedProducts, ...retainedProducts];
-  const editedCategories = getOrderedCategories(editedImportedProducts, editedImportStyle);
-  const retainedCategories = getOrderedCategories(retainedProducts, processed.previewStyle)
-    .filter((category) => !editedCategories.includes(category));
-  const customCategoryOrder = [...editedCategories, ...retainedCategories];
-  const customProductOrder = Object.fromEntries(customCategoryOrder.map((category) => {
-    const editedIds = getOrderedProductIds(editedImportedProducts, editedImportStyle, category);
-    const retainedIds = getOrderedProductIds(retainedProducts, processed.previewStyle, category)
-      .filter((id) => !editedIds.includes(id));
-    return [category, [...editedIds, ...retainedIds]];
-  }));
-  const editedProductIdSet = new Set(editedImportedProducts.map((product) => product.id));
-  const hiddenProductIds = unique([
-    ...(processed.previewStyle.hiddenProductIds || [])
-      .filter((productId) => !originalImportedIdSet.has(productId)),
-    ...(editedImportStyle.hiddenProductIds || [])
-      .filter((productId) => editedProductIdSet.has(productId)),
-  ]);
-
-  return {
-    products,
-    style: {
-      ...processed.previewStyle,
-      customCategoryOrder,
-      customProductOrder,
-      hiddenProductIds,
-    },
   };
 };

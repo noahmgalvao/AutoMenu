@@ -26,7 +26,6 @@ interface ProductDesignerProps {
     onPrint?: () => void;
     isOpen?: boolean;
     productsCanChangeCategory?: boolean;
-    splitCategoryAcrossPages?: boolean;
 }
 
 export const ProductDesigner: React.FC<ProductDesignerProps> = ({
@@ -42,8 +41,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
     onClose,
     onPrint,
     isOpen = true,
-    productsCanChangeCategory,
-    splitCategoryAcrossPages
+    productsCanChangeCategory
 }) => {
 
     const {
@@ -74,8 +72,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
         saveEdit,
         remove,
         handleToggleVisibility,
-        prepareAIImport,
-        commitAIImport
+        handleAIImport
     } = useProductDesignerLogic({
         products,
         setProducts,
@@ -231,14 +228,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
             <MenuImportFlow
                 ref={importFlowRef}
                 disabled={isUploading}
-                sortOption={sortOption}
-                workspaceId={workspaceId}
-                currentUserId={currentUserId}
-                currentMenuId={currentMenuId}
-                productsCanChangeCategory={productsCanChangeCategory}
-                splitCategoryAcrossPages={splitCategoryAcrossPages}
-                onPrepare={prepareAIImport}
-                onComplete={commitAIImport}
+                onImport={handleAIImport}
             />
         </>
     );

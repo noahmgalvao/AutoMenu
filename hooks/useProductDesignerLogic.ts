@@ -20,11 +20,7 @@ import {
 } from '../utils/imageProcessor';
 import { createAiImportJob } from '../services/workspaceService';
 import { uploadDataUrlAsset, uploadFileAsset } from '../services/storageService';
-import {
-    FinalizedMenuImport,
-    ProcessedMenuImport,
-    processMenuImport,
-} from '../services/menuImportService';
+import { processMenuImport } from '../services/menuImportService';
 
 interface UseProductDesignerLogicProps {
     products: Product[];
@@ -653,11 +649,8 @@ export const useProductDesignerLogic = ({
         }
     };
 
-    const prepareAIImport = async (
-        files: File[],
-        importMode: MenuImportMode
-    ): Promise<ProcessedMenuImport> => {
-        if (files.length === 0) throw new Error('Nenhuma página foi selecionada.');
+    const handleAIImport = async (files: File[], importMode: MenuImportMode) => {
+        if (files.length === 0) return;
         setIsUploading(true);
 
         try {
@@ -671,35 +664,41 @@ export const useProductDesignerLogic = ({
                 menuId: currentMenuId,
             });
 
+            if (imported.products) {
+                setProducts(imported.products);
+            }
+
+            if (imported.style) {
+                setStyle(imported.style);
+                if (setTemplates) {
+                    setTemplates((previousTemplates) => [imported.style!, ...previousTemplates]);
+                }
+            } else if (imported.orderStyle) {
+                setStyle((currentStyle) => ({
+                    ...currentStyle,
+                    ...imported.orderStyle,
+                    name: 'Custom',
+                }));
+            }
+
             await createAiImportJob({
                 workspaceId,
                 sourceAssetId: imported.sourceAssetId,
                 createdMenuId: currentMenuId,
                 normalizedResult: imported.normalizedResult,
             });
-            return imported;
+
+            const importedParts = [
+                importMode !== 'visual' ? `${imported.productCount} produtos` : '',
+                importMode !== 'products' ? `${imported.imageCount} imagens` : '',
+                `${imported.pageCount} página${imported.pageCount === 1 ? '' : 's'}`,
+            ].filter(Boolean);
+            alert(`Importação concluída: ${importedParts.join(', ')}.`);
         } catch (error) {
             console.error(error);
             throw new Error('Erro ao importar cardápio. Tente novamente.');
         } finally {
             setIsUploading(false);
-        }
-    };
-
-    const commitAIImport = (
-        imported: ProcessedMenuImport,
-        finalized: FinalizedMenuImport,
-    ) => {
-        if (imported.products) {
-            setProducts(finalized.products);
-        }
-
-        if (imported.style || imported.orderStyle) {
-            setStyle(finalized.style);
-        }
-
-        if (imported.style && setTemplates) {
-            setTemplates((previousTemplates) => [finalized.style, ...previousTemplates]);
         }
     };
 
@@ -739,7 +738,6 @@ export const useProductDesignerLogic = ({
         saveEdit,
         remove,
         handleToggleVisibility,
-        prepareAIImport,
-        commitAIImport
+        handleAIImport
     };
 };
