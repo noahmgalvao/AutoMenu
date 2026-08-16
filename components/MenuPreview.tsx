@@ -11,7 +11,7 @@ import { getImageLayerIndexes } from '../utils/imageLayers';
 import type { FlowDirection } from '../utils/flowControls';
 import { getCollisionSafeFreeTextTop } from '../hooks/interactions/freeTextMovement';
 import { resolveMenuMargins } from '../utils/styleRules';
-import { canIncreaseCanvasFontSize, type WordFitScope } from '../utils/textFit';
+import { canIncreaseCanvasFontSize } from '../utils/textFit';
 
 interface MenuPreviewProps {
     products: Product[];
@@ -399,15 +399,6 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                         target.field === 'price' ? 'productPrice' :
                             target.field === 'description' ? 'productDescription' :
                                 'productName';
-
-        const currentElementStyle = style.elementStyles[elementType] || {};
-        if (
-            target.type !== 'pageNumber'
-            && !style.allowSameWordBreak
-            && Number.isFinite(nextFontSize)
-            && nextFontSize > Number(currentElementStyle.fontSize || 0)
-            && !canIncreaseCanvasFontSize(elementType as WordFitScope, nextFontSize)
-        ) return false;
 
         onStyleUpdate?.(prev => {
             const previousStyle = prev.elementStyles[elementType] || {};

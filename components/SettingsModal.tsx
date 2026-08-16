@@ -1,5 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { KeyRound, Loader2, ShieldCheck, UserRound, X } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { KeyRound, Loader2, RotateCcw, ShieldCheck, UserRound, X } from 'lucide-react';
+import {
+  DEFAULT_FONT_SIZE_LIMITS,
+  DEFAULT_MENU_CONTENT_SPACING,
+  DEFAULT_MENU_MARGINS,
+  DEFAULT_MINIMUM_FONT_SIZE,
+} from '../constants';
 import type {
   FontSizeLimitKey,
   FontSizeLimits,
@@ -34,10 +40,12 @@ interface SettingsModalProps {
     fontSizeLimits: FontSizeLimits;
     margins: MenuMargins;
     contentSpacing: MenuContentSpacing;
-  }) => Promise<void>;
+  }, section: 'account' | 'rules') => Promise<void>;
   onRequestPasswordReset: () => Promise<void>;
   onUpdatePassword: (password: string, nonce: string) => Promise<void>;
 }
+
+const AUTO_SAVE_DELAY_MS = 600;
 
 const RuleGroup = <T extends object>({
   title,
@@ -114,55 +122,142 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [newPassword, setNewPassword] = useState('');
   const [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [updatingPassword, setUpdatingPassword] = useState(false);
+  const savedAccountSignatureRef = useRef('');
+  const savedRulesSignatureRef = useRef('');
+
+  const getValues = useCallback(() => ({
+    fullName,
+    workspaceName,
+    splitCategoryAcrossPages,
+    productsCanChangeCategory,
+    minimumFontSize,
+    allowSameWordBreak,
+    fontSizeLimits,
+    margins,
+    contentSpacing,
+  }), [
+    allowSameWordBreak,
+    contentSpacing,
+    fontSizeLimits,
+    fullName,
+    margins,
+    minimumFontSize,
+    productsCanChangeCategory,
+    splitCategoryAcrossPages,
+    workspaceName,
+  ]);
+
+  const saveAccountIfChanged = useCallback(async () => {
+    const signature = JSON.stringify({ fullName, workspaceName });
+    if (signature === savedAccountSignatureRef.current || !fullName.trim() || !workspaceName.trim()) return;
+    savedAccountSignatureRef.current = signature;
+    setMessage(null);
+    setError(null);
+    try {
+      await onSave(getValues(), 'account');
+      setMessage('Alterações salvas automaticamente.');
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Falha ao salvar configurações.');
+    }
+  }, [fullName, getValues, onSave, workspaceName]);
+
+  const saveRulesIfChanged = useCallback(async () => {
+    const signature = JSON.stringify({
+      splitCategoryAcrossPages,
+      productsCanChangeCategory,
+      minimumFontSize,
+      allowSameWordBreak,
+      fontSizeLimits,
+      margins,
+      contentSpacing,
+    });
+    if (signature === savedRulesSignatureRef.current) return;
+    savedRulesSignatureRef.current = signature;
+    setMessage(null);
+    setError(null);
+    try {
+      await onSave(getValues(), 'rules');
+      setMessage('Alterações salvas automaticamente.');
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Falha ao salvar configurações.');
+    }
+  }, [
+    allowSameWordBreak,
+    contentSpacing,
+    fontSizeLimits,
+    getValues,
+    margins,
+    minimumFontSize,
+    onSave,
+    productsCanChangeCategory,
+    splitCategoryAcrossPages,
+  ]);
 
   useEffect(() => {
     if (!open) return;
+    const nextMinimumFontSize = resolveMinimumFontSize(menuStyle);
+    const nextAllowSameWordBreak = menuStyle.allowSameWordBreak === true;
+    const nextFontSizeLimits = resolveFontSizeLimits(menuStyle);
+    const nextMargins = resolveMenuMargins(menuStyle);
+    const nextContentSpacing = resolveMenuContentSpacing(menuStyle);
     setFullName(profile.fullName || '');
     setWorkspaceName(workspace.name);
     setSplitCategoryAcrossPages(workspace.settings.splitCategoryAcrossPages);
     setProductsCanChangeCategory(workspace.settings.productsCanChangeCategory ?? false);
-    setMinimumFontSize(resolveMinimumFontSize(menuStyle));
-    setAllowSameWordBreak(menuStyle.allowSameWordBreak === true);
-    setFontSizeLimits(resolveFontSizeLimits(menuStyle));
-    setMargins(resolveMenuMargins(menuStyle));
-    setContentSpacing(resolveMenuContentSpacing(menuStyle));
+    setMinimumFontSize(nextMinimumFontSize);
+    setAllowSameWordBreak(nextAllowSameWordBreak);
+    setFontSizeLimits(nextFontSizeLimits);
+    setMargins(nextMargins);
+    setContentSpacing(nextContentSpacing);
+    savedAccountSignatureRef.current = JSON.stringify({
+      fullName: profile.fullName || '',
+      workspaceName: workspace.name,
+    });
+    savedRulesSignatureRef.current = JSON.stringify({
+      splitCategoryAcrossPages: workspace.settings.splitCategoryAcrossPages,
+      productsCanChangeCategory: workspace.settings.productsCanChangeCategory ?? false,
+      minimumFontSize: nextMinimumFontSize,
+      allowSameWordBreak: nextAllowSameWordBreak,
+      fontSizeLimits: nextFontSizeLimits,
+      margins: nextMargins,
+      contentSpacing: nextContentSpacing,
+    });
     setMessage(null);
     setError(null);
     setShowPasswordVerification(false);
     setPasswordNonce('');
     setNewPassword('');
     setPasswordConfirmation('');
-  }, [
-    open,
-    profile.fullName,
-    workspace.name,
-    workspace.settings.productsCanChangeCategory,
-    workspace.settings.splitCategoryAcrossPages,
-    menuStyle,
-  ]);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const timeout = window.setTimeout(() => void saveAccountIfChanged(), AUTO_SAVE_DELAY_MS);
+    return () => window.clearTimeout(timeout);
+  }, [open, saveAccountIfChanged]);
+
+  useEffect(() => {
+    if (!open) return;
+    const timeout = window.setTimeout(() => void saveRulesIfChanged(), AUTO_SAVE_DELAY_MS);
+    return () => window.clearTimeout(timeout);
+  }, [open, saveRulesIfChanged]);
 
   if (!open) return null;
 
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setMessage(null);
-    setError(null);
-    try {
-      await onSave({
-        fullName,
-        workspaceName,
-        splitCategoryAcrossPages,
-        productsCanChangeCategory,
-        minimumFontSize,
-        allowSameWordBreak,
-        fontSizeLimits,
-        margins,
-        contentSpacing,
-      });
-      setMessage('Configurações salvas.');
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Falha ao salvar configurações.');
-    }
+  const closeAndSave = () => {
+    void saveAccountIfChanged();
+    void saveRulesIfChanged();
+    onClose();
+  };
+
+  const resetRules = () => {
+    setSplitCategoryAcrossPages(false);
+    setProductsCanChangeCategory(false);
+    setMinimumFontSize(DEFAULT_MINIMUM_FONT_SIZE);
+    setAllowSameWordBreak(false);
+    setFontSizeLimits({ ...DEFAULT_FONT_SIZE_LIMITS });
+    setMargins({ ...DEFAULT_MENU_MARGINS });
+    setContentSpacing({ ...DEFAULT_MENU_CONTENT_SPACING });
   };
 
   const requestPasswordReset = async () => {
@@ -212,7 +307,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4" onPointerDown={onClose}>
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4" onPointerDown={closeAndSave}>
       <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:flex-row" onPointerDown={(event) => event.stopPropagation()}>
         <aside className="w-full shrink-0 border-b border-slate-200 bg-slate-50 p-3 sm:w-44 sm:border-b-0 sm:border-r">
           <div className="mb-3 px-2 text-sm font-bold text-slate-900">Configurações</div>
@@ -224,10 +319,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </aside>
 
-        <form onSubmit={submit} className="min-w-0 flex-1 overflow-y-auto p-6">
+        <form onSubmit={(event) => event.preventDefault()} className="min-w-0 flex-1 overflow-y-auto p-6">
           <div className="mb-6 flex items-center justify-between">
             <h2 className="text-xl font-bold text-slate-900">{section === 'account' ? 'Minha Conta' : 'Regras Gerais'}</h2>
-            <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={20} /></button>
+            <button type="button" onClick={closeAndSave} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={20} /></button>
           </div>
 
           {section === 'account' ? (
@@ -351,17 +446,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <span className="mt-1 block text-sm text-slate-500">Ex.: permitir “HAMBU” / “RGUER” em duas linhas. Desativado, o texto reduz até o mínimo.</span>
                 </span>
               </label>
+
+              <button
+                type="button"
+                onClick={resetRules}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                <RotateCcw size={16} /> Redefinir regras ao padrão
+              </button>
             </div>
           )}
 
           {message && <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div>}
           {error && <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
-          <div className="mt-6 flex justify-end gap-3 border-t border-slate-100 pt-5">
-            <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancelar</button>
-            <button type="submit" disabled={saving} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
-              {saving && <Loader2 size={15} className="animate-spin" />} Salvar
-            </button>
+          <div className="mt-6 flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+            {saving && <span className="flex items-center gap-2 text-xs font-medium text-slate-500"><Loader2 size={14} className="animate-spin" /> Salvando</span>}
+            <button type="button" onClick={closeAndSave} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Fechar</button>
           </div>
         </form>
       </div>

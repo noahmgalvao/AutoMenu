@@ -217,30 +217,37 @@ export const calculateItemHeight = (
         const imgHeight = hasImage
             ? (categoryColumnCount >= 3 ? 96 * imgScale : categoryColumnCount === 2 ? 64 * imgScale : 96 * imgScale)
             : 0;
-        const innerWidth = Math.max(80, containerWidth - PRODUCT_ITEM_HORIZONTAL_PADDING_PX);
+        const compactLayout = categoryColumnCount > 1;
+        const innerWidth = Math.max(80, containerWidth);
+        const imageGap = compactLayout ? 8 : 16;
         const textWidth = hasImage && categoryColumnCount < 3
-            ? Math.max(80, innerWidth - imgHeight - 16)
+            ? Math.max(80, innerWidth - imgHeight - imageGap)
             : innerWidth;
 
         let textHeight = 0;
 
         const nameCharWidth = fontSize * 0.6;
-        const priceColumnReserve = categoryColumnCount >= 3 || style.elementStyles?.productName?.textAlign === 'center'
-            ? 0
-            : 90 + spacing.productNameToPrice;
-        const editButtonReserve = categoryColumnCount > 1 ? 28 : 48;
-        const nameLines = getSafeLineCount(product.name, Math.max(48, textWidth - priceColumnReserve - editButtonReserve), nameCharWidth);
-        textHeight += fontSize * 1.6 * nameLines;
+        const formattedPriceLength = product.price.toFixed(2).length + 2;
+        const priceColumnReserve = Math.max(36, formattedPriceLength * priceSize * 0.58) + spacing.productNameToPrice;
+        const editButtonReserve = compactLayout ? 0 : 48;
+        const nameLines = getSafeLineCount(
+            product.name,
+            Math.max(48, textWidth - priceColumnReserve - editButtonReserve),
+            nameCharWidth,
+        );
+        const nameAndPriceHeight = Math.max(fontSize * 1.375 * nameLines, priceSize * 1.375);
+        textHeight += nameAndPriceHeight;
 
         if (product.description) {
             const descCharWidth = descSize * 0.55;
             const lines = getSafeLineCount(product.description, textWidth, descCharWidth);
-            textHeight += (descSize * 1.6 * lines) + spacing.productNameToDescription;
+            const descriptionLineHeight = Number(style.elementStyles?.productDescription?.lineHeight) || 1.625;
+            textHeight += (descSize * descriptionLineHeight * lines) + spacing.productNameToDescription;
         }
 
         contentHeight = categoryColumnCount >= 3 && hasImage
-            ? imgHeight + textHeight + PRODUCT_ITEM_VERTICAL_PADDING_PX + 14
-            : Math.max(imgHeight, textHeight) + PRODUCT_ITEM_VERTICAL_PADDING_PX + 6;
+            ? imgHeight + textHeight + PRODUCT_ITEM_VERTICAL_PADDING_PX + 8
+            : Math.max(imgHeight, textHeight) + PRODUCT_ITEM_VERTICAL_PADDING_PX + 2;
     }
 
     return contentHeight + getSafeCustomMarginTop(product) + spacing.betweenProducts;
@@ -474,30 +481,51 @@ const buildLockedPagination = (
 
         const headerItem: PageItem = { type: 'category-header', data: category, category };
         const lockedPage = ensurePage(placement.pageIndex);
-        const lockedCalculator = createPageItemHeightCalculator(style, lockedPage.columns.length, placement.columnIndex);
-        const headerItemHeight = lockedCalculator(headerItem);
+        let lockedCalculator = createPageItemHeightCalculator(style, lockedPage.columns.length, placement.columnIndex);
+        let headerItemHeight = lockedCalculator(headerItem);
+        let fullCategoryHeight = headerItemHeight
+            + contentItems.reduce((total, item) => total + lockedCalculator(item), 0);
         let remainingItems = [...contentItems];
         let currentPlacement = placement;
         let startsCategory = true;
 
+        if (!style.categoryPositions?.[category] && placement.columnIndex > 0) {
+            for (let columnIndex = 0; columnIndex < placement.columnIndex; columnIndex += 1) {
+                const candidatePlacement = { pageIndex: placement.pageIndex, columnIndex };
+                const candidateCalculator = createPageItemHeightCalculator(style, lockedPage.columns.length, columnIndex);
+                const candidateHeaderHeight = candidateCalculator(headerItem);
+                const candidateFullHeight = candidateHeaderHeight
+                    + contentItems.reduce((total, item) => total + candidateCalculator(item), 0);
+                const requiredHeight = options.splitCategoryAcrossPages
+                    ? candidateHeaderHeight + candidateCalculator(contentItems[0])
+                    : candidateFullHeight;
+                if (getRemainingHeight(candidatePlacement) < requiredHeight) continue;
+
+                currentPlacement = candidatePlacement;
+                lockedCalculator = candidateCalculator;
+                headerItemHeight = candidateHeaderHeight;
+                fullCategoryHeight = candidateFullHeight;
+                break;
+            }
+        }
+        fallbackPlacement = currentPlacement;
+
         if (!options.splitCategoryAcrossPages) {
-            const placementPage = ensurePage(placement.pageIndex);
-            const placementColumn = placementPage.columns[Math.max(0, Math.min(placement.columnIndex, placementPage.columns.length - 1))];
+            const placementPage = ensurePage(currentPlacement.pageIndex);
+            const placementColumn = placementPage.columns[Math.max(0, Math.min(currentPlacement.columnIndex, placementPage.columns.length - 1))];
             const placementColumnLimit = baseColumnHeight - (placementPage.mainHeader ? headerHeight : 0);
-            const fullCategoryHeight = headerItemHeight
-                + contentItems.reduce((total, item) => total + lockedCalculator(item), 0);
             if (
                 placementPage.mainHeader &&
                 fullCategoryHeight <= baseColumnHeight &&
                 fullCategoryHeight > placementColumnLimit
             ) {
-                currentPlacement = { pageIndex: placement.pageIndex + 1, columnIndex: 0 };
+                currentPlacement = { pageIndex: currentPlacement.pageIndex + 1, columnIndex: 0 };
             } else if (
                 placementColumn.chunks.length > 0 &&
                 fullCategoryHeight <= placementColumnLimit &&
-                getRemainingHeight(placement) < fullCategoryHeight
+                getRemainingHeight(currentPlacement) < fullCategoryHeight
             ) {
-                currentPlacement = advancePlacement(placement);
+                currentPlacement = advancePlacement(currentPlacement);
             }
         }
 

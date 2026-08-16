@@ -175,6 +175,67 @@ const mapWorkspaceRow = (row: any): Workspace => ({
   updatedAt: row.updated_at,
 });
 
+export const updateAccountIdentity = async ({
+  userId,
+  workspaceId,
+  fullName,
+  workspaceName,
+}: {
+  userId: string;
+  workspaceId: string;
+  fullName: string;
+  workspaceName: string;
+}) => {
+  const supabase = getSupabaseClient();
+  const normalizedFullName = fullName.trim();
+  const normalizedWorkspaceName = workspaceName.trim();
+
+  if (!normalizedFullName || !normalizedWorkspaceName) {
+    throw new Error('Preencha o nome do responsável e do restaurante.');
+  }
+
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .update({ full_name: normalizedFullName })
+    .eq('user_id', userId);
+
+  if (profileError) throw profileError;
+
+  const { error: workspaceError } = await supabase
+    .from('workspaces')
+    .update({ name: normalizedWorkspaceName })
+    .eq('id', workspaceId);
+
+  if (workspaceError) throw workspaceError;
+
+  return { fullName: normalizedFullName, workspaceName: normalizedWorkspaceName };
+};
+
+export const updateWorkspaceRuleSettings = async ({
+  workspaceId,
+  splitCategoryAcrossPages,
+  productsCanChangeCategory,
+}: {
+  workspaceId: string;
+  splitCategoryAcrossPages: boolean;
+  productsCanChangeCategory: boolean;
+}) => {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase
+    .from('workspaces')
+    .update({
+      settings: {
+        split_category_across_pages: splitCategoryAcrossPages,
+        productsCanChangeCategory,
+      },
+    })
+    .eq('id', workspaceId);
+
+  if (error) throw error;
+
+  return { splitCategoryAcrossPages, productsCanChangeCategory };
+};
+
 export const updateAccountSettings = async ({
   userId,
   workspaceId,

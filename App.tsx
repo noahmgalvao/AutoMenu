@@ -34,7 +34,8 @@ import {
   normalizeWorkspaceClientState,
   renameWorkspaceMenu,
   saveWorkspaceState,
-  updateAccountSettings,
+  updateAccountIdentity,
+  updateWorkspaceRuleSettings,
 } from './services/workspaceService';
 
 interface HistoryState {
@@ -832,24 +833,32 @@ const App: React.FC = () => {
     fontSizeLimits: FontSizeLimits;
     margins: MenuMargins;
     contentSpacing: MenuContentSpacing;
-  }) => {
+  }, section: 'account' | 'rules') => {
     if (!session || !workspaceData) return;
     setIsSettingsSaving(true);
     try {
+      if (section === 'account') {
+        const updated = await updateAccountIdentity({
+          userId: session.user.id,
+          workspaceId: workspaceData.workspace.id,
+          fullName: values.fullName,
+          workspaceName: values.workspaceName,
+        });
+        setWorkspaceData((previous) => previous ? {
+          ...previous,
+          profile: { ...previous.profile, fullName: updated.fullName },
+          workspace: { ...previous.workspace, name: updated.workspaceName },
+        } : previous);
+        return;
+      }
+
       const {
         fontSizeLimits,
         minimumFontSize,
         allowSameWordBreak,
         margins,
         contentSpacing,
-        ...accountSettings
       } = values;
-      const updated = await updateAccountSettings({
-        userId: session.user.id,
-        workspaceId: workspaceData.workspace.id,
-        ...accountSettings,
-      });
-      setWorkspaceData((prev) => prev ? { ...prev, ...updated } : prev);
       setStyle((previous) => ({
         ...previous,
         fontSizeLimits,
@@ -857,18 +866,40 @@ const App: React.FC = () => {
         allowSameWordBreak,
         margins,
         contentSpacing,
-        elementStyles: Object.fromEntries(
-          Object.entries(previous.elementStyles).map(([key, elementStyle]) => [
-            key,
-            elementStyle?.fontSize && elementStyle.fontSize < minimumFontSize
-              ? { ...elementStyle, fontSize: minimumFontSize }
-              : elementStyle,
-          ]),
-        ) as MenuStyle['elementStyles'],
+        elementStyles: Object.fromEntries(Object.entries(previous.elementStyles).map(([key, elementStyle]) => {
+          const fontLimitKey = key === 'menuTitle' || key === 'menuSubtitle' || key === 'category'
+            || key === 'productName' || key === 'productPrice' || key === 'productDescription'
+            ? key
+            : null;
+          if (!fontLimitKey || !elementStyle?.fontSize) return [key, elementStyle];
+          return [key, {
+            ...elementStyle,
+            fontSize: Math.min(fontSizeLimits[fontLimitKey], Math.max(minimumFontSize, elementStyle.fontSize)),
+          }];
+        })) as MenuStyle['elementStyles'],
         pagePadding: (margins.top + margins.bottom + margins.left + margins.right) / 4,
         itemGap: contentSpacing.betweenProducts,
         name: 'Custom',
       }));
+
+      const currentWorkspaceSettings = workspaceData.workspace.settings;
+      if (
+        currentWorkspaceSettings.splitCategoryAcrossPages !== values.splitCategoryAcrossPages
+        || Boolean(currentWorkspaceSettings.productsCanChangeCategory) !== values.productsCanChangeCategory
+      ) {
+        const workspaceSettings = await updateWorkspaceRuleSettings({
+          workspaceId: workspaceData.workspace.id,
+          splitCategoryAcrossPages: values.splitCategoryAcrossPages,
+          productsCanChangeCategory: values.productsCanChangeCategory,
+        });
+        setWorkspaceData((previous) => previous ? {
+          ...previous,
+          workspace: {
+            ...previous.workspace,
+            settings: workspaceSettings,
+          },
+        } : previous);
+      }
     } finally {
       setIsSettingsSaving(false);
     }
