@@ -668,7 +668,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                     minimumFontSize={minimumFontSize}
                                     allowSameWordBreak={false}
                                     fitScope="productPrice"
-                                    widthMode="flex"
+                                    containerSelector={`#product-container-${product.id}`}
                                     showOverflowFeedback={isEditing}
                                     id={`product-price-${product.id}`} data-product-edit-id={product.id} className={`whitespace-nowrap outline-none rounded ${isEditing ? 'bg-white ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : ''}`}
                                     style={{ 
@@ -849,7 +849,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         minimumFontSize={minimumFontSize}
                                                         allowSameWordBreak={false}
                                                         fitScope="productPrice"
-                                                        widthMode="flex"
+                                                        containerSelector={`#product-container-${product.id}`}
                                                         showOverflowFeedback={isEditing}
                                                         id={`product-price-${product.id}`}
                                                         data-product-edit-id={product.id}

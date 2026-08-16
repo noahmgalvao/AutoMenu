@@ -13,6 +13,7 @@ import {
   resolveFontSizeLimits,
   resolveMenuContentSpacing,
   resolveMenuMargins,
+  resolveMinimumFontSize,
 } from '../utils/styleRules';
 
 interface SettingsModalProps {
@@ -28,6 +29,8 @@ interface SettingsModalProps {
     workspaceName: string;
     splitCategoryAcrossPages: boolean;
     productsCanChangeCategory: boolean;
+    minimumFontSize: number;
+    allowSameWordBreak: boolean;
     fontSizeLimits: FontSizeLimits;
     margins: MenuMargins;
     contentSpacing: MenuContentSpacing;
@@ -43,6 +46,7 @@ const RuleGroup = <T extends object>({
   min = 0,
   max,
   onChange,
+  headerContent,
 }: {
   title: string;
   rows: Array<[keyof T & string, string]>;
@@ -50,9 +54,11 @@ const RuleGroup = <T extends object>({
   min?: number;
   max: number;
   onChange: (key: keyof T & string, value: number) => void;
+  headerContent?: React.ReactNode;
 }) => (
   <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
     <h3 className="mb-3 text-sm font-bold text-slate-800">{title}</h3>
+    {headerContent}
     <div className="grid gap-x-5 gap-y-2 sm:grid-cols-2">
       {rows.map(([key, label]) => (
         <label key={key} className="flex items-center justify-between gap-3 text-sm text-slate-600">
@@ -95,6 +101,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [productsCanChangeCategory, setProductsCanChangeCategory] = useState(
     workspace.settings.productsCanChangeCategory ?? false
   );
+  const [minimumFontSize, setMinimumFontSize] = useState(() => resolveMinimumFontSize(menuStyle));
+  const [allowSameWordBreak, setAllowSameWordBreak] = useState(menuStyle.allowSameWordBreak === true);
   const [fontSizeLimits, setFontSizeLimits] = useState(() => resolveFontSizeLimits(menuStyle));
   const [margins, setMargins] = useState(() => resolveMenuMargins(menuStyle));
   const [contentSpacing, setContentSpacing] = useState(() => resolveMenuContentSpacing(menuStyle));
@@ -113,6 +121,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setWorkspaceName(workspace.name);
     setSplitCategoryAcrossPages(workspace.settings.splitCategoryAcrossPages);
     setProductsCanChangeCategory(workspace.settings.productsCanChangeCategory ?? false);
+    setMinimumFontSize(resolveMinimumFontSize(menuStyle));
+    setAllowSameWordBreak(menuStyle.allowSameWordBreak === true);
     setFontSizeLimits(resolveFontSizeLimits(menuStyle));
     setMargins(resolveMenuMargins(menuStyle));
     setContentSpacing(resolveMenuContentSpacing(menuStyle));
@@ -143,6 +153,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         workspaceName,
         splitCategoryAcrossPages,
         productsCanChangeCategory,
+        minimumFontSize,
+        allowSameWordBreak,
         fontSizeLimits,
         margins,
         contentSpacing,
@@ -261,8 +273,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   ['freeText', 'Texto livre'],
                 ]}
                 values={fontSizeLimits}
-                min={1}
+                min={minimumFontSize}
                 max={300}
+                headerContent={(
+                  <label className="mb-3 flex items-center justify-between gap-3 border-b border-slate-200 pb-3 text-sm font-semibold text-slate-700">
+                    <span>Mínimo geral</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={300}
+                      value={minimumFontSize}
+                      onChange={(event) => {
+                        const parsed = Number(event.target.value);
+                        if (!Number.isFinite(parsed)) return;
+                        const value = Math.min(300, Math.max(1, parsed));
+                        setMinimumFontSize(value);
+                        setFontSizeLimits((previous) => ({
+                          menuTitle: Math.max(value, previous.menuTitle),
+                          menuSubtitle: Math.max(value, previous.menuSubtitle),
+                          category: Math.max(value, previous.category),
+                          productName: Math.max(value, previous.productName),
+                          productPrice: Math.max(value, previous.productPrice),
+                          productDescription: Math.max(value, previous.productDescription),
+                          freeText: Math.max(value, previous.freeText),
+                        }));
+                      }}
+                      className="h-9 w-20 rounded-lg border border-slate-200 bg-white px-2 text-right text-sm font-semibold text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                    />
+                  </label>
+                )}
                 onChange={(key, value) => setFontSizeLimits((previous) => ({
                   ...previous,
                   [key as FontSizeLimitKey]: value,
@@ -302,6 +341,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <span>
                   <span className="block font-semibold text-slate-800">Quebra de página entre produtos da mesma categoria</span>
                   <span className="mt-1 block text-sm text-slate-500">Permite continuar os produtos da categoria na página seguinte quando não houver espaço.</span>
+                </span>
+              </label>
+
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 hover:bg-slate-50">
+                <input type="checkbox" checked={allowSameWordBreak} onChange={(event) => setAllowSameWordBreak(event.target.checked)} className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600" />
+                <span>
+                  <span className="block font-semibold text-slate-800">Permitir quebra de linha na mesma palavra</span>
+                  <span className="mt-1 block text-sm text-slate-500">Ex.: permitir “HAMBU” / “RGUER” em duas linhas. Desativado, o texto reduz até o mínimo.</span>
                 </span>
               </label>
             </div>

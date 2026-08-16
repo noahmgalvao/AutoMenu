@@ -1,5 +1,6 @@
 import type { ElementStyle, MenuStyle } from '../types';
-import { resolveMenuMargins, resolveMinimumFontSize } from './styleRules';
+import { resolveMenuMargins } from './styleRules';
+import { normalizeColumnWidths } from './categoryColumns';
 
 const MENU_PAGE_WIDTH_PX = 794;
 
@@ -72,7 +73,7 @@ export const fitTextToUnbrokenWords = (
     return { fontSize: base, fits: true };
   }
 
-  const safeWidth = Math.max(1, availableWidth - 2);
+  const safeWidth = Math.max(1, availableWidth + 1);
   const widthAtBase = getLongestWordWidth(text, base, options);
   if (widthAtBase <= safeWidth) return { fontSize: base, fits: true };
 
@@ -153,29 +154,37 @@ export const canApplyCanvasColumnCounts = (
   nextProductColumnCount: number,
 ) => {
   if (typeof document === 'undefined' || style.allowSameWordBreak) return true;
-  const currentCategoryColumnCount = style.categoryColumnCount || 1;
-  const currentProductColumnCount = style.columnCount || 1;
   const margins = resolveMenuMargins(style);
   const usableWidth = MENU_PAGE_WIDTH_PX - margins.left - margins.right;
-  const currentCategoryWidth = (usableWidth - (margins.columnGap * (currentCategoryColumnCount - 1))) / currentCategoryColumnCount;
-  const nextCategoryWidth = (usableWidth - (margins.columnGap * (nextCategoryColumnCount - 1))) / nextCategoryColumnCount;
-  const categoryRatio = nextCategoryWidth / Math.max(1, currentCategoryWidth);
-  const productRatio = currentProductColumnCount / Math.max(1, nextProductColumnCount);
-  const minimum = resolveMinimumFontSize(style);
+  const categoryContentWidth = Math.max(1, usableWidth - (margins.columnGap * (nextCategoryColumnCount - 1)));
+  const categoryWidthRatios = normalizeColumnWidths(
+    nextCategoryColumnCount === (style.categoryColumnCount || 1) ? style.categoryColumnWidths : undefined,
+    nextCategoryColumnCount,
+  );
+  const productGridGap = nextCategoryColumnCount > 1
+    ? (nextProductColumnCount > 2 ? 4 : 8)
+    : nextProductColumnCount > 2
+      ? 8
+      : nextProductColumnCount > 1
+        ? 12
+        : 0;
 
   return getCanvasWordFitElements().every((element) => {
     const scope = element.dataset.wordFitScope as WordFitScope;
     if (element.dataset.wordFitAllowBreak === 'true' || scope === 'menuTitle' || scope === 'menuSubtitle') return true;
     const lane = element.closest<HTMLElement>('[data-drag-column-container="category"]');
-    const elementCategoryRatio = lane?.clientWidth
-      ? nextCategoryWidth / lane.clientWidth
-      : categoryRatio;
-    const widthRatio = scope === 'category' || scope === 'freeText'
-      ? elementCategoryRatio
-      : elementCategoryRatio * productRatio;
-    const availableWidth = getElementAvailableWidth(element) * widthRatio;
+    const currentColumnIndex = Number(lane?.dataset.dragColumnIndex || 0);
+    const nextColumnIndex = Math.max(0, Math.min(nextCategoryColumnCount - 1, currentColumnIndex));
+    const categoryWidth = categoryContentWidth * categoryWidthRatios[nextColumnIndex];
+    const productWidth = Math.max(
+      1,
+      (categoryWidth - (productGridGap * (nextProductColumnCount - 1))) / nextProductColumnCount,
+    );
+    const availableWidth = scope === 'category' || scope === 'freeText'
+      ? Math.max(1, categoryWidth - 8)
+      : Math.max(1, productWidth - 16);
     const result = measureWordFitElement(element, { availableWidth });
-    return result.fits && result.fontSize >= minimum;
+    return result.fits;
   });
 };
 

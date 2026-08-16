@@ -20,6 +20,9 @@ import {
   ScanLine,
   Trash2,
   X,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
 } from 'lucide-react';
 import type { MenuImportMode, MenuStyle, Product, SortOption } from '../../types';
 import {
@@ -36,7 +39,7 @@ import {
   getDefaultDocumentCorners,
   getScannerImageInfo,
 } from '../../utils/documentScanner';
-import { FREE_TEXT_PREFIX } from '../../utils/menuPagination';
+import { A4_HEIGHT_PX, A4_WIDTH_PX, FREE_TEXT_PREFIX } from '../../utils/menuPagination';
 import { useProductDesignerLogic } from '../../hooks/useProductDesignerLogic';
 import { MenuPreview } from '../MenuPreview';
 import { ProductList } from './ProductList';
@@ -132,14 +135,18 @@ const PreviewCanvas: React.FC<{
   productsCanChangeCategory?: boolean;
 }> = ({ products, style, sortOption, splitCategoryAcrossPages, productsCanChangeCategory }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const fitScaleRef = useRef(0.42);
+  const manualZoomRef = useRef(false);
   const [scale, setScale] = useState(0.42);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     const updateScale = () => {
-      const width = container.getBoundingClientRect().width;
-      setScale(Math.max(0.22, Math.min(0.58, (width - 24) / 930)));
+      const rect = container.getBoundingClientRect();
+      const fitScale = Math.max(0.1, Math.min(1, (rect.width - 24) / A4_WIDTH_PX, (rect.height - 24) / A4_HEIGHT_PX));
+      fitScaleRef.current = fitScale;
+      if (!manualZoomRef.current) setScale(fitScale);
     };
     updateScale();
     const observer = new ResizeObserver(updateScale);
@@ -147,8 +154,25 @@ const PreviewCanvas: React.FC<{
     return () => observer.disconnect();
   }, []);
 
+  const updateZoom = (delta: number) => {
+    manualZoomRef.current = true;
+    setScale((current) => Math.max(0.1, Math.min(2.5, current + delta)));
+  };
+
+  const resetZoom = () => {
+    manualZoomRef.current = false;
+    setScale(fitScaleRef.current);
+  };
+
   return (
-    <div ref={containerRef} className="h-full min-h-0 overflow-auto rounded-2xl bg-slate-200/60 p-3 custom-scrollbar">
+    <div ref={containerRef} className="relative h-full min-h-0 overflow-auto rounded-2xl bg-slate-200/60 p-3 custom-scrollbar">
+      <div className="pointer-events-none sticky right-2 top-2 z-20 ml-auto flex h-0 w-fit justify-end">
+        <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-slate-200 bg-white/95 p-1 shadow-lg backdrop-blur">
+          <button type="button" onClick={() => updateZoom(-0.1)} className="rounded-full p-2 text-slate-600 hover:bg-slate-100" aria-label="Diminuir zoom"><ZoomOut size={16} /></button>
+          <button type="button" onClick={resetZoom} className="flex min-w-16 items-center justify-center gap-1 rounded-full px-2 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-100" aria-label="Ajustar página inteira"><Maximize2 size={14} />{Math.round(scale * 100)}%</button>
+          <button type="button" onClick={() => updateZoom(0.1)} className="rounded-full p-2 text-slate-600 hover:bg-slate-100" aria-label="Aumentar zoom"><ZoomIn size={16} /></button>
+        </div>
+      </div>
       <div className="mx-auto w-fit origin-top-left" style={{ zoom: scale }}>
         <MenuPreview
           products={products}
@@ -297,6 +321,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
         ? deriveProcessedMenuImportMode(previewResult, mode, currentProducts, currentStyle)
         : null
     ), [currentProducts, currentStyle, mode, previewResult]);
+    const completionPreviewResult = effectivePreviewResult || previewResult;
 
     const stopCamera = useCallback(() => {
       streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -665,21 +690,21 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
     }, []);
 
     const finalizedPreview = useMemo(() => (
-      effectivePreviewResult && draftStyle ? finalizeMenuImport(effectivePreviewResult, draftProducts, draftStyle) : null
-    ), [draftProducts, draftStyle, effectivePreviewResult]);
+      completionPreviewResult && draftStyle ? finalizeMenuImport(completionPreviewResult, draftProducts, draftStyle) : null
+    ), [completionPreviewResult, draftProducts, draftStyle]);
 
     const complete = useCallback(() => {
-      if (!effectivePreviewResult || !finalizedPreview || previewStale || busy) return;
-      onComplete(effectivePreviewResult, finalizedPreview);
+      if (!completionPreviewResult || !finalizedPreview || busy) return;
+      onComplete(completionPreviewResult, finalizedPreview);
       stopCamera();
       clearPages();
       resetPreview();
       setVisible(false);
       document.body.dataset.automenuDeleteContext = 'product-designer';
-    }, [busy, clearPages, effectivePreviewResult, finalizedPreview, onComplete, previewStale, resetPreview, stopCamera]);
+    }, [busy, clearPages, completionPreviewResult, finalizedPreview, onComplete, resetPreview, stopCamera]);
 
     const renderCamera = () => (
-      <div className="fixed inset-0 z-[1000] flex flex-col overflow-hidden bg-black text-white">
+      <div className="fixed inset-x-0 bottom-0 top-16 z-[1000] flex flex-col overflow-hidden bg-black text-white">
         <video ref={videoRef} autoPlay muted playsInline className="absolute inset-0 h-full w-full object-cover" />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/70 via-transparent to-black/80" />
         <header className="relative z-10 flex items-center justify-between px-4 pb-3 pt-4" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
@@ -823,7 +848,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
             <button type="button" onClick={addAnotherPage} disabled={busy} className="flex h-24 w-20 flex-none flex-col items-center justify-center rounded-xl border border-dashed border-violet-300 bg-violet-50 text-[11px] font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-40"><ImagePlus size={24} />Adicionar Página</button>
           </div>
         </div>
-        {previewStale && previewResult && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-800">Alterações pendentes. Use “Escanear Novamente” para atualizar o preview.</div>}
+        {previewStale && previewResult && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-800">Alterações pendentes. Ao concluir, será usado o último scan processado.</div>}
       </section>
     );
 
@@ -837,6 +862,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
             {showMenuTab && <button type="button" onClick={() => setPreviewTab('menu')} className={`rounded-full px-5 py-2 text-sm font-bold transition-all ${previewTab === 'menu' ? 'bg-violet-600 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>Ver Cardápio</button>}
             {showItemsTab && <button type="button" onClick={() => setPreviewTab('items')} className={`rounded-full px-5 py-2 text-sm font-bold transition-all ${previewTab === 'items' ? 'bg-violet-600 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>Ver Itens</button>}
           </div>
+          {previewStale && previewResult && !processing && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-800">Preview desatualizado — você pode continuar navegando ou concluir usando o último scan.</div>}
           <div className="relative h-[58vh] min-h-[420px] lg:h-[calc(100vh-235px)] lg:min-h-[430px]">
             {finalizedPreview && previewTab === 'menu' && <PreviewCanvas products={finalizedPreview.products} style={finalizedPreview.style} sortOption={sortOption} splitCategoryAcrossPages={splitCategoryAcrossPages} productsCanChangeCategory={productsCanChangeCategory} />}
             {previewResult && draftStyle && previewTab === 'items' && (
@@ -844,7 +870,6 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
             )}
             {!previewResult && !processing && <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 text-center text-sm text-slate-500">O resultado aparecerá aqui após o processamento.</div>}
             {processing && <div className="absolute inset-0 z-30 flex items-center justify-center rounded-2xl bg-white/90 backdrop-blur-sm"><div className="text-center"><Loader2 size={36} className="mx-auto mb-3 animate-spin text-violet-600" /><p className="font-bold text-slate-800">Processando cardápio...</p><p className="mt-1 text-xs text-slate-500">Produtos, imagens e visual estão sendo preparados.</p></div></div>}
-            {previewStale && previewResult && !processing && <div className="absolute inset-0 z-20 flex cursor-not-allowed items-center justify-center rounded-2xl bg-slate-950/25 backdrop-blur-[1px]"><span className="rounded-full bg-white px-4 py-2 text-sm font-bold text-amber-700 shadow-lg">Preview desatualizado</span></div>}
           </div>
           {processingError && <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{processingError}</div>}
         </section>
@@ -852,7 +877,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
     };
 
     const renderEditor = () => (
-      <div className="fixed inset-0 z-[1000] flex flex-col overflow-hidden bg-slate-100 text-slate-900" onPointerDownCapture={() => { document.body.dataset.automenuDeleteContext = 'import-preview'; }}>
+      <div className="fixed inset-x-0 bottom-0 top-16 z-[1000] flex flex-col overflow-hidden bg-slate-100 text-slate-900" onPointerDownCapture={() => { document.body.dataset.automenuDeleteContext = 'import-preview'; }}>
         <button type="button" onClick={close} disabled={busy} className="absolute right-4 top-4 z-50 flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-lg hover:text-slate-900 disabled:opacity-40" style={{ marginTop: 'env(safe-area-inset-top)' }} aria-label="Fechar importação"><X size={23} /></button>
         <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-28 pt-16 custom-scrollbar md:px-6 lg:overflow-hidden lg:pb-24">
           <div className="mx-auto grid max-w-[1700px] gap-7 lg:h-full lg:grid-cols-[minmax(300px,1fr)_300px_minmax(360px,1fr)]">
@@ -863,7 +888,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
         </main>
         <footer className="absolute inset-x-0 bottom-0 z-40 flex items-center justify-between gap-3 border-t border-slate-200 bg-white/95 px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur md:px-6" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
           <div className="hidden text-xs text-slate-500 sm:block">{previewResult && !previewStale ? `${previewResult.productCount} produtos · ${previewResult.pageCount} página${previewResult.pageCount === 1 ? '' : 's'}` : 'Revise o resultado antes de concluir.'}</div>
-          <button type="button" onClick={complete} disabled={!previewResult || !finalizedPreview || previewStale || busy} className="ml-auto flex h-12 items-center justify-center gap-2 rounded-xl bg-violet-600 px-6 text-sm font-bold text-white shadow-lg transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40"><Check size={19} />Concluir Importação</button>
+          <button type="button" onClick={complete} disabled={!previewResult || !finalizedPreview || busy} className="ml-auto flex h-12 items-center justify-center gap-2 rounded-xl bg-violet-600 px-6 text-sm font-bold text-white shadow-lg transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40"><Check size={19} />Concluir Importação</button>
         </footer>
       </div>
     );

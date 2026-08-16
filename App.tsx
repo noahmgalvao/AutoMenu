@@ -827,6 +827,8 @@ const App: React.FC = () => {
     workspaceName: string;
     splitCategoryAcrossPages: boolean;
     productsCanChangeCategory: boolean;
+    minimumFontSize: number;
+    allowSameWordBreak: boolean;
     fontSizeLimits: FontSizeLimits;
     margins: MenuMargins;
     contentSpacing: MenuContentSpacing;
@@ -836,6 +838,8 @@ const App: React.FC = () => {
     try {
       const {
         fontSizeLimits,
+        minimumFontSize,
+        allowSameWordBreak,
         margins,
         contentSpacing,
         ...accountSettings
@@ -849,8 +853,18 @@ const App: React.FC = () => {
       setStyle((previous) => ({
         ...previous,
         fontSizeLimits,
+        minimumFontSize,
+        allowSameWordBreak,
         margins,
         contentSpacing,
+        elementStyles: Object.fromEntries(
+          Object.entries(previous.elementStyles).map(([key, elementStyle]) => [
+            key,
+            elementStyle?.fontSize && elementStyle.fontSize < minimumFontSize
+              ? { ...elementStyle, fontSize: minimumFontSize }
+              : elementStyle,
+          ]),
+        ) as MenuStyle['elementStyles'],
         pagePadding: (margins.top + margins.bottom + margins.left + margins.right) / 4,
         itemGap: contentSpacing.betweenProducts,
         name: 'Custom',

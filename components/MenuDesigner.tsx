@@ -651,7 +651,14 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 if (idx === newOrder.length - 1) return prev;
                 [newOrder[idx + 1], newOrder[idx]] = [newOrder[idx], newOrder[idx + 1]];
             }
-            return { ...prev, customCategoryOrder: newOrder, name: 'Custom' };
+            const nextCategoryPositions = { ...(prev.categoryPositions || {}) };
+            delete nextCategoryPositions[category];
+            return {
+                ...prev,
+                customCategoryOrder: newOrder,
+                categoryPositions: nextCategoryPositions,
+                name: 'Custom',
+            };
         });
     };
 

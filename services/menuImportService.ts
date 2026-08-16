@@ -292,6 +292,79 @@ const estimateFontSizeFromKnownLines = (
   return Number.isFinite(size) && size > 0 ? size : null;
 };
 
+const getScaledVerticalGap = (
+  page: AnalyzedPage,
+  upperBox: BoundingBox | undefined,
+  lowerBox: BoundingBox | undefined,
+) => {
+  if (!upperBox || !lowerBox) return null;
+  const sourceGap = lowerBox.y - (upperBox.y + upperBox.height);
+  if (!Number.isFinite(sourceGap) || sourceGap < 0) return null;
+  return (sourceGap / page.imageDimensions.height) * 1123;
+};
+
+const getCategoryHeaderBox = (category: AnalysisResult['categories'][number]) => (
+  category.nameBoundingBox || category.boundingBox
+);
+
+const getCategoryBlockBottom = (category: AnalysisResult['categories'][number]) => {
+  const boxes = [
+    getCategoryHeaderBox(category),
+    ...category.products.flatMap((product) => [
+      product.boundingBox,
+      product.nameBoundingBox,
+      product.descriptionBoundingBox,
+      product.priceBoundingBox,
+    ]),
+  ].filter(isBoundingBox);
+  return boxes.reduce((bottom, box) => Math.max(bottom, box.y + box.height), 0);
+};
+
+const getLargeGapCategoryPositions = (
+  page: AnalyzedPage,
+  geometry: ReturnType<typeof getAnalyzedPageColumnGeometry>,
+  categoryNameByKey: Map<string, string>,
+) => {
+  const positions: NonNullable<MenuStyle['categoryPositions']> = {};
+  const categoriesByColumn = Array.from({ length: geometry.columnCount }, () => [] as AnalysisResult['categories']);
+
+  page.categories.forEach((category) => {
+    const box = getCategoryHeaderBox(category);
+    if (!box) return;
+    const centerX = box.x + (box.width / 2);
+    categoriesByColumn[geometry.getColumnIndex(centerX)].push(category);
+  });
+
+  categoriesByColumn.forEach((categories, columnIndex) => {
+    const ordered = categories.sort((left, right) => (
+      (getCategoryHeaderBox(left)?.y || 0) - (getCategoryHeaderBox(right)?.y || 0)
+    ));
+    const gaps = ordered.slice(1).map((category, index) => {
+      const box = getCategoryHeaderBox(category);
+      const previousBottom = getCategoryBlockBottom(ordered[index]);
+      return box ? ((box.y - previousBottom) / page.imageDimensions.height) * 1123 : 0;
+    }).filter((gap) => Number.isFinite(gap) && gap >= 0);
+    const typicalGap = gaps.length >= 2 ? (getMedian(gaps) || 16) : 16;
+    const largeGapThreshold = Math.max(72, typicalGap + 48, typicalGap * 1.8);
+
+    ordered.slice(1).forEach((category, index) => {
+      const box = getCategoryHeaderBox(category);
+      if (!box) return;
+      const previousBottom = getCategoryBlockBottom(ordered[index]);
+      const gap = ((box.y - previousBottom) / page.imageDimensions.height) * 1123;
+      if (!Number.isFinite(gap) || gap < largeGapThreshold) return;
+      const categoryName = categoryNameByKey.get(normalizeEntityName(category.name)) || category.name;
+      positions[categoryName] = {
+        pageIndex: page.pageIndex,
+        columnIndex,
+        y: Math.max(0, Math.round((box.y / page.imageDimensions.height) * 1123)),
+      };
+    });
+  });
+
+  return positions;
+};
+
 const buildFreeTextProduct = (
   freeText: any,
   pageIndex: number,
@@ -723,17 +796,10 @@ export const processMenuImport = async ({
   const categoryPositions = importsProducts
     ? analyzedPages.reduce<NonNullable<MenuStyle['categoryPositions']>>((positions, page) => {
       const geometry = pageColumnGeometry[page.pageIndex];
-      page.categories.forEach((category) => {
-        if (!category.boundingBox) return;
-        const mergedCategoryName = mergedImport.categoryNameByKey.get(normalizeEntityName(category.name))
-          || category.name;
-        const centerX = category.boundingBox.x + (category.boundingBox.width / 2);
-        positions[mergedCategoryName] = {
-          pageIndex: page.pageIndex,
-          columnIndex: geometry.getColumnIndex(centerX),
-          y: Math.max(0, Math.round((category.boundingBox.y / page.imageDimensions.height) * A4_HEIGHT)),
-        };
-      });
+      Object.assign(
+        positions,
+        getLargeGapCategoryPositions(page, geometry, mergedImport.categoryNameByKey),
+      );
       return positions;
     }, {})
     : currentStyle.categoryPositions;
@@ -788,8 +854,24 @@ export const processMenuImport = async ({
       right: Math.min(300, Math.max(0, importedMetric(layout.marginRight, fallbackPadding))),
       columnGap: Math.min(300, Math.max(0, importedMetric(layout.columnGap, 32))),
     };
+    const titleBox = isBoundingBox(typography.mainTitle?.boundingBox)
+      ? typography.mainTitle.boundingBox as BoundingBox
+      : undefined;
+    const subtitleBox = typography.subtitle?.exists && isBoundingBox(typography.subtitle?.boundingBox)
+      ? typography.subtitle.boundingBox as BoundingBox
+      : undefined;
+    const firstCategoryBox = firstPage.categories
+      .map(getCategoryHeaderBox)
+      .filter(isBoundingBox)
+      .sort((left, right) => left.y - right.y)[0];
+    const measuredTitleToSubtitle = getScaledVerticalGap(firstPage, titleBox, subtitleBox);
+    const measuredHeaderToContent = getScaledVerticalGap(
+      firstPage,
+      subtitleBox || titleBox,
+      firstCategoryBox,
+    );
     const contentSpacing = {
-      headerToContent: Math.min(200, Math.max(0, importedMetric(spacing.headerToContent, 20))),
+      headerToContent: Math.min(200, Math.max(0, measuredHeaderToContent ?? importedMetric(spacing.headerToContent, 20))),
       categoryToProduct: Math.min(200, Math.max(0, importedMetric(spacing.categoryToFirstProduct, 16))),
       productNameToDescription: Math.min(200, Math.max(0, importedMetric(spacing.productNameToDescription, 4))),
       betweenProducts: Math.min(200, Math.max(0, importedMetric(spacing.betweenProducts, 16))),
@@ -912,7 +994,7 @@ export const processMenuImport = async ({
           textTransform: typography.mainTitle?.textTransform || 'uppercase',
           fontWeight: '700',
           marginBottom: typography.subtitle?.exists
-            ? importedMetric(spacing.titleToSubtitle, 10)
+            ? Math.min(200, Math.max(0, measuredTitleToSubtitle ?? importedMetric(spacing.titleToSubtitle, 10)))
             : (currentStyle.elementStyles.menuTitle?.marginBottom ?? 10),
         },
         menuSubtitle: {
