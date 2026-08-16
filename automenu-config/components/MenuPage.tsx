@@ -32,46 +32,37 @@ const PositionedCategoryChunk: React.FC<
     }
 > = ({ desiredPageY, pageIndex, layoutKey, style, children, ...props }) => {
     const elementRef = React.useRef<HTMLDivElement>(null);
-    const offsetRef = React.useRef(0);
-    const [offset, setOffset] = React.useState(0);
+    const [absoluteTop, setAbsoluteTop] = React.useState(0);
 
     React.useLayoutEffect(() => {
         const element = elementRef.current;
         if (!element) return;
         if (!Number.isFinite(desiredPageY)) {
-            offsetRef.current = 0;
-            setOffset(0);
+            setAbsoluteTop(0);
             return;
         }
 
         const page = element.closest<HTMLElement>(`[data-menu-print-page="true"][data-page-index="${pageIndex}"]`);
-        if (!page) return;
+        const column = element.closest<HTMLElement>('[data-drag-column-container="category"]');
+        if (!page || !column) return;
         let animationFrame: number | null = null;
-        const updateOffset = () => {
+        const updateTop = () => {
             animationFrame = null;
             const pageRect = page.getBoundingClientRect();
-            const elementRect = element.getBoundingClientRect();
+            const columnRect = column.getBoundingClientRect();
             const scale = Math.max(0.001, pageRect.width / A4_WIDTH_PX);
-            const naturalTop = elementRect.top - (offsetRef.current * scale);
-            const nextOffset = ((pageRect.top + (Number(desiredPageY) * scale)) - naturalTop) / scale;
-            if (Math.abs(nextOffset - offsetRef.current) < 0.25) return;
-            offsetRef.current = nextOffset;
-            setOffset(nextOffset);
+            const nextTop = ((pageRect.top + (Number(desiredPageY) * scale)) - columnRect.top) / scale;
+            setAbsoluteTop((current) => Math.abs(nextTop - current) < 0.25 ? current : nextTop);
         };
         const scheduleUpdate = () => {
             if (animationFrame !== null) cancelAnimationFrame(animationFrame);
-            animationFrame = requestAnimationFrame(updateOffset);
+            animationFrame = requestAnimationFrame(updateTop);
         };
 
-        updateOffset();
+        updateTop();
         const observer = new ResizeObserver(scheduleUpdate);
         observer.observe(page);
-        observer.observe(element);
-        const column = element.closest<HTMLElement>('[data-drag-column-container="category"]');
-        if (column) {
-            observer.observe(column);
-            Array.from(column.children).forEach((child) => observer.observe(child));
-        }
+        observer.observe(column);
         window.addEventListener('resize', scheduleUpdate);
         return () => {
             observer.disconnect();
@@ -84,9 +75,19 @@ const PositionedCategoryChunk: React.FC<
         <div
             {...props}
             ref={elementRef}
+            data-free-positioned={Number.isFinite(desiredPageY) ? 'true' : undefined}
             style={{
                 ...style,
-                transform: Number.isFinite(desiredPageY) ? `translateY(${offset}px)` : style?.transform,
+                ...(Number.isFinite(desiredPageY)
+                    ? {
+                        position: 'absolute',
+                        top: `${absoluteTop}px`,
+                        left: 0,
+                        right: 0,
+                        width: '100%',
+                        transform: style?.transform,
+                    }
+                    : {}),
             }}
         >
             {children}
@@ -314,7 +315,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         data-drag-page-index={pageIndex}
                         data-drag-column-index={column.columnIndex}
                         onDragOver={(e) => handlers.handleDragOverItem?.(e)}
-                        className="min-w-0 min-h-full flex flex-col gap-4"
+                        className="relative min-w-0 min-h-full flex flex-col gap-4"
                     >
                         {column.chunks.map(renderChunk)}
                     </div>

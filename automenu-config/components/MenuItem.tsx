@@ -60,6 +60,201 @@ const rectanglesOverlap = (left: DOMRect, right: DOMRect, gap: number = 3) => (
     left.bottom > right.top - gap
 );
 
+type ResponsiveControlAxis = 'x' | 'y';
+
+interface ResponsiveControlCoordinator {
+    users: number;
+    schedule: () => void;
+    dispose: () => void;
+}
+
+const responsiveControlCoordinators = new WeakMap<HTMLElement, ResponsiveControlCoordinator>();
+
+const getResponsiveControlAxis = (direction: FlowDirection): ResponsiveControlAxis => (
+    direction === 'top' || direction === 'bottom' ? 'x' : 'y'
+);
+
+const getResponsiveControlShift = (control: HTMLElement, axis: ResponsiveControlAxis) => {
+    const value = Number(
+        axis === 'x'
+            ? control.dataset.responsiveShiftX
+            : control.dataset.responsiveShiftY
+    );
+    return Number.isFinite(value) ? value : 0;
+};
+
+const getUnshiftedControlRect = (control: HTMLElement) => {
+    const rect = control.getBoundingClientRect();
+    const shiftX = getResponsiveControlShift(control, 'x');
+    const shiftY = getResponsiveControlShift(control, 'y');
+    return DOMRect.fromRect({
+        x: rect.left - shiftX,
+        y: rect.top - shiftY,
+        width: rect.width,
+        height: rect.height,
+    });
+};
+
+const shiftControlRect = (rect: DOMRect, axis: ResponsiveControlAxis, shift: number) => (
+    DOMRect.fromRect({
+        x: rect.left + (axis === 'x' ? shift : 0),
+        y: rect.top + (axis === 'y' ? shift : 0),
+        width: rect.width,
+        height: rect.height,
+    })
+);
+
+const setResponsiveControlShift = (
+    control: HTMLElement,
+    axis: ResponsiveControlAxis,
+    shift: number,
+) => {
+    const roundedShift = Math.round(shift * 10) / 10;
+    const shiftX = axis === 'x' ? roundedShift : 0;
+    const shiftY = axis === 'y' ? roundedShift : 0;
+    control.dataset.responsiveShiftX = String(shiftX);
+    control.dataset.responsiveShiftY = String(shiftY);
+    control.style.translate = `${shiftX}px ${shiftY}px`;
+};
+
+const clearResponsiveControlShift = (control: HTMLElement) => {
+    delete control.dataset.responsiveShiftX;
+    delete control.dataset.responsiveShiftY;
+    control.style.removeProperty('translate');
+};
+
+const registerResponsiveControl = (root: HTMLElement) => {
+    let coordinator = responsiveControlCoordinators.get(root);
+
+    if (!coordinator) {
+        let animationFrame: number | null = null;
+        let disposed = false;
+        const observedElements = new Set<Element>();
+        const resizeObserver = new ResizeObserver(() => schedule());
+
+        const observeCurrentElements = () => {
+            [
+                root,
+                ...Array.from(root.querySelectorAll<HTMLElement>(
+                    '[data-responsive-edge-control="true"], [data-responsive-control-obstacle="true"]'
+                )),
+            ].forEach((element) => {
+                if (observedElements.has(element)) return;
+                observedElements.add(element);
+                resizeObserver.observe(element);
+            });
+        };
+
+        const reposition = () => {
+            animationFrame = null;
+            if (disposed || !root.isConnected) return;
+
+            observeCurrentElements();
+            const controls = Array.from(
+                root.querySelectorAll<HTMLButtonElement>('[data-responsive-edge-control="true"]')
+            ).filter((control) => (
+                control.getClientRects().length > 0
+                && control.closest<HTMLElement>('[data-category-chunk], .automenu-drag-item') === root
+            ));
+            if (controls.length === 0) return;
+
+            const page = root.closest<HTMLElement>('[data-menu-print-page="true"]');
+            const bounds = page?.getBoundingClientRect() || root.getBoundingClientRect();
+            const occupiedRects = Array.from(
+                root.querySelectorAll<HTMLButtonElement>('[data-responsive-control-obstacle="true"]')
+            )
+                .filter((candidate) => (
+                    candidate.getClientRects().length > 0
+                    && candidate.closest<HTMLElement>('[data-category-chunk], .automenu-drag-item') === root
+                ))
+                .map((candidate) => candidate.getBoundingClientRect());
+            const groups = new Map<string, { axis: ResponsiveControlAxis; controls: HTMLButtonElement[] }>();
+
+            controls.forEach((control) => {
+                const direction = control.dataset.responsiveFlowDirection as FlowDirection;
+                const axis = getResponsiveControlAxis(direction);
+                const key = `${control.dataset.responsiveControlGroup || 'move'}:${axis}`;
+                const group = groups.get(key) || { axis, controls: [] };
+                group.controls.push(control);
+                groups.set(key, group);
+            });
+
+            [...groups.entries()]
+                .sort(([left], [right]) => left.localeCompare(right))
+                .forEach(([, group]) => {
+                    const baseRects = group.controls.map(getUnshiftedControlRect);
+                    const currentShift = getResponsiveControlShift(group.controls[0], group.axis);
+                    const isValidShift = (shift: number) => baseRects.every((baseRect) => {
+                        const candidate = shiftControlRect(baseRect, group.axis, shift);
+                        const insidePage = group.axis === 'x'
+                            ? candidate.left >= bounds.left && candidate.right <= bounds.right
+                            : candidate.top >= bounds.top && candidate.bottom <= bounds.bottom;
+                        return insidePage
+                            && !occupiedRects.some((obstacle) => rectanglesOverlap(candidate, obstacle));
+                    });
+
+                    let resolvedShift = 0;
+                    if (!isValidShift(0)) {
+                        if (currentShift !== 0 && isValidShift(currentShift)) {
+                            resolvedShift = currentShift;
+                        } else {
+                            const candidates = new Set<number>();
+                            occupiedRects.forEach((obstacle) => {
+                                baseRects.forEach((baseRect) => {
+                                    if (group.axis === 'x') {
+                                        candidates.add(obstacle.left - 4 - baseRect.right);
+                                        candidates.add(obstacle.right + 4 - baseRect.left);
+                                    } else {
+                                        candidates.add(obstacle.top - 4 - baseRect.bottom);
+                                        candidates.add(obstacle.bottom + 4 - baseRect.top);
+                                    }
+                                });
+                            });
+                            resolvedShift = [...candidates]
+                                .filter(isValidShift)
+                                .sort((left, right) => Math.abs(left) - Math.abs(right))[0] ?? currentShift;
+                        }
+                    }
+
+                    group.controls.forEach((control) => {
+                        setResponsiveControlShift(control, group.axis, resolvedShift);
+                    });
+                    baseRects.forEach((baseRect) => {
+                        occupiedRects.push(shiftControlRect(baseRect, group.axis, resolvedShift));
+                    });
+                });
+        };
+
+        function schedule() {
+            if (disposed || animationFrame !== null) return;
+            animationFrame = window.requestAnimationFrame(reposition);
+        }
+
+        coordinator = {
+            users: 0,
+            schedule,
+            dispose: () => {
+                disposed = true;
+                if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
+                resizeObserver.disconnect();
+                responsiveControlCoordinators.delete(root);
+            },
+        };
+        responsiveControlCoordinators.set(root, coordinator);
+        reposition();
+    }
+
+    coordinator.users += 1;
+    coordinator.schedule();
+    return () => {
+        const current = responsiveControlCoordinators.get(root);
+        if (!current) return;
+        current.users -= 1;
+        if (current.users <= 0) current.dispose();
+        else current.schedule();
+    };
+};
+
 export const ResponsiveMoveButton: React.FC<
     React.ButtonHTMLAttributes<HTMLButtonElement> & { flowDirection: FlowDirection; controlGroup?: string }
 > = ({ flowDirection, controlGroup = 'move', children, ...buttonProps }) => {
@@ -69,87 +264,12 @@ export const ResponsiveMoveButton: React.FC<
         const button = buttonRef.current;
         const root = button?.closest<HTMLElement>('[data-category-chunk], .automenu-drag-item');
         if (!button || !root) return;
-
-        let animationFrame: number | null = null;
-        let disposed = false;
-        const reposition = () => {
-            animationFrame = null;
-            if (disposed) return;
-            const movesHorizontally = flowDirection === 'top' || flowDirection === 'bottom';
-            const groupedButtons = Array.from(
-                root.querySelectorAll<HTMLButtonElement>('[data-responsive-edge-control="true"]')
-            ).filter((candidate) => {
-                const direction = candidate.dataset.responsiveFlowDirection as FlowDirection;
-                const candidateMovesHorizontally = direction === 'top' || direction === 'bottom';
-                return candidate.dataset.responsiveControlGroup === controlGroup
-                    && candidateMovesHorizontally === movesHorizontally
-                    && candidate.getClientRects().length > 0;
-            });
-            const controls = groupedButtons.length > 0 ? groupedButtons : [button];
-            controls.forEach((control) => {
-                if (movesHorizontally) control.style.removeProperty('left');
-                else control.style.removeProperty('top');
-            });
-
-            const rootRect = root.getBoundingClientRect();
-            const controlSet = new Set(controls);
-            const obstacles = Array.from(root.querySelectorAll<HTMLButtonElement>('button'))
-                .filter((candidate) => !controlSet.has(candidate) && candidate.getClientRects().length > 0)
-                .map((candidate) => candidate.getBoundingClientRect());
-            const controlRects = controls.map((control) => ({
-                control,
-                rect: control.getBoundingClientRect(),
-            }));
-
-            if (!controlRects.some(({ rect }) => obstacles.some((obstacle) => rectanglesOverlap(rect, obstacle)))) return;
-
-            const candidateFractions = [0.12, 0.28, 0.72, 0.88];
-            const candidate = candidateFractions.find((fraction) => {
-                const centerX = rootRect.left + (rootRect.width * fraction);
-                const centerY = rootRect.top + (rootRect.height * fraction);
-                return controlRects.every(({ rect }) => {
-                    const candidateRect = movesHorizontally
-                        ? new DOMRect(centerX - (rect.width / 2), rect.top, rect.width, rect.height)
-                        : new DOMRect(rect.left, centerY - (rect.height / 2), rect.width, rect.height);
-                    const staysWithinItem = movesHorizontally
-                        ? candidateRect.left >= rootRect.left && candidateRect.right <= rootRect.right
-                        : candidateRect.top >= rootRect.top && candidateRect.bottom <= rootRect.bottom;
-
-                    return staysWithinItem && !obstacles.some((obstacle) => rectanglesOverlap(candidateRect, obstacle));
-                });
-            });
-
-            if (candidate === undefined) return;
-            controls.forEach((control) => {
-                if (movesHorizontally) control.style.left = `${candidate * 100}%`;
-                else control.style.top = `${candidate * 100}%`;
-            });
-        };
-
-        const scheduleReposition = () => {
-            if (disposed) return;
-            if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
-            animationFrame = window.requestAnimationFrame(reposition);
-        };
-
-        reposition();
-        scheduleReposition();
-        const resizeObserver = new ResizeObserver(scheduleReposition);
-        resizeObserver.observe(root);
-        root.querySelectorAll<HTMLElement>('button, [id^="product-name-"], [id^="text-"]')
-            .forEach((element) => resizeObserver.observe(element));
-        window.addEventListener('resize', scheduleReposition);
-        document.fonts?.ready.then(scheduleReposition);
-
+        const unregister = registerResponsiveControl(root);
         return () => {
-            disposed = true;
-            if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
-            resizeObserver.disconnect();
-            window.removeEventListener('resize', scheduleReposition);
-            if (flowDirection === 'top' || flowDirection === 'bottom') button.style.removeProperty('left');
-            else button.style.removeProperty('top');
+            unregister();
+            clearResponsiveControlShift(button);
         };
-    });
+    }, [controlGroup, flowDirection]);
 
     return (
         <button

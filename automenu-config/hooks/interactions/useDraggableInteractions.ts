@@ -1020,12 +1020,12 @@ export const useDraggableInteractions = (
         [getCurrentCategoryAssignments, getRenderedDragElement, initializeLiveCategoryOrder, initializeLiveCategoryPageAssignments, style.categoryPositions]
     );
 
-    const clearDraggedCategoryPosition = useCallback((categoryId: string) => {
+    const clearCategoryPositions = useCallback((categoryIds: string[]) => {
         const currentPositions = liveCategoryPositionsRef.current || style.categoryPositions || {};
-        if (!currentPositions[categoryId]) return;
+        if (!categoryIds.some((categoryId) => currentPositions[categoryId])) return;
 
         const nextPositions = { ...currentPositions };
-        delete nextPositions[categoryId];
+        categoryIds.forEach((categoryId) => delete nextPositions[categoryId]);
         liveCategoryPositionsRef.current = nextPositions;
         setLiveCategoryPositions(nextPositions);
         hasDragMutationRef.current = true;
@@ -1211,12 +1211,14 @@ export const useDraggableInteractions = (
     );
 
     const resolveCategoryPageIndex = useCallback(
-        (pointer: { x: number; y: number }, fallbackPageIndex: number | null) => {
+        (pointer: { x: number; y: number }, fallbackPageIndex: number | null, useFullPageHitArea: boolean = false) => {
             const pages = getCategoryPages();
             if (pages.length === 0) return fallbackPageIndex;
 
             const exactPage = pages.find((page) => {
-                const inset = Math.min(CATEGORY_PAGE_SWITCH_INSET_PX, Math.max(28, page.rect.width * 0.12));
+                const inset = useFullPageHitArea
+                    ? 0
+                    : Math.min(CATEGORY_PAGE_SWITCH_INSET_PX, Math.max(28, page.rect.width * 0.12));
                 return (
                     pointer.x >= page.rect.left + inset &&
                     pointer.x <= page.rect.right - inset &&
@@ -1228,6 +1230,8 @@ export const useDraggableInteractions = (
             if (!exactPage) {
                 return fallbackPageIndex ?? pages[0].pageIndex;
             }
+
+            if (useFullPageHitArea) return exactPage.pageIndex;
 
             if (fallbackPageIndex === null || exactPage.pageIndex === fallbackPageIndex) {
                 return exactPage.pageIndex;
@@ -1241,12 +1245,14 @@ export const useDraggableInteractions = (
     );
 
     const resolveCategoryLaneKey = useCallback(
-        (pointer: { x: number; y: number }, activePageIndex: number, fallbackLaneKey: string | null) => {
+        (pointer: { x: number; y: number }, activePageIndex: number, fallbackLaneKey: string | null, useFullLaneHitArea: boolean = false) => {
             const lanes = getCategoryLanes().filter((lane) => lane.pageIndex === activePageIndex);
             if (lanes.length === 0) return fallbackLaneKey;
 
             const exactLane = lanes.find((lane) => {
-                const inset = Math.min(CATEGORY_COLUMN_SWITCH_INSET_PX, Math.max(12, lane.rect.width * 0.22));
+                const inset = useFullLaneHitArea
+                    ? 0
+                    : Math.min(CATEGORY_COLUMN_SWITCH_INSET_PX, Math.max(12, lane.rect.width * 0.22));
                 return pointer.x >= lane.rect.left + inset && pointer.x <= lane.rect.right - inset;
             });
 
@@ -1288,7 +1294,7 @@ export const useDraggableInteractions = (
                 categoryActivePageIndexRef.current ??
                 currentAssignment?.pageIndex ??
                 Number(currentElement?.dataset.dragPageIndex ?? 0);
-            const activePageIndex = resolveCategoryPageIndex(pointer, currentPageIndex);
+            const activePageIndex = resolveCategoryPageIndex(pointer, currentPageIndex, true);
             if (activePageIndex === null) return;
 
             if (activePageIndex !== currentPageIndex) {
@@ -1303,7 +1309,7 @@ export const useDraggableInteractions = (
                     : currentAssignment
                         ? getCategoryLaneKey(String(currentAssignment.pageIndex), String(currentAssignment.columnIndex))
                         : null);
-            const activeLaneKey = resolveCategoryLaneKey(pointer, activePageIndex, currentLaneKey);
+            const activeLaneKey = resolveCategoryLaneKey(pointer, activePageIndex, currentLaneKey, true);
             if (!activeLaneKey) return;
 
             categoryActiveLaneKeyRef.current = activeLaneKey;
@@ -1311,10 +1317,11 @@ export const useDraggableInteractions = (
             const activeColumnIndex = Number(activeLaneKey.split(':')[1] ?? 0);
             const currentAssignments = liveCategoryPageAssignmentsRef.current || {};
             const currentPlacement = currentAssignments[currentDragItem.id];
-            if (
-                currentPlacement?.pageIndex !== activePageIndex ||
-                currentPlacement?.columnIndex !== activeColumnIndex
-            ) {
+            const updateDraggedAssignment = () => {
+                if (
+                    currentPlacement?.pageIndex === activePageIndex &&
+                    currentPlacement?.columnIndex === activeColumnIndex
+                ) return;
                 const nextAssignments = {
                     ...currentAssignments,
                     [currentDragItem.id]: {
@@ -1324,30 +1331,34 @@ export const useDraggableInteractions = (
                 };
                 setLiveCategoryPageAssignments(nextAssignments);
                 liveCategoryPageAssignmentsRef.current = nextAssignments;
-            }
+            };
 
             const orderWithoutDragged = currentOrder.filter((id) => id !== currentDragItem.id);
             const orderedTargets = getOrderedCategoryTargets().filter((target) => target.id !== currentDragItem.id);
             const laneTargets = orderedTargets
                 .filter((target) => target.laneKey === activeLaneKey)
                 .sort((left, right) => left.rect.top - right.rect.top);
-            const pointerOverCategoryTarget = laneTargets.some((target) => (
+            const categoryDropTarget = laneTargets.find((target) => (
                 pointer.x >= target.rect.left
                 && pointer.x <= target.rect.right
                 && pointer.y >= target.rect.top
                 && pointer.y <= target.rect.bottom
             ));
 
-            if (!pointerOverCategoryTarget) {
-                updateDraggedCategoryPosition(
+            if (!categoryDropTarget) {
+                const positionUpdated = updateDraggedCategoryPosition(
                     currentDragItem.id,
                     pointer,
                     activePageIndex,
                     activeColumnIndex,
                     activeLaneKey,
                 );
+                if (positionUpdated) updateDraggedAssignment();
                 return;
             }
+
+            updateDraggedAssignment();
+            const swapParticipants = [currentDragItem.id, categoryDropTarget.id];
 
             let desiredInsertionIndex = orderWithoutDragged.length;
             let insideDeadZone = false;
@@ -1411,17 +1422,17 @@ export const useDraggableInteractions = (
             }
 
             if (insideDeadZone) {
-                clearDraggedCategoryPosition(currentDragItem.id);
+                clearCategoryPositions(swapParticipants);
                 return;
             }
 
             const newOrder = moveItemToInsertionIndex(currentOrder, currentDragItem.id, desiredInsertionIndex);
             if (areOrdersEqual(newOrder, currentOrder)) {
-                clearDraggedCategoryPosition(currentDragItem.id);
+                clearCategoryPositions(swapParticipants);
                 return;
             }
 
-            clearDraggedCategoryPosition(currentDragItem.id);
+            clearCategoryPositions(swapParticipants);
             hasDragMutationRef.current = true;
             setLiveCategoryOrder(newOrder);
             liveCategoryOrderRef.current = newOrder;
@@ -1451,7 +1462,7 @@ export const useDraggableInteractions = (
                 }));
             }
         },
-        [clearDraggedCategoryPosition, getCategoryLanes, getOrderedCategoryTargets, getRenderedDragElement, onCommitCategoryOrder, onStyleUpdate, resolveCategoryLaneKey, resolveCategoryPageIndex, updateDraggedCategoryPosition]
+        [clearCategoryPositions, getCategoryLanes, getOrderedCategoryTargets, getRenderedDragElement, onCommitCategoryOrder, onStyleUpdate, resolveCategoryLaneKey, resolveCategoryPageIndex, updateDraggedCategoryPosition]
     );
 
     const syncFreeTextCategoryOrderToLane = useCallback(

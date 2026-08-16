@@ -235,16 +235,34 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
     // 4. Pagination
     const basePages = useMemo(() => {
+        const effectiveCategoryPositions = handlers.liveCategoryPositions || style.categoryPositions;
+        const effectiveStyle = effectiveCategoryPositions === style.categoryPositions
+            ? style
+            : { ...style, categoryPositions: effectiveCategoryPositions };
+        const positionAssignments = Object.entries(effectiveCategoryPositions || {}).reduce<Record<string, { pageIndex: number; columnIndex: number }>>(
+            (assignments, [category, position]) => {
+                assignments[category] = {
+                    pageIndex: position.pageIndex,
+                    columnIndex: position.columnIndex,
+                };
+                return assignments;
+            },
+            {},
+        );
         return calculatePagination(
             products,
-            style,
+            effectiveStyle,
             handlers.groupedProducts,
             handlers.sortedCategories,
             handlers.liveCategoryPageAssignments
-                || (Object.keys(style.categoryPlacements || {}).length > 0 ? style.categoryPlacements : null),
+                || (Object.keys(style.categoryPlacements || {}).length > 0
+                    ? { ...positionAssignments, ...style.categoryPlacements }
+                    : Object.keys(positionAssignments).length > 0
+                        ? positionAssignments
+                        : null),
             { splitCategoryAcrossPages: props.splitCategoryAcrossPages }
         );
-    }, [products, props.splitCategoryAcrossPages, style, handlers.groupedProducts, handlers.sortedCategories, handlers.liveCategoryPageAssignments]);
+    }, [products, props.splitCategoryAcrossPages, style, handlers.groupedProducts, handlers.sortedCategories, handlers.liveCategoryPageAssignments, handlers.liveCategoryPositions]);
 
     const pages = useMemo(() => {
         const columnCount = style.categoryColumnCount || 1;

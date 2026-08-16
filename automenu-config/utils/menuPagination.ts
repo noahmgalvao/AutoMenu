@@ -30,6 +30,7 @@ export interface CategoryChunkLayout {
     columnIndex: number;
     items: PageItem[];
     estimatedHeight: number;
+    isOutOfFlow?: boolean;
 }
 
 export interface PageColumnLayout {
@@ -380,6 +381,10 @@ const buildLockedPagination = (
     let chunkCounter = 0;
     let fallbackPlacement: CategoryPlacementAssignment = { pageIndex: 0, columnIndex: 0 };
 
+    const hasInFlowChunks = (column: PageColumnLayout) => (
+        column.chunks.some((chunk) => !chunk.isOutOfFlow)
+    );
+
     const ensurePage = (pageIndex: number) => {
         const safePageIndex = Number.isFinite(pageIndex) ? Math.max(0, Math.floor(pageIndex)) : 0;
         while (pages.length <= safePageIndex) {
@@ -397,7 +402,8 @@ const buildLockedPagination = (
     ) => {
         const page = ensurePage(placement.pageIndex);
         const column = page.columns[Math.max(0, Math.min(placement.columnIndex, page.columns.length - 1))];
-        const gapBeforeChunk = column.chunks.length > 0 ? CATEGORY_CHUNK_GAP_PX : 0;
+        const isOutOfFlow = startsCategory && Boolean(style.categoryPositions?.[category]);
+        const gapBeforeChunk = !isOutOfFlow && hasInFlowChunks(column) ? CATEGORY_CHUNK_GAP_PX : 0;
 
         column.chunks.push({
             chunkId: `${category}::chunk-${chunkCounter++}`,
@@ -406,8 +412,9 @@ const buildLockedPagination = (
             columnIndex: column.columnIndex,
             items,
             estimatedHeight,
+            isOutOfFlow,
         });
-        column.estimatedHeight += estimatedHeight + gapBeforeChunk;
+        if (!isOutOfFlow) column.estimatedHeight += estimatedHeight + gapBeforeChunk;
     };
 
     const advancePlacement = (placement: CategoryPlacementAssignment): CategoryPlacementAssignment => {
@@ -421,7 +428,7 @@ const buildLockedPagination = (
         const page = ensurePage(placement.pageIndex);
         const column = page.columns[Math.max(0, Math.min(placement.columnIndex, page.columns.length - 1))];
         const columnLimit = baseColumnHeight - (page.mainHeader ? headerHeight : 0);
-        const gapBeforeChunk = column.chunks.length > 0 ? CATEGORY_CHUNK_GAP_PX : 0;
+        const gapBeforeChunk = hasInFlowChunks(column) ? CATEGORY_CHUNK_GAP_PX : 0;
         return columnLimit - column.estimatedHeight - gapBeforeChunk;
     };
 
@@ -432,8 +439,13 @@ const buildLockedPagination = (
         const visibleProducts = categoryProducts.filter((product) => !isHidden(product.id));
         if (visibleProducts.length === 0) return;
 
-        const placement = normalizePlacement(categoryPlacementAssignments[category] || fallbackPlacement);
-        fallbackPlacement = placement;
+        const freePosition = style.categoryPositions?.[category];
+        const placement = normalizePlacement(
+            freePosition
+                ? { pageIndex: freePosition.pageIndex, columnIndex: freePosition.columnIndex }
+                : categoryPlacementAssignments[category] || fallbackPlacement
+        );
+        if (!freePosition) fallbackPlacement = placement;
 
         if (category.startsWith(FREE_TEXT_PREFIX)) {
             let remainingItems: PageItem[] = visibleProducts.map((product) => ({
@@ -447,7 +459,7 @@ const buildLockedPagination = (
                 let availableHeight = getRemainingHeight(currentPlacement);
                 const page = ensurePage(currentPlacement.pageIndex);
                 const column = page.columns[Math.max(0, Math.min(currentPlacement.columnIndex, page.columns.length - 1))];
-                if (availableHeight <= 0 && column.chunks.length > 0) {
+                if (availableHeight <= 0 && hasInFlowChunks(column)) {
                     currentPlacement = advancePlacement(currentPlacement);
                     continue;
                 }
@@ -458,7 +470,7 @@ const buildLockedPagination = (
                     const itemHeight = getItemHeight(remainingItems[0]);
                     const fits = chunkHeight + itemHeight <= availableHeight;
                     if (!fits && chunkItems.length > 0) break;
-                    if (!fits && column.chunks.length > 0) break;
+                    if (!fits && hasInFlowChunks(column)) break;
                     chunkItems.push(remainingItems.shift()!);
                     chunkHeight += itemHeight;
                     if (!fits) break;
@@ -508,7 +520,7 @@ const buildLockedPagination = (
                 break;
             }
         }
-        fallbackPlacement = currentPlacement;
+        if (!freePosition) fallbackPlacement = currentPlacement;
 
         if (!options.splitCategoryAcrossPages) {
             const placementPage = ensurePage(currentPlacement.pageIndex);
@@ -521,7 +533,7 @@ const buildLockedPagination = (
             ) {
                 currentPlacement = { pageIndex: currentPlacement.pageIndex + 1, columnIndex: 0 };
             } else if (
-                placementColumn.chunks.length > 0 &&
+                hasInFlowChunks(placementColumn) &&
                 fullCategoryHeight <= placementColumnLimit &&
                 getRemainingHeight(currentPlacement) < fullCategoryHeight
             ) {
@@ -542,14 +554,14 @@ const buildLockedPagination = (
             if (startsCategory && availableHeight < currentHeaderItemHeight + firstItemHeight) {
                 const page = ensurePage(currentPlacement.pageIndex);
                 const column = page.columns[Math.max(0, Math.min(currentPlacement.columnIndex, page.columns.length - 1))];
-                if (column.chunks.length > 0 || (page.mainHeader && currentHeaderItemHeight + firstItemHeight <= baseColumnHeight)) {
+                if (hasInFlowChunks(column) || (page.mainHeader && currentHeaderItemHeight + firstItemHeight <= baseColumnHeight)) {
                     currentPlacement = advancePlacement(currentPlacement);
                     continue;
                 }
             } else if (!startsCategory && availableHeight < firstItemHeight) {
                 const page = ensurePage(currentPlacement.pageIndex);
                 const column = page.columns[Math.max(0, Math.min(currentPlacement.columnIndex, page.columns.length - 1))];
-                if (column.chunks.length > 0 || (page.mainHeader && firstItemHeight <= baseColumnHeight)) {
+                if (hasInFlowChunks(column) || (page.mainHeader && firstItemHeight <= baseColumnHeight)) {
                     currentPlacement = advancePlacement(currentPlacement);
                     continue;
                 }
