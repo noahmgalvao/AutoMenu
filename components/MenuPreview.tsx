@@ -40,6 +40,7 @@ interface MenuPreviewProps {
     scale?: number;
     splitCategoryAcrossPages?: boolean;
     productsCanChangeCategory?: boolean;
+    readOnly?: boolean;
 }
 
 type ObjectSelectionItem = SelectionItem & { type: 'product' | 'category' | 'freeText' | 'addedImage' };
@@ -148,7 +149,8 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const [objectMenuPosition, setObjectMenuPosition] = useState<{ left: number; top: number } | null>(null);
     const [marqueeRect, setMarqueeRect] = useState<MarqueeRect | null>(null);
     const {
-        products, style, onAddProduct, onStyleUpdate, onDeleteProduct, onToggleProductVisibility, onSelectedItemsChange
+        products, style, onAddProduct, onStyleUpdate, onDeleteProduct, onToggleProductVisibility, onSelectedItemsChange,
+        readOnly = false,
     } = props;
 
     useEffect(() => {
@@ -1772,14 +1774,14 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     return (
         <div
             ref={previewRootRef}
-            className="flex justify-start w-full relative min-h-full min-w-full md:cursor-grab"
-            onClick={handleBackgroundClick}
-            onContextMenu={openBackgroundMenu}
-            onPointerDownCapture={handlePreviewPointerDownCapture}
-            onPointerMove={handlePreviewPointerMove}
-            onPointerUp={handlePreviewPointerEnd}
-            onPointerCancel={handlePreviewPointerEnd}
-            onClickCapture={(event) => {
+            className={`flex justify-start w-full relative min-h-full min-w-full ${readOnly ? 'pointer-events-none select-none' : 'md:cursor-grab'}`}
+            onClick={readOnly ? undefined : handleBackgroundClick}
+            onContextMenu={readOnly ? undefined : openBackgroundMenu}
+            onPointerDownCapture={readOnly ? undefined : handlePreviewPointerDownCapture}
+            onPointerMove={readOnly ? undefined : handlePreviewPointerMove}
+            onPointerUp={readOnly ? undefined : handlePreviewPointerEnd}
+            onPointerCancel={readOnly ? undefined : handlePreviewPointerEnd}
+            onClickCapture={readOnly ? undefined : (event) => {
                 if (!suppressMarqueeClickRef.current) return;
                 suppressMarqueeClickRef.current = false;
                 event.preventDefault();
@@ -1788,7 +1790,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         >
             <DynamicFontLoader fonts={usedFonts} />
 
-            {marqueeRect && createPortal(
+            {!readOnly && marqueeRect && createPortal(
                 <div
                     data-marquee-selection="true"
                     className="fixed pointer-events-none border border-indigo-500 bg-indigo-500/15"
@@ -1797,7 +1799,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 document.body
             )}
 
-            {handlers.showAddModal && (createPortal(<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm" onClick={() => handlers.setShowAddModal(null)}> <div className="bg-white p-4 rounded-xl shadow-2xl animate-fade-in" onClick={e => e.stopPropagation()}> <h3 className="text-lg font-bold mb-4">Itens ocultos</h3> <div className="space-y-2 max-h-60 overflow-y-auto"> {products.filter(p => p.category === handlers.showAddModal!.category && !handlers.groupedProducts[handlers.showAddModal!.category]?.find(gp => gp.id === p.id)).map(p => (<button key={p.id} onClick={() => restoreProduct(p.id)} className="w-full p-2 text-left hover:bg-slate-100 rounded flex justify-between items-center"> <span>{p.name}</span> <Plus size={14} /> </button>))} </div> <div className="mt-4 pt-4 border-t"> <button onClick={createNewInModal} className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"> Criar novo item </button> </div> </div> </div>, document.body))}
+            {!readOnly && handlers.showAddModal && (createPortal(<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm" onClick={() => handlers.setShowAddModal(null)}> <div className="bg-white p-4 rounded-xl shadow-2xl animate-fade-in" onClick={e => e.stopPropagation()}> <h3 className="text-lg font-bold mb-4">Itens ocultos</h3> <div className="space-y-2 max-h-60 overflow-y-auto"> {products.filter(p => p.category === handlers.showAddModal!.category && !handlers.groupedProducts[handlers.showAddModal!.category]?.find(gp => gp.id === p.id)).map(p => (<button key={p.id} onClick={() => restoreProduct(p.id)} className="w-full p-2 text-left hover:bg-slate-100 rounded flex justify-between items-center"> <span>{p.name}</span> <Plus size={14} /> </button>))} </div> <div className="mt-4 pt-4 border-t"> <button onClick={createNewInModal} className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"> Criar novo item </button> </div> </div> </div>, document.body))}
 
             <div className="flex flex-row gap-8 px-8 pb-20 pt-16 items-start min-h-full w-fit mx-auto">
                 {pages.map((pageContent, i) => (
@@ -1816,7 +1818,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 ))}
             </div>
 
-            {objectMenu && createPortal(
+            {!readOnly && objectMenu && createPortal(
                 <div
                     ref={objectMenuRef}
                     className="fixed z-[10000] min-w-52 max-h-[calc(100vh-16px)] overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-2xl text-sm text-slate-700"
