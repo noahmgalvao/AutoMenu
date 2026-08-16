@@ -11,6 +11,7 @@ import { getImageLayerIndexes } from '../utils/imageLayers';
 import type { FlowDirection } from '../utils/flowControls';
 import { getCollisionSafeFreeTextTop } from '../hooks/interactions/freeTextMovement';
 import { resolveMenuMargins } from '../utils/styleRules';
+import { canIncreaseCanvasFontSize, type WordFitScope } from '../utils/textFit';
 
 interface MenuPreviewProps {
     products: Product[];
@@ -366,8 +367,20 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     (handlers as any).getFlowControlDirections = getFlowControlDirections;
 
     (handlers as any).handleInlineStyleChange = (target: any, newStyle: ElementStyle) => {
+        const nextFontSize = Number(newStyle.fontSize);
         if (target.type === 'freeText') {
             const currentProduct = products.find(product => product.id === target.id);
+            const currentFontSize = Number(
+                currentProduct?.styles?.fontSize
+                || style.elementStyles.productName?.fontSize
+                || 18,
+            );
+            if (
+                !style.allowSameWordBreak
+                && Number.isFinite(nextFontSize)
+                && nextFontSize > currentFontSize
+                && !canIncreaseCanvasFontSize('freeText', nextFontSize, target.elementId)
+            ) return false;
             const fontSizeReduced = Number(newStyle.fontSize) > 0
                 && Number(currentProduct?.styles?.fontSize) > 0
                 && Number(newStyle.fontSize) < Number(currentProduct?.styles?.fontSize);
@@ -375,7 +388,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             if (fontSizeReduced) {
                 onStyleUpdate?.(prev => ({ ...prev, pageBreaks: [] }));
             }
-            return;
+            return true;
         }
 
         const elementType: keyof MenuStyle['elementStyles'] =
@@ -386,6 +399,15 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                         target.field === 'price' ? 'productPrice' :
                             target.field === 'description' ? 'productDescription' :
                                 'productName';
+
+        const currentElementStyle = style.elementStyles[elementType] || {};
+        if (
+            target.type !== 'pageNumber'
+            && !style.allowSameWordBreak
+            && Number.isFinite(nextFontSize)
+            && nextFontSize > Number(currentElementStyle.fontSize || 0)
+            && !canIncreaseCanvasFontSize(elementType as WordFitScope, nextFontSize)
+        ) return false;
 
         onStyleUpdate?.(prev => {
             const previousStyle = prev.elementStyles[elementType] || {};
@@ -404,6 +426,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 name: 'Custom',
             };
         });
+        return true;
     };
 
     const selectedPageIndexes = useMemo(() => (
@@ -1595,6 +1618,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     }, [buildClipboardItems, copyFormatting, copyItems, deleteObjectItems, duplicateClipboardItems, getActiveObjectItems, hideObjectItems, layerObjectItems, pasteClipboard, pasteFormattingClipboard]);
 
     useEffect(() => {
+        if (readOnly) return;
         if (props.externalAction?.type !== 'APPEND_FREE_TEXT') return;
         if (handledExternalActionIdRef.current === props.externalAction.id) return;
         handledExternalActionIdRef.current = props.externalAction.id;
@@ -1609,7 +1633,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 isFreeText: true,
             }, getFreeTextPlacementBelowSelection() || getLastFreeTextPlacement());
         }, 0);
-    }, [getLastFreeTextPlacement, getFreeTextPlacementBelowSelection, insertFreeTextProduct, props.externalAction]);
+    }, [getLastFreeTextPlacement, getFreeTextPlacementBelowSelection, insertFreeTextProduct, props.externalAction, readOnly]);
 
     const openObjectMenu = useCallback((event: React.MouseEvent, item: CanvasContextMenuItem) => {
         event.preventDefault();
@@ -1660,6 +1684,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     }, [handlers]);
 
     useEffect(() => {
+        if (readOnly) return;
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.key !== 'Delete') return;
 
@@ -1674,9 +1699,10 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [handleDeleteSelectedCanvasItems]);
+    }, [handleDeleteSelectedCanvasItems, readOnly]);
 
     useEffect(() => {
+        if (readOnly) return;
         const handleClipboardShortcuts = (event: KeyboardEvent) => {
             const isDesktop = window.matchMedia('(min-width: 768px)').matches;
             if (!isDesktop) return;
@@ -1703,9 +1729,10 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
         window.addEventListener('keydown', handleClipboardShortcuts);
         return () => window.removeEventListener('keydown', handleClipboardShortcuts);
-    }, [handlers.selectedItems, runObjectAction]);
+    }, [handlers.selectedItems, readOnly, runObjectAction]);
 
     useEffect(() => {
+        if (readOnly) return;
         const handleNativePaste = (event: ClipboardEvent) => {
             const target = event.target as HTMLElement | null;
             if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
@@ -1730,7 +1757,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
         window.addEventListener('paste', handleNativePaste);
         return () => window.removeEventListener('paste', handleNativePaste);
-    }, [getImagePastePoint, handleNativeClipboardPayload]);
+    }, [getImagePastePoint, handleNativeClipboardPayload, readOnly]);
 
     const restoreProduct = (id: string) => { onToggleProductVisibility?.(id, true); handlers.setShowAddModal(null); };
     const createNewInModal = () => { if (handlers.showAddModal) { onAddProduct?.(handlers.showAddModal.category); handlers.setShowAddModal(null); } };
@@ -1774,7 +1801,9 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     return (
         <div
             ref={previewRootRef}
-            className={`flex justify-start w-full relative min-h-full min-w-full ${readOnly ? 'pointer-events-none select-none' : 'md:cursor-grab'}`}
+            inert={readOnly ? true : undefined}
+            aria-label={readOnly ? 'Pré-visualização do cardápio, somente leitura' : undefined}
+            className={`flex justify-start w-full relative ${readOnly ? 'pointer-events-none select-none min-h-0 min-w-0' : 'min-h-full min-w-full md:cursor-grab'}`}
             onClick={readOnly ? undefined : handleBackgroundClick}
             onContextMenu={readOnly ? undefined : openBackgroundMenu}
             onPointerDownCapture={readOnly ? undefined : handlePreviewPointerDownCapture}
@@ -1790,6 +1819,16 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         >
             <DynamicFontLoader fonts={usedFonts} />
 
+            {readOnly && (
+                <div
+                    aria-hidden="true"
+                    className="absolute inset-0 z-[2147483000] cursor-default pointer-events-auto"
+                    onClick={(event) => { event.preventDefault(); event.stopPropagation(); }}
+                    onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); }}
+                    onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); }}
+                />
+            )}
+
             {!readOnly && marqueeRect && createPortal(
                 <div
                     data-marquee-selection="true"
@@ -1801,7 +1840,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
             {!readOnly && handlers.showAddModal && (createPortal(<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm" onClick={() => handlers.setShowAddModal(null)}> <div className="bg-white p-4 rounded-xl shadow-2xl animate-fade-in" onClick={e => e.stopPropagation()}> <h3 className="text-lg font-bold mb-4">Itens ocultos</h3> <div className="space-y-2 max-h-60 overflow-y-auto"> {products.filter(p => p.category === handlers.showAddModal!.category && !handlers.groupedProducts[handlers.showAddModal!.category]?.find(gp => gp.id === p.id)).map(p => (<button key={p.id} onClick={() => restoreProduct(p.id)} className="w-full p-2 text-left hover:bg-slate-100 rounded flex justify-between items-center"> <span>{p.name}</span> <Plus size={14} /> </button>))} </div> <div className="mt-4 pt-4 border-t"> <button onClick={createNewInModal} className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"> Criar novo item </button> </div> </div> </div>, document.body))}
 
-            <div className="flex flex-row gap-8 px-8 pb-20 pt-16 items-start min-h-full w-fit mx-auto">
+            <div className={`flex flex-row items-start w-fit mx-auto ${readOnly ? 'gap-4 p-0 min-h-0' : 'gap-8 px-8 pb-20 pt-16 min-h-full'}`}>
                 {pages.map((pageContent, i) => (
                     <MenuPage
                         key={i}

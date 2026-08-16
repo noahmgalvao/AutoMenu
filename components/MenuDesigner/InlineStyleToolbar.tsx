@@ -8,13 +8,14 @@ import { FontSizeInput } from './FontSizeInput';
 interface InlineStyleToolbarProps {
     targetElementId: string;
     value: ElementStyle;
-    onChange: (style: ElementStyle) => void;
+    onChange: (style: ElementStyle) => void | boolean;
     onDismiss: () => void;
     controls?: 'all' | 'sizeColor';
     maxFontSize?: number;
+    minFontSize?: number;
 }
 
-export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, value, onChange, onDismiss, controls = 'all', maxFontSize }) => {
+export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, value, onChange, onDismiss, controls = 'all', maxFontSize, minFontSize }) => {
     const toolbarRef = useRef<HTMLDivElement>(null);
     const [position, setPosition] = useState({ left: 8, top: 8, width: 270 });
     const isSizeColorOnly = controls === 'sizeColor';
@@ -88,6 +89,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                 <FontSizeInput
                     value={value.fontSize}
                     max={maxFontSize}
+                    min={minFontSize}
                     onChange={(fontSize) => onChange({ ...value, fontSize })}
                 />
                 <div className="relative h-8 w-8 flex-shrink-0 overflow-hidden rounded border border-slate-200">

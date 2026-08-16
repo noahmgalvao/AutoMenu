@@ -2,13 +2,13 @@ import React from 'react';
 import { Product, MenuStyle } from '../types';
 import { BringToFront, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Minus, MoreHorizontal, Plus, SendToBack, Trash2 } from 'lucide-react';
 import { Resizable } from 're-resizable';
-import { MenuItem } from './MenuItem';
+import { MenuItem, ResponsiveMoveButton } from './MenuItem';
 import { PageLayout, CategoryChunkLayout, FREE_TEXT_PREFIX, A4_WIDTH_PX } from '../utils/menuPagination';
 import { selectionLayerClasses } from './selectionLayers';
 import { getDirectionLabel, getEdgeControlClass, type FlowDirection } from '../utils/flowControls';
 import { normalizeTextureUrl } from '../constants';
 import { InlineStyleToolbar } from './MenuDesigner/InlineStyleToolbar';
-import { resolveMenuMargins } from '../utils/styleRules';
+import { resolveMenuMargins, resolveMinimumFontSize } from '../utils/styleRules';
 import { getColumnGridTemplate, getPageColumnWidths } from '../utils/categoryColumns';
 import { ColumnResizeHandles } from './ColumnResizeHandles';
 
@@ -129,7 +129,8 @@ export const MenuPage: React.FC<MenuPageProps> = ({
         ? style
         : { ...style, categoryColumnCount: renderedColumnCount as 1 | 2 | 3 };
     const pageNumberStyle = style.elementStyles?.pageNumber || {};
-    const pageNumberFontSize = Math.min(50, Math.max(1, Number(pageNumberStyle.fontSize) || 14));
+    const minimumFontSize = resolveMinimumFontSize(style);
+    const pageNumberFontSize = Math.max(minimumFontSize, Math.min(50, Number(pageNumberStyle.fontSize) || 14));
     const pageNumberElementId = `page-number-${pageIndex}`;
     const isFormattingPageNumber = handlers.formattingTarget?.type === 'pageNumber'
         && handlers.formattingTarget?.elementId === pageNumberElementId;
@@ -178,7 +179,8 @@ export const MenuPage: React.FC<MenuPageProps> = ({
             const lane = direction === 'left' || direction === 'right' ? 'center' : 'leading';
 
             return (
-                <button
+                <ResponsiveMoveButton
+                    flowDirection={direction}
                     className={`absolute ${getEdgeControlClass(direction, lane)} p-2 bg-white border border-slate-200 shadow-md rounded-full text-slate-500 hover:text-indigo-600 hover:bg-slate-50 ${selectionLayerClasses.controls} transition-all cursor-pointer pointer-events-auto`}
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => handlers.handleGlobalMove?.(
@@ -191,7 +193,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                     title={`Mover ${getDirectionLabel(direction)}`}
                 >
                     <CategoryMoveIcon direction={direction} />
-                </button>
+                </ResponsiveMoveButton>
             );
         };
 
@@ -542,7 +544,8 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                             fontSize: pageNumberFontSize,
                         }}
                         controls="sizeColor"
-                        maxFontSize={50}
+                        maxFontSize={Math.max(50, minimumFontSize)}
+                        minFontSize={minimumFontSize}
                         onChange={(newStyle) => handlers.handleInlineStyleChange?.(handlers.formattingTarget, newStyle)}
                         onDismiss={() => handlers.setFormattingTarget?.(null)}
                     />

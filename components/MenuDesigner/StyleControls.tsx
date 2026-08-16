@@ -8,9 +8,10 @@ import { FontSizeInput } from './FontSizeInput';
 interface StyleControlsProps {
   label: string;
   value: ElementStyle;
-  onChange: (newStyle: ElementStyle) => void;
+  onChange: (newStyle: ElementStyle) => void | boolean;
   disabled?: boolean;
   maxFontSize?: number;
+  minFontSize?: number;
 }
 
 export const StyleControls: React.FC<StyleControlsProps> = ({ 
@@ -19,6 +20,7 @@ export const StyleControls: React.FC<StyleControlsProps> = ({
   onChange,
   disabled = false,
   maxFontSize,
+  minFontSize,
 }) => {
     return (
         <div className={`space-y-2 p-3 bg-slate-50 rounded-lg border border-slate-100 ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
@@ -38,6 +40,7 @@ export const StyleControls: React.FC<StyleControlsProps> = ({
                     value={value.fontSize}
                     onChange={(fontSize) => onChange({...value, fontSize})}
                     max={maxFontSize}
+                    min={minFontSize}
                 />
             </div>
 

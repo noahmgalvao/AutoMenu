@@ -2,6 +2,7 @@
 import React from 'react';
 import { Product } from '../../types';
 import { X, Check } from 'lucide-react';
+import { parseAndRoundPrice } from '../../utils/price';
 
 interface EditFormProps {
   type: 'product' | 'category';
@@ -46,6 +47,11 @@ export const EditForm: React.FC<EditFormProps> = ({
               placeholder="0.00"
               value={formData.price || ''}
               onChange={e => setFormData(prev => ({ ...prev, price: parseFloat(e.target.value) }))}
+              onBlur={(event) => {
+                const normalized = parseAndRoundPrice(event.target.value);
+                if (normalized !== null) setFormData((previous) => ({ ...previous, price: normalized }));
+              }}
+              step="any"
             />
           </div>
         </>

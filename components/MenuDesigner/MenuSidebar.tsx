@@ -10,7 +10,7 @@ import {
   StyleSection, 
   SortingSection 
 } from './SidebarSections';
-import { resolveFontSizeLimits } from '../../utils/styleRules';
+import { resolveFontSizeLimits, resolveMinimumFontSize } from '../../utils/styleRules';
 
 interface MenuSidebarProps {
     isOpen: boolean;
@@ -34,8 +34,8 @@ interface MenuSidebarProps {
     selectedAddedImageIds: string[];
     
     // Handlers
-    updateFreeTextStyle: (id: string, newStyle: ElementStyle) => void;
-    updateGlobalElementStyle: (elementType: keyof MenuStyle['elementStyles'], newStyle: ElementStyle) => void;
+    updateFreeTextStyle: (id: string, newStyle: ElementStyle) => void | boolean;
+    updateGlobalElementStyle: (elementType: keyof MenuStyle['elementStyles'], newStyle: ElementStyle) => void | boolean;
     setPreviewAction: React.Dispatch<React.SetStateAction<{ type: string, id: number } | undefined>>;
     handleAddedImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
     handleImageResize: (delta: number) => void;
@@ -62,6 +62,7 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
         productDescription: { fontSize: 14, fontWeight: '400' as const, textAlign: 'left' as const },
     };
     const fontSizeLimits = resolveFontSizeLimits(style);
+    const minimumFontSize = resolveMinimumFontSize(style);
 
     return (
         <div 
@@ -107,6 +108,7 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
             selectedAddedImageIds={selectedAddedImageIds}
             safeStyles={safeStyles}
             fontSizeLimits={fontSizeLimits}
+            minimumFontSize={minimumFontSize}
             setStyle={setStyle}
             updateFreeTextStyle={updateFreeTextStyle}
             updateGlobalElementStyle={updateGlobalElementStyle}

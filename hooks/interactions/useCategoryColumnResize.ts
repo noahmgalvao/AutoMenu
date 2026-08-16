@@ -3,6 +3,7 @@ import type { MenuStyle } from '../../types';
 import { A4_WIDTH_PX } from '../../utils/menuPagination';
 import { normalizeColumnWidths } from '../../utils/categoryColumns';
 import { resolveMenuMargins } from '../../utils/styleRules';
+import { canApplyLiveColumnWidths, triggerLimitFeedback } from '../../utils/textFit';
 
 type ResizeEdge = 'left' | 'right';
 
@@ -20,6 +21,7 @@ interface ResizeSession {
     page: HTMLElement;
     pointerId: number;
     initialWidths: number[];
+    source: HTMLElement;
 }
 
 const MIN_COLUMN_WIDTH_PX = 96;
@@ -93,6 +95,10 @@ export const useCategoryColumnResize = (
             nextWidths[session.boundaryIndex] = nextLeftWidth;
             nextWidths[session.boundaryIndex + 1] = nextRightWidth;
             const normalized = normalizeColumnWidths(nextWidths, session.columnCount);
+            if (!style.allowSameWordBreak && !canApplyLiveColumnWidths(session.grid, session.initialWidths, normalized)) {
+                triggerLimitFeedback(session.source);
+                return;
+            }
             liveWidthsRef.current = normalized;
             setLiveCategoryColumnWidths(normalized);
             setColumnResizeGuide({
@@ -160,6 +166,7 @@ export const useCategoryColumnResize = (
             page,
             pointerId: event.pointerId,
             initialWidths,
+            source,
         };
         liveWidthsRef.current = initialWidths;
         setLiveCategoryColumnWidths(liveWidthsRef.current);

@@ -10,6 +10,8 @@ export const DEFAULT_FONT_SIZE_LIMITS: FontSizeLimits = {
   freeText: 50,
 };
 
+export const DEFAULT_MINIMUM_FONT_SIZE = 10;
+
 export const DEFAULT_MENU_MARGINS: MenuMargins = {
   top: 48,
   bottom: 48,
@@ -88,6 +90,8 @@ const createTemplate = (template: Omit<MenuStyle, 'scope' | 'sourceType' | 'isLo
   pageBreaks: [],
   cardBackgroundColor: '#ffffff',
   fontSizeLimits: { ...DEFAULT_FONT_SIZE_LIMITS },
+  minimumFontSize: DEFAULT_MINIMUM_FONT_SIZE,
+  allowSameWordBreak: false,
   margins: {
     ...DEFAULT_MENU_MARGINS,
     top: template.pagePadding ?? DEFAULT_MENU_MARGINS.top,

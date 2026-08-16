@@ -2,10 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 
 interface FontSizeInputProps {
     value?: number;
-    onChange: (fontSize: number) => void;
+    onChange: (fontSize: number) => void | boolean;
     className?: string;
     placeholder?: string;
     max?: number;
+    min?: number;
 }
 
 const toInputValue = (value?: number): string => (
@@ -18,10 +19,11 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
     className = '',
     placeholder = 'Tam.',
     max,
+    min = 1,
 }) => {
     const inputRef = useRef<HTMLInputElement>(null);
     const effectiveValue = Number.isFinite(value)
-        ? Math.min(max ?? Number.POSITIVE_INFINITY, Number(value))
+        ? Math.max(min, Math.min(max ?? Number.POSITIVE_INFINITY, Number(value)))
         : value;
     const [draftValue, setDraftValue] = useState(() => toInputValue(effectiveValue));
 
@@ -35,11 +37,25 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
         setDraftValue(toInputValue(effectiveValue));
     };
 
+    const applyValue = (nextValue: number) => {
+        const accepted = onChange(nextValue);
+        if (accepted === false) {
+            const input = inputRef.current;
+            input?.classList.remove('automenu-limit-feedback');
+            if (input) void input.offsetWidth;
+            input?.classList.add('automenu-limit-feedback');
+            window.setTimeout(() => input?.classList.remove('automenu-limit-feedback'), 850);
+            restoreCurrentValue();
+            return false;
+        }
+        return true;
+    };
+
     return (
         <input
             ref={inputRef}
             type="number"
-            min={1}
+            min={min}
             max={max}
             step={1}
             inputMode="numeric"
@@ -57,25 +73,25 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
                 const parsedValue = Number(nextValue);
                 if (
                     Number.isFinite(parsedValue)
-                    && parsedValue >= 1
+                    && parsedValue >= min
                     && (max === undefined || parsedValue <= max)
                 ) {
-                    onChange(parsedValue);
+                    applyValue(parsedValue);
                 }
             }}
             onBlur={() => {
                 const parsedValue = Number(draftValue);
-                if (!draftValue.trim() || !Number.isFinite(parsedValue) || parsedValue < 1) {
+                if (!draftValue.trim() || !Number.isFinite(parsedValue) || parsedValue < min) {
                     restoreCurrentValue();
                     return;
                 }
 
                 const normalizedValue = Math.min(
                     max ?? Number.POSITIVE_INFINITY,
-                    Math.max(1, Math.round(parsedValue)),
+                    Math.max(min, Math.round(parsedValue)),
                 );
                 setDraftValue(String(normalizedValue));
-                if (normalizedValue !== effectiveValue) onChange(normalizedValue);
+                if (normalizedValue !== effectiveValue) applyValue(normalizedValue);
             }}
         />
     );

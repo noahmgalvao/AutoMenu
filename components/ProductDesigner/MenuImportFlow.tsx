@@ -24,6 +24,7 @@ import {
 import type { MenuImportMode, MenuStyle, Product, SortOption } from '../../types';
 import {
   createMenuImportEditorStyle,
+  deriveProcessedMenuImportMode,
   finalizeMenuImport,
   FinalizedMenuImport,
   ProcessedMenuImport,
@@ -63,6 +64,8 @@ interface MenuImportFlowProps {
   currentMenuId: string;
   productsCanChangeCategory?: boolean;
   splitCategoryAcrossPages?: boolean;
+  currentProducts: Product[];
+  currentStyle: MenuStyle;
   onPrepare: (files: File[], mode: MenuImportMode) => Promise<ProcessedMenuImport>;
   onComplete: (processed: ProcessedMenuImport, finalized: FinalizedMenuImport) => void;
 }
@@ -145,8 +148,8 @@ const PreviewCanvas: React.FC<{
   }, []);
 
   return (
-    <div ref={containerRef} className="h-full min-h-0 overflow-auto rounded-2xl bg-slate-200/60 custom-scrollbar">
-      <div className="w-fit min-w-[794px] origin-top-left" style={{ transform: `scale(${scale})` }}>
+    <div ref={containerRef} className="h-full min-h-0 overflow-auto rounded-2xl bg-slate-200/60 p-3 custom-scrollbar">
+      <div className="mx-auto w-fit origin-top-left" style={{ zoom: scale }}>
         <MenuPreview
           products={products}
           style={style}
@@ -257,6 +260,8 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
     currentMenuId,
     productsCanChangeCategory,
     splitCategoryAcrossPages,
+    currentProducts,
+    currentStyle,
     onPrepare,
     onComplete,
   }, ref) => {
@@ -287,6 +292,11 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
     const draggingCornerRef = useRef<{ name: CornerName; pointerId: number } | null>(null);
 
     const busy = preparing || processing;
+    const effectivePreviewResult = useMemo(() => (
+      previewResult
+        ? deriveProcessedMenuImportMode(previewResult, mode, currentProducts, currentStyle)
+        : null
+    ), [currentProducts, currentStyle, mode, previewResult]);
 
     const stopCamera = useCallback(() => {
       streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -623,8 +633,23 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
       if (nextMode === mode || busy) return;
       setMode(nextMode);
       setPreviewTab(nextMode === 'products' ? 'items' : 'menu');
-      if (previewResult) setPreviewStale(true);
-    }, [busy, mode, previewResult]);
+      if (!previewResult) return;
+      const derived = deriveProcessedMenuImportMode(previewResult, nextMode, currentProducts, currentStyle);
+      if (!derived) {
+        setPreviewStale(true);
+        return;
+      }
+      setDraftStyle((existingStyle) => {
+        const derivedStyle = createMenuImportEditorStyle(derived);
+        if (!existingStyle || !draftDirty || nextMode === 'visual') return derivedStyle;
+        return {
+          ...derivedStyle,
+          customCategoryOrder: existingStyle.customCategoryOrder,
+          customProductOrder: existingStyle.customProductOrder,
+          hiddenProductIds: existingStyle.hiddenProductIds,
+        };
+      });
+    }, [busy, currentProducts, currentStyle, draftDirty, mode, previewResult]);
 
     const updateDraftProducts: React.Dispatch<React.SetStateAction<Product[]>> = useCallback((value) => {
       setDraftProducts(value);
@@ -640,18 +665,18 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
     }, []);
 
     const finalizedPreview = useMemo(() => (
-      previewResult && draftStyle ? finalizeMenuImport(previewResult, draftProducts, draftStyle) : null
-    ), [draftProducts, draftStyle, previewResult]);
+      effectivePreviewResult && draftStyle ? finalizeMenuImport(effectivePreviewResult, draftProducts, draftStyle) : null
+    ), [draftProducts, draftStyle, effectivePreviewResult]);
 
     const complete = useCallback(() => {
-      if (!previewResult || !finalizedPreview || previewStale || busy) return;
-      onComplete(previewResult, finalizedPreview);
+      if (!effectivePreviewResult || !finalizedPreview || previewStale || busy) return;
+      onComplete(effectivePreviewResult, finalizedPreview);
       stopCamera();
       clearPages();
       resetPreview();
       setVisible(false);
       document.body.dataset.automenuDeleteContext = 'product-designer';
-    }, [busy, clearPages, finalizedPreview, onComplete, previewResult, previewStale, resetPreview, stopCamera]);
+    }, [busy, clearPages, effectivePreviewResult, finalizedPreview, onComplete, previewStale, resetPreview, stopCamera]);
 
     const renderCamera = () => (
       <div className="fixed inset-0 z-[1000] flex flex-col overflow-hidden bg-black text-white">

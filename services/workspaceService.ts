@@ -24,6 +24,7 @@ import {
   resolveAssetMapForIds,
   uploadDataUrlAsset,
 } from './storageService';
+import { roundPrice } from '../utils/price';
 
 const LOCAL_STORAGE_KEYS = {
   products: 'automenu_products',
@@ -62,7 +63,7 @@ const normalizePersistedProducts = (value: unknown): Product[] => {
         id: product.id,
         name: typeof product.name === 'string' ? product.name : '',
         description: typeof product.description === 'string' ? product.description : '',
-        price: Number.isFinite(numericPrice) ? numericPrice : 0,
+        price: Number.isFinite(numericPrice) ? roundPrice(numericPrice) : 0,
         category,
         categoryId: isFreeText ? null : product.categoryId,
         image: typeof product.image === 'string' ? product.image : '',
@@ -305,6 +306,10 @@ const withStyleDefaults = (style: MenuStyle | null | undefined): MenuStyle => {
       ...(base.fontSizeLimits || {}),
       ...(isRecord(source.fontSizeLimits) ? source.fontSizeLimits : {}),
     } as MenuStyle['fontSizeLimits'],
+    minimumFontSize: Number.isFinite(Number(source.minimumFontSize))
+      ? Math.min(300, Math.max(1, Number(source.minimumFontSize)))
+      : base.minimumFontSize,
+    allowSameWordBreak: source.allowSameWordBreak === true,
     margins: {
       ...(base.margins || {}),
       ...(isRecord(source.margins) ? source.margins : {}),
@@ -613,7 +618,7 @@ const resolveProductRowsForApp = (
       id: row.id,
       name: row.name,
       description: row.description || '',
-      price: Number(row.base_price || 0),
+      price: roundPrice(row.base_price),
       category: category?.name || 'Uncategorized',
       categoryId: row.category_id,
       imageAssetId: row.primary_asset_id,
@@ -1256,7 +1261,7 @@ export const saveWorkspaceState = async ({
     category_id: product.categoryId,
     name: product.name,
     description: product.description,
-    base_price: product.price,
+    base_price: roundPrice(product.price),
     primary_asset_id: product.imageAssetId || null,
     sort_index: index,
     is_active: true,

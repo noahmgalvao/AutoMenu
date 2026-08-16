@@ -1,6 +1,8 @@
 import React, { useState, useCallback, useMemo, useRef } from 'react';
 import { Product, MenuStyle } from '../../types';
 import { FREE_TEXT_PREFIX, FormattingField, FormattingTarget, InteractionProps, SelectableType, SelectionItem, SelectionType } from './types';
+import { parseAndRoundPrice } from '../../utils/price';
+import { measureWordFitElement, triggerLimitFeedback } from '../../utils/textFit';
 
 const getSelectionKey = (type: SelectionType, id: string | null) => `${type || 'none'}:${id || ''}`;
 
@@ -22,7 +24,7 @@ export const useSelectionState = (
     sortedCategories: string[] = [],
     groupedProducts: Record<string, Product[]> = {}
 ) => {
-    const { onSelectionChange, onUpdateProduct, onUpdateCategoryName, onUpdateMenuText, onDeleteProduct, onStyleUpdate, products } = props;
+    const { onSelectionChange, onUpdateProduct, onUpdateCategoryName, onUpdateMenuText, onDeleteProduct, onStyleUpdate, products, style } = props;
 
     // Selection & Editing State
     const [selectedId, setSelectedId] = useState<string | null>(null); 
@@ -370,6 +372,32 @@ export const useSelectionState = (
     }, [selectedId, selectedItems]);
 
     const handleBlur = useCallback((e: React.FocusEvent<HTMLElement>, type: string, id: string, field?: string) => {
+        if (type === 'product' && field === 'price') {
+            const normalizedPrice = parseAndRoundPrice(e.currentTarget.innerText);
+            if (normalizedPrice !== null) {
+                e.currentTarget.innerText = normalizedPrice.toFixed(2);
+                const fit = measureWordFitElement(e.currentTarget, { text: e.currentTarget.innerText });
+                e.currentTarget.dataset.wordOverflow = String(!fit.fits);
+            }
+        }
+        if (e.currentTarget.dataset.wordOverflow === 'true') {
+            let originalValue = '';
+            if (type === 'product' && field) {
+                const original = products.find((product) => product.id === id);
+                originalValue = field === 'price'
+                    ? (original?.price.toFixed(2) || '0.00')
+                    : String(original?.[field as keyof Product] || '');
+            } else if (type === 'category') {
+                originalValue = id;
+            } else if (type === 'menu' && field) {
+                originalValue = String(style[field as 'menuTitle' | 'menuSubtitle'] || '');
+            }
+            e.currentTarget.innerText = originalValue;
+            e.currentTarget.dataset.wordOverflow = 'false';
+            triggerLimitFeedback(e.currentTarget);
+            setEditingId(null);
+            return;
+        }
         if (type === 'product') {
             window.setTimeout(() => {
                 const activeElement = document.activeElement as HTMLElement | null;
@@ -419,20 +447,12 @@ export const useSelectionState = (
             }
 
             if (field === 'price') {
-                const sanitized = newVal.replace(/[^0-9,.-]/g, '');
-                const separatorIndexes = [sanitized.lastIndexOf(','), sanitized.lastIndexOf('.')];
-                const decimalIndex = Math.max(...separatorIndexes);
-                const digitsAfterSeparator = decimalIndex >= 0 ? sanitized.length - decimalIndex - 1 : 0;
-                const shouldUseDecimal = decimalIndex >= 0 && digitsAfterSeparator > 0 && digitsAfterSeparator <= 2;
-                const integerPart = shouldUseDecimal ? sanitized.slice(0, decimalIndex) : sanitized;
-                const decimalPart = shouldUseDecimal ? sanitized.slice(decimalIndex + 1) : '';
-                const normalized = `${integerPart.replace(/[^0-9-]/g, '')}${shouldUseDecimal ? `.${decimalPart.replace(/\D/g, '')}` : ''}`;
-                const num = Number(normalized);
-                if (Number.isFinite(num)) {
-                    e.currentTarget.innerText = `$${num.toFixed(2)}`;
+                const num = parseAndRoundPrice(newVal);
+                if (num !== null) {
+                    e.currentTarget.innerText = num.toFixed(2);
                     onUpdateProduct(id, 'price', num);
                 }
-                else e.currentTarget.innerText = '$' + (products.find(p=>p.id === id)?.price.toFixed(2) || '0.00');
+                else e.currentTarget.innerText = products.find(p=>p.id === id)?.price.toFixed(2) || '0.00';
             } else {
                 onUpdateProduct(id, field as keyof Product, newVal);
             }
@@ -441,11 +461,23 @@ export const useSelectionState = (
         } else if (type === 'menu' && onUpdateMenuText && field) {
             onUpdateMenuText(field as any, newVal);
         }
-    }, [emitSelection, onDeleteProduct, onStyleUpdate, onUpdateProduct, onUpdateCategoryName, onUpdateMenuText, products]);
+    }, [emitSelection, onDeleteProduct, onStyleUpdate, onUpdateProduct, onUpdateCategoryName, onUpdateMenuText, products, style]);
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
+            if (e.currentTarget.id.startsWith('product-price-')) {
+                const normalizedPrice = parseAndRoundPrice(e.currentTarget.innerText);
+                if (normalizedPrice !== null) {
+                    e.currentTarget.innerText = normalizedPrice.toFixed(2);
+                    const fit = measureWordFitElement(e.currentTarget, { text: e.currentTarget.innerText });
+                    e.currentTarget.dataset.wordOverflow = String(!fit.fits);
+                }
+            }
+            if (e.currentTarget.dataset.wordOverflow === 'true') {
+                triggerLimitFeedback(e.currentTarget);
+                return;
+            }
             e.currentTarget.blur();
         }
     };

@@ -2,7 +2,8 @@
 import React, { useRef } from 'react';
 import { MenuStyle, Product, ElementStyle, SortOption, AddedImage, FontSizeLimitKey } from '../../types';
 import { isMiniFoodTexture, normalizeTextureUrl } from '../../constants';
-import { resolveFontSizeLimits, resolveMenuContentSpacing, resolveMenuMargins } from '../../utils/styleRules';
+import { resolveFontSizeLimits, resolveMenuContentSpacing, resolveMenuMargins, resolveMinimumFontSize } from '../../utils/styleRules';
+import { canApplyCanvasColumnCounts, triggerLimitFeedback } from '../../utils/textFit';
 import { StyleControls } from './StyleControls';
 import { FontSelect, MiniFoodTextureSelect, TemplateSelect, TextureSelect } from './SearchableSelects';
 import { 
@@ -18,9 +19,10 @@ interface ElementsSectionProps {
   selectedAddedImageIds: string[];
   safeStyles: MenuStyle['elementStyles'];
   fontSizeLimits: ReturnType<typeof resolveFontSizeLimits>;
+  minimumFontSize: number;
   setStyle: React.Dispatch<React.SetStateAction<MenuStyle>>;
-  updateFreeTextStyle: (id: string, newStyle: ElementStyle) => void;
-  updateGlobalElementStyle: (elementType: keyof MenuStyle['elementStyles'], newStyle: ElementStyle) => void;
+  updateFreeTextStyle: (id: string, newStyle: ElementStyle) => void | boolean;
+  updateGlobalElementStyle: (elementType: keyof MenuStyle['elementStyles'], newStyle: ElementStyle) => void | boolean;
   setPreviewAction: React.Dispatch<React.SetStateAction<{ type: string, id: number } | undefined>>;
   onAddedImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   setSelection: (selection: { type: 'product' | 'category' | 'freeText' | 'addedImage' | 'page' | 'menuTitle' | 'menuSubtitle' | null, id: string | null }) => void;
@@ -36,6 +38,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
   selectedAddedImageIds,
   safeStyles,
   fontSizeLimits,
+  minimumFontSize,
   setStyle,
   updateFreeTextStyle,
   updateGlobalElementStyle,
@@ -80,6 +83,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                     value={safeStyles.menuTitle || {}}
                     onChange={(s) => updateGlobalElementStyle('menuTitle', s)}
                     maxFontSize={fontSizeLimits.menuTitle}
+                    minFontSize={minimumFontSize}
                 />
             </div>
         ) : selection.type === 'menuSubtitle' ? (
@@ -89,6 +93,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                     value={safeStyles.menuSubtitle || {}}
                     onChange={(s) => updateGlobalElementStyle('menuSubtitle', s)}
                     maxFontSize={fontSizeLimits.menuSubtitle}
+                    minFontSize={minimumFontSize}
                 />
             </div>
         ) : selection.type === 'freeText' && selectedFreeText ? (
@@ -99,6 +104,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                 value={selectedFreeText.styles || {}}
                 onChange={(newStyle) => updateFreeTextStyle(selectedFreeText.id, newStyle)}
                 maxFontSize={fontSizeLimits.freeText}
+                minFontSize={minimumFontSize}
                 />
             </div>
         ) : selection.type === 'addedImage' && selectedAddedImage ? (
@@ -155,6 +161,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                     value={safeStyles.category}
                     onChange={(s) => updateGlobalElementStyle('category', s)}
                     maxFontSize={fontSizeLimits.category}
+                    minFontSize={minimumFontSize}
                 />
                 )}
                 
@@ -164,19 +171,22 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                         label="Nomes dos produtos"
                         value={safeStyles.productName}
                         onChange={(s) => updateGlobalElementStyle('productName', s)}
-                        maxFontSize={fontSizeLimits.productName}
+                    maxFontSize={fontSizeLimits.productName}
+                    minFontSize={minimumFontSize}
                     />}
                     {safeStyles.productPrice && <StyleControls 
                         label="Preços dos produtos"
                         value={safeStyles.productPrice}
                         onChange={(s) => updateGlobalElementStyle('productPrice', s)}
-                        maxFontSize={fontSizeLimits.productPrice}
+                    maxFontSize={fontSizeLimits.productPrice}
+                    minFontSize={minimumFontSize}
                     />}
                     {safeStyles.productDescription && <StyleControls 
                         label="Descricoes dos produtos"
                         value={safeStyles.productDescription}
                         onChange={(s) => updateGlobalElementStyle('productDescription', s)}
-                        maxFontSize={fontSizeLimits.productDescription}
+                    maxFontSize={fontSizeLimits.productDescription}
+                    minFontSize={minimumFontSize}
                     />}
                     </>
                 )}
@@ -232,7 +242,33 @@ interface LayoutSectionProps {
   handleImageResize: (delta: number) => void;
 }
 
-export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle, handleImageResize }) => (
+export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle, handleImageResize }) => {
+  const updateColumnCounts = (
+    event: React.MouseEvent<HTMLButtonElement>,
+    nextCategoryColumnCount: number,
+    nextProductColumnCount: number,
+  ) => {
+    if (!canApplyCanvasColumnCounts(style, nextCategoryColumnCount, nextProductColumnCount)) {
+      triggerLimitFeedback(event.currentTarget);
+      return;
+    }
+    setStyle((previous) => ({
+      ...previous,
+      columnCount: nextProductColumnCount as 1 | 2 | 3,
+      categoryColumnCount: nextCategoryColumnCount as 1 | 2 | 3,
+      categoryPlacements: {},
+      categoryPositions: nextCategoryColumnCount !== (previous.categoryColumnCount || 1)
+        ? {}
+        : previous.categoryPositions,
+      categoryColumnWidths: nextCategoryColumnCount !== (previous.categoryColumnCount || 1)
+        ? []
+        : previous.categoryColumnWidths,
+      pageBreaks: [],
+      name: 'Custom',
+    }));
+  };
+
+  return (
   <section className="space-y-3">
     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2"> <Layout size={14} /> Layout </h3>
     <div className="flex bg-slate-100 p-1 rounded-lg">
@@ -261,13 +297,13 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle, h
         <div className="flex-1 bg-slate-50 p-2 rounded border border-slate-100">
             <label className="text-[10px] text-slate-500 font-bold block mb-1">Colunas de produtos</label>
             <div className="flex gap-1">
-                {[1, 2, 3].map(cols => ( <button key={cols} onClick={() => setStyle(prev => ({ ...prev, columnCount: cols as any, categoryPlacements: {}, pageBreaks: [], name: 'Custom' }))} className={`flex-1 h-6 text-xs font-bold rounded ${style.columnCount === cols ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}> {cols} </button> ))}
+                {[1, 2, 3].map(cols => ( <button key={cols} onClick={(event) => updateColumnCounts(event, style.categoryColumnCount || 1, cols)} className={`flex-1 h-6 text-xs font-bold rounded ${style.columnCount === cols ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}> {cols} </button> ))}
             </div>
         </div>
         <div className="flex-1 bg-slate-50 p-2 rounded border border-slate-100">
             <label className="text-[10px] text-slate-500 font-bold block mb-1">Colunas de categorias</label>
             <div className="flex gap-1">
-                            {[1, 2, 3].map(cols => ( <button key={cols} onClick={() => setStyle(prev => ({ ...prev, categoryColumnCount: cols as any, categoryPlacements: {}, categoryPositions: {}, categoryColumnWidths: [], pageBreaks: [], name: 'Custom' }))} className={`flex-1 h-6 text-xs font-bold rounded ${(style.categoryColumnCount || 1) === cols ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}> {cols} </button> ))}
+                            {[1, 2, 3].map(cols => ( <button key={cols} onClick={(event) => updateColumnCounts(event, cols, style.columnCount || 1)} className={`flex-1 h-6 text-xs font-bold rounded ${(style.categoryColumnCount || 1) === cols ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}> {cols} </button> ))}
             </div>
         </div>
     </div>
@@ -282,7 +318,8 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle, h
         </div>
     </div>
   </section>
-);
+  );
+};
 
 // --- GENERAL RULES SECTION ---
 interface GeneralRulesSectionProps {
@@ -311,6 +348,7 @@ const RuleNumberInput: React.FC<{
 
 export const GeneralRulesSection: React.FC<GeneralRulesSectionProps> = ({ style, setStyle }) => {
   const fontSizeLimits = resolveFontSizeLimits(style);
+  const minimumFontSize = resolveMinimumFontSize(style);
   const margins = resolveMenuMargins(style);
   const contentSpacing = resolveMenuContentSpacing(style);
   const fontLimitRows: Array<{ key: FontSizeLimitKey; label: string }> = [
@@ -364,13 +402,65 @@ export const GeneralRulesSection: React.FC<GeneralRulesSectionProps> = ({ style,
 
       <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
         <h4 className="text-xs font-bold text-slate-600">Limite de tamanho das fontes</h4>
+        <label className="flex items-center justify-between gap-3 border-b border-slate-200 pb-2 text-xs font-semibold text-slate-700">
+          <span>Mínimo geral</span>
+          <RuleNumberInput
+            value={minimumFontSize}
+            min={1}
+            max={300}
+            onChange={(value) => setStyle((previous) => ({
+              ...previous,
+              minimumFontSize: value,
+              fontSizeLimits: (() => {
+                const limits = resolveFontSizeLimits(previous);
+                return {
+                  menuTitle: Math.max(value, limits.menuTitle),
+                  menuSubtitle: Math.max(value, limits.menuSubtitle),
+                  category: Math.max(value, limits.category),
+                  productName: Math.max(value, limits.productName),
+                  productPrice: Math.max(value, limits.productPrice),
+                  productDescription: Math.max(value, limits.productDescription),
+                  freeText: Math.max(value, limits.freeText),
+                };
+              })(),
+              elementStyles: Object.fromEntries(
+                Object.entries(previous.elementStyles).map(([key, elementStyle]) => [
+                  key,
+                  elementStyle?.fontSize && elementStyle.fontSize < value
+                    ? { ...elementStyle, fontSize: value }
+                    : elementStyle,
+                ]),
+              ) as MenuStyle['elementStyles'],
+              name: 'Custom',
+            }))}
+          />
+        </label>
         {fontLimitRows.map(({ key, label }) => (
           <label key={key} className="flex items-center justify-between gap-3 text-xs text-slate-600">
             <span>{label}</span>
-            <RuleNumberInput value={fontSizeLimits[key]} min={1} max={300} onChange={(value) => updateFontLimit(key, value)} />
+            <RuleNumberInput value={fontSizeLimits[key]} min={minimumFontSize} max={300} onChange={(value) => updateFontLimit(key, value)} />
           </label>
         ))}
       </div>
+
+      <label className="flex cursor-pointer items-start justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <span className="min-w-0">
+          <span className="block text-xs font-bold text-slate-700">Permitir quebra de linha na mesma palavra</span>
+          <span className="mt-1 block text-[10px] leading-relaxed text-slate-500">
+            Ex.: permitir “HAMBU” / “RGUER” em duas linhas. Desativado, o texto reduz até o mínimo.
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          checked={style.allowSameWordBreak === true}
+          onChange={(event) => setStyle((previous) => ({
+            ...previous,
+            allowSameWordBreak: event.target.checked,
+            name: 'Custom',
+          }))}
+          className="mt-0.5 h-4 w-4 shrink-0 accent-indigo-600"
+        />
+      </label>
 
       <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
         <h4 className="text-xs font-bold text-slate-600">Margens</h4>

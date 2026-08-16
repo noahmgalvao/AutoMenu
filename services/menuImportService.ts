@@ -19,6 +19,7 @@ import { isUnmodifiedInitialProduct } from '../utils/pristineItems';
 import { clampFontSize, resolveFontSizeLimits } from '../utils/styleRules';
 import { FREE_TEXT_PREFIX } from '../utils/menuPagination';
 import { normalizeColumnWidths } from '../utils/categoryColumns';
+import { roundPrice } from '../utils/price';
 
 export interface ProcessMenuImportOptions {
   files: File[];
@@ -53,6 +54,58 @@ export interface FinalizedMenuImport {
   products: Product[];
   style: MenuStyle;
 }
+
+export const deriveProcessedMenuImportMode = (
+  processed: ProcessedMenuImport,
+  mode: MenuImportMode,
+  currentProducts: Product[],
+  currentStyle: MenuStyle,
+): ProcessedMenuImport | null => {
+  if (mode === processed.importMode) return processed;
+  if (processed.importMode !== 'complete') return null;
+
+  if (mode === 'products') {
+    const previewProducts = processed.previewProducts.filter((product) => !product.isFreeText);
+    const previewStyle: MenuStyle = {
+      ...currentStyle,
+      ...(processed.orderStyle || {}),
+      name: processed.orderStyle ? 'Custom' : currentStyle.name,
+    };
+    return {
+      ...processed,
+      importMode: 'products',
+      products: previewProducts,
+      style: null,
+      previewProducts,
+      previewStyle,
+      normalizedResult: { ...processed.normalizedResult, importMode: 'products' },
+    };
+  }
+
+  const importedStyle = processed.style;
+  if (!importedStyle) return null;
+  const previewStyle: MenuStyle = {
+    ...importedStyle,
+    categoryPlacements: currentStyle.categoryPlacements,
+    categoryPositions: currentStyle.categoryPositions,
+    customCategoryOrder: currentStyle.customCategoryOrder,
+    customProductOrder: currentStyle.customProductOrder,
+    hiddenProductIds: currentStyle.hiddenProductIds,
+    pageBreaks: currentStyle.pageBreaks,
+  };
+  return {
+    ...processed,
+    importMode: 'visual',
+    products: null,
+    style: previewStyle,
+    orderStyle: null,
+    previewProducts: currentProducts,
+    previewStyle,
+    importedProducts: [],
+    importedProductIds: [],
+    normalizedResult: { ...processed.normalizedResult, importMode: 'visual' },
+  };
+};
 
 type AnalysisResult = Awaited<ReturnType<typeof analyzeMenuImage>>;
 
@@ -388,7 +441,7 @@ export const mergeImportedProducts = (
         : {
           ...existingProduct,
           description: importedProduct.description,
-          price: importedProduct.price,
+          price: roundPrice(importedProduct.price),
         };
     } else {
       resolvedProduct = {
@@ -596,7 +649,7 @@ export const processMenuImport = async ({
       id: product.id,
       name: product.name,
       description: product.description,
-      price: product.price,
+      price: roundPrice(product.price),
       category: category.name,
       categoryId: category.id,
       image: '',

@@ -25,6 +25,7 @@ import {
     ProcessedMenuImport,
     processMenuImport,
 } from '../services/menuImportService';
+import { roundPrice } from '../utils/price';
 
 interface UseProductDesignerLogicProps {
     products: Product[];
@@ -178,7 +179,7 @@ export const useProductDesignerLogic = ({
             const nextPrice = bulkAdjustmentMode === 'percentage'
                 ? p.price * (1 + (direction * (amount / 100)))
                 : p.price + (direction * amount);
-            return { ...p, price: Math.max(0, parseFloat(nextPrice.toFixed(2))) };
+            return { ...p, price: roundPrice(nextPrice) };
         }));
     };
 
@@ -243,7 +244,7 @@ export const useProductDesignerLogic = ({
                 const newProd: Product = {
                     id: crypto.randomUUID(),
                     name: formData.name || 'Novo item',
-                    price: formData.price || 0,
+                    price: roundPrice(formData.price),
                     description: formData.description || '',
                     category: newItemDraft.categoryId,
                     categoryId: resolveCategoryId(newItemDraft.categoryId),
@@ -483,7 +484,7 @@ export const useProductDesignerLogic = ({
                     id: product.id,
                     name: product.name,
                     description: product.description,
-                    price: product.price,
+                    price: roundPrice(product.price),
                     category: category.name,
                     categoryId: category.id,
                     image: '',

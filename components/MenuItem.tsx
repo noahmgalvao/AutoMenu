@@ -7,8 +7,9 @@ import { selectionLayerClasses } from './selectionLayers';
 import { getDirectionLabel, getEdgeControlClass, type FlowDirection } from '../utils/flowControls';
 import { InlineStyleToolbar } from './MenuDesigner/InlineStyleToolbar';
 import type { MoveDirection } from '../hooks/interactions/types';
-import { clampFontSize, resolveFontSizeLimits, resolveMenuContentSpacing } from '../utils/styleRules';
+import { clampFontSize, resolveFontSizeLimits, resolveMenuContentSpacing, resolveMinimumFontSize } from '../utils/styleRules';
 import { ColumnResizeHandles } from './ColumnResizeHandles';
+import { AutoFitText } from './AutoFitText';
 
 interface MenuItemProps {
     item: any;
@@ -59,14 +60,14 @@ const rectanglesOverlap = (left: DOMRect, right: DOMRect, gap: number = 3) => (
     left.bottom > right.top - gap
 );
 
-const ResponsiveMoveButton: React.FC<
+export const ResponsiveMoveButton: React.FC<
     React.ButtonHTMLAttributes<HTMLButtonElement> & { flowDirection: FlowDirection }
 > = ({ flowDirection, children, ...buttonProps }) => {
     const buttonRef = React.useRef<HTMLButtonElement>(null);
 
     React.useLayoutEffect(() => {
         const button = buttonRef.current;
-        const root = button?.closest<HTMLElement>('.automenu-drag-item');
+        const root = button?.closest<HTMLElement>('[data-category-chunk], .automenu-drag-item');
         if (!button || !root) return;
 
         let animationFrame: number | null = null;
@@ -318,6 +319,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
 }) => {
     const formattingTarget = handlers.formattingTarget;
     const fontSizeLimits = resolveFontSizeLimits(style);
+    const minimumFontSize = resolveMinimumFontSize(style);
+    const allowSameWordBreak = style.allowSameWordBreak === true;
     const contentSpacing = resolveMenuContentSpacing(style);
     const getToolbarFontSizeLimit = (type: string) => {
         if (type === 'menuTitle') return fontSizeLimits.menuTitle;
@@ -333,7 +336,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
     };
     const renderFormattingToolbar = (type: string, id: string, value: any) => (
         formattingTarget?.type === type && formattingTarget?.id === id
-            ? <InlineStyleToolbar targetElementId={formattingTarget.elementId} value={value || {}} maxFontSize={getToolbarFontSizeLimit(type)} onChange={(newStyle) => handlers.handleInlineStyleChange?.(formattingTarget, newStyle)} onDismiss={() => handlers.setFormattingTarget?.(null)} />
+            ? <InlineStyleToolbar targetElementId={formattingTarget.elementId} value={value || {}} maxFontSize={getToolbarFontSizeLimit(type)} minFontSize={minimumFontSize} onChange={(newStyle) => handlers.handleInlineStyleChange?.(formattingTarget, newStyle)} onDismiss={() => handlers.setFormattingTarget?.(null)} />
             : null
     );
     
@@ -353,7 +356,15 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             >
             {formattingTarget?.type === 'menuTitle' && renderFormattingToolbar('menuTitle', 'menuTitle', titleStyle)}
             {formattingTarget?.type === 'menuSubtitle' && renderFormattingToolbar('menuSubtitle', 'menuSubtitle', subStyle)}
-            <h1 
+            <AutoFitText
+                as="h1"
+                text={style.menuTitle ?? 'MENU'}
+                baseFontSize={clampFontSize(style, 'menuTitle', titleStyle.fontSize, 48)}
+                minimumFontSize={minimumFontSize}
+                allowSameWordBreak={allowSameWordBreak}
+                fitScope="menuTitle"
+                widthMode="parent"
+                showOverflowFeedback
                 id="menu-title-text"
                 data-menu-heading="title"
                 className={`tracking-tight outline-none focus:bg-blue-50/50 rounded cursor-text ${isTitleSelected ? 'ring-2 ring-indigo-500 bg-indigo-50/20' : ''}`}
@@ -379,10 +390,16 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     handlers.startMenuTextEditing?.('menuTitle', 'menu-title-text');
                 }}
                 contentEditable suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'menu', 'header', 'menuTitle')} onKeyDown={handlers.handleKeyDown}
-            >
-                {style.menuTitle ?? 'MENU'}
-            </h1>
-            {hasSubtitle && <p
+            />
+            {hasSubtitle && <AutoFitText
+                as="p"
+                text={style.menuSubtitle}
+                baseFontSize={clampFontSize(style, 'menuSubtitle', subStyle.fontSize, 18)}
+                minimumFontSize={minimumFontSize}
+                allowSameWordBreak={allowSameWordBreak}
+                fitScope="menuSubtitle"
+                widthMode="parent"
+                showOverflowFeedback
                 id="menu-subtitle-text"
                 data-menu-heading="subtitle"
                 className={`opacity-90 outline-none focus:bg-blue-50/50 rounded cursor-text ${isSubtitleSelected ? 'ring-2 ring-indigo-500 bg-indigo-50/20' : ''}`}
@@ -408,9 +425,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     handlers.startMenuTextEditing?.('menuSubtitle', 'menu-subtitle-text');
                 }}
                 contentEditable suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'menu', 'subheader', 'menuSubtitle')} onKeyDown={handlers.handleKeyDown}
-            >
-                {style.menuSubtitle}
-            </p>
+            />
             }
             </header>
         );
@@ -453,7 +468,15 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 <ProductControls type="category" catName={item.data} isMobileSelected={isSelected} index={idx} total={0} isLastInBlock={false} canMoveUp={false} canMoveDown={false} canMoveLeft={false} canMoveRight={false} hideGeneralControls={false} isPristineNewDefault={isPristineNewDefault} handlers={handlers} isDragging={isBeingDragged} showSelectionOutline={false} showAddControls={false} compactControls={compactControls} showGridMoveControls={false}/>
                 <div className={`flex w-full max-w-full min-w-0 items-center ${compactControls ? 'gap-2 px-1' : 'gap-4 px-2'} ${categoryAlign === 'center' ? 'justify-center' : categoryAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
                     {(categoryAlign === 'center' || categoryAlign === 'right') && renderCategoryDivider('before')}
-                    <h2 
+                    <AutoFitText
+                        as="h2"
+                        text={item.data}
+                        baseFontSize={clampFontSize(style, 'category', catStyle.fontSize, 24)}
+                        minimumFontSize={minimumFontSize}
+                        allowSameWordBreak={allowSameWordBreak}
+                        fitScope="category"
+                        widthMode="flex"
+                        showOverflowFeedback={handlers.editingId === item.data}
                         id={elementId}
                         className={`min-w-0 max-w-full shrink whitespace-normal break-words [overflow-wrap:anywhere] [word-break:normal] outline-none rounded ${handlers.editingId === item.data ? 'bg-white ring-2 ring-blue-500 z-10 cursor-text px-1' : ''}`}
                         style={{ 
@@ -467,9 +490,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             textTransform: catStyle.textTransform,
                             letterSpacing: catStyle.letterSpacing ? `${catStyle.letterSpacing}px` : undefined
                         }}
-                        contentEditable={handlers.editingId === item.data} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'category', item.data)} onKeyDown={handlers.handleKeyDown} onMouseDown={(e) => { if(handlers.editingId !== item.data) e.preventDefault(); }} onPointerDown={(e) => { if (handlers.editingId === item.data) e.stopPropagation(); }}>
-                        {item.data}
-                    </h2>
+                        contentEditable={handlers.editingId === item.data} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'category', item.data)} onKeyDown={handlers.handleKeyDown} onMouseDown={(e) => { if(handlers.editingId !== item.data) e.preventDefault(); }} onPointerDown={(e) => { if (handlers.editingId === item.data) e.stopPropagation(); }}
+                    />
                     <button onClick={(e) => handlers.startEditing(e, item.data, elementId, 'category')} className={`relative flex-shrink-0 ${selectionLayerClasses.controls} ${compactControls ? 'p-1.5' : 'p-2.5'} bg-white border border-slate-200 shadow-sm rounded-md text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all ${isSelected || handlers.editingId === item.data ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'}`} onPointerDown={(e) => e.stopPropagation()}><Edit3 size={compactControls ? 15 : 24} /></button>
                     {(categoryAlign === 'left' || categoryAlign === 'center') && renderCategoryDivider('after')}
                 </div>
@@ -555,7 +577,16 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                         className="min-w-0 max-w-full leading-snug break-words [overflow-wrap:anywhere]"
                         style={{ textAlign: nameStyle.textAlign || 'left' }}
                     >
-                            <span id={`product-name-${product.id}`} data-product-edit-id={product.id} className={`whitespace-pre-wrap break-words [overflow-wrap:anywhere] outline-none rounded ${isEditing ? 'bg-white ring-2 ring-blue-500 cursor-text px-1' : ''}`}
+                            <AutoFitText
+                            as="span"
+                            text={product.name}
+                            baseFontSize={clampFontSize(style, 'freeText', nameStyle.fontSize, 18)}
+                            minimumFontSize={minimumFontSize}
+                            allowSameWordBreak={allowSameWordBreak}
+                            fitScope="freeText"
+                            containerSelector={`#product-container-${product.id}`}
+                            showOverflowFeedback={isEditing}
+                            id={`product-name-${product.id}`} data-product-edit-id={product.id} className={`whitespace-pre-wrap break-words [overflow-wrap:anywhere] outline-none rounded ${isEditing ? 'bg-white ring-2 ring-blue-500 cursor-text px-1' : ''}`}
                             style={{ 
                                 color: nameStyle.color,
                                 fontFamily: nameStyle.fontFamily,
@@ -566,9 +597,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 textTransform: nameStyle.textTransform,
                                 letterSpacing: nameStyle.letterSpacing ? `${nameStyle.letterSpacing}px` : undefined
                             }}
-                            contentEditable={isEditing} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'name')} onKeyDown={handlers.handleKeyDown} onFocus={(e) => clearDefaultTextOnFocus(e.currentTarget, ['Novo texto'])} onMouseDown={(e) => { if(!isEditing) e.preventDefault(); }} onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }}>
-                                {product.name}
-                            </span>
+                            contentEditable={isEditing} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'name')} onKeyDown={handlers.handleKeyDown} onFocus={(e) => clearDefaultTextOnFocus(e.currentTarget, ['Novo texto'])} onMouseDown={(e) => { if(!isEditing) e.preventDefault(); }} onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }}
+                            />
                             <button
                                 data-product-edit-id={product.id}
                                 onClick={(e) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'freeText')}
@@ -595,7 +625,16 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             }}
                          >
                             <div className={`flex items-center gap-2 min-w-0 ${isNameCentered ? 'justify-center w-full' : isNameRight ? 'justify-end' : ''}`}>
-                                <h3 id={`product-name-${product.id}`} data-product-edit-id={product.id} className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditing ? 'bg-white ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : ''}`}
+                                <AutoFitText
+                                    as="h3"
+                                    text={product.name}
+                                    baseFontSize={clampFontSize(style, 'productName', nameStyle.fontSize, 18)}
+                                    minimumFontSize={minimumFontSize}
+                                    allowSameWordBreak={allowSameWordBreak}
+                                    fitScope="productName"
+                                    widthMode="flex"
+                                    showOverflowFeedback={isEditing}
+                                    id={`product-name-${product.id}`} data-product-edit-id={product.id} className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditing ? 'bg-white ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : ''}`}
                                     style={{ 
                                         color: nameStyle.color || style.textColor,
                                         fontFamily: nameStyle.fontFamily,
@@ -608,9 +647,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                         letterSpacing: nameStyle.letterSpacing ? `${nameStyle.letterSpacing}px` : undefined
                                     }}
                                     contentEditable={isEditing} tabIndex={isEditing ? 0 : undefined} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'name')} onKeyDown={handlers.handleKeyDown} onFocus={(e) => { if (!isEditing) return; handlers.setProductEditingField?.(product.id, 'name', `product-name-${product.id}`); handleMobileFocusScroll(e.currentTarget); }} onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }} onClick={(e) => { if (isEditing) e.stopPropagation(); }}
-                                >
-                                    {product.name}
-                                </h3>
+                                />
                                 <button data-product-edit-id={product.id} onClick={(e) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name')} className={`relative ${selectionLayerClasses.controls} ${compactControls ? 'hidden' : ''} p-2.5 bg-white border border-slate-200 shadow-sm rounded-md text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all flex-shrink-0 ${isSelected || handlers.editingId === product.id ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'}`} onPointerDown={(e) => e.stopPropagation()}><Edit3 size={24} /></button>
                             </div>
                             <div 
@@ -624,7 +661,16 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                               }}
                             >
                                 <span className="opacity-70 mr-[1px] select-none touch-none" style={{ color: priceStyle.color }}>$</span>
-                                <span id={`product-price-${product.id}`} data-product-edit-id={product.id} className={`whitespace-nowrap outline-none rounded ${isEditing ? 'bg-white ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : ''}`}
+                                <AutoFitText
+                                    as="span"
+                                    text={product.price.toFixed(2)}
+                                    baseFontSize={clampFontSize(style, 'productPrice', priceStyle.fontSize, 18)}
+                                    minimumFontSize={minimumFontSize}
+                                    allowSameWordBreak={false}
+                                    fitScope="productPrice"
+                                    widthMode="flex"
+                                    showOverflowFeedback={isEditing}
+                                    id={`product-price-${product.id}`} data-product-edit-id={product.id} className={`whitespace-nowrap outline-none rounded ${isEditing ? 'bg-white ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : ''}`}
                                     style={{ 
                                         color: priceStyle.color,
                                         fontFamily: priceStyle.fontFamily,
@@ -636,12 +682,19 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                         display: 'inline-block'
                                     }}
                                     contentEditable={isEditing} tabIndex={isEditing ? 0 : undefined} inputMode="decimal" enterKeyHint="done" suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'price')} onKeyDown={(e) => { if (isEditing && e.key !== 'Unidentified' && e.key.length === 1 && !/^[0-9.,]$/.test(e.key) && !e.ctrlKey && !e.metaKey) e.preventDefault(); handlers.handleKeyDown(e); }} onFocus={(e) => { if (!isEditing) return; handlers.setProductEditingField?.(product.id, 'price', `product-price-${product.id}`); handleMobileFocusScroll(e.currentTarget); setTimeout(() => { if (document.activeElement === e.currentTarget) { const range = document.createRange(); range.selectNodeContents(e.currentTarget); const sel = window.getSelection(); sel?.removeAllRanges(); sel?.addRange(range); } }, 0); }} onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }} onClick={(e) => { if (isEditing) e.stopPropagation(); }}
-                                >
-                                    {product.price.toFixed(2)}
-                                </span>
+                                />
                             </div>
                         </div>
-                        <p id={`product-description-${product.id}`} data-product-edit-id={product.id} className={`max-w-full opacity-80 break-words [overflow-wrap:anywhere] [word-break:normal] leading-relaxed outline-none rounded ${isEditing ? 'min-h-[1.5em] bg-white ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : ''}`}
+                        <AutoFitText
+                            as="p"
+                            text={product.description}
+                            baseFontSize={clampFontSize(style, 'productDescription', descStyle.fontSize, 14)}
+                            minimumFontSize={minimumFontSize}
+                            allowSameWordBreak={allowSameWordBreak}
+                            fitScope="productDescription"
+                            widthMode="parent"
+                            showOverflowFeedback={isEditing}
+                            id={`product-description-${product.id}`} data-product-edit-id={product.id} className={`max-w-full opacity-80 break-words [overflow-wrap:anywhere] [word-break:normal] leading-relaxed outline-none rounded ${isEditing ? 'min-h-[1.5em] bg-white ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : ''}`}
                             style={{ 
                                 color: descStyle.color,
                                 fontFamily: descStyle.fontFamily,
@@ -652,9 +705,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 textDecoration: descStyle.underline ? 'underline' : 'none'
                             }}
                             contentEditable={isEditing} tabIndex={isEditing ? 0 : undefined} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'description')} onKeyDown={handlers.handleKeyDown} onFocus={(e) => { if (!isEditing) return; handlers.setProductEditingField?.(product.id, 'description', `product-description-${product.id}`); handleMobileFocusScroll(e.currentTarget); }} onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }} onClick={(e) => { if (isEditing) e.stopPropagation(); }}
-                        >
-                            {product.description}
-                        </p>
+                        />
                     </div>
                     </div>
                 )}
@@ -754,7 +805,15 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                 }}
                                             >
                                                 <div className={`flex min-w-0 items-center gap-1 ${nameStyle.textAlign === 'center' ? 'justify-center' : nameStyle.textAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
-                                                    <h3
+                                                    <AutoFitText
+                                                        as="h3"
+                                                        text={product.name}
+                                                        baseFontSize={clampFontSize(style, 'productName', nameStyle.fontSize, 18)}
+                                                        minimumFontSize={minimumFontSize}
+                                                        allowSameWordBreak={allowSameWordBreak}
+                                                        fitScope="productName"
+                                                        widthMode="flex"
+                                                        showOverflowFeedback={isEditing}
                                                         id={`product-name-${product.id}`}
                                                         data-product-edit-id={product.id}
                                                         className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditing ? 'bg-white ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : ''}`}
@@ -767,9 +826,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         tabIndex={isEditing ? 0 : undefined}
                                                         onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }}
                                                         onClick={(e) => { if (isEditing) e.stopPropagation(); }}
-                                                    >
-                                                        {product.name}
-                                                    </h3>
+                                                    />
                                                     <button
                                                         data-product-edit-id={product.id}
                                                         onClick={(e) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name')}
@@ -785,7 +842,15 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                     style={{ color: priceStyle.color, fontFamily: priceStyle.fontFamily, fontSize: clampFontSize(style, 'productPrice', priceStyle.fontSize, 18), fontWeight: priceStyle.fontWeight, fontStyle: priceStyle.italic ? 'italic' : 'normal', textDecoration: priceStyle.underline ? 'underline' : 'none' }}
                                                 >
                                                     <span className="opacity-70 select-none touch-none">$</span>
-                                                    <span
+                                                    <AutoFitText
+                                                        as="span"
+                                                        text={product.price.toFixed(2)}
+                                                        baseFontSize={clampFontSize(style, 'productPrice', priceStyle.fontSize, 18)}
+                                                        minimumFontSize={minimumFontSize}
+                                                        allowSameWordBreak={false}
+                                                        fitScope="productPrice"
+                                                        widthMode="flex"
+                                                        showOverflowFeedback={isEditing}
                                                         id={`product-price-${product.id}`}
                                                         data-product-edit-id={product.id}
                                                         className={`whitespace-nowrap outline-none ${isEditing ? 'ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
@@ -800,12 +865,18 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         onFocus={(e) => { if (!isEditing) return; handlers.setProductEditingField?.(product.id, 'price', `product-price-${product.id}`); handleMobileFocusScroll(e.currentTarget); setTimeout(() => { if (document.activeElement === e.currentTarget) { const range = document.createRange(); range.selectNodeContents(e.currentTarget); const sel = window.getSelection(); sel?.removeAllRanges(); sel?.addRange(range); } }, 0); }}
                                                         onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }}
                                                         onClick={(e) => { if (isEditing) e.stopPropagation(); }}
-                                                    >
-                                                        {product.price.toFixed(2)}
-                                                    </span>
+                                                    />
                                                 </div>
                                             </div>
-                                            <p
+                                            <AutoFitText
+                                                as="p"
+                                                text={product.description}
+                                                baseFontSize={clampFontSize(style, 'productDescription', descStyle.fontSize, 14)}
+                                                minimumFontSize={minimumFontSize}
+                                                allowSameWordBreak={allowSameWordBreak}
+                                                fitScope="productDescription"
+                                                widthMode="parent"
+                                                showOverflowFeedback={isEditing}
                                                 id={`product-description-${product.id}`}
                                                 data-product-edit-id={product.id}
                                                 className={`max-w-full opacity-75 break-words [overflow-wrap:anywhere] [word-break:normal] flex-grow outline-none rounded ${isEditing ? 'min-h-[1.5em] bg-white ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : 'line-clamp-4'}`}
@@ -818,9 +889,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                 onFocus={(e) => { if (!isEditing) return; handlers.setProductEditingField?.(product.id, 'description', `product-description-${product.id}`); handleMobileFocusScroll(e.currentTarget); }}
                                                 onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }}
                                                 onClick={(e) => { if (isEditing) e.stopPropagation(); }}
-                                            >
-                                                {product.description}
-                                            </p>
+                                            />
                                         </div>
                                     </div>
                                 </div>

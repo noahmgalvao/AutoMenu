@@ -15,6 +15,8 @@ import {
     resolvePdfPageIndexes,
     type PdfDebugEntry,
 } from '../utils/pdfExport';
+import { canIncreaseCanvasFontSize, type WordFitScope } from '../utils/textFit';
+import { roundPrice } from '../utils/price';
 
 interface MenuDesignerProps {
     products: Product[];
@@ -372,7 +374,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
     const handleProductUpdate = (id: string, field: keyof Product, value: any) => {
         if (!setProducts) return;
-        setProducts(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
+        const normalizedValue = field === 'price' ? roundPrice(value) : value;
+        setProducts(prev => prev.map(p => p.id === id ? { ...p, [field]: normalizedValue } : p));
     };
 
     const handleBatchProductUpdate = (updates: { id: string, field: keyof Product, value: any }[]) => {
@@ -381,7 +384,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             const updateMap = new Map<string, Record<string, any>>();
             updates.forEach(u => {
                 const existing = updateMap.get(u.id) || {};
-                existing[u.field] = u.value;
+                existing[u.field] = u.field === 'price' ? roundPrice(u.value) : u.value;
                 updateMap.set(u.id, existing);
             });
             return prev.map(p => {
@@ -737,6 +740,17 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     };
 
     const updateGlobalElementStyle = (elementType: keyof MenuStyle['elementStyles'], newStyle: ElementStyle) => {
+        const previousStyle = style.elementStyles[elementType] || {};
+        const nextFontSize = Number(newStyle.fontSize);
+        if (
+            !style.allowSameWordBreak
+            && Number.isFinite(nextFontSize)
+            && nextFontSize > Number(previousStyle.fontSize || 0)
+            && elementType !== 'pageNumber'
+            && !canIncreaseCanvasFontSize(elementType as WordFitScope, nextFontSize)
+        ) {
+            return false;
+        }
         setStyle(prev => {
             const previousStyle = prev.elementStyles[elementType] || {};
             const colorChanged = newStyle.color !== previousStyle.color;
@@ -753,11 +767,26 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 name: 'Custom'
             };
         });
+        return true;
     };
 
     const updateFreeTextStyle = (id: string, newStyle: ElementStyle) => {
-        if (!setProducts) return;
+        if (!setProducts) return false;
         const currentProduct = products.find(product => product.id === id);
+        const nextFontSize = Number(newStyle.fontSize);
+        const currentFontSize = Number(
+            currentProduct?.styles?.fontSize
+            || style.elementStyles.productName?.fontSize
+            || 18,
+        );
+        if (
+            !style.allowSameWordBreak
+            && Number.isFinite(nextFontSize)
+            && nextFontSize > currentFontSize
+            && !canIncreaseCanvasFontSize('freeText', nextFontSize, `product-name-${id}`)
+        ) {
+            return false;
+        }
         const fontSizeReduced = Number(newStyle.fontSize) > 0
             && Number(currentProduct?.styles?.fontSize) > 0
             && Number(newStyle.fontSize) < Number(currentProduct?.styles?.fontSize);
@@ -765,6 +794,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         if (fontSizeReduced) {
             setStyle(currentStyle => ({ ...currentStyle, pageBreaks: [] }));
         }
+        return true;
     };
 
     const handleImageResize = (delta: number) => {
@@ -895,6 +925,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 </div>
 
                 <div
+                    data-automenu-editor-canvas="true"
                     className="flex-1 overflow-auto custom-scrollbar px-4 pt-20 pb-20 md:px-8 md:pt-24 md:pb-8 flex items-start justify-start touch-pan-x touch-pan-y md:cursor-grab"
                     onScroll={handleScroll}
                     onTouchStart={handleTouchStart}

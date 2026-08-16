@@ -188,6 +188,8 @@ export interface MenuStyle {
   globalRadius?: number;
   itemGap?: number;
   fontSizeLimits?: FontSizeLimits;
+  minimumFontSize?: number;
+  allowSameWordBreak?: boolean;
   margins?: MenuMargins;
   contentSpacing?: MenuContentSpacing;
   elementColorOverrides?: Partial<Record<'menuTitle' | 'menuSubtitle' | 'pageNumber' | 'category' | 'productName' | 'productPrice' | 'productDescription', boolean>>;

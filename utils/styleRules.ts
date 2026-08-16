@@ -1,5 +1,6 @@
 import {
   DEFAULT_FONT_SIZE_LIMITS,
+  DEFAULT_MINIMUM_FONT_SIZE,
   DEFAULT_MENU_CONTENT_SPACING,
   DEFAULT_MENU_MARGINS,
 } from '../constants';
@@ -20,6 +21,13 @@ export const resolveFontSizeLimits = (style: MenuStyle): FontSizeLimits => ({
   ...DEFAULT_FONT_SIZE_LIMITS,
   ...(style.fontSizeLimits || {}),
 });
+
+export const resolveMinimumFontSize = (style: MenuStyle): number => {
+  const parsed = Number(style.minimumFontSize);
+  return Number.isFinite(parsed) && parsed >= 1
+    ? Math.min(300, parsed)
+    : DEFAULT_MINIMUM_FONT_SIZE;
+};
 
 export const resolveMenuMargins = (style: MenuStyle): MenuMargins => {
   const legacyPadding = positiveNumber(style.pagePadding, DEFAULT_MENU_MARGINS.top);
@@ -62,5 +70,8 @@ export const clampFontSize = (
   fallback: number,
 ) => {
   const parsed = positiveNumber(value, fallback);
-  return Math.max(1, Math.min(resolveFontSizeLimits(style)[key], parsed));
+  return Math.max(
+    resolveMinimumFontSize(style),
+    Math.min(resolveFontSizeLimits(style)[key], parsed),
+  );
 };

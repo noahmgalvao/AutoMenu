@@ -237,6 +237,8 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                 currentMenuId={currentMenuId}
                 productsCanChangeCategory={productsCanChangeCategory}
                 splitCategoryAcrossPages={splitCategoryAcrossPages}
+                currentProducts={products}
+                currentStyle={style}
                 onPrepare={prepareAIImport}
                 onComplete={commitAIImport}
             />
