@@ -611,10 +611,7 @@ export const useDraggableInteractions = (
                         ...(prev.categoryPlacements || {}),
                         ...liveCategoryPageAssignmentsRef.current,
                     },
-                    categoryPositions: {
-                        ...(prev.categoryPositions || {}),
-                        ...(liveCategoryPositionsRef.current || {}),
-                    },
+                    categoryPositions: { ...(liveCategoryPositionsRef.current || prev.categoryPositions || {}) },
                     name: 'Custom',
                 }));
             }
@@ -1010,6 +1007,17 @@ export const useDraggableInteractions = (
         [getCurrentCategoryAssignments, getRenderedDragElement, initializeLiveCategoryOrder, initializeLiveCategoryPageAssignments, style.categoryPositions]
     );
 
+    const clearDraggedCategoryPosition = useCallback((categoryId: string) => {
+        const currentPositions = liveCategoryPositionsRef.current || style.categoryPositions || {};
+        if (!currentPositions[categoryId]) return;
+
+        const nextPositions = { ...currentPositions };
+        delete nextPositions[categoryId];
+        liveCategoryPositionsRef.current = nextPositions;
+        setLiveCategoryPositions(nextPositions);
+        hasDragMutationRef.current = true;
+    }, [style.categoryPositions]);
+
     const updateDraggedCategoryPosition = useCallback((
         categoryId: string,
         pointer: { x: number; y: number },
@@ -1022,15 +1030,17 @@ export const useDraggableInteractions = (
             `[data-drag-scope="${escapeSelectorValue(dragScope)}"][data-drag-page-container="category"][data-drag-page-index="${activePageIndex}"]`,
         );
         const element = getRenderedDragElement('category', categoryId);
-        if (!lane || !page || !element) return;
+        if (!lane || !page || !element) return false;
 
         const pageRect = page.getBoundingClientRect();
         const elementRect = element.getBoundingClientRect();
         const scale = Math.max(0.001, pageRect.width / 794);
         const pointerOffset = categoryPointerOffsetYRef.current ?? Math.min(24 * scale, elementRect.height / 2);
         const minimumTop = lane.rect.top;
-        const maximumBottom = pageRect.bottom - (SAFETY_BUFFER * scale);
-        let desiredTop = Math.max(
+        const maximumBottom = lane.rect.bottom;
+        if (elementRect.height > maximumBottom - minimumTop) return false;
+
+        const desiredTop = Math.max(
             minimumTop,
             Math.min(maximumBottom - elementRect.height, pointer.y - pointerOffset),
         );
@@ -1038,17 +1048,12 @@ export const useDraggableInteractions = (
         const obstacles = getOrderedCategoryTargets()
             .filter((target) => target.id !== categoryId && target.laneKey === activeLaneKey)
             .sort((left, right) => left.rect.top - right.rect.top);
-        for (let pass = 0; pass < 3; pass += 1) {
-            const collision = obstacles.find((target) => (
-                desiredTop < target.rect.bottom + 6
-                && desiredTop + elementRect.height > target.rect.top - 6
-            ));
-            if (!collision) break;
-            desiredTop = pointer.y < collision.rect.top + (collision.rect.height / 2)
-                ? collision.rect.top - elementRect.height - 6
-                : collision.rect.bottom + 6;
-            desiredTop = Math.max(minimumTop, Math.min(maximumBottom - elementRect.height, desiredTop));
-        }
+        const desiredBottom = desiredTop + elementRect.height;
+        const overlapsCategory = obstacles.some((target) => (
+            desiredTop < target.rect.bottom - 0.5
+            && desiredBottom > target.rect.top + 0.5
+        ));
+        if (overlapsCategory) return false;
 
         const nextPosition: CategoryPosition = {
             pageIndex: activePageIndex,
@@ -1061,7 +1066,7 @@ export const useDraggableInteractions = (
             && previousPosition?.columnIndex === nextPosition.columnIndex
             && previousPosition?.y === nextPosition.y
         ) {
-            return;
+            return true;
         }
 
         const nextPositions = {
@@ -1071,6 +1076,7 @@ export const useDraggableInteractions = (
         liveCategoryPositionsRef.current = nextPositions;
         setLiveCategoryPositions(nextPositions);
         hasDragMutationRef.current = true;
+        return true;
     }, [dragScope, getCategoryLanes, getOrderedCategoryTargets, getRenderedDragElement, style.categoryPositions]);
 
     const ensureFreeTextCategoryDragState = useCallback(
@@ -1302,19 +1308,17 @@ export const useDraggableInteractions = (
                 liveCategoryPageAssignmentsRef.current = nextAssignments;
             }
 
-            updateDraggedCategoryPosition(
-                currentDragItem.id,
-                pointer,
-                activePageIndex,
-                activeColumnIndex,
-                activeLaneKey,
-            );
-
             const orderWithoutDragged = currentOrder.filter((id) => id !== currentDragItem.id);
             const orderedTargets = getOrderedCategoryTargets().filter((target) => target.id !== currentDragItem.id);
             const laneTargets = orderedTargets
                 .filter((target) => target.laneKey === activeLaneKey)
                 .sort((left, right) => left.rect.top - right.rect.top);
+            const pointerOverCategoryTarget = laneTargets.some((target) => (
+                pointer.x >= target.rect.left
+                && pointer.x <= target.rect.right
+                && pointer.y >= target.rect.top
+                && pointer.y <= target.rect.bottom
+            ));
 
             let desiredInsertionIndex = orderWithoutDragged.length;
             let insideDeadZone = false;
@@ -1377,11 +1381,29 @@ export const useDraggableInteractions = (
                 }
             }
 
-            if (insideDeadZone) return;
+            if (insideDeadZone) {
+                clearDraggedCategoryPosition(currentDragItem.id);
+                return;
+            }
 
             const newOrder = moveItemToInsertionIndex(currentOrder, currentDragItem.id, desiredInsertionIndex);
-            if (areOrdersEqual(newOrder, currentOrder)) return;
+            if (areOrdersEqual(newOrder, currentOrder)) {
+                if (pointerOverCategoryTarget) {
+                    clearDraggedCategoryPosition(currentDragItem.id);
+                    return;
+                }
 
+                updateDraggedCategoryPosition(
+                    currentDragItem.id,
+                    pointer,
+                    activePageIndex,
+                    activeColumnIndex,
+                    activeLaneKey,
+                );
+                return;
+            }
+
+            clearDraggedCategoryPosition(currentDragItem.id);
             hasDragMutationRef.current = true;
             setLiveCategoryOrder(newOrder);
             liveCategoryOrderRef.current = newOrder;
@@ -1411,7 +1433,7 @@ export const useDraggableInteractions = (
                 }));
             }
         },
-        [getCategoryLanes, getOrderedCategoryTargets, getRenderedDragElement, onCommitCategoryOrder, onStyleUpdate, resolveCategoryLaneKey, resolveCategoryPageIndex, updateDraggedCategoryPosition]
+        [clearDraggedCategoryPosition, getCategoryLanes, getOrderedCategoryTargets, getRenderedDragElement, onCommitCategoryOrder, onStyleUpdate, resolveCategoryLaneKey, resolveCategoryPageIndex, updateDraggedCategoryPosition]
     );
 
     const syncFreeTextCategoryOrderToLane = useCallback(
@@ -2585,6 +2607,18 @@ export const useDraggableInteractions = (
         [activateDrag, clearTouchCancelCommit, handlePointerReorder, keepScrollLocked]
     );
 
+    const updateCategoryAtReleasePointer = useCallback((pointer: { x: number; y: number }) => {
+        if (draggedItemRef.current?.type !== 'category') return;
+        const previousPointer = lastPointerRef.current;
+        const positionChanged = !previousPointer
+            || Math.abs(pointer.x - previousPointer.x) > 0.01
+            || Math.abs(pointer.y - previousPointer.y) > 0.01;
+        if (!positionChanged) return;
+
+        reorderCategoryByPointer(pointer, { commitImmediately: false });
+        lastPointerRef.current = pointer;
+    }, [reorderCategoryByPointer]);
+
     const handleGlobalPointerUp = useCallback(
         (event: PointerEvent) => {
             const activePointer = activePointerRef.current;
@@ -2593,6 +2627,7 @@ export const useDraggableInteractions = (
                     event.preventDefault();
                 }
                 event.stopPropagation();
+                updateCategoryAtReleasePointer({ x: event.clientX, y: event.clientY });
                 performCommitAndCleanup();
                 return;
             }
@@ -2602,7 +2637,7 @@ export const useDraggableInteractions = (
                 cancelAndCleanup();
             }
         },
-        [cancelAndCleanup, performCommitAndCleanup]
+        [cancelAndCleanup, performCommitAndCleanup, updateCategoryAtReleasePointer]
     );
 
     const handleGlobalPointerCancel = useCallback(
@@ -2620,6 +2655,7 @@ export const useDraggableInteractions = (
                     return;
                 }
 
+                updateCategoryAtReleasePointer({ x: event.clientX, y: event.clientY });
                 performCommitAndCleanup();
                 return;
             }
@@ -2629,7 +2665,7 @@ export const useDraggableInteractions = (
                 cancelAndCleanup();
             }
         },
-        [cancelAndCleanup, keepScrollLocked, performCommitAndCleanup, scheduleTouchCancelCommit]
+        [cancelAndCleanup, keepScrollLocked, performCommitAndCleanup, scheduleTouchCancelCommit, updateCategoryAtReleasePointer]
     );
 
     const handleWindowBlur = useCallback(() => {
@@ -2701,6 +2737,8 @@ export const useDraggableInteractions = (
                 event.stopPropagation();
                 event.stopImmediatePropagation();
                 clearTouchCancelCommit();
+                const touch = event.changedTouches[0];
+                if (touch) updateCategoryAtReleasePointer({ x: touch.clientX, y: touch.clientY });
                 performCommitAndCleanup();
                 return;
             }
@@ -2712,7 +2750,7 @@ export const useDraggableInteractions = (
 
             removeNativeTouchBlockerRef.current();
         };
-    }, [cancelAndCleanup, clearTouchCancelCommit, performCommitAndCleanup]);
+    }, [cancelAndCleanup, clearTouchCancelCommit, performCommitAndCleanup, updateCategoryAtReleasePointer]);
 
     useEffect(() => {
         touchCancelHandlerRef.current = (event: TouchEvent) => {
@@ -2725,6 +2763,8 @@ export const useDraggableInteractions = (
                 keepScrollLocked();
                 if (event.touches.length === 0) {
                     clearTouchCancelCommit();
+                    const touch = event.changedTouches[0];
+                    if (touch) updateCategoryAtReleasePointer({ x: touch.clientX, y: touch.clientY });
                     performCommitAndCleanup();
                     return;
                 }
@@ -2739,7 +2779,7 @@ export const useDraggableInteractions = (
 
             removeNativeTouchBlockerRef.current();
         };
-    }, [cancelAndCleanup, clearTouchCancelCommit, keepScrollLocked, performCommitAndCleanup, scheduleTouchCancelCommit]);
+    }, [cancelAndCleanup, clearTouchCancelCommit, keepScrollLocked, performCommitAndCleanup, scheduleTouchCancelCommit, updateCategoryAtReleasePointer]);
 
     useEffect(() => {
         blurHandlerRef.current = handleWindowBlur;
@@ -2992,9 +3032,12 @@ export const useDraggableInteractions = (
         (event: React.DragEvent<HTMLElement>) => {
             event.preventDefault();
             event.stopPropagation();
+            if (event.clientX !== 0 || event.clientY !== 0) {
+                updateCategoryAtReleasePointer({ x: event.clientX, y: event.clientY });
+            }
             performCommitAndCleanup();
         },
-        [performCommitAndCleanup]
+        [performCommitAndCleanup, updateCategoryAtReleasePointer]
     );
 
     return {

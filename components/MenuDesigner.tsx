@@ -641,17 +641,25 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             if (idx === -1) return prev;
             const newOrder = [...currentOrder];
             const neighborIndex = visibleNeighborId ? currentOrder.indexOf(visibleNeighborId) : -1;
+            let orderChanged = false;
 
             if (neighborIndex !== -1) {
                 [newOrder[idx], newOrder[neighborIndex]] = [newOrder[neighborIndex], newOrder[idx]];
+                orderChanged = neighborIndex !== idx;
             } else if (direction === 'up' || direction === 'left') {
-                if (idx === 0) return prev;
-                [newOrder[idx - 1], newOrder[idx]] = [newOrder[idx], newOrder[idx - 1]];
+                if (idx > 0) {
+                    [newOrder[idx - 1], newOrder[idx]] = [newOrder[idx], newOrder[idx - 1]];
+                    orderChanged = true;
+                }
             } else {
-                if (idx === newOrder.length - 1) return prev;
-                [newOrder[idx + 1], newOrder[idx]] = [newOrder[idx], newOrder[idx + 1]];
+                if (idx < newOrder.length - 1) {
+                    [newOrder[idx + 1], newOrder[idx]] = [newOrder[idx], newOrder[idx + 1]];
+                    orderChanged = true;
+                }
             }
             const nextCategoryPositions = { ...(prev.categoryPositions || {}) };
+            const hadFreePosition = Boolean(nextCategoryPositions[category]);
+            if (!orderChanged && !hadFreePosition) return prev;
             delete nextCategoryPositions[category];
             return {
                 ...prev,

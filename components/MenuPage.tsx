@@ -29,9 +29,8 @@ const PositionedCategoryChunk: React.FC<
         desiredPageY?: number;
         pageIndex: number;
         layoutKey: string;
-        dragging?: boolean;
     }
-> = ({ desiredPageY, pageIndex, layoutKey, dragging = false, style, children, ...props }) => {
+> = ({ desiredPageY, pageIndex, layoutKey, style, children, ...props }) => {
     const elementRef = React.useRef<HTMLDivElement>(null);
     const offsetRef = React.useRef(0);
     const [offset, setOffset] = React.useState(0);
@@ -87,8 +86,7 @@ const PositionedCategoryChunk: React.FC<
             ref={elementRef}
             style={{
                 ...style,
-                marginTop: Number.isFinite(desiredPageY) && !dragging ? `${offset}px` : style?.marginTop,
-                transform: Number.isFinite(desiredPageY) && dragging ? `translateY(${offset}px)` : style?.transform,
+                transform: Number.isFinite(desiredPageY) ? `translateY(${offset}px)` : style?.transform,
             }}
         >
             {children}
@@ -205,7 +203,6 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 desiredPageY={desiredPageY}
                 pageIndex={pageIndex}
                 layoutKey={`${flowIndex}:${categoryColumnWidths.join(',')}`}
-                dragging={isCategoryDragged}
                 data-chunk-id={chunk.chunkId}
                 data-category-chunk={chunk.category}
                 data-drag-scope={handlers.dragScope}

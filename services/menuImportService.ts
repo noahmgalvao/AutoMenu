@@ -342,16 +342,22 @@ const getLargeGapCategoryPositions = (
     const gaps = ordered.slice(1).map((category, index) => {
       const box = getCategoryHeaderBox(category);
       const previousBottom = getCategoryBlockBottom(ordered[index]);
-      return box ? ((box.y - previousBottom) / page.imageDimensions.height) * 1123 : 0;
-    }).filter((gap) => Number.isFinite(gap) && gap >= 0);
-    const typicalGap = gaps.length >= 2 ? (getMedian(gaps) || 16) : 16;
-    const largeGapThreshold = Math.max(72, typicalGap + 48, typicalGap * 1.8);
+      if (!box) return null;
+      const gap = ((box.y - previousBottom) / page.imageDimensions.height) * 1123;
+      return Number.isFinite(gap) && gap >= 0 ? gap : null;
+    });
 
     ordered.slice(1).forEach((category, index) => {
       const box = getCategoryHeaderBox(category);
       if (!box) return;
       const previousBottom = getCategoryBlockBottom(ordered[index]);
       const gap = ((box.y - previousBottom) / page.imageDimensions.height) * 1123;
+      const peerGaps = gaps
+        .filter((peerGap, gapIndex): peerGap is number => gapIndex !== index && peerGap !== null)
+        .sort((left, right) => left - right);
+      const baselineSample = peerGaps.slice(0, Math.max(1, Math.ceil(peerGaps.length / 2)));
+      const typicalGap = baselineSample.length > 0 ? (getMedian(baselineSample) || 16) : 16;
+      const largeGapThreshold = Math.max(72, typicalGap + 48, typicalGap * 1.8);
       if (!Number.isFinite(gap) || gap < largeGapThreshold) return;
       const categoryName = categoryNameByKey.get(normalizeEntityName(category.name)) || category.name;
       positions[categoryName] = {
