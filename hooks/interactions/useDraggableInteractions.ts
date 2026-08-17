@@ -86,11 +86,15 @@ interface FreeTextSwapRebase {
     pointer: { x: number; y: number };
 }
 
-interface CategoryFreeSwapLock {
+interface CategorySwapLock {
     sourceId: string;
     targetId: string;
-    direction: 'before' | 'after';
-    rect: { left: number; right: number; top: number; bottom: number };
+    position: 'before' | 'after';
+}
+
+interface CategorySwapRebase {
+    sourceId: string;
+    pointer: { x: number; y: number };
 }
 
 interface ScrollContainerSnapshot {
@@ -235,8 +239,9 @@ export const useDraggableInteractions = (
     const categoryPageSwitchOriginXRef = useRef<number | null>(null);
     const categoryPointerOffsetYRef = useRef<number | null>(null);
     const categoryDraggedHeightRef = useRef<number | null>(null);
-    const categoryFreeIdsRef = useRef<Set<string>>(new Set());
-    const categoryFreeSwapLockRef = useRef<CategoryFreeSwapLock | null>(null);
+    const categorySwapLockRef = useRef<CategorySwapLock | null>(null);
+    const categorySwapRebaseRef = useRef<CategorySwapRebase | null>(null);
+    const categorySwapRebaseFrameRef = useRef<number | null>(null);
     const isDraggingRef = useRef(false);
     const hasDragMutationRef = useRef(false);
     const listenersAttachedRef = useRef(false);
@@ -572,8 +577,12 @@ export const useDraggableInteractions = (
         categoryPageSwitchOriginXRef.current = null;
         categoryPointerOffsetYRef.current = null;
         categoryDraggedHeightRef.current = null;
-        categoryFreeIdsRef.current = new Set();
-        categoryFreeSwapLockRef.current = null;
+        categorySwapLockRef.current = null;
+        if (categorySwapRebaseFrameRef.current !== null && typeof window !== 'undefined') {
+            window.cancelAnimationFrame(categorySwapRebaseFrameRef.current);
+        }
+        categorySwapRebaseFrameRef.current = null;
+        categorySwapRebaseRef.current = null;
         isDraggingRef.current = false;
         hasDragMutationRef.current = false;
     }, [clearTouchCancelCommit, releasePointerCapture]);
@@ -1020,8 +1029,7 @@ export const useDraggableInteractions = (
             const currentPositions = { ...(style.categoryPositions || {}) };
             setLiveCategoryPositions(currentPositions);
             liveCategoryPositionsRef.current = currentPositions;
-            categoryFreeIdsRef.current = new Set(Object.keys(currentPositions));
-            categoryFreeSwapLockRef.current = null;
+            categorySwapLockRef.current = null;
             categoryActivePageIndexRef.current = currentElement
                 ? Number(currentElement.dataset.dragPageIndex ?? 0)
                 : null;
@@ -1033,16 +1041,52 @@ export const useDraggableInteractions = (
         [getCurrentCategoryAssignments, getRenderedDragElement, initializeLiveCategoryOrder, initializeLiveCategoryPageAssignments, style.categoryPositions]
     );
 
-    const clearCategoryPositions = useCallback((categoryIds: string[]) => {
-        const currentPositions = liveCategoryPositionsRef.current || style.categoryPositions || {};
-        if (!categoryIds.some((categoryId) => currentPositions[categoryId])) return;
+    const rebaseCategoryAfterSwap = useCallback((rebase: CategorySwapRebase) => {
+        if (typeof window === 'undefined') return;
+        if (categorySwapRebaseFrameRef.current !== null) {
+            window.cancelAnimationFrame(categorySwapRebaseFrameRef.current);
+        }
 
-        const nextPositions = { ...currentPositions };
-        categoryIds.forEach((categoryId) => delete nextPositions[categoryId]);
-        liveCategoryPositionsRef.current = nextPositions;
-        setLiveCategoryPositions(nextPositions);
-        hasDragMutationRef.current = true;
-    }, [style.categoryPositions]);
+        categorySwapRebaseRef.current = rebase;
+        let attempts = 0;
+        const applyRebase = () => {
+            const current = categorySwapRebaseRef.current;
+            if (!current) {
+                categorySwapRebaseFrameRef.current = null;
+                return;
+            }
+
+            const sourceElement = getRenderedDragElement('category', current.sourceId);
+            const sourceRect = sourceElement?.getBoundingClientRect();
+            const pageElement = sourceElement?.closest<HTMLElement>(
+                '[data-drag-page-container="category"][data-drag-page-index]'
+            );
+            const pageRect = pageElement?.getBoundingClientRect();
+            if (!sourceElement || !sourceRect || !pageRect) {
+                attempts += 1;
+                if (attempts < 3) {
+                    categorySwapRebaseFrameRef.current = window.requestAnimationFrame(applyRebase);
+                } else {
+                    categorySwapRebaseFrameRef.current = null;
+                    categorySwapRebaseRef.current = null;
+                }
+                return;
+            }
+
+            const scale = Math.max(0.001, pageRect.width / A4_WIDTH_PX);
+            categoryPointerOffsetYRef.current = (current.pointer.y - sourceRect.top) / scale;
+            categoryDraggedHeightRef.current = sourceRect.height / scale;
+            categoryActivePageIndexRef.current = Number(sourceElement.dataset.dragPageIndex ?? 0);
+            categoryActiveLaneKeyRef.current = getCategoryLaneKey(
+                sourceElement.dataset.dragPageIndex,
+                sourceElement.dataset.dragColumnIndex,
+            );
+            categorySwapRebaseFrameRef.current = null;
+            categorySwapRebaseRef.current = null;
+        };
+
+        categorySwapRebaseFrameRef.current = window.requestAnimationFrame(applyRebase);
+    }, [getRenderedDragElement]);
 
     const updateDraggedCategoryPosition = useCallback((
         categoryId: string,
@@ -1286,20 +1330,6 @@ export const useDraggableInteractions = (
             const currentDragItem = draggedItemRef.current;
             if (!currentDragItem || currentDragItem.type !== 'category') return;
             const commitImmediately = options.commitImmediately ?? true;
-            const freeSwapLock = categoryFreeSwapLockRef.current;
-            if (freeSwapLock?.sourceId === currentDragItem.id) {
-                const releaseInset = 14;
-                const remainsInsideCollision = (
-                    pointer.x >= freeSwapLock.rect.left - releaseInset
-                    && pointer.x <= freeSwapLock.rect.right + releaseInset
-                    && pointer.y >= freeSwapLock.rect.top - releaseInset
-                    && pointer.y <= freeSwapLock.rect.bottom + releaseInset
-                );
-                if (remainsInsideCollision) {
-                    return;
-                }
-                categoryFreeSwapLockRef.current = null;
-            }
 
             if (dragSourceContextRef.current === 'product-designer') {
                 const startPointer = dragStartPointerRef.current;
@@ -1316,6 +1346,23 @@ export const useDraggableInteractions = (
             const currentElement = getRenderedDragElement('category', currentDragItem.id);
             const currentAssignment = liveCategoryPageAssignmentsRef.current?.[currentDragItem.id];
             if (!currentElement && !currentAssignment) return;
+
+            const activeSwapLock = categorySwapLockRef.current;
+            if (activeSwapLock?.sourceId === currentDragItem.id && currentElement) {
+                const lockedTargetElement = getRenderedDragElement('category', activeSwapLock.targetId);
+                const sourceRect = currentElement.getBoundingClientRect();
+                const targetRect = lockedTargetElement?.getBoundingClientRect();
+                const containersAreSeparated = Boolean(
+                    targetRect
+                    && (
+                        sourceRect.right < targetRect.left - 0.5
+                        || sourceRect.left > targetRect.right + 0.5
+                        || sourceRect.bottom < targetRect.top - 0.5
+                        || sourceRect.top > targetRect.bottom + 0.5
+                    )
+                );
+                if (containersAreSeparated) categorySwapLockRef.current = null;
+            }
 
             const currentPageIndex =
                 categoryActivePageIndexRef.current ??
@@ -1365,12 +1412,27 @@ export const useDraggableInteractions = (
             const laneTargets = orderedTargets
                 .filter((target) => target.laneKey === activeLaneKey)
                 .sort((left, right) => left.rect.top - right.rect.top);
-            const categoryDropTarget = laneTargets.find((target) => (
+            const pointerTarget = laneTargets.find((target) => (
                 pointer.x >= target.rect.left
                 && pointer.x <= target.rect.right
                 && pointer.y >= target.rect.top
                 && pointer.y <= target.rect.bottom
             ));
+            const currentSwapLock = categorySwapLockRef.current;
+            if (
+                pointerTarget
+                && currentSwapLock?.sourceId === currentDragItem.id
+                && currentSwapLock.targetId !== pointerTarget.id
+            ) {
+                categorySwapLockRef.current = null;
+            }
+            const categoryDropTarget = (
+                pointerTarget
+                && !(
+                    categorySwapLockRef.current?.sourceId === currentDragItem.id
+                    && categorySwapLockRef.current.targetId === pointerTarget.id
+                )
+            ) ? pointerTarget : null;
 
             if (!categoryDropTarget) {
                 const positionUpdated = updateDraggedCategoryPosition(
@@ -1384,195 +1446,83 @@ export const useDraggableInteractions = (
                 return;
             }
 
+            const targetCenterY = categoryDropTarget.rect.top + (categoryDropTarget.rect.height / 2);
+            const targetPosition: 'before' | 'after' = pointer.y < targetCenterY ? 'before' : 'after';
+            const targetIndex = orderWithoutDragged.indexOf(categoryDropTarget.id);
+            if (targetIndex === -1) return;
+            const desiredInsertionIndex = targetIndex + (targetPosition === 'after' ? 1 : 0);
+            const newOrder = moveItemToInsertionIndex(currentOrder, currentDragItem.id, desiredInsertionIndex);
+            if (areOrdersEqual(newOrder, currentOrder)) return;
+
             const currentPositions = liveCategoryPositionsRef.current || style.categoryPositions || {};
             const sourceCollisionPosition = currentPositions[currentDragItem.id] || null;
-            const targetPosition = currentPositions[categoryDropTarget.id] || null;
-            const isFreePositionCollision = (
-                categoryFreeIdsRef.current.has(currentDragItem.id)
-                || categoryFreeIdsRef.current.has(categoryDropTarget.id)
-            );
-            const finishOrderChange = (newOrder: string[]) => {
-                hasDragMutationRef.current = true;
-                setLiveCategoryOrder(newOrder);
-                liveCategoryOrderRef.current = newOrder;
-                if (!commitImmediately) return;
-
-                onCommitCategoryOrder?.(newOrder);
-
-                if (liveCategoryPageAssignmentsRef.current && onStyleUpdate) {
-                    const nextPageBreaks = newOrder.reduce<string[]>((breaks, category, index, order) => {
-                        if (index === 0) return breaks;
-
-                        const previousCategory = order[index - 1];
-                        const previousPage = liveCategoryPageAssignmentsRef.current?.[previousCategory]?.pageIndex ?? 0;
-                        const currentPage = liveCategoryPageAssignmentsRef.current?.[category]?.pageIndex ?? previousPage;
-
-                        if (currentPage > previousPage) {
-                            breaks.push(category);
-                        }
-
-                        return breaks;
-                    }, []);
-
-                    onStyleUpdate((prev) => ({
-                        ...prev,
-                        pageBreaks: nextPageBreaks,
-                        name: 'Custom',
-                    }));
-                }
+            const targetFreePosition = currentPositions[categoryDropTarget.id] || null;
+            const sourceCollisionAssignment = currentPlacement || {
+                pageIndex: activePageIndex,
+                columnIndex: activeColumnIndex,
+            };
+            const targetAssignment = currentAssignments[categoryDropTarget.id] || {
+                pageIndex: Number(categoryDropTarget.element.dataset.dragPageIndex ?? activePageIndex),
+                columnIndex: Number(categoryDropTarget.element.dataset.dragColumnIndex ?? activeColumnIndex),
+            };
+            const exchangesFreeSlots = Boolean(sourceCollisionPosition || targetFreePosition);
+            const nextPositions = { ...currentPositions };
+            if (exchangesFreeSlots) {
+                if (targetFreePosition) nextPositions[currentDragItem.id] = { ...targetFreePosition };
+                else delete nextPositions[currentDragItem.id];
+                if (sourceCollisionPosition) nextPositions[categoryDropTarget.id] = { ...sourceCollisionPosition };
+                else delete nextPositions[categoryDropTarget.id];
+            }
+            const nextAssignments = {
+                ...currentAssignments,
+                [currentDragItem.id]: { ...targetAssignment },
+                ...(exchangesFreeSlots
+                    ? { [categoryDropTarget.id]: { ...sourceCollisionAssignment } }
+                    : {}),
             };
 
-            if (isFreePositionCollision) {
-                const sourceIndex = currentOrder.indexOf(currentDragItem.id);
-                const targetIndex = currentOrder.indexOf(categoryDropTarget.id);
-                if (sourceIndex === -1 || targetIndex === -1 || sourceIndex === targetIndex) return;
-
-                const sourceCollisionAssignment = currentPlacement || {
-                    pageIndex: activePageIndex,
-                    columnIndex: activeColumnIndex,
-                };
-                const targetAssignment = currentAssignments[categoryDropTarget.id] || {
-                    pageIndex: Number(categoryDropTarget.element.dataset.dragPageIndex ?? activePageIndex),
-                    columnIndex: Number(categoryDropTarget.element.dataset.dragColumnIndex ?? activeColumnIndex),
-                };
-                const nextPositions = { ...currentPositions };
-                if (targetPosition) {
-                    nextPositions[currentDragItem.id] = { ...targetPosition };
-                } else {
-                    delete nextPositions[currentDragItem.id];
+            categorySwapLockRef.current = {
+                sourceId: currentDragItem.id,
+                targetId: categoryDropTarget.id,
+                position: targetPosition,
+            };
+            flushSync(() => {
+                if (exchangesFreeSlots) {
+                    liveCategoryPositionsRef.current = nextPositions;
+                    setLiveCategoryPositions(nextPositions);
                 }
-                if (sourceCollisionPosition) {
-                    nextPositions[categoryDropTarget.id] = { ...sourceCollisionPosition };
-                } else {
-                    delete nextPositions[categoryDropTarget.id];
-                }
-                liveCategoryPositionsRef.current = nextPositions;
-                setLiveCategoryPositions(nextPositions);
-
-                const nextAssignments = {
-                    ...currentAssignments,
-                    [currentDragItem.id]: { ...targetAssignment },
-                    [categoryDropTarget.id]: { ...sourceCollisionAssignment },
-                };
                 liveCategoryPageAssignmentsRef.current = nextAssignments;
                 setLiveCategoryPageAssignments(nextAssignments);
+                hasDragMutationRef.current = true;
+                liveCategoryOrderRef.current = newOrder;
+                setLiveCategoryOrder(newOrder);
+            });
 
-                const nextFreeIds = new Set(categoryFreeIdsRef.current);
-                if (nextPositions[currentDragItem.id]) nextFreeIds.add(currentDragItem.id);
-                else nextFreeIds.delete(currentDragItem.id);
-                if (nextPositions[categoryDropTarget.id]) nextFreeIds.add(categoryDropTarget.id);
-                else nextFreeIds.delete(categoryDropTarget.id);
-                categoryFreeIdsRef.current = nextFreeIds;
+            categoryActivePageIndexRef.current = targetAssignment.pageIndex;
+            categoryActiveLaneKeyRef.current = getCategoryLaneKey(
+                String(targetAssignment.pageIndex),
+                String(targetAssignment.columnIndex),
+            );
+            rebaseCategoryAfterSwap({
+                sourceId: currentDragItem.id,
+                pointer,
+            });
 
-                const targetCenterY = categoryDropTarget.rect.top + (categoryDropTarget.rect.height / 2);
-                const draggedRect = currentElement?.getBoundingClientRect();
-                const draggedCenterY = draggedRect
-                    ? draggedRect.top + (draggedRect.height / 2)
-                    : pointer.y;
-                categoryFreeSwapLockRef.current = {
-                    sourceId: currentDragItem.id,
-                    targetId: categoryDropTarget.id,
-                    direction: draggedCenterY <= targetCenterY ? 'before' : 'after',
-                    rect: {
-                        left: categoryDropTarget.rect.left,
-                        right: categoryDropTarget.rect.right,
-                        top: categoryDropTarget.rect.top,
-                        bottom: categoryDropTarget.rect.bottom,
-                    },
-                };
-                categoryActivePageIndexRef.current = targetAssignment.pageIndex;
-                categoryActiveLaneKeyRef.current = getCategoryLaneKey(
-                    String(targetAssignment.pageIndex),
-                    String(targetAssignment.columnIndex),
-                );
-
-                const swappedOrder = [...currentOrder];
-                [swappedOrder[sourceIndex], swappedOrder[targetIndex]] = [
-                    swappedOrder[targetIndex],
-                    swappedOrder[sourceIndex],
-                ];
-                finishOrderChange(swappedOrder);
-                return;
+            if (!commitImmediately) return;
+            onCommitCategoryOrder?.(newOrder);
+            if (liveCategoryPageAssignmentsRef.current && onStyleUpdate) {
+                const nextPageBreaks = newOrder.reduce<string[]>((breaks, category, index, order) => {
+                    if (index === 0) return breaks;
+                    const previousCategory = order[index - 1];
+                    const previousPage = liveCategoryPageAssignmentsRef.current?.[previousCategory]?.pageIndex ?? 0;
+                    const currentPage = liveCategoryPageAssignmentsRef.current?.[category]?.pageIndex ?? previousPage;
+                    if (currentPage > previousPage) breaks.push(category);
+                    return breaks;
+                }, []);
+                onStyleUpdate((prev) => ({ ...prev, pageBreaks: nextPageBreaks, name: 'Custom' }));
             }
-
-            updateDraggedAssignment();
-            const swapParticipants = [currentDragItem.id, categoryDropTarget.id];
-            let desiredInsertionIndex = orderWithoutDragged.length;
-            let insideDeadZone = false;
-
-            if (laneTargets.length === 0) {
-                const lanes = getCategoryLanes();
-                const activeLaneIndex = lanes.findIndex((lane) => lane.key === activeLaneKey);
-                const getLaneIndex = (target: CategoryTarget) => lanes.findIndex((lane) => lane.key === target.laneKey);
-                const nextTarget = activeLaneIndex === -1
-                    ? null
-                    : orderedTargets.find((target) => getLaneIndex(target) > activeLaneIndex);
-                const previousTarget = activeLaneIndex === -1
-                    ? null
-                    : [...orderedTargets].reverse().find((target) => {
-                        const laneIndex = getLaneIndex(target);
-                        return laneIndex !== -1 && laneIndex < activeLaneIndex;
-                    });
-
-                if (nextTarget) {
-                    const nextIndex = orderWithoutDragged.indexOf(nextTarget.id);
-                    desiredInsertionIndex = nextIndex === -1 ? orderWithoutDragged.length : nextIndex;
-                } else if (previousTarget) {
-                    const previousIndex = orderWithoutDragged.indexOf(previousTarget.id);
-                    desiredInsertionIndex = previousIndex === -1 ? orderWithoutDragged.length : previousIndex + 1;
-                }
-            } else {
-                const isProductDesignerDrag = dragSourceContextRef.current === 'product-designer';
-
-                for (const target of laneTargets) {
-                    const targetIndex = orderWithoutDragged.indexOf(target.id);
-                    if (targetIndex === -1) continue;
-
-                    const centerY = target.rect.top + (target.rect.height / 2);
-                    const buffer = isProductDesignerDrag
-                        ? Math.min(72, Math.max(24, target.rect.height * 0.32))
-                        : Math.min(28, Math.max(12, target.rect.height * 0.18));
-
-                    if (pointer.y < centerY - buffer) {
-                        desiredInsertionIndex = targetIndex;
-                        break;
-                    }
-
-                    if (Math.abs(pointer.y - centerY) <= buffer) {
-                        const draggedIndex = currentOrder.indexOf(currentDragItem.id);
-                        const targetOriginalIndex = currentOrder.indexOf(target.id);
-                        const isAlreadyAdjacent = draggedIndex !== -1
-                            && targetOriginalIndex !== -1
-                            && Math.abs(draggedIndex - targetOriginalIndex) === 1;
-
-                        if (isAlreadyAdjacent) {
-                            insideDeadZone = true;
-                            break;
-                        }
-
-                        desiredInsertionIndex = pointer.y >= centerY ? targetIndex + 1 : targetIndex;
-                        break;
-                    }
-
-                    desiredInsertionIndex = targetIndex + 1;
-                }
-            }
-
-            if (insideDeadZone) {
-                clearCategoryPositions(swapParticipants);
-                return;
-            }
-
-            const newOrder = moveItemToInsertionIndex(currentOrder, currentDragItem.id, desiredInsertionIndex);
-            if (areOrdersEqual(newOrder, currentOrder)) {
-                clearCategoryPositions(swapParticipants);
-                return;
-            }
-
-            clearCategoryPositions(swapParticipants);
-            finishOrderChange(newOrder);
         },
-        [clearCategoryPositions, getCategoryLanes, getOrderedCategoryTargets, getRenderedDragElement, onCommitCategoryOrder, onStyleUpdate, resolveCategoryLaneKey, resolveCategoryPageIndex, style.categoryPositions, updateDraggedCategoryPosition]
+        [getOrderedCategoryTargets, getRenderedDragElement, onCommitCategoryOrder, onStyleUpdate, rebaseCategoryAfterSwap, resolveCategoryLaneKey, resolveCategoryPageIndex, style.categoryPositions, updateDraggedCategoryPosition]
     );
 
     const syncFreeTextCategoryOrderToLane = useCallback(
@@ -2305,6 +2255,13 @@ export const useDraggableInteractions = (
                 return;
             }
 
+            const categorySwapRebase = categorySwapRebaseRef.current;
+            if (currentDragItem.type === 'category' && categorySwapRebase?.sourceId === currentDragItem.id) {
+                categorySwapRebase.pointer = pointer;
+                lastPointerRef.current = pointer;
+                return;
+            }
+
             const swapRebase = freeTextSwapRebaseRef.current;
             if (swapRebase?.sourceId === currentDragItem.id) {
                 swapRebase.pointer = pointer;
@@ -2748,6 +2705,13 @@ export const useDraggableInteractions = (
 
     const updateCategoryAtReleasePointer = useCallback((pointer: { x: number; y: number }) => {
         if (draggedItemRef.current?.type !== 'category') return;
+
+        const pendingRebase = categorySwapRebaseRef.current;
+        if (pendingRebase?.sourceId === draggedItemRef.current.id) {
+            pendingRebase.pointer = pointer;
+            lastPointerRef.current = pointer;
+            return;
+        }
 
         reorderCategoryByPointer(pointer, { commitImmediately: false });
         lastPointerRef.current = pointer;

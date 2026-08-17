@@ -27,18 +27,24 @@ const getCategoryMoveDirection = (direction: FlowDirection) => {
 const PositionedCategoryChunk: React.FC<
     React.HTMLAttributes<HTMLDivElement> & {
         desiredPageY?: number;
+        flowOffsetBefore?: number;
+        detachedForDrag?: boolean;
         pageIndex: number;
         layoutKey: string;
     }
-> = ({ desiredPageY, pageIndex, layoutKey, style, children, ...props }) => {
+> = ({ desiredPageY, flowOffsetBefore = 0, detachedForDrag = false, pageIndex, layoutKey, style, children, ...props }) => {
     const elementRef = React.useRef<HTMLDivElement>(null);
-    const [absoluteTop, setAbsoluteTop] = React.useState(0);
+    const marginTopRef = React.useRef(Math.max(0, flowOffsetBefore));
+    const [flowMarginTop, setFlowMarginTop] = React.useState(Math.max(0, flowOffsetBefore));
+    const [detachedTop, setDetachedTop] = React.useState(0);
+    const [placeholderHeight, setPlaceholderHeight] = React.useState(0);
 
     React.useLayoutEffect(() => {
         const element = elementRef.current;
         if (!element) return;
         if (!Number.isFinite(desiredPageY)) {
-            setAbsoluteTop(0);
+            marginTopRef.current = 0;
+            setFlowMarginTop(0);
             return;
         }
 
@@ -50,9 +56,23 @@ const PositionedCategoryChunk: React.FC<
             animationFrame = null;
             const pageRect = page.getBoundingClientRect();
             const columnRect = column.getBoundingClientRect();
+            const elementRect = element.getBoundingClientRect();
             const scale = Math.max(0.001, pageRect.width / A4_WIDTH_PX);
-            const nextTop = ((pageRect.top + (Number(desiredPageY) * scale)) - columnRect.top) / scale;
-            setAbsoluteTop((current) => Math.abs(nextTop - current) < 0.25 ? current : nextTop);
+            const nextPlaceholderHeight = elementRect.height / scale;
+            setPlaceholderHeight((current) => (
+                Math.abs(nextPlaceholderHeight - current) < 0.25 ? current : nextPlaceholderHeight
+            ));
+            if (detachedForDrag) {
+                const nextDetachedTop = ((pageRect.top + (Number(desiredPageY) * scale)) - columnRect.top) / scale;
+                setDetachedTop((current) => Math.abs(nextDetachedTop - current) < 0.25 ? current : nextDetachedTop);
+                return;
+            }
+            const naturalTop = elementRect.top - (marginTopRef.current * scale);
+            const requestedTop = pageRect.top + (Number(desiredPageY) * scale);
+            const nextMargin = Math.max(0, (requestedTop - naturalTop) / scale);
+            if (Math.abs(nextMargin - marginTopRef.current) < 0.25) return;
+            marginTopRef.current = nextMargin;
+            setFlowMarginTop(nextMargin);
         };
         const scheduleUpdate = () => {
             if (animationFrame !== null) cancelAnimationFrame(animationFrame);
@@ -63,35 +83,53 @@ const PositionedCategoryChunk: React.FC<
         const observer = new ResizeObserver(scheduleUpdate);
         observer.observe(page);
         observer.observe(column);
+        observer.observe(element);
         window.addEventListener('resize', scheduleUpdate);
         return () => {
             observer.disconnect();
             window.removeEventListener('resize', scheduleUpdate);
             if (animationFrame !== null) cancelAnimationFrame(animationFrame);
         };
-    }, [desiredPageY, layoutKey, pageIndex]);
+    }, [desiredPageY, detachedForDrag, flowOffsetBefore, layoutKey, pageIndex]);
+
+    const isDetached = detachedForDrag && Number.isFinite(desiredPageY);
 
     return (
-        <div
-            {...props}
-            ref={elementRef}
-            data-free-positioned={Number.isFinite(desiredPageY) ? 'true' : undefined}
-            style={{
-                ...style,
-                ...(Number.isFinite(desiredPageY)
-                    ? {
-                        position: 'absolute',
-                        top: `${absoluteTop}px`,
-                        left: 0,
-                        right: 0,
-                        width: '100%',
-                        transform: style?.transform,
-                    }
-                    : {}),
-            }}
-        >
-            {children}
-        </div>
+        <>
+            {isDetached && (
+                <div
+                    aria-hidden="true"
+                    data-category-drag-placeholder="true"
+                    className="pointer-events-none invisible"
+                    style={{
+                        height: `${placeholderHeight}px`,
+                        marginTop: `${flowMarginTop}px`,
+                    }}
+                />
+            )}
+            <div
+                {...props}
+                ref={elementRef}
+                data-free-positioned={Number.isFinite(desiredPageY) ? 'true' : undefined}
+                style={{
+                    ...style,
+                    ...(Number.isFinite(desiredPageY)
+                        ? isDetached
+                            ? {
+                                position: 'absolute',
+                                top: `${detachedTop}px`,
+                                left: 0,
+                                right: 0,
+                                width: '100%',
+                                zIndex: 40,
+                            }
+                            : { marginTop: `${flowMarginTop}px` }
+                        : {}),
+                }}
+            >
+                {children}
+            </div>
+        </>
     );
 };
 
@@ -203,6 +241,8 @@ export const MenuPage: React.FC<MenuPageProps> = ({
             <PositionedCategoryChunk
                 key={chunk.chunkId}
                 desiredPageY={desiredPageY}
+                flowOffsetBefore={chunk.flowOffsetBefore}
+                detachedForDrag={isCategoryDragged}
                 pageIndex={pageIndex}
                 layoutKey={`${flowIndex}:${categoryColumnWidths.join(',')}`}
                 data-chunk-id={chunk.chunkId}
