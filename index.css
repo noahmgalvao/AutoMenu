@@ -96,3 +96,11 @@ body {
   animation: shake 0.82s cubic-bezier(.36,.07,.19,.97) both;
   box-shadow: 0 0 0 2px rgb(239 68 68 / 0.28), 0 0 12px rgb(239 68 68 / 0.45) !important;
 }
+
+.automenu-tip-font-highlight {
+  outline: 3px solid rgb(245 158 11) !important;
+  outline-offset: 3px;
+  border-radius: 4px;
+  background-color: rgb(254 243 199 / 0.7) !important;
+  box-shadow: 0 0 0 6px rgb(245 158 11 / 0.16) !important;
+}

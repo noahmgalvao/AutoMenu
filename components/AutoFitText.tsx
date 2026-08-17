@@ -67,6 +67,8 @@ export const AutoFitText: React.FC<AutoFitTextProps> = ({
     'data-word-fit': 'true',
     'data-word-fit-scope': fitScope,
     'data-word-fit-base-size': baseFontSize,
+    'data-word-fit-size': fit.fontSize,
+    'data-word-fit-reduced': fit.fontSize < baseFontSize,
     'data-word-fit-minimum': minimumFontSize,
     'data-word-fit-allow-break': allowSameWordBreak,
     'data-word-fit-width-mode': widthMode,

@@ -129,6 +129,26 @@ export const measureWordFitElement = (
   readElementOptions(element),
 );
 
+export const getLargestSafeFontSizeForElements = (
+  elements: HTMLElement[],
+  maximumFontSize: number,
+  minimumFontSize: number,
+) => {
+  const maximum = Math.max(minimumFontSize, Math.floor(Number(maximumFontSize) || minimumFontSize));
+  const minimum = Math.max(1, Math.ceil(Number(minimumFontSize) || 10));
+
+  for (let fontSize = maximum; fontSize >= minimum; fontSize -= 1) {
+    const allFit = elements.every((element) => {
+      if (element.dataset.wordFitAllowBreak === 'true') return true;
+      const result = measureWordFitElement(element, { baseFontSize: fontSize });
+      return result.fits && result.fontSize >= fontSize;
+    });
+    if (allFit) return fontSize;
+  }
+
+  return minimum;
+};
+
 const getCanvasWordFitElements = () => Array.from(
   document.querySelectorAll<HTMLElement>('[data-automenu-editor-canvas="true"] [data-word-fit="true"]'),
 ).filter((element) => element.isConnected && element.getClientRects().length > 0);

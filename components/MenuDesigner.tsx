@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Product, MenuStyle, SortOption, ElementStyle, AddedImage } from '../types';
 import { PRESET_TEMPLATES } from '../constants';
 import { MenuPreview } from './MenuPreview';
-import { Undo, Redo } from 'lucide-react';
+import { Undo, Redo, HelpCircle, Check, X } from 'lucide-react';
 import { ZoomControls } from './MenuDesigner/ZoomControls';
 import { MenuSidebar } from './MenuDesigner/MenuSidebar';
 import { PrintCanvasModal, type PrintCanvasOptions, type PrintPreviewPage } from './MenuDesigner/PrintCanvasModal';
@@ -15,7 +15,11 @@ import {
     resolvePdfPageIndexes,
     type PdfDebugEntry,
 } from '../utils/pdfExport';
-import { canIncreaseCanvasFontSize } from '../utils/textFit';
+import {
+    canIncreaseCanvasFontSize,
+    getLargestSafeFontSizeForElements,
+    type WordFitScope,
+} from '../utils/textFit';
 import { roundPrice } from '../utils/price';
 
 interface MenuDesignerProps {
@@ -62,6 +66,22 @@ const DEFAULT_PRINT_OPTIONS: PrintCanvasOptions = {
     includeCanvasShadow: false,
 };
 
+interface FontTip {
+    scope: WordFitScope;
+    count: number;
+    safeFontSize: number;
+}
+
+const WORD_FIT_SCOPE_LABELS: Record<WordFitScope, string> = {
+    menuTitle: 'títulos principais',
+    menuSubtitle: 'subtítulos',
+    category: 'categorias',
+    productName: 'nomes dos produtos',
+    productPrice: 'preços',
+    productDescription: 'descrições dos produtos',
+    freeText: 'textos livres',
+};
+
 const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, templates = [], sortOption, setSortOption, undo, redo, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, printRequestId = 0, onClose, onScrollActivity, workspaceId, currentUserId, splitCategoryAcrossPages = false, productsCanChangeCategory = false }) => {
     const [scale, setScale] = useState(DEFAULT_PREVIEW_ZOOM);
     const [isDesktopViewport, setIsDesktopViewport] = useState(() => window.matchMedia('(min-width: 768px)').matches);
@@ -72,6 +92,10 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const [printPreviewPages, setPrintPreviewPages] = useState<PrintPreviewPage[]>([]);
     const [isPrintPreviewLoading, setIsPrintPreviewLoading] = useState(false);
     const [printPreviewError, setPrintPreviewError] = useState<string | null>(null);
+    const [tipsOpen, setTipsOpen] = useState(false);
+    const [fontTips, setFontTips] = useState<FontTip[]>([]);
+    const [dismissedTips, setDismissedTips] = useState<Set<string>>(() => new Set());
+    const [hoveredFontScope, setHoveredFontScope] = useState<WordFitScope | null>(null);
 
     // Zoom Indicator State
     const [showZoomInfo, setShowZoomInfo] = useState(false);
@@ -102,6 +126,12 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const initialPinchScaleRef = useRef<number | null>(null);
 
     const displayProducts = products;
+    const realCategoryIds = new Set(products.filter(product => !product.isFreeText).map(product => product.category));
+    const positionedCategoryIds = Object.keys(style.categoryPositions || {}).filter(category => realCategoryIds.has(category));
+    const positionedCategorySignature = positionedCategoryIds.slice().sort().join('\u0000');
+    const visibleFontTips = fontTips.filter(tip => !dismissedTips.has(`font:${tip.scope}`));
+    const showPositionedCategoryTip = positionedCategoryIds.length > 0 && !dismissedTips.has('free-categories');
+    const hasVisibleTips = visibleFontTips.length > 0 || showPositionedCategoryTip;
 
     useEffect(() => {
         const mediaQuery = window.matchMedia('(min-width: 768px)');
@@ -110,6 +140,94 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         mediaQuery.addEventListener('change', syncViewport);
         return () => mediaQuery.removeEventListener('change', syncViewport);
     }, []);
+
+    useEffect(() => {
+        const root = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas="true"]');
+        if (!root) return;
+
+        let frameId: number | null = null;
+        const scanFontTips = () => {
+            frameId = null;
+            const elements = Array.from(root.querySelectorAll<HTMLElement>('[data-word-fit="true"]'))
+                .filter(element => element.isConnected && element.getClientRects().length > 0);
+            const reducedElements = elements.filter(element => element.dataset.wordFitReduced === 'true');
+            const scopes = Array.from(new Set(
+                reducedElements
+                    .map(element => element.dataset.wordFitScope as WordFitScope | undefined)
+                    .filter((scope): scope is WordFitScope => Boolean(scope && WORD_FIT_SCOPE_LABELS[scope]))
+            ));
+            const nextTips = scopes.map(scope => {
+                const scopeElements = elements.filter(element => element.dataset.wordFitScope === scope);
+                const maximumFontSize = Math.max(
+                    ...scopeElements.map(element => Number(element.dataset.wordFitBaseSize) || 10),
+                );
+                const minimumFontSize = Math.max(
+                    ...scopeElements.map(element => Number(element.dataset.wordFitMinimum) || 10),
+                );
+                return {
+                    scope,
+                    count: reducedElements.filter(element => element.dataset.wordFitScope === scope).length,
+                    safeFontSize: getLargestSafeFontSizeForElements(scopeElements, maximumFontSize, minimumFontSize),
+                };
+            });
+
+            setFontTips(current => {
+                const unchanged = current.length === nextTips.length && current.every((tip, index) => (
+                    tip.scope === nextTips[index]?.scope
+                    && tip.count === nextTips[index]?.count
+                    && tip.safeFontSize === nextTips[index]?.safeFontSize
+                ));
+                return unchanged ? current : nextTips;
+            });
+        };
+        const scheduleScan = () => {
+            if (frameId !== null) window.cancelAnimationFrame(frameId);
+            frameId = window.requestAnimationFrame(scanFontTips);
+        };
+        const observer = new MutationObserver(scheduleScan);
+        observer.observe(root, {
+            subtree: true,
+            childList: true,
+            characterData: true,
+            attributes: true,
+            attributeFilter: ['data-word-fit-reduced', 'data-word-fit-size', 'data-word-fit-base-size'],
+        });
+        scheduleScan();
+
+        return () => {
+            observer.disconnect();
+            if (frameId !== null) window.cancelAnimationFrame(frameId);
+        };
+    }, [products, renderScale, style]);
+
+    useEffect(() => {
+        const activeKeys = new Set(fontTips.map(tip => `font:${tip.scope}`));
+        if (positionedCategoryIds.length > 0) activeKeys.add('free-categories');
+        setDismissedTips(current => {
+            const next = new Set(Array.from(current).filter(key => activeKeys.has(key)));
+            return next.size === current.size ? current : next;
+        });
+    }, [fontTips, positionedCategorySignature]);
+
+    useEffect(() => {
+        const root = containerRef.current;
+        const highlighted = root
+            ? Array.from(root.querySelectorAll<HTMLElement>('.automenu-tip-font-highlight'))
+            : [];
+        highlighted.forEach(element => element.classList.remove('automenu-tip-font-highlight'));
+        if (!hoveredFontScope || !root) return;
+
+        const affected = Array.from(root.querySelectorAll<HTMLElement>('[data-word-fit-reduced="true"]'))
+            .filter(element => element.dataset.wordFitScope === hoveredFontScope);
+        affected.forEach(element => element.classList.add('automenu-tip-font-highlight'));
+        return () => affected.forEach(element => element.classList.remove('automenu-tip-font-highlight'));
+    }, [hoveredFontScope, fontTips]);
+
+    useEffect(() => {
+        if (hasVisibleTips) return;
+        setTipsOpen(false);
+        setHoveredFontScope(null);
+    }, [hasVisibleTips]);
 
     const updateZoom = (delta: number) => {
         const newScale = Math.min(2.5, Math.max(0.3, scale + delta));
@@ -908,6 +1026,70 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         });
     };
 
+    const dismissTip = (key: string) => {
+        setDismissedTips(current => new Set(current).add(key));
+        if (key.startsWith('font:')) setHoveredFontScope(null);
+    };
+
+    const applyFontSuggestion = (scope: WordFitScope) => {
+        const root = containerRef.current;
+        if (!root) return;
+        const elements = Array.from(root.querySelectorAll<HTMLElement>('[data-word-fit="true"]'))
+            .filter(element => (
+                element.dataset.wordFitScope === scope
+                && element.isConnected
+                && element.getClientRects().length > 0
+            ));
+        if (elements.length === 0) return;
+
+        const maximumFontSize = Math.max(...elements.map(element => Number(element.dataset.wordFitBaseSize) || 10));
+        const minimumFontSize = Math.max(...elements.map(element => Number(element.dataset.wordFitMinimum) || 10));
+        const safeFontSize = getLargestSafeFontSizeForElements(elements, maximumFontSize, minimumFontSize);
+
+        if (scope === 'freeText') {
+            setProducts?.(current => current.map(product => (
+                product.isFreeText
+                    ? { ...product, styles: { ...(product.styles || {}), fontSize: safeFontSize } }
+                    : product
+            )));
+        } else {
+            const elementType = scope as keyof MenuStyle['elementStyles'];
+            setStyle(current => ({
+                ...current,
+                elementStyles: {
+                    ...current.elementStyles,
+                    [elementType]: {
+                        ...(current.elementStyles[elementType] || {}),
+                        fontSize: safeFontSize,
+                    },
+                },
+                pageBreaks: [],
+                name: 'Custom',
+            }));
+        }
+
+        setFontTips(current => current.filter(tip => tip.scope !== scope));
+        setHoveredFontScope(null);
+    };
+
+    const applyPositionedCategorySuggestion = () => {
+        const categoriesToNormalize = new Set(positionedCategoryIds);
+        setStyle(current => {
+            const nextPositions = { ...(current.categoryPositions || {}) };
+            categoriesToNormalize.forEach(category => delete nextPositions[category]);
+            return {
+                ...current,
+                categoryPositions: nextPositions,
+                name: 'Custom',
+            };
+        });
+    };
+
+    const applyAllSuggestions = () => {
+        visibleFontTips.forEach(tip => applyFontSuggestion(tip.scope));
+        if (showPositionedCategoryTip) applyPositionedCategorySuggestion();
+    };
+
     return (
         <div className="flex flex-row-reverse h-full bg-slate-100 overflow-hidden relative">
 
@@ -921,6 +1103,114 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                     updateZoom={updateZoom}
                     showZoomInfo={showZoomInfo}
                 />
+
+                {hasVisibleTips && (
+                    <div className="absolute left-1/2 top-3 z-[80] -translate-x-1/2">
+                        <button
+                            type="button"
+                            onClick={() => setTipsOpen(current => !current)}
+                            className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-white bg-indigo-600 text-white shadow-lg transition hover:bg-indigo-700"
+                            title="Dicas do cardápio"
+                            aria-label="Abrir dicas do cardápio"
+                            aria-expanded={tipsOpen}
+                        >
+                            <HelpCircle size={22} />
+                        </button>
+
+                        {tipsOpen && (
+                            <div className="absolute left-1/2 top-12 w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl">
+                                <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+                                    <div>
+                                        <p className="text-sm font-bold text-slate-800">Dicas do cardápio</p>
+                                        <p className="text-xs text-slate-500">Ajustes opcionais detectados no layout.</p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={applyAllSuggestions}
+                                        className="flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-700"
+                                        title="Aplicar todas as sugestões"
+                                    >
+                                        <Check size={15} />
+                                        Aplicar todas
+                                    </button>
+                                </div>
+
+                                <div className="max-h-[min(60vh,32rem)] space-y-4 overflow-y-auto p-4">
+                                    {visibleFontTips.length > 0 && (
+                                        <section>
+                                            <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Fontes reduzidas</h3>
+                                            <div className="space-y-2">
+                                                {visibleFontTips.map(tip => (
+                                                    <div
+                                                        key={tip.scope}
+                                                        onMouseEnter={() => setHoveredFontScope(tip.scope)}
+                                                        onMouseLeave={() => setHoveredFontScope(null)}
+                                                        className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3"
+                                                    >
+                                                        <p className="min-w-0 flex-1 text-xs leading-relaxed text-slate-700">
+                                                            A classe <strong>{WORD_FIT_SCOPE_LABELS[tip.scope]}</strong> tem {tip.count} {tip.count === 1 ? 'texto reduzido' : 'textos reduzidos'}. Confirmar iguala a classe em <strong>{tip.safeFontSize}px</strong>, o maior tamanho que mantém cada palavra inteira.
+                                                        </p>
+                                                        <div className="flex shrink-0 gap-1">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => applyFontSuggestion(tip.scope)}
+                                                                className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700"
+                                                                title="Aplicar sugestão"
+                                                                aria-label={`Aplicar sugestão para ${WORD_FIT_SCOPE_LABELS[tip.scope]}`}
+                                                            >
+                                                                <Check size={16} />
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => dismissTip(`font:${tip.scope}`)}
+                                                                className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm transition hover:bg-slate-100 hover:text-slate-700"
+                                                                title="Remover esta dica"
+                                                                aria-label={`Remover dica para ${WORD_FIT_SCOPE_LABELS[tip.scope]}`}
+                                                            >
+                                                                <X size={16} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </section>
+                                    )}
+
+                                    {showPositionedCategoryTip && (
+                                        <section>
+                                            <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Categorias em posição livre</h3>
+                                            <div className="flex items-start gap-3 rounded-xl border border-indigo-200 bg-indigo-50 p-3">
+                                                <p className="min-w-0 flex-1 text-xs leading-relaxed text-slate-700">
+                                                    {positionedCategoryIds.length} {positionedCategoryIds.length === 1 ? 'categoria está' : 'categorias estão'} fora das posições normais. Confirmar mantém a ordem atual e remove os espaços livres entre elas.
+                                                </p>
+                                                <div className="flex shrink-0 gap-1">
+                                                    <button
+                                                        type="button"
+                                                        onClick={applyPositionedCategorySuggestion}
+                                                        className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700"
+                                                        title="Reposicionar categorias"
+                                                        aria-label="Reposicionar categorias"
+                                                    >
+                                                        <Check size={16} />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => dismissTip('free-categories')}
+                                                        className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm transition hover:bg-slate-100 hover:text-slate-700"
+                                                        title="Remover esta dica"
+                                                        aria-label="Remover dica de categorias"
+                                                    >
+                                                        <X size={16} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </section>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {/* Undo/Redo Controls - Dynamic Positioning for Bottom Sheet */}
                 <div className={`absolute right-4 z-[70] md:z-10 flex gap-2 transition-all duration-300 ${(isOpen || isProductDesignerOpen) ? 'bottom-[calc(var(--automenu-bottom-sheet-height,45vh)+0.75rem)] md:bottom-24' : 'bottom-[5.25rem] md:bottom-24'}`}>

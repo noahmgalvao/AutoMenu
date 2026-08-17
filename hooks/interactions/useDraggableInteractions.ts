@@ -228,6 +228,9 @@ export const useDraggableInteractions = (
     const categoryPageSwitchOriginXRef = useRef<number | null>(null);
     const categoryPointerOffsetYRef = useRef<number | null>(null);
     const categoryDraggedHeightRef = useRef<number | null>(null);
+    const categoryDragSlotAssignmentRef = useRef<CategoryPlacementAssignment | null>(null);
+    const categoryDragSlotPositionRef = useRef<CategoryPosition | null>(null);
+    const categoryLastSwapPointerRef = useRef<{ x: number; y: number } | null>(null);
     const isDraggingRef = useRef(false);
     const hasDragMutationRef = useRef(false);
     const listenersAttachedRef = useRef(false);
@@ -563,6 +566,9 @@ export const useDraggableInteractions = (
         categoryPageSwitchOriginXRef.current = null;
         categoryPointerOffsetYRef.current = null;
         categoryDraggedHeightRef.current = null;
+        categoryDragSlotAssignmentRef.current = null;
+        categoryDragSlotPositionRef.current = null;
+        categoryLastSwapPointerRef.current = null;
         isDraggingRef.current = false;
         hasDragMutationRef.current = false;
     }, [clearTouchCancelCommit, releasePointerCapture]);
@@ -1009,6 +1015,9 @@ export const useDraggableInteractions = (
             const currentPositions = { ...(style.categoryPositions || {}) };
             setLiveCategoryPositions(currentPositions);
             liveCategoryPositionsRef.current = currentPositions;
+            categoryDragSlotAssignmentRef.current = pageAssignments[categoryId] || null;
+            categoryDragSlotPositionRef.current = currentPositions[categoryId] || null;
+            categoryLastSwapPointerRef.current = null;
             categoryActivePageIndexRef.current = currentElement
                 ? Number(currentElement.dataset.dragPageIndex ?? 0)
                 : null;
@@ -1019,17 +1028,6 @@ export const useDraggableInteractions = (
         },
         [getCurrentCategoryAssignments, getRenderedDragElement, initializeLiveCategoryOrder, initializeLiveCategoryPageAssignments, style.categoryPositions]
     );
-
-    const clearCategoryPositions = useCallback((categoryIds: string[]) => {
-        const currentPositions = liveCategoryPositionsRef.current || style.categoryPositions || {};
-        if (!categoryIds.some((categoryId) => currentPositions[categoryId])) return;
-
-        const nextPositions = { ...currentPositions };
-        categoryIds.forEach((categoryId) => delete nextPositions[categoryId]);
-        liveCategoryPositionsRef.current = nextPositions;
-        setLiveCategoryPositions(nextPositions);
-        hasDragMutationRef.current = true;
-    }, [style.categoryPositions]);
 
     const updateDraggedCategoryPosition = useCallback((
         categoryId: string,
@@ -1273,6 +1271,13 @@ export const useDraggableInteractions = (
             const currentDragItem = draggedItemRef.current;
             if (!currentDragItem || currentDragItem.type !== 'category') return;
             const commitImmediately = options.commitImmediately ?? true;
+            const lastSwapPointer = categoryLastSwapPointerRef.current;
+            if (lastSwapPointer) {
+                if (Math.hypot(pointer.x - lastSwapPointer.x, pointer.y - lastSwapPointer.y) < POINTER_MOVE_THRESHOLD_PX) {
+                    return;
+                }
+                categoryLastSwapPointerRef.current = null;
+            }
 
             if (dragSourceContextRef.current === 'product-designer') {
                 const startPointer = dragStartPointerRef.current;
@@ -1357,9 +1362,6 @@ export const useDraggableInteractions = (
                 return;
             }
 
-            updateDraggedAssignment();
-            const swapParticipants = [currentDragItem.id, categoryDropTarget.id];
-
             let desiredInsertionIndex = orderWithoutDragged.length;
             let insideDeadZone = false;
 
@@ -1422,18 +1424,62 @@ export const useDraggableInteractions = (
             }
 
             if (insideDeadZone) {
-                clearCategoryPositions(swapParticipants);
                 return;
             }
 
             const newOrder = moveItemToInsertionIndex(currentOrder, currentDragItem.id, desiredInsertionIndex);
             if (areOrdersEqual(newOrder, currentOrder)) {
-                clearCategoryPositions(swapParticipants);
                 return;
             }
 
-            clearCategoryPositions(swapParticipants);
+            const currentPositions = liveCategoryPositionsRef.current || style.categoryPositions || {};
+            const sourceSlotPosition = categoryDragSlotPositionRef.current;
+            const targetPosition = currentPositions[categoryDropTarget.id] || null;
+            const sourceSlotAssignment = categoryDragSlotAssignmentRef.current || currentPlacement || {
+                pageIndex: currentPageIndex,
+                columnIndex: Number(currentLaneKey?.split(':')[1] ?? 0),
+            };
+            const targetAssignment = currentAssignments[categoryDropTarget.id] || {
+                pageIndex: Number(categoryDropTarget.element.dataset.dragPageIndex ?? activePageIndex),
+                columnIndex: Number(categoryDropTarget.element.dataset.dragColumnIndex ?? activeColumnIndex),
+            };
+
+            if (sourceSlotPosition || targetPosition) {
+                const nextPositions = { ...currentPositions };
+                if (targetPosition) {
+                    nextPositions[currentDragItem.id] = { ...targetPosition };
+                } else {
+                    delete nextPositions[currentDragItem.id];
+                }
+                if (sourceSlotPosition) {
+                    nextPositions[categoryDropTarget.id] = { ...sourceSlotPosition };
+                } else {
+                    delete nextPositions[categoryDropTarget.id];
+                }
+                liveCategoryPositionsRef.current = nextPositions;
+                setLiveCategoryPositions(nextPositions);
+
+                const nextAssignments = {
+                    ...currentAssignments,
+                    [currentDragItem.id]: { ...targetAssignment },
+                    [categoryDropTarget.id]: { ...sourceSlotAssignment },
+                };
+                liveCategoryPageAssignmentsRef.current = nextAssignments;
+                setLiveCategoryPageAssignments(nextAssignments);
+
+                categoryDragSlotPositionRef.current = targetPosition ? { ...targetPosition } : null;
+                categoryDragSlotAssignmentRef.current = { ...targetAssignment };
+                categoryActivePageIndexRef.current = targetAssignment.pageIndex;
+                categoryActiveLaneKeyRef.current = getCategoryLaneKey(
+                    String(targetAssignment.pageIndex),
+                    String(targetAssignment.columnIndex),
+                );
+            } else {
+                updateDraggedAssignment();
+            }
+
             hasDragMutationRef.current = true;
+            categoryLastSwapPointerRef.current = { ...pointer };
             setLiveCategoryOrder(newOrder);
             liveCategoryOrderRef.current = newOrder;
             if (!commitImmediately) return;
@@ -1462,7 +1508,7 @@ export const useDraggableInteractions = (
                 }));
             }
         },
-        [clearCategoryPositions, getCategoryLanes, getOrderedCategoryTargets, getRenderedDragElement, onCommitCategoryOrder, onStyleUpdate, resolveCategoryLaneKey, resolveCategoryPageIndex, updateDraggedCategoryPosition]
+        [getCategoryLanes, getOrderedCategoryTargets, getRenderedDragElement, onCommitCategoryOrder, onStyleUpdate, resolveCategoryLaneKey, resolveCategoryPageIndex, style.categoryPositions, updateDraggedCategoryPosition]
     );
 
     const syncFreeTextCategoryOrderToLane = useCallback(
