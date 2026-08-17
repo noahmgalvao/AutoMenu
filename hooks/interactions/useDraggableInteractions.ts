@@ -239,6 +239,7 @@ export const useDraggableInteractions = (
     const categoryPageSwitchOriginXRef = useRef<number | null>(null);
     const categoryPointerOffsetYRef = useRef<number | null>(null);
     const categoryDraggedHeightRef = useRef<number | null>(null);
+    const categoryStableFreeIdsRef = useRef<Set<string>>(new Set());
     const categorySwapLockRef = useRef<CategorySwapLock | null>(null);
     const categorySwapRebaseRef = useRef<CategorySwapRebase | null>(null);
     const categorySwapRebaseFrameRef = useRef<number | null>(null);
@@ -577,6 +578,7 @@ export const useDraggableInteractions = (
         categoryPageSwitchOriginXRef.current = null;
         categoryPointerOffsetYRef.current = null;
         categoryDraggedHeightRef.current = null;
+        categoryStableFreeIdsRef.current = new Set();
         categorySwapLockRef.current = null;
         if (categorySwapRebaseFrameRef.current !== null && typeof window !== 'undefined') {
             window.cancelAnimationFrame(categorySwapRebaseFrameRef.current);
@@ -1029,6 +1031,7 @@ export const useDraggableInteractions = (
             const currentPositions = { ...(style.categoryPositions || {}) };
             setLiveCategoryPositions(currentPositions);
             liveCategoryPositionsRef.current = currentPositions;
+            categoryStableFreeIdsRef.current = new Set(Object.keys(currentPositions));
             categorySwapLockRef.current = null;
             categoryActivePageIndexRef.current = currentElement
                 ? Number(currentElement.dataset.dragPageIndex ?? 0)
@@ -1105,9 +1108,12 @@ export const useDraggableInteractions = (
         const pageRect = page.getBoundingClientRect();
         const elementRect = element.getBoundingClientRect();
         const scale = Math.max(0.001, pageRect.width / A4_WIDTH_PX);
-        const elementHeight = categoryDraggedHeightRef.current
-            ? categoryDraggedHeightRef.current * scale
-            : elementRect.height;
+        const elementHeight = elementRect.height > 0
+            ? elementRect.height
+            : (categoryDraggedHeightRef.current || 0) * scale;
+        if (elementHeight > 0) {
+            categoryDraggedHeightRef.current = elementHeight / scale;
+        }
         const pointerOffset = categoryPointerOffsetYRef.current !== null
             ? categoryPointerOffsetYRef.current * scale
             : Math.min(24 * scale, elementHeight / 2);
@@ -1119,6 +1125,22 @@ export const useDraggableInteractions = (
             minimumTop,
             Math.min(maximumBottom - elementHeight, pointer.y - pointerOffset),
         );
+
+        const previousPosition = liveCategoryPositionsRef.current?.[categoryId];
+        const renderedPageIndex = Number(element.dataset.dragPageIndex ?? activePageIndex);
+        const renderedColumnIndex = Number(element.dataset.dragColumnIndex ?? activeColumnIndex);
+        const remainsInNaturalLane = (
+            renderedPageIndex === activePageIndex
+            && renderedColumnIndex === activeColumnIndex
+        );
+        const freePlacementActivationDistance = (STANDARD_GAP + 4) * scale;
+        if (
+            !previousPosition
+            && remainsInNaturalLane
+            && Math.abs(desiredTop - elementRect.top) <= freePlacementActivationDistance
+        ) {
+            return true;
+        }
 
         const obstacles = getOrderedCategoryTargets()
             .filter((target) => target.id !== categoryId && target.laneKey === activeLaneKey)
@@ -1135,7 +1157,6 @@ export const useDraggableInteractions = (
             columnIndex: activeColumnIndex,
             y: Math.max(0, Math.round((desiredTop - pageRect.top) / scale)),
         };
-        const previousPosition = liveCategoryPositionsRef.current?.[categoryId];
         if (
             previousPosition?.pageIndex === nextPosition.pageIndex
             && previousPosition?.columnIndex === nextPosition.columnIndex
@@ -1455,8 +1476,8 @@ export const useDraggableInteractions = (
             if (areOrdersEqual(newOrder, currentOrder)) return;
 
             const currentPositions = liveCategoryPositionsRef.current || style.categoryPositions || {};
-            const sourceCollisionPosition = currentPositions[currentDragItem.id] || null;
-            const targetFreePosition = currentPositions[categoryDropTarget.id] || null;
+            const sourceWasFree = categoryStableFreeIdsRef.current.has(currentDragItem.id);
+            const targetWasFree = categoryStableFreeIdsRef.current.has(categoryDropTarget.id);
             const sourceCollisionAssignment = currentPlacement || {
                 pageIndex: activePageIndex,
                 columnIndex: activeColumnIndex,
@@ -1465,14 +1486,58 @@ export const useDraggableInteractions = (
                 pageIndex: Number(categoryDropTarget.element.dataset.dragPageIndex ?? activePageIndex),
                 columnIndex: Number(categoryDropTarget.element.dataset.dragColumnIndex ?? activeColumnIndex),
             };
-            const exchangesFreeSlots = Boolean(sourceCollisionPosition || targetFreePosition);
+            const getRenderedCategoryPosition = (
+                element: HTMLElement | null,
+                rect: DOMRect | null,
+                fallback: CategoryPlacementAssignment,
+            ): CategoryPosition | null => {
+                const pageElement = element?.closest<HTMLElement>(
+                    '[data-drag-page-container="category"][data-drag-page-index]'
+                );
+                const pageRect = pageElement?.getBoundingClientRect();
+                if (!element || !rect || !pageRect) return null;
+                const scale = Math.max(0.001, pageRect.width / A4_WIDTH_PX);
+                return {
+                    pageIndex: Number(element.dataset.dragPageIndex ?? fallback.pageIndex),
+                    columnIndex: Number(element.dataset.dragColumnIndex ?? fallback.columnIndex),
+                    y: Math.max(0, Math.round((rect.top - pageRect.top) / scale)),
+                };
+            };
+            const sourceCollisionPosition = sourceWasFree
+                ? getRenderedCategoryPosition(
+                    currentElement,
+                    currentElement?.getBoundingClientRect() || null,
+                    sourceCollisionAssignment,
+                ) || currentPositions[currentDragItem.id]
+                : null;
+            const targetFreePosition = targetWasFree
+                ? getRenderedCategoryPosition(
+                    categoryDropTarget.element,
+                    categoryDropTarget.rect,
+                    targetAssignment,
+                ) || currentPositions[categoryDropTarget.id]
+                : null;
+            const exchangesFreeSlots = sourceWasFree || targetWasFree;
             const nextPositions = { ...currentPositions };
             if (exchangesFreeSlots) {
                 if (targetFreePosition) nextPositions[currentDragItem.id] = { ...targetFreePosition };
                 else delete nextPositions[currentDragItem.id];
                 if (sourceCollisionPosition) nextPositions[categoryDropTarget.id] = { ...sourceCollisionPosition };
                 else delete nextPositions[categoryDropTarget.id];
+            } else {
+                delete nextPositions[currentDragItem.id];
+                delete nextPositions[categoryDropTarget.id];
             }
+            const nextStableFreeIds = new Set(categoryStableFreeIdsRef.current);
+            if (targetWasFree) nextStableFreeIds.add(currentDragItem.id);
+            else nextStableFreeIds.delete(currentDragItem.id);
+            if (sourceWasFree) nextStableFreeIds.add(categoryDropTarget.id);
+            else nextStableFreeIds.delete(categoryDropTarget.id);
+            categoryStableFreeIdsRef.current = nextStableFreeIds;
+            const positionsChanged = (
+                JSON.stringify(nextPositions[currentDragItem.id]) !== JSON.stringify(currentPositions[currentDragItem.id])
+                || JSON.stringify(nextPositions[categoryDropTarget.id]) !== JSON.stringify(currentPositions[categoryDropTarget.id])
+            );
             const nextAssignments = {
                 ...currentAssignments,
                 [currentDragItem.id]: { ...targetAssignment },
@@ -1487,7 +1552,7 @@ export const useDraggableInteractions = (
                 position: targetPosition,
             };
             flushSync(() => {
-                if (exchangesFreeSlots) {
+                if (positionsChanged) {
                     liveCategoryPositionsRef.current = nextPositions;
                     setLiveCategoryPositions(nextPositions);
                 }
