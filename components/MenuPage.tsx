@@ -217,8 +217,10 @@ export const MenuPage: React.FC<MenuPageProps> = ({
         const categoryAddControls = handlers.getSelectionAddControls?.('category', chunk.category) || { top: true, bottom: true };
         const categoryFlowDirections = handlers.getFlowControlDirections?.('category', chunk.category) || { before: 'top', after: 'bottom' };
         const flowIndex = isDragTarget ? handlers.sortedCategories.indexOf(chunk.category) : -1;
-        const categoryPosition = handlers.liveCategoryPositions?.[chunk.category]
-            || style.categoryPositions?.[chunk.category];
+        const categoryPosition = handlers.liveCategoryPositions !== null
+            && handlers.liveCategoryPositions !== undefined
+            ? handlers.liveCategoryPositions[chunk.category]
+            : style.categoryPositions?.[chunk.category];
         const desiredPageY = isCategoryTarget
             && categoryPosition?.pageIndex === pageIndex
             && categoryPosition?.columnIndex === chunk.columnIndex
