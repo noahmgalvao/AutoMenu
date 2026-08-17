@@ -1073,13 +1073,17 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     };
 
     const applyPositionedCategorySuggestion = () => {
-        const categoriesToNormalize = new Set(positionedCategoryIds);
+        const categoriesToNormalize = new Set(realCategoryIds);
         setStyle(current => {
             const nextPositions = { ...(current.categoryPositions || {}) };
+            const nextPlacements = { ...(current.categoryPlacements || {}) };
             categoriesToNormalize.forEach(category => delete nextPositions[category]);
+            categoriesToNormalize.forEach(category => delete nextPlacements[category]);
             return {
                 ...current,
                 categoryPositions: nextPositions,
+                categoryPlacements: nextPlacements,
+                pageBreaks: (current.pageBreaks || []).filter(category => !categoriesToNormalize.has(category)),
                 name: 'Custom',
             };
         });

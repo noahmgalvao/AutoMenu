@@ -292,6 +292,57 @@ const estimateFontSizeFromKnownLines = (
   return Number.isFinite(size) && size > 0 ? size : null;
 };
 
+const estimateProductPriceFontSize = (
+  page: AnalyzedPage,
+  product: AnalysisResult['categories'][number]['products'][number],
+) => {
+  const directEstimate = estimateFontSizeFromKnownLines(
+    page,
+    product.priceBoundingBox,
+    product.priceLineCount || 1,
+    1.18,
+  );
+  if (!directEstimate || !product.priceBoundingBox) return directEstimate;
+
+  const nameEstimate = estimateFontSizeFromBoundingBox(
+    page,
+    product.nameBoundingBox,
+    product.name,
+    1.18,
+  );
+  if (!nameEstimate) return directEstimate;
+
+  const typography = page.result.styleSuggestion?.typography || {};
+  const modelPriceSize = Number(typography.productPrice?.fontSize);
+  const modelNameSize = Number(typography.productName?.fontSize);
+  const modelRatio = Number.isFinite(modelPriceSize) && modelPriceSize > 0
+    && Number.isFinite(modelNameSize) && modelNameSize > 0
+    ? Math.max(0.6, Math.min(1.6, modelPriceSize / modelNameSize))
+    : 1;
+  const expectedSize = nameEstimate * modelRatio;
+  if (directEstimate >= expectedSize * 0.72 && directEstimate <= expectedSize * 1.35) {
+    return directEstimate;
+  }
+
+  const scaledHeight = (product.priceBoundingBox.height / page.imageDimensions.height) * 1123;
+  const reportedLines = Math.max(1, Math.min(6, Math.round(Number(product.priceLineCount) || 1)));
+  let bestSize = directEstimate;
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (let lines = 1; lines <= 6; lines += 1) {
+    const candidateSize = scaledHeight / (0.82 + ((lines - 1) * 1.18));
+    if (!Number.isFinite(candidateSize) || candidateSize <= 0) continue;
+    const ratioScore = Math.abs(Math.log(candidateSize / Math.max(1, expectedSize)));
+    const linePenalty = Math.abs(lines - reportedLines) * 0.08;
+    const score = ratioScore + linePenalty;
+    if (score < bestScore) {
+      bestScore = score;
+      bestSize = candidateSize;
+    }
+  }
+
+  return Math.max(expectedSize * 0.65, Math.min(expectedSize * 1.5, bestSize));
+};
+
 const getScaledVerticalGap = (
   page: AnalyzedPage,
   upperBox: BoundingBox | undefined,
@@ -904,7 +955,7 @@ export const processMenuImport = async ({
     )));
     const productPriceFontMeasurement = getMedian(analyzedPages.flatMap((page) => (
       page.categories.flatMap((category) => category.products.map((product) => (
-        estimateFontSizeFromKnownLines(page, product.priceBoundingBox, product.priceLineCount || 1, 1.18)
+        estimateProductPriceFontSize(page, product)
       )))
     )));
     const titleFontMeasurement = estimateFontSizeFromBoundingBox(

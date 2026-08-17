@@ -203,10 +203,10 @@ const canvasToFile = (
 
 const isAxisAligned = (
   corners: DocumentCorners,
-  width: number,
-  height: number,
+  _width: number,
+  _height: number,
 ) => {
-  const tolerance = Math.max(3, Math.min(width, height) * 0.008);
+  const tolerance = 1;
   return (
     Math.abs(corners.topLeft.y - corners.topRight.y) <= tolerance
     && Math.abs(corners.bottomLeft.y - corners.bottomRight.y) <= tolerance
@@ -220,10 +220,10 @@ const getAxisAlignedBounds = (
   width: number,
   height: number,
 ) => {
-  const left = clamp(Math.round((corners.topLeft.x + corners.bottomLeft.x) / 2), 0, width - 1);
-  const top = clamp(Math.round((corners.topLeft.y + corners.topRight.y) / 2), 0, height - 1);
-  const right = clamp(Math.round((corners.topRight.x + corners.bottomRight.x) / 2), left + 1, width);
-  const bottom = clamp(Math.round((corners.bottomLeft.y + corners.bottomRight.y) / 2), top + 1, height);
+  const left = clamp(Math.ceil(Math.max(corners.topLeft.x, corners.bottomLeft.x)), 0, width - 1);
+  const top = clamp(Math.ceil(Math.max(corners.topLeft.y, corners.topRight.y)), 0, height - 1);
+  const right = clamp(Math.floor(Math.min(corners.topRight.x, corners.bottomRight.x)), left + 1, width);
+  const bottom = clamp(Math.floor(Math.min(corners.bottomLeft.y, corners.bottomRight.y)), top + 1, height);
   return { left, top, right, bottom };
 };
 

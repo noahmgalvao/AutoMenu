@@ -441,6 +441,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
       if (imageFiles.length === 0) return;
       const selectedFiles = intent === 'initial' ? imageFiles : imageFiles.slice(0, 1);
 
+      resetPreview();
       setPreparing(true);
       setProcessingError('');
       stopCamera();
@@ -481,7 +482,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
       } finally {
         setPreparing(false);
       }
-    }, [activePageId, createPendingPage, detectPage, disposePages, runProcessing, stopCamera]);
+    }, [activePageId, createPendingPage, detectPage, disposePages, resetPreview, runProcessing, stopCamera]);
 
     const handleGalleryChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(event.target.files || []);

@@ -1023,7 +1023,7 @@ export const useDraggableInteractions = (
                 ? Math.max(0.001, currentPageRect.width / A4_WIDTH_PX)
                 : 1;
             categoryPointerOffsetYRef.current = currentRect
-                ? Math.max(0, Math.min(currentRect.height, pointer.y - currentRect.top)) / currentScale
+                ? Math.max(0, Math.min(currentRect.height, pointer.y - currentRect.top))
                 : 0;
             categoryDraggedHeightRef.current = currentRect
                 ? currentRect.height / currentScale
@@ -1077,7 +1077,10 @@ export const useDraggableInteractions = (
             }
 
             const scale = Math.max(0.001, pageRect.width / A4_WIDTH_PX);
-            categoryPointerOffsetYRef.current = (current.pointer.y - sourceRect.top) / scale;
+            categoryPointerOffsetYRef.current = Math.max(
+                0,
+                Math.min(sourceRect.height, current.pointer.y - sourceRect.top),
+            );
             categoryDraggedHeightRef.current = sourceRect.height / scale;
             categoryActivePageIndexRef.current = Number(sourceElement.dataset.dragPageIndex ?? 0);
             categoryActiveLaneKeyRef.current = getCategoryLaneKey(
@@ -1115,7 +1118,7 @@ export const useDraggableInteractions = (
             categoryDraggedHeightRef.current = elementHeight / scale;
         }
         const pointerOffset = categoryPointerOffsetYRef.current !== null
-            ? categoryPointerOffsetYRef.current * scale
+            ? categoryPointerOffsetYRef.current
             : Math.min(24 * scale, elementHeight / 2);
         const minimumTop = lane.rect.top;
         const maximumBottom = lane.rect.bottom;
