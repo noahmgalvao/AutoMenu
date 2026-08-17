@@ -354,6 +354,16 @@ const createLockedPage = (categoryColumnCount: number, includeMainHeader: boolea
     columnCount: categoryColumnCount,
 });
 
+const createCategoryChunkIdFactory = () => {
+    const counters = new Map<string, number>();
+
+    return (category: string) => {
+        const categoryChunkIndex = counters.get(category) || 0;
+        counters.set(category, categoryChunkIndex + 1);
+        return `${category}::chunk-${categoryChunkIndex}`;
+    };
+};
+
 const buildLockedPagination = (
     style: MenuStyle,
     groupedProducts: Record<string, Product[]>,
@@ -378,7 +388,7 @@ const buildLockedPagination = (
     };
     const getLockedPageColumnCount = (_pageIndex: number) => categoryColumnCount;
     const pages: PageLayout[] = [createLockedPage(getLockedPageColumnCount(0), true)];
-    let chunkCounter = 0;
+    const getNextChunkId = createCategoryChunkIdFactory();
     let fallbackPlacement: CategoryPlacementAssignment = { pageIndex: 0, columnIndex: 0 };
 
     const hasChunks = (column: PageColumnLayout) => column.chunks.length > 0;
@@ -426,7 +436,7 @@ const buildLockedPagination = (
         const flowOffsetBefore = getFlowOffsetBefore(page, column, placement, category, startsCategory);
 
         column.chunks.push({
-            chunkId: `${category}::chunk-${chunkCounter++}`,
+            chunkId: getNextChunkId(category),
             category,
             startsCategory,
             columnIndex: column.columnIndex,
@@ -647,7 +657,7 @@ export const calculatePagination = (
         );
     }
 
-    let chunkCounter = 0;
+    const getNextChunkId = createCategoryChunkIdFactory();
 
     const createPage = (includeMainHeader: boolean, pageColumnCount: number = categoryColumnCount): MutablePage => ({
         mainHeader: includeMainHeader ? { type: 'main-header' } : null,
@@ -718,7 +728,7 @@ export const calculatePagination = (
 
     const pushChunk = (category: string, startsCategory: boolean, items: PageItem[], estimatedHeight: number) => {
         const chunk: CategoryChunkLayout = {
-            chunkId: `${category}::chunk-${chunkCounter++}`,
+            chunkId: getNextChunkId(category),
             category,
             startsCategory,
             columnIndex: currentColumnIndex,

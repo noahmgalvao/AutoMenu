@@ -44,6 +44,7 @@ const PositionedCategoryChunk: React.FC<
         const element = elementRef.current;
         if (!element) return;
         if (!Number.isFinite(desiredPageY)) {
+            delete element.dataset.categoryNaturalPageY;
             marginTopRef.current = 0;
             setFlowMarginTop(0);
             setResolvedTop(0);
@@ -68,6 +69,7 @@ const PositionedCategoryChunk: React.FC<
                 Math.abs(nextPlaceholderHeight - current) < 0.25 ? current : nextPlaceholderHeight
             ));
             const naturalTop = placeholderRect.top - (marginTopRef.current * scale);
+            element.dataset.categoryNaturalPageY = String((naturalTop - pageRect.top) / scale);
             const requestedTop = pageRect.top + (Number(desiredPageY) * scale);
             const nextResolvedClientTop = Math.max(requestedTop, naturalTop);
             const nextMargin = Math.max(0, (nextResolvedClientTop - naturalTop) / scale);
@@ -263,7 +265,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 data-drag-column-index={isDragTarget ? chunk.columnIndex : undefined}
                 data-drag-flow-index={isDragTarget ? flowIndex : undefined}
                 onDragOver={(e) => handlers.handleDragOverItem?.(e, chunk.category, 'category')}
-                className={`relative rounded-xl ${isCategoryDragged ? 'transition-none' : 'transition-all duration-200'} pointer-events-none ${isCategorySelected ? `ring-2 ring-indigo-500 bg-indigo-50/10 ${selectionLayerClasses.outline}` : ''}`}
+                className={`relative rounded-xl ${isCategoryDragged || Number.isFinite(desiredPageY) ? 'transition-none' : 'transition-all duration-200'} pointer-events-none ${isCategorySelected ? `ring-2 ring-indigo-500 bg-indigo-50/10 ${selectionLayerClasses.outline}` : ''}`}
             >
                 {isCategorySelected && !isCategoryDragged && (
                     <ColumnResizeHandles

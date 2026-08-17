@@ -1135,7 +1135,8 @@ export const useDraggableInteractions = (
             Math.min(maximumBottom - elementHeight, pointer.y - pointerOffset),
         );
 
-        const previousPosition = liveCategoryPositionsRef.current?.[categoryId];
+        const currentPositions = liveCategoryPositionsRef.current || style.categoryPositions || {};
+        const previousPosition = currentPositions[categoryId];
         const renderedPageIndex = Number(element.dataset.dragPageIndex ?? activePageIndex);
         const renderedColumnIndex = Number(element.dataset.dragColumnIndex ?? activeColumnIndex);
         const remainsInNaturalLane = (
@@ -1143,6 +1144,23 @@ export const useDraggableInteractions = (
             && renderedColumnIndex === activeColumnIndex
         );
         const freePlacementActivationDistance = (STANDARD_GAP + 4) * scale;
+        const naturalPageY = Number(element.dataset.categoryNaturalPageY);
+        const naturalTop = Number.isFinite(naturalPageY)
+            ? pageRect.top + (naturalPageY * scale)
+            : null;
+        if (
+            previousPosition
+            && remainsInNaturalLane
+            && naturalTop !== null
+            && Math.abs(desiredTop - naturalTop) <= freePlacementActivationDistance
+        ) {
+            const nextPositions = { ...currentPositions };
+            delete nextPositions[categoryId];
+            liveCategoryPositionsRef.current = nextPositions;
+            setLiveCategoryPositions(nextPositions);
+            hasDragMutationRef.current = true;
+            return true;
+        }
         if (
             !previousPosition
             && remainsInNaturalLane
@@ -1175,7 +1193,7 @@ export const useDraggableInteractions = (
         }
 
         const nextPositions = {
-            ...(liveCategoryPositionsRef.current || style.categoryPositions || {}),
+            ...currentPositions,
             [categoryId]: nextPosition,
         };
         liveCategoryPositionsRef.current = nextPositions;
@@ -1509,8 +1527,16 @@ export const useDraggableInteractions = (
             if (areOrdersEqual(newOrder, currentOrder)) return;
 
             const currentPositions = liveCategoryPositionsRef.current || style.categoryPositions || {};
-            const sourceWasFree = currentElement?.dataset.freePositioned === 'true';
-            const targetWasFree = categoryDropTarget.element.dataset.freePositioned === 'true';
+            const hasCurrentFreePosition = (categoryId: string, element: HTMLElement | null) => {
+                const position = currentPositions[categoryId];
+                if (!position || !element) return false;
+                return (
+                    Number(element.dataset.dragPageIndex) === position.pageIndex
+                    && Number(element.dataset.dragColumnIndex) === position.columnIndex
+                );
+            };
+            const sourceWasFree = hasCurrentFreePosition(currentDragItem.id, currentElement);
+            const targetWasFree = hasCurrentFreePosition(categoryDropTarget.id, categoryDropTarget.element);
             const exchangesFreeSlots = sourceWasFree || targetWasFree;
             const getRenderedCategoryPosition = (
                 element: HTMLElement | null,
