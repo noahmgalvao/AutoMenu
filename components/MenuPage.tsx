@@ -34,9 +34,10 @@ const PositionedCategoryChunk: React.FC<
     }
 > = ({ desiredPageY, flowOffsetBefore = 0, detachedForDrag = false, pageIndex, layoutKey, style, children, ...props }) => {
     const elementRef = React.useRef<HTMLDivElement>(null);
+    const placeholderRef = React.useRef<HTMLDivElement>(null);
     const marginTopRef = React.useRef(Math.max(0, flowOffsetBefore));
     const [flowMarginTop, setFlowMarginTop] = React.useState(Math.max(0, flowOffsetBefore));
-    const [detachedTop, setDetachedTop] = React.useState(0);
+    const [resolvedTop, setResolvedTop] = React.useState(0);
     const [placeholderHeight, setPlaceholderHeight] = React.useState(0);
 
     React.useLayoutEffect(() => {
@@ -45,34 +46,39 @@ const PositionedCategoryChunk: React.FC<
         if (!Number.isFinite(desiredPageY)) {
             marginTopRef.current = 0;
             setFlowMarginTop(0);
+            setResolvedTop(0);
+            setPlaceholderHeight(0);
             return;
         }
 
+        const placeholder = placeholderRef.current;
         const page = element.closest<HTMLElement>(`[data-menu-print-page="true"][data-page-index="${pageIndex}"]`);
         const column = element.closest<HTMLElement>('[data-drag-column-container="category"]');
-        if (!page || !column) return;
+        if (!placeholder || !page || !column) return;
         let animationFrame: number | null = null;
         const updateTop = () => {
             animationFrame = null;
             const pageRect = page.getBoundingClientRect();
             const columnRect = column.getBoundingClientRect();
             const elementRect = element.getBoundingClientRect();
+            const placeholderRect = placeholder.getBoundingClientRect();
             const scale = Math.max(0.001, pageRect.width / A4_WIDTH_PX);
             const nextPlaceholderHeight = elementRect.height / scale;
             setPlaceholderHeight((current) => (
                 Math.abs(nextPlaceholderHeight - current) < 0.25 ? current : nextPlaceholderHeight
             ));
-            if (detachedForDrag) {
-                const nextDetachedTop = ((pageRect.top + (Number(desiredPageY) * scale)) - columnRect.top) / scale;
-                setDetachedTop((current) => Math.abs(nextDetachedTop - current) < 0.25 ? current : nextDetachedTop);
-                return;
-            }
-            const naturalTop = elementRect.top - (marginTopRef.current * scale);
+            const naturalTop = placeholderRect.top - (marginTopRef.current * scale);
             const requestedTop = pageRect.top + (Number(desiredPageY) * scale);
-            const nextMargin = Math.max(0, (requestedTop - naturalTop) / scale);
-            if (Math.abs(nextMargin - marginTopRef.current) < 0.25) return;
-            marginTopRef.current = nextMargin;
-            setFlowMarginTop(nextMargin);
+            const nextResolvedClientTop = Math.max(requestedTop, naturalTop);
+            const nextMargin = Math.max(0, (nextResolvedClientTop - naturalTop) / scale);
+            const nextResolvedTop = (nextResolvedClientTop - columnRect.top) / scale;
+            if (Math.abs(nextMargin - marginTopRef.current) >= 0.25) {
+                marginTopRef.current = nextMargin;
+                setFlowMarginTop(nextMargin);
+            }
+            setResolvedTop((current) => (
+                Math.abs(nextResolvedTop - current) < 0.25 ? current : nextResolvedTop
+            ));
         };
         const scheduleUpdate = () => {
             if (animationFrame !== null) cancelAnimationFrame(animationFrame);
@@ -84,20 +90,25 @@ const PositionedCategoryChunk: React.FC<
         observer.observe(page);
         observer.observe(column);
         observer.observe(element);
+        observer.observe(placeholder);
+        Array.from(column.children).forEach((child) => {
+            if (child instanceof HTMLElement) observer.observe(child);
+        });
         window.addEventListener('resize', scheduleUpdate);
         return () => {
             observer.disconnect();
             window.removeEventListener('resize', scheduleUpdate);
             if (animationFrame !== null) cancelAnimationFrame(animationFrame);
         };
-    }, [desiredPageY, detachedForDrag, flowOffsetBefore, layoutKey, pageIndex]);
+    }, [desiredPageY, flowOffsetBefore, layoutKey, pageIndex]);
 
-    const isDetached = detachedForDrag && Number.isFinite(desiredPageY);
+    const isFreePositioned = Number.isFinite(desiredPageY);
 
     return (
         <>
-            {isDetached && (
+            {isFreePositioned && (
                 <div
+                    ref={placeholderRef}
                     aria-hidden="true"
                     data-category-drag-placeholder="true"
                     className="pointer-events-none invisible"
@@ -110,20 +121,18 @@ const PositionedCategoryChunk: React.FC<
             <div
                 {...props}
                 ref={elementRef}
-                data-free-positioned={Number.isFinite(desiredPageY) ? 'true' : undefined}
+                data-free-positioned={isFreePositioned ? 'true' : undefined}
                 style={{
                     ...style,
-                    ...(Number.isFinite(desiredPageY)
-                        ? isDetached
-                            ? {
-                                position: 'absolute',
-                                top: `${detachedTop}px`,
-                                left: 0,
-                                right: 0,
-                                width: '100%',
-                                zIndex: 40,
-                            }
-                            : { marginTop: `${flowMarginTop}px` }
+                    ...(isFreePositioned
+                        ? {
+                            position: 'absolute',
+                            top: `${resolvedTop}px`,
+                            left: 0,
+                            right: 0,
+                            width: '100%',
+                            zIndex: detachedForDrag ? 40 : undefined,
+                        }
                         : {}),
                 }}
             >
