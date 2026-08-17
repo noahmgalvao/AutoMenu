@@ -90,6 +90,15 @@ interface CategorySwapLock {
     sourceId: string;
     targetId: string;
     position: 'before' | 'after';
+    freeCollision?: {
+        laneKey: string;
+        bounds: {
+            top: number;
+            right: number;
+            bottom: number;
+            left: number;
+        };
+    };
 }
 
 interface CategorySwapRebase {
@@ -239,7 +248,6 @@ export const useDraggableInteractions = (
     const categoryPageSwitchOriginXRef = useRef<number | null>(null);
     const categoryPointerOffsetYRef = useRef<number | null>(null);
     const categoryDraggedHeightRef = useRef<number | null>(null);
-    const categoryStableFreeIdsRef = useRef<Set<string>>(new Set());
     const categorySwapLockRef = useRef<CategorySwapLock | null>(null);
     const categorySwapRebaseRef = useRef<CategorySwapRebase | null>(null);
     const categorySwapRebaseFrameRef = useRef<number | null>(null);
@@ -578,7 +586,6 @@ export const useDraggableInteractions = (
         categoryPageSwitchOriginXRef.current = null;
         categoryPointerOffsetYRef.current = null;
         categoryDraggedHeightRef.current = null;
-        categoryStableFreeIdsRef.current = new Set();
         categorySwapLockRef.current = null;
         if (categorySwapRebaseFrameRef.current !== null && typeof window !== 'undefined') {
             window.cancelAnimationFrame(categorySwapRebaseFrameRef.current);
@@ -1031,7 +1038,6 @@ export const useDraggableInteractions = (
             const currentPositions = { ...(style.categoryPositions || {}) };
             setLiveCategoryPositions(currentPositions);
             liveCategoryPositionsRef.current = currentPositions;
-            categoryStableFreeIdsRef.current = new Set(Object.keys(currentPositions));
             categorySwapLockRef.current = null;
             categoryActivePageIndexRef.current = currentElement
                 ? Number(currentElement.dataset.dragPageIndex ?? 0)
@@ -1373,19 +1379,30 @@ export const useDraggableInteractions = (
 
             const activeSwapLock = categorySwapLockRef.current;
             if (activeSwapLock?.sourceId === currentDragItem.id && currentElement) {
-                const lockedTargetElement = getRenderedDragElement('category', activeSwapLock.targetId);
-                const sourceRect = currentElement.getBoundingClientRect();
-                const targetRect = lockedTargetElement?.getBoundingClientRect();
-                const containersAreSeparated = Boolean(
-                    targetRect
-                    && (
-                        sourceRect.right < targetRect.left - 0.5
-                        || sourceRect.left > targetRect.right + 0.5
-                        || sourceRect.bottom < targetRect.top - 0.5
-                        || sourceRect.top > targetRect.bottom + 0.5
-                    )
-                );
-                if (containersAreSeparated) categorySwapLockRef.current = null;
+                if (activeSwapLock.freeCollision) {
+                    const { bounds } = activeSwapLock.freeCollision;
+                    const pointerStillInsideCollision = (
+                        pointer.x >= bounds.left
+                        && pointer.x <= bounds.right
+                        && pointer.y >= bounds.top
+                        && pointer.y <= bounds.bottom
+                    );
+                    if (!pointerStillInsideCollision) categorySwapLockRef.current = null;
+                } else {
+                    const lockedTargetElement = getRenderedDragElement('category', activeSwapLock.targetId);
+                    const sourceRect = currentElement.getBoundingClientRect();
+                    const targetRect = lockedTargetElement?.getBoundingClientRect();
+                    const containersAreSeparated = Boolean(
+                        targetRect
+                        && (
+                            sourceRect.right < targetRect.left - 0.5
+                            || sourceRect.left > targetRect.right + 0.5
+                            || sourceRect.bottom < targetRect.top - 0.5
+                            || sourceRect.top > targetRect.bottom + 0.5
+                        )
+                    );
+                    if (containersAreSeparated) categorySwapLockRef.current = null;
+                }
             }
 
             const currentPageIndex =
@@ -1411,6 +1428,12 @@ export const useDraggableInteractions = (
             if (!activeLaneKey) return;
 
             categoryActiveLaneKeyRef.current = activeLaneKey;
+            if (
+                categorySwapLockRef.current?.freeCollision
+                && categorySwapLockRef.current.freeCollision.laneKey !== activeLaneKey
+            ) {
+                categorySwapLockRef.current = null;
+            }
 
             const activeColumnIndex = Number(activeLaneKey.split(':')[1] ?? 0);
             const currentAssignments = liveCategoryPageAssignmentsRef.current || {};
@@ -1450,6 +1473,13 @@ export const useDraggableInteractions = (
             ) {
                 categorySwapLockRef.current = null;
             }
+            const activeFreeCollisionLock = categorySwapLockRef.current;
+            if (
+                activeFreeCollisionLock?.sourceId === currentDragItem.id
+                && activeFreeCollisionLock.freeCollision
+            ) {
+                return;
+            }
             const categoryDropTarget = (
                 pointerTarget
                 && !(
@@ -1479,48 +1509,62 @@ export const useDraggableInteractions = (
             if (areOrdersEqual(newOrder, currentOrder)) return;
 
             const currentPositions = liveCategoryPositionsRef.current || style.categoryPositions || {};
-            const sourceWasFree = categoryStableFreeIdsRef.current.has(currentDragItem.id);
-            const targetWasFree = categoryStableFreeIdsRef.current.has(categoryDropTarget.id);
-            const sourceCollisionAssignment = currentPlacement || {
-                pageIndex: activePageIndex,
-                columnIndex: activeColumnIndex,
-            };
-            const targetAssignment = currentAssignments[categoryDropTarget.id] || {
-                pageIndex: Number(categoryDropTarget.element.dataset.dragPageIndex ?? activePageIndex),
-                columnIndex: Number(categoryDropTarget.element.dataset.dragColumnIndex ?? activeColumnIndex),
-            };
+            const sourceWasFree = currentElement?.dataset.freePositioned === 'true';
+            const targetWasFree = categoryDropTarget.element.dataset.freePositioned === 'true';
+            const exchangesFreeSlots = sourceWasFree || targetWasFree;
             const getRenderedCategoryPosition = (
                 element: HTMLElement | null,
                 rect: DOMRect | null,
-                fallback: CategoryPlacementAssignment,
             ): CategoryPosition | null => {
                 const pageElement = element?.closest<HTMLElement>(
                     '[data-drag-page-container="category"][data-drag-page-index]'
                 );
                 const pageRect = pageElement?.getBoundingClientRect();
                 if (!element || !rect || !pageRect) return null;
+                const renderedPageIndex = Number(element.dataset.dragPageIndex);
+                const renderedColumnIndex = Number(element.dataset.dragColumnIndex);
+                if (!Number.isFinite(renderedPageIndex) || !Number.isFinite(renderedColumnIndex)) return null;
                 const scale = Math.max(0.001, pageRect.width / A4_WIDTH_PX);
                 return {
-                    pageIndex: Number(element.dataset.dragPageIndex ?? fallback.pageIndex),
-                    columnIndex: Number(element.dataset.dragColumnIndex ?? fallback.columnIndex),
+                    pageIndex: renderedPageIndex,
+                    columnIndex: renderedColumnIndex,
                     y: Math.max(0, Math.round((rect.top - pageRect.top) / scale)),
                 };
             };
-            const sourceCollisionPosition = sourceWasFree
+            const sourceRenderedPosition = exchangesFreeSlots
                 ? getRenderedCategoryPosition(
                     currentElement,
                     currentElement?.getBoundingClientRect() || null,
-                    sourceCollisionAssignment,
-                ) || currentPositions[currentDragItem.id]
+                )
                 : null;
-            const targetFreePosition = targetWasFree
+            const targetRenderedPosition = exchangesFreeSlots
                 ? getRenderedCategoryPosition(
                     categoryDropTarget.element,
                     categoryDropTarget.rect,
-                    targetAssignment,
-                ) || currentPositions[categoryDropTarget.id]
+                )
                 : null;
-            const exchangesFreeSlots = sourceWasFree || targetWasFree;
+            if (exchangesFreeSlots && (!sourceRenderedPosition || !targetRenderedPosition)) return;
+
+            const sourceCollisionAssignment = sourceRenderedPosition
+                ? {
+                    pageIndex: sourceRenderedPosition.pageIndex,
+                    columnIndex: sourceRenderedPosition.columnIndex,
+                }
+                : currentPlacement || {
+                    pageIndex: activePageIndex,
+                    columnIndex: activeColumnIndex,
+                };
+            const targetAssignment = targetRenderedPosition
+                ? {
+                    pageIndex: targetRenderedPosition.pageIndex,
+                    columnIndex: targetRenderedPosition.columnIndex,
+                }
+                : currentAssignments[categoryDropTarget.id] || {
+                    pageIndex: Number(categoryDropTarget.element.dataset.dragPageIndex ?? activePageIndex),
+                    columnIndex: Number(categoryDropTarget.element.dataset.dragColumnIndex ?? activeColumnIndex),
+                };
+            const sourceCollisionPosition = sourceWasFree ? sourceRenderedPosition : null;
+            const targetFreePosition = targetWasFree ? targetRenderedPosition : null;
             const nextPositions = { ...currentPositions };
             if (exchangesFreeSlots) {
                 if (targetFreePosition) nextPositions[currentDragItem.id] = { ...targetFreePosition };
@@ -1531,12 +1575,6 @@ export const useDraggableInteractions = (
                 delete nextPositions[currentDragItem.id];
                 delete nextPositions[categoryDropTarget.id];
             }
-            const nextStableFreeIds = new Set(categoryStableFreeIdsRef.current);
-            if (targetWasFree) nextStableFreeIds.add(currentDragItem.id);
-            else nextStableFreeIds.delete(currentDragItem.id);
-            if (sourceWasFree) nextStableFreeIds.add(categoryDropTarget.id);
-            else nextStableFreeIds.delete(categoryDropTarget.id);
-            categoryStableFreeIdsRef.current = nextStableFreeIds;
             const positionsChanged = (
                 JSON.stringify(nextPositions[currentDragItem.id]) !== JSON.stringify(currentPositions[currentDragItem.id])
                 || JSON.stringify(nextPositions[categoryDropTarget.id]) !== JSON.stringify(currentPositions[categoryDropTarget.id])
@@ -1553,6 +1591,19 @@ export const useDraggableInteractions = (
                 sourceId: currentDragItem.id,
                 targetId: categoryDropTarget.id,
                 position: targetPosition,
+                ...(exchangesFreeSlots
+                    ? {
+                        freeCollision: {
+                            laneKey: activeLaneKey,
+                            bounds: {
+                                top: categoryDropTarget.rect.top,
+                                right: categoryDropTarget.rect.right,
+                                bottom: categoryDropTarget.rect.bottom,
+                                left: categoryDropTarget.rect.left,
+                            },
+                        },
+                    }
+                    : {}),
             };
             flushSync(() => {
                 if (positionsChanged) {
