@@ -817,6 +817,106 @@ export const deleteWorkspaceMenu = async ({
   if (error) throw error;
 };
 
+const createInitialMenuVersionPayload = () => {
+  const products = assignCategoryIds(cloneJson(INITIAL_PRODUCTS));
+  const style = withStyleDefaults(cloneJson(INITIAL_STYLE));
+  const sortOption = DEFAULT_SORT_OPTION;
+
+  return {
+    editorState: createEditorState(style, [], sortOption),
+    renderSnapshot: createRenderSnapshot(products, style, sortOption),
+  };
+};
+
+const initializeWorkspaceMenu = async (menu: Menu, userId: string) => {
+  if (menu.currentDraftVersionId) {
+    return menu;
+  }
+
+  const supabase = getSupabaseClient();
+  const { editorState, renderSnapshot } = createInitialMenuVersionPayload();
+  const { versionId } = await insertMenuVersionWithRetry({
+    menuId: menu.id,
+    userId,
+    editorState,
+    renderSnapshot,
+  });
+
+  const { data: updatedMenuRow, error: updateError } = await supabase
+    .from('menus')
+    .update({ current_draft_version_id: versionId })
+    .eq('id', menu.id)
+    .is('current_draft_version_id', null)
+    .select('*')
+    .maybeSingle();
+
+  if (updateError) {
+    throw updateError;
+  }
+
+  if (updatedMenuRow) {
+    return mapMenuRow(updatedMenuRow);
+  }
+
+  const { data: currentMenuRow, error: currentMenuError } = await supabase
+    .from('menus')
+    .select('*')
+    .eq('id', menu.id)
+    .single();
+
+  if (currentMenuError) {
+    throw currentMenuError;
+  }
+
+  return mapMenuRow(currentMenuRow);
+};
+
+const isMissingMenuRecoveryFunction = (error: any) => {
+  const message = String(error?.message || error?.details || '');
+  return error?.code === 'PGRST202'
+    || (/ensure_my_workspace_menu/i.test(message) && /function|schema cache/i.test(message));
+};
+
+const ensureWorkspaceMenuForCurrentUser = async ({
+  workspaceId,
+  userId,
+  menuId,
+}: {
+  workspaceId: string;
+  userId: string;
+  menuId?: string | null;
+}) => {
+  const supabase = getSupabaseClient();
+  const { editorState, renderSnapshot } = createInitialMenuVersionPayload();
+  const { data, error } = await supabase.rpc('ensure_my_workspace_menu', {
+    requested_workspace_id: workspaceId,
+    requested_menu_id: menuId || null,
+    initial_editor_state: editorState,
+    initial_render_snapshot: renderSnapshot,
+  });
+
+  if (!error) {
+    const menuRow = Array.isArray(data) ? data[0] : data;
+    if (!menuRow || menuRow.workspace_id !== workspaceId) {
+      throw new Error('Não foi possível recuperar o cardápio padrão deste ambiente.');
+    }
+
+    return mapMenuRow(menuRow);
+  }
+
+  if (!isMissingMenuRecoveryFunction(error)) {
+    throw error;
+  }
+
+  const menus = await listWorkspaceMenus(workspaceId);
+  if (menus.length === 0) {
+    return createWorkspaceMenu({ workspaceId, userId, name: 'Cardápio 1' });
+  }
+
+  const selectedMenu = menus.find((candidate) => candidate.id === menuId) || menus[0];
+  return initializeWorkspaceMenu(selectedMenu, userId);
+};
+
 export const createWorkspaceMenu = async ({
   workspaceId,
   userId,
@@ -829,41 +929,22 @@ export const createWorkspaceMenu = async ({
   const supabase = getSupabaseClient();
   const menuId = crypto.randomUUID();
 
-  const { error } = await supabase.from('menus').insert({
-    id: menuId,
-    workspace_id: workspaceId,
-    name,
-    status: 'draft',
-  });
+  const { data: menuRow, error } = await supabase
+    .from('menus')
+    .insert({
+      id: menuId,
+      workspace_id: workspaceId,
+      name,
+      status: 'draft',
+    })
+    .select('*')
+    .single();
 
   if (error) {
     throw error;
   }
 
-  const initialProducts = assignCategoryIds(cloneJson(INITIAL_PRODUCTS));
-  const initialStyle = withStyleDefaults(cloneJson(INITIAL_STYLE));
-  const initialSortOption = DEFAULT_SORT_OPTION;
-  const editorState = createEditorState(initialStyle, [], initialSortOption);
-  const renderSnapshot = createRenderSnapshot(initialProducts, initialStyle, initialSortOption);
-  const { versionId } = await insertMenuVersionWithRetry({
-    menuId,
-    userId,
-    editorState,
-    renderSnapshot,
-  });
-
-  const { data: menuRow, error: updateError } = await supabase
-    .from('menus')
-    .update({ current_draft_version_id: versionId })
-    .eq('id', menuId)
-    .select('*')
-    .single();
-
-  if (updateError) {
-    throw updateError;
-  }
-
-  return mapMenuRow(menuRow);
+  return initializeWorkspaceMenu(mapMenuRow(menuRow), userId);
 };
 
 const resolveActiveMenu = async (workspaceId: string, menuId?: string | null) => {
@@ -1465,16 +1546,24 @@ export const loadWorkspaceData = async (userId: string, menuId?: string | null):
   let menus = await listWorkspaceMenus(workspace.id);
   let menu: Menu;
   if (menus.length === 0) {
-    menu = await createWorkspaceMenu({
+    menu = await ensureWorkspaceMenuForCurrentUser({
       workspaceId: workspace.id,
       userId,
-      name: 'Cardápio 1',
     });
     menus = [menu];
   } else {
     menu = await resolveActiveMenu(workspace.id, menuId);
+    if (!menu.currentDraftVersionId) {
+      menu = await ensureWorkspaceMenuForCurrentUser({
+        workspaceId: workspace.id,
+        userId,
+        menuId: menu.id,
+      });
+    }
     if (!menus.some((candidate) => candidate.id === menu.id)) {
       menus = await listWorkspaceMenus(workspace.id);
+    } else {
+      menus = menus.map((candidate) => candidate.id === menu.id ? menu : candidate);
     }
   }
 
