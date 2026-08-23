@@ -27,6 +27,7 @@ interface ProductDesignerProps {
     isOpen?: boolean;
     productsCanChangeCategory?: boolean;
     splitCategoryAcrossPages?: boolean;
+    onImportVisibilityChange?: (visible: boolean) => void;
 }
 
 export const ProductDesigner: React.FC<ProductDesignerProps> = ({
@@ -43,7 +44,8 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
     onPrint,
     isOpen = true,
     productsCanChangeCategory,
-    splitCategoryAcrossPages
+    splitCategoryAcrossPages,
+    onImportVisibilityChange,
 }) => {
 
     const {
@@ -241,6 +243,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                 currentStyle={style}
                 onPrepare={prepareAIImport}
                 onComplete={commitAIImport}
+                onVisibilityChange={onImportVisibilityChange}
             />
         </>
     );

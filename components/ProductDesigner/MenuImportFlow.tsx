@@ -71,6 +71,7 @@ interface MenuImportFlowProps {
   currentStyle: MenuStyle;
   onPrepare: (files: File[], mode: MenuImportMode) => Promise<ProcessedMenuImport>;
   onComplete: (processed: ProcessedMenuImport, finalized: FinalizedMenuImport) => void;
+  onVisibilityChange?: (visible: boolean) => void;
 }
 
 export interface MenuImportFlowHandle {
@@ -137,7 +138,10 @@ const PreviewCanvas: React.FC<{
   const containerRef = useRef<HTMLDivElement>(null);
   const fitScaleRef = useRef(0.42);
   const manualZoomRef = useRef(false);
+  const scaleRef = useRef(0.42);
+  const pinchStartRef = useRef<{ distance: number; scale: number } | null>(null);
   const [scale, setScale] = useState(0.42);
+  scaleRef.current = scale;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -154,34 +158,83 @@ const PreviewCanvas: React.FC<{
     return () => observer.disconnect();
   }, []);
 
-  const updateZoom = (delta: number) => {
+  const updateZoom = useCallback((delta: number) => {
     manualZoomRef.current = true;
     setScale((current) => Math.max(0.1, Math.min(2.5, current + delta)));
-  };
+  }, []);
 
   const resetZoom = () => {
     manualZoomRef.current = false;
     setScale(fitScaleRef.current);
   };
 
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const getTouchDistance = (touches: TouchList) => Math.hypot(
+      touches[0].clientX - touches[1].clientX,
+      touches[0].clientY - touches[1].clientY,
+    );
+    const handleWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      updateZoom(event.deltaY * -0.005);
+    };
+    const handleTouchStart = (event: TouchEvent) => {
+      if (event.touches.length !== 2) return;
+      event.preventDefault();
+      pinchStartRef.current = {
+        distance: getTouchDistance(event.touches),
+        scale: scaleRef.current,
+      };
+    };
+    const handleTouchMove = (event: TouchEvent) => {
+      const pinchStart = pinchStartRef.current;
+      if (event.touches.length !== 2 || !pinchStart || pinchStart.distance <= 0) return;
+      event.preventDefault();
+      manualZoomRef.current = true;
+      const nextScale = pinchStart.scale * (getTouchDistance(event.touches) / pinchStart.distance);
+      setScale(Math.max(0.1, Math.min(2.5, nextScale)));
+    };
+    const handleTouchEnd = (event: TouchEvent) => {
+      if (event.touches.length < 2) pinchStartRef.current = null;
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    container.addEventListener('touchstart', handleTouchStart, { passive: false });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchend', handleTouchEnd);
+    container.addEventListener('touchcancel', handleTouchEnd);
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', handleTouchEnd);
+      container.removeEventListener('touchcancel', handleTouchEnd);
+    };
+  }, [updateZoom]);
+
   return (
-    <div ref={containerRef} className="relative h-full min-h-0 overflow-auto rounded-2xl bg-slate-200/60 p-3 custom-scrollbar">
-      <div className="pointer-events-none sticky right-2 top-2 z-20 ml-auto flex h-0 w-fit justify-end">
-        <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-slate-200 bg-white/95 p-1 shadow-lg backdrop-blur">
-          <button type="button" onClick={() => updateZoom(-0.1)} className="rounded-full p-2 text-slate-600 hover:bg-slate-100" aria-label="Diminuir zoom"><ZoomOut size={16} /></button>
-          <button type="button" onClick={resetZoom} className="flex min-w-16 items-center justify-center gap-1 rounded-full px-2 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-100" aria-label="Ajustar página inteira"><Maximize2 size={14} />{Math.round(scale * 100)}%</button>
-          <button type="button" onClick={() => updateZoom(0.1)} className="rounded-full p-2 text-slate-600 hover:bg-slate-100" aria-label="Aumentar zoom"><ZoomIn size={16} /></button>
+    <div className="flex h-full min-h-0 flex-col gap-2">
+      <div className="flex shrink-0 justify-end">
+        <div className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+          <button type="button" onClick={() => updateZoom(-0.1)} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-violet-700" aria-label="Diminuir zoom"><ZoomOut size={16} /></button>
+          <button type="button" onClick={resetZoom} className="flex h-8 min-w-16 items-center justify-center gap-1 rounded-lg px-2 text-xs font-bold text-slate-600 transition hover:bg-slate-100 hover:text-violet-700" aria-label="Ajustar página inteira"><Maximize2 size={14} />{Math.round(scale * 100)}%</button>
+          <button type="button" onClick={() => updateZoom(0.1)} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-violet-700" aria-label="Aumentar zoom"><ZoomIn size={16} /></button>
         </div>
       </div>
-      <div className="mx-auto w-fit origin-top-left" style={{ zoom: scale }}>
-        <MenuPreview
-          products={products}
-          style={style}
-          sortOption={sortOption}
-          splitCategoryAcrossPages={splitCategoryAcrossPages}
-          productsCanChangeCategory={productsCanChangeCategory}
-          readOnly
-        />
+      <div ref={containerRef} className="relative min-h-0 flex-1 overflow-auto rounded-2xl bg-slate-200/60 p-3 custom-scrollbar" style={{ touchAction: 'pan-x pan-y' }}>
+        <div className="mx-auto w-fit origin-top-left" style={{ zoom: scale }}>
+          <MenuPreview
+            products={products}
+            style={style}
+            sortOption={sortOption}
+            splitCategoryAcrossPages={splitCategoryAcrossPages}
+            productsCanChangeCategory={productsCanChangeCategory}
+            readOnly
+          />
+        </div>
       </div>
     </div>
   );
@@ -288,6 +341,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
     currentStyle,
     onPrepare,
     onComplete,
+    onVisibilityChange,
   }, ref) => {
     const [visible, setVisible] = useState(false);
     const [screen, setScreen] = useState<FlowScreen>('editor');
@@ -544,6 +598,10 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
 
     useEffect(() => { pagesRef.current = pages; }, [pages]);
     useEffect(() => {
+      onVisibilityChange?.(visible);
+    }, [onVisibilityChange, visible]);
+    useEffect(() => () => onVisibilityChange?.(false), [onVisibilityChange]);
+    useEffect(() => {
       if (!visible) return;
       const previousContext = document.body.dataset.automenuDeleteContext;
       document.body.dataset.automenuDeleteContext = 'import-preview';
@@ -741,11 +799,14 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
             <button type="button" onClick={() => void redetectActivePage()} disabled={busy || !activePage} className="flex min-h-16 flex-col items-center justify-center gap-1 border-r border-slate-100 px-2 py-2 text-xs font-semibold text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-40"><ScanLine size={20} />Detectar Bordas</button>
             <button type="button" onClick={() => openFilePicker('replace')} disabled={busy || !activePage} className="flex min-h-16 flex-col items-center justify-center gap-1 px-2 py-2 text-xs font-semibold text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-40"><FileImage size={20} />Substituir Arquivo</button>
           </div>
-          <div ref={editorViewportRef} className="relative h-[52vh] min-h-[360px] overflow-hidden rounded-2xl bg-slate-950 shadow-xl lg:h-[calc(100vh-235px)] lg:min-h-[430px]">
+          <div ref={editorViewportRef} className="relative h-[52vh] min-h-[360px] lg:h-[calc(100vh-235px)] lg:min-h-[430px]">
             {activePage && displayGeometry && (
-              <>
-                <img src={activePage.previewUrl} alt="Página para recorte" draggable={false} className="absolute select-none" style={{ left: displayGeometry.left, top: displayGeometry.top, width: displayGeometry.width, height: displayGeometry.height }} />
-                <svg className="pointer-events-none absolute" style={{ left: displayGeometry.left, top: displayGeometry.top, width: displayGeometry.width, height: displayGeometry.height }} viewBox={`0 0 ${activePage.width} ${activePage.height}`} preserveAspectRatio="none" aria-hidden="true">
+              <div
+                className="absolute rounded-2xl bg-slate-950 shadow-xl"
+                style={{ left: displayGeometry.left, top: displayGeometry.top, width: displayGeometry.width, height: displayGeometry.height }}
+              >
+                <img src={activePage.previewUrl} alt="Página para recorte" draggable={false} className="absolute inset-0 h-full w-full select-none rounded-2xl" />
+                <svg className="pointer-events-none absolute inset-0 h-full w-full rounded-2xl" viewBox={`0 0 ${activePage.width} ${activePage.height}`} preserveAspectRatio="none" aria-hidden="true">
                   <defs>
                     <mask id={`scanner-mask-${activePage.id}`}>
                       <rect width={activePage.width} height={activePage.height} fill="white" />
@@ -764,7 +825,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
                       aria-label={cornerLabels[cornerName]}
                       disabled={busy}
                       className="absolute z-10 h-8 w-8 -translate-x-1/2 -translate-y-1/2 touch-none rounded-full border-[5px] border-white bg-violet-600 shadow-[0_0_0_2px_rgba(124,58,237,0.9),0_4px_12px_rgba(0,0,0,0.5)] disabled:opacity-50"
-                      style={{ left: displayGeometry.left + (point.x * displayGeometry.scale), top: displayGeometry.top + (point.y * displayGeometry.scale) }}
+                      style={{ left: point.x * displayGeometry.scale, top: point.y * displayGeometry.scale }}
                       onPointerDown={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
@@ -780,9 +841,9 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
                     />
                   );
                 })}
-              </>
+                {(preparing || activePage.detecting) && <div className="absolute inset-0 z-20 flex items-center justify-center rounded-2xl bg-black/55 text-white"><div className="flex items-center gap-2 rounded-full bg-slate-950/90 px-4 py-2 text-sm font-bold"><Loader2 size={18} className="animate-spin text-violet-400" />Detectando bordas...</div></div>}
+              </div>
             )}
-            {(preparing || activePage?.detecting) && <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/55 text-white"><div className="flex items-center gap-2 rounded-full bg-slate-950/90 px-4 py-2 text-sm font-bold"><Loader2 size={18} className="animate-spin text-violet-400" />Detectando bordas...</div></div>}
           </div>
         </section>
       );

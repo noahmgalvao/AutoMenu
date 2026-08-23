@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Product, MenuStyle, SortOption, ElementStyle, AddedImage } from '../types';
 import { PRESET_TEMPLATES } from '../constants';
 import { MenuPreview } from './MenuPreview';
-import { Undo, Redo, HelpCircle, Check, X } from 'lucide-react';
+import { Undo, Redo, Check, X } from 'lucide-react';
 import { ZoomControls } from './MenuDesigner/ZoomControls';
 import { MenuSidebar } from './MenuDesigner/MenuSidebar';
 import { PrintCanvasModal, type PrintCanvasOptions, type PrintPreviewPage } from './MenuDesigner/PrintCanvasModal';
@@ -121,6 +121,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const containerRef = useRef<HTMLDivElement>(null);
+    const tipsAnchorRef = useRef<HTMLDivElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
     const canvasPanRef = useRef<{
         pointerId: number;
@@ -246,6 +247,53 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         setTipsOpen(false);
         setHoveredFontScope(null);
     }, [hasVisibleTips]);
+
+    React.useLayoutEffect(() => {
+        if (!hasVisibleTips) return;
+        const container = containerRef.current;
+        const anchor = tipsAnchorRef.current;
+        const canvas = container?.querySelector<HTMLElement>('[data-automenu-editor-canvas="true"]');
+        if (!container || !anchor || !canvas) return;
+
+        let animationFrame: number | null = null;
+        const updatePosition = () => {
+            animationFrame = null;
+            const firstPage = canvas.querySelector<HTMLElement>(
+                '[data-menu-print-page="true"][data-page-index="0"]'
+            );
+            if (!firstPage) {
+                anchor.style.visibility = 'hidden';
+                return;
+            }
+
+            const containerRect = container.getBoundingClientRect();
+            const pageRect = firstPage.getBoundingClientRect();
+            anchor.style.left = `${pageRect.left - containerRect.left}px`;
+            anchor.style.top = `${pageRect.top - containerRect.top - anchor.offsetHeight - 4}px`;
+            anchor.style.visibility = 'visible';
+        };
+        const schedulePosition = () => {
+            if (animationFrame !== null) return;
+            animationFrame = window.requestAnimationFrame(updatePosition);
+        };
+        const resizeObserver = new ResizeObserver(schedulePosition);
+        const mutationObserver = new MutationObserver(schedulePosition);
+
+        resizeObserver.observe(container);
+        resizeObserver.observe(canvas);
+        mutationObserver.observe(canvas, { childList: true, subtree: true });
+        canvas.addEventListener('scroll', schedulePosition, { passive: true });
+        window.addEventListener('resize', schedulePosition);
+        schedulePosition();
+
+        return () => {
+            if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
+            resizeObserver.disconnect();
+            mutationObserver.disconnect();
+            canvas.removeEventListener('scroll', schedulePosition);
+            window.removeEventListener('resize', schedulePosition);
+        };
+    }, [hasVisibleTips, renderScale]);
 
     const updateZoom = (delta: number) => {
         const newScale = Math.min(2.5, Math.max(0.3, scale + delta));
@@ -1257,20 +1305,20 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 />
 
                 {hasVisibleTips && (
-                    <div className="absolute left-1/2 top-3 z-[80] -translate-x-1/2">
+                    <div ref={tipsAnchorRef} className="absolute z-[80]" style={{ visibility: 'hidden' }}>
                         <button
                             type="button"
                             onClick={() => setTipsOpen(current => !current)}
-                            className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-white bg-indigo-600 text-white shadow-lg transition hover:bg-indigo-700"
+                            className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-600 text-base font-bold leading-none text-white shadow-md transition hover:bg-indigo-700"
                             title="Dicas do cardápio"
                             aria-label="Abrir dicas do cardápio"
                             aria-expanded={tipsOpen}
                         >
-                            <HelpCircle size={22} />
+                            <span aria-hidden="true">?</span>
                         </button>
 
                         {tipsOpen && (
-                            <div className="absolute left-1/2 top-12 w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl">
+                            <div className="absolute left-0 top-10 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl">
                                 <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
                                     <div>
                                         <p className="text-sm font-bold text-slate-800">Dicas do cardápio</p>

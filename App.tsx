@@ -179,6 +179,7 @@ const App: React.FC = () => {
   const [isSettingsSaving, setIsSettingsSaving] = useState(false);
   const [isMenuActionLoading, setIsMenuActionLoading] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
+  const [isMenuImportOpen, setIsMenuImportOpen] = useState(false);
   const [history, setHistory] = useState<HistoryState[]>([]);
   const [future, setFuture] = useState<HistoryState[]>([]);
 
@@ -1163,7 +1164,7 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen bg-slate-50 flex flex-col font-sans text-slate-900 overflow-hidden relative">
-      <nav className={`absolute top-0 left-0 right-0 bg-white border-b border-slate-200 h-16 z-30 transition-transform duration-300 ${isScrolling ? '-translate-y-full md:translate-y-0' : 'translate-y-0'}`}>
+      <nav className={`absolute top-0 left-0 right-0 bg-white border-b border-slate-200 h-16 ${isMenuImportOpen ? 'z-[1100]' : 'z-30'} transition-transform duration-300 ${isMenuImportOpen ? 'translate-y-0' : isScrolling ? '-translate-y-full md:translate-y-0' : 'translate-y-0'}`}>
         <div className="w-full px-4 h-full flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
             <div className="bg-indigo-600 p-2 rounded-lg">
@@ -1228,14 +1229,16 @@ const App: React.FC = () => {
 
       <div className="flex-grow flex overflow-hidden relative">
         <div className="hidden md:flex flex-col items-center gap-4 w-16 bg-white border-r border-slate-200 py-4 z-40">
-          <button
-            onClick={() => void handleCreateMenu()}
-            disabled={isMenuActionLoading || isWorkspaceLoading}
-            className="p-3 rounded-xl transition-all text-slate-400 hover:text-indigo-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Novo cardápio"
-          >
-            {isMenuActionLoading ? <Loader2 size={24} className="animate-spin" /> : <Plus size={24} />}
-          </button>
+          {!isMenuImportOpen && (
+            <button
+              onClick={() => void handleCreateMenu()}
+              disabled={isMenuActionLoading || isWorkspaceLoading}
+              className="p-3 rounded-xl transition-all text-slate-400 hover:text-indigo-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Novo cardápio"
+            >
+              {isMenuActionLoading ? <Loader2 size={24} className="animate-spin" /> : <Plus size={24} />}
+            </button>
+          )}
           <button
             onClick={toggleMenuDesigner}
             className={`p-3 rounded-xl transition-all ${activePanel === 'style' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-50'}`}
@@ -1267,6 +1270,7 @@ const App: React.FC = () => {
           productsCanChangeCategory={workspaceData.workspace.settings?.productsCanChangeCategory}
           splitCategoryAcrossPages={workspaceData.workspace.settings.splitCategoryAcrossPages}
           onPrint={requestPrint}
+          onImportVisibilityChange={setIsMenuImportOpen}
         />
 
         <div className="flex-1 min-w-0 h-full relative">

@@ -74,13 +74,25 @@ const getResponsiveControlAxis = (direction: FlowDirection): ResponsiveControlAx
     direction === 'top' || direction === 'bottom' ? 'x' : 'y'
 );
 
+const getResponsiveControlRenderedScale = (control: HTMLElement, axis: ResponsiveControlAxis) => {
+    const page = control.closest<HTMLElement>('[data-menu-print-page="true"]');
+    const element = page || control;
+    const rect = element.getBoundingClientRect();
+    const layoutSize = axis === 'x' ? element.offsetWidth : element.offsetHeight;
+    const renderedSize = axis === 'x' ? rect.width : rect.height;
+    const scale = layoutSize > 0 ? renderedSize / layoutSize : 1;
+    return Number.isFinite(scale) && scale > 0 ? scale : 1;
+};
+
 const getResponsiveControlShift = (control: HTMLElement, axis: ResponsiveControlAxis) => {
     const value = Number(
         axis === 'x'
             ? control.dataset.responsiveShiftX
             : control.dataset.responsiveShiftY
     );
-    return Number.isFinite(value) ? value : 0;
+    return Number.isFinite(value)
+        ? value * getResponsiveControlRenderedScale(control, axis)
+        : 0;
 };
 
 const getUnshiftedControlRect = (control: HTMLElement) => {
@@ -109,18 +121,19 @@ const setResponsiveControlShift = (
     axis: ResponsiveControlAxis,
     shift: number,
 ) => {
-    const roundedShift = Math.round(shift * 10) / 10;
-    const shiftX = axis === 'x' ? roundedShift : 0;
-    const shiftY = axis === 'y' ? roundedShift : 0;
+    const renderedScale = getResponsiveControlRenderedScale(control, axis);
+    const layoutShift = Math.round((shift / renderedScale) * 10) / 10;
+    const shiftX = axis === 'x' ? layoutShift : 0;
+    const shiftY = axis === 'y' ? layoutShift : 0;
     control.dataset.responsiveShiftX = String(shiftX);
     control.dataset.responsiveShiftY = String(shiftY);
-    control.style.translate = `${shiftX}px ${shiftY}px`;
+    control.style.transform = `translate(${shiftX}px, ${shiftY}px)`;
 };
 
 const clearResponsiveControlShift = (control: HTMLElement) => {
     delete control.dataset.responsiveShiftX;
     delete control.dataset.responsiveShiftY;
-    control.style.removeProperty('translate');
+    control.style.removeProperty('transform');
 };
 
 const registerResponsiveControl = (root: HTMLElement) => {
@@ -131,6 +144,7 @@ const registerResponsiveControl = (root: HTMLElement) => {
         let disposed = false;
         const observedElements = new Set<Element>();
         const resizeObserver = new ResizeObserver(() => schedule());
+        const mutationObserver = new MutationObserver(() => schedule());
 
         const observeCurrentElements = () => {
             [
@@ -144,6 +158,9 @@ const registerResponsiveControl = (root: HTMLElement) => {
                 resizeObserver.observe(element);
             });
         };
+
+        mutationObserver.observe(root, { childList: true, subtree: true });
+        window.addEventListener('resize', schedule);
 
         const reposition = () => {
             animationFrame = null;
@@ -160,13 +177,11 @@ const registerResponsiveControl = (root: HTMLElement) => {
 
             const page = root.closest<HTMLElement>('[data-menu-print-page="true"]');
             const bounds = page?.getBoundingClientRect() || root.getBoundingClientRect();
+            const obstacleScope = page || root;
             const occupiedRects = Array.from(
-                root.querySelectorAll<HTMLButtonElement>('[data-responsive-control-obstacle="true"]')
+                obstacleScope.querySelectorAll<HTMLButtonElement>('[data-responsive-control-obstacle="true"]')
             )
-                .filter((candidate) => (
-                    candidate.getClientRects().length > 0
-                    && candidate.closest<HTMLElement>('[data-category-chunk], .automenu-drag-item') === root
-                ))
+                .filter((candidate) => candidate.getClientRects().length > 0)
                 .map((candidate) => candidate.getBoundingClientRect());
             const groups = new Map<string, { axis: ResponsiveControlAxis; controls: HTMLButtonElement[] }>();
 
@@ -237,6 +252,8 @@ const registerResponsiveControl = (root: HTMLElement) => {
                 disposed = true;
                 if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
                 resizeObserver.disconnect();
+                mutationObserver.disconnect();
+                window.removeEventListener('resize', schedule);
                 responsiveControlCoordinators.delete(root);
             },
         };
@@ -270,6 +287,11 @@ export const ResponsiveMoveButton: React.FC<
             clearResponsiveControlShift(button);
         };
     }, [controlGroup, flowDirection]);
+
+    React.useLayoutEffect(() => {
+        const root = buttonRef.current?.closest<HTMLElement>('[data-category-chunk], .automenu-drag-item');
+        if (root) responsiveControlCoordinators.get(root)?.schedule();
+    });
 
     return (
         <button
