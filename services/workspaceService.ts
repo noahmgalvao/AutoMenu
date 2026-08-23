@@ -904,10 +904,11 @@ export const loadWorkspaceMenuData = async ({
   menuId: string;
 }): Promise<LoadedWorkspaceData> => {
   const supabase = getSupabaseClient();
-  const [menu, menus] = await Promise.all([
-    resolveActiveMenu(workspace.id, menuId),
-    listWorkspaceMenus(workspace.id),
-  ]);
+  const menus = await listWorkspaceMenus(workspace.id);
+  if (menus.length === 0) {
+    return loadWorkspaceData(userId, menuId);
+  }
+  const menu = await resolveActiveMenu(workspace.id, menuId);
 
   if (!menu.currentDraftVersionId) {
     return loadWorkspaceData(userId, menuId);
@@ -1461,10 +1462,21 @@ export const loadWorkspaceData = async (userId: string, menuId?: string | null):
   }
 
   const workspace = mapWorkspaceRow(workspaceRow);
-  const [menu, menus] = await Promise.all([
-    resolveActiveMenu(workspace.id, menuId),
-    listWorkspaceMenus(workspace.id),
-  ]);
+  let menus = await listWorkspaceMenus(workspace.id);
+  let menu: Menu;
+  if (menus.length === 0) {
+    menu = await createWorkspaceMenu({
+      workspaceId: workspace.id,
+      userId,
+      name: 'Cardápio 1',
+    });
+    menus = [menu];
+  } else {
+    menu = await resolveActiveMenu(workspace.id, menuId);
+    if (!menus.some((candidate) => candidate.id === menu.id)) {
+      menus = await listWorkspaceMenus(workspace.id);
+    }
+  }
 
   let currentVersionRow: any = null;
   let templates: MenuStyle[] | null = null;

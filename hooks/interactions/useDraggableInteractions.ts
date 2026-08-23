@@ -1425,6 +1425,8 @@ export const useDraggableInteractions = (
             const activeLaneKey = resolveCategoryLaneKey(pointer, activePageIndex, currentLaneKey, true);
             if (!activeLaneKey) return;
 
+            const changedColumn = activePageIndex === currentPageIndex && activeLaneKey !== currentLaneKey;
+
             categoryActiveLaneKeyRef.current = activeLaneKey;
 
             const activeColumnIndex = Number(activeLaneKey.split(':')[1] ?? 0);
@@ -1451,6 +1453,98 @@ export const useDraggableInteractions = (
             const laneTargets = orderedTargets
                 .filter((target) => target.laneKey === activeLaneKey)
                 .sort((left, right) => left.rect.top - right.rect.top);
+
+            if (changedColumn) {
+                const currentRect = currentElement?.getBoundingClientRect();
+                const pointerOffset = categoryPointerOffsetYRef.current ?? 0;
+                const projectedTop = currentRect ? pointer.y - pointerOffset : pointer.y;
+                const projectedHeight = currentRect?.height || 0;
+                const projectedBottom = projectedTop + projectedHeight;
+                const projectedCenterY = projectedTop + (projectedHeight / 2);
+                const overlappingTarget = laneTargets
+                    .map((target) => ({
+                        target,
+                        overlap: Math.max(0, Math.min(projectedBottom, target.rect.bottom) - Math.max(projectedTop, target.rect.top)),
+                    }))
+                    .filter((candidate) => candidate.overlap > 0)
+                    .sort((left, right) => right.overlap - left.overlap || Math.abs(left.target.rect.top - projectedTop) - Math.abs(right.target.rect.top - projectedTop))[0]?.target;
+                const nextTarget = overlappingTarget
+                    || laneTargets.find((target) => target.rect.top + (target.rect.height / 2) >= projectedCenterY);
+                const anchorTarget = nextTarget || laneTargets[laneTargets.length - 1];
+                let desiredInsertionIndex = orderWithoutDragged.length;
+                let targetPosition: 'before' | 'after' = nextTarget ? 'before' : 'after';
+
+                if (anchorTarget) {
+                    const anchorIndex = orderWithoutDragged.indexOf(anchorTarget.id);
+                    if (anchorIndex !== -1) {
+                        desiredInsertionIndex = anchorIndex + (targetPosition === 'after' ? 1 : 0);
+                    }
+                } else {
+                    const lanes = getCategoryLanes();
+                    const activeLaneIndex = lanes.findIndex((lane) => lane.key === activeLaneKey);
+                    const laneIndexes = new Map(lanes.map((lane, index) => [lane.key, index]));
+                    const followingTarget = activeLaneIndex === -1
+                        ? null
+                        : orderedTargets.find((target) => (laneIndexes.get(target.laneKey) ?? -1) > activeLaneIndex);
+                    const precedingTarget = activeLaneIndex === -1
+                        ? null
+                        : [...orderedTargets].reverse().find((target) => {
+                            const laneIndex = laneIndexes.get(target.laneKey) ?? -1;
+                            return laneIndex !== -1 && laneIndex < activeLaneIndex;
+                        });
+                    const boundaryTarget = followingTarget || precedingTarget;
+                    if (boundaryTarget) {
+                        const boundaryIndex = orderWithoutDragged.indexOf(boundaryTarget.id);
+                        targetPosition = followingTarget ? 'before' : 'after';
+                        desiredInsertionIndex = boundaryIndex === -1
+                            ? orderWithoutDragged.length
+                            : boundaryIndex + (targetPosition === 'after' ? 1 : 0);
+                    }
+                }
+
+                const newOrder = moveItemToInsertionIndex(currentOrder, currentDragItem.id, desiredInsertionIndex);
+                const currentPositions = liveCategoryPositionsRef.current || style.categoryPositions || {};
+                const nextPositions = { ...currentPositions };
+                const hadPosition = Boolean(nextPositions[currentDragItem.id]);
+                delete nextPositions[currentDragItem.id];
+                const nextAssignments = {
+                    ...currentAssignments,
+                    [currentDragItem.id]: {
+                        pageIndex: activePageIndex,
+                        columnIndex: activeColumnIndex,
+                    },
+                };
+                const assignmentChanged = currentPlacement?.pageIndex !== activePageIndex
+                    || currentPlacement?.columnIndex !== activeColumnIndex;
+                const orderChanged = !areOrdersEqual(newOrder, currentOrder);
+                if (!assignmentChanged && !orderChanged && !hadPosition) return;
+
+                categorySwapLockRef.current = anchorTarget ? {
+                    sourceId: currentDragItem.id,
+                    targetId: anchorTarget.id,
+                    position: targetPosition,
+                } : null;
+                flushSync(() => {
+                    if (hadPosition) {
+                        liveCategoryPositionsRef.current = nextPositions;
+                        setLiveCategoryPositions(nextPositions);
+                    }
+                    liveCategoryPageAssignmentsRef.current = nextAssignments;
+                    setLiveCategoryPageAssignments(nextAssignments);
+                    if (orderChanged) {
+                        liveCategoryOrderRef.current = newOrder;
+                        setLiveCategoryOrder(newOrder);
+                    }
+                    hasDragMutationRef.current = true;
+                });
+
+                categoryActivePageIndexRef.current = activePageIndex;
+                categoryActiveLaneKeyRef.current = activeLaneKey;
+                rebaseCategoryAfterSwap({ sourceId: currentDragItem.id, pointer });
+                if (commitImmediately && orderChanged) onCommitCategoryOrder?.(newOrder);
+                return;
+            }
+
             const pointerTarget = laneTargets.find((target) => (
                 pointer.x >= target.rect.left
                 && pointer.x <= target.rect.right
@@ -1551,7 +1645,7 @@ export const useDraggableInteractions = (
                 onStyleUpdate((prev) => ({ ...prev, pageBreaks: nextPageBreaks, name: 'Custom' }));
             }
         },
-        [getOrderedCategoryTargets, getRenderedDragElement, onCommitCategoryOrder, onStyleUpdate, rebaseCategoryAfterSwap, resolveCategoryLaneKey, resolveCategoryPageIndex, style.categoryPositions, updateDraggedCategoryPosition]
+        [getCategoryLanes, getOrderedCategoryTargets, getRenderedDragElement, onCommitCategoryOrder, onStyleUpdate, rebaseCategoryAfterSwap, resolveCategoryLaneKey, resolveCategoryPageIndex, style.categoryPositions, updateDraggedCategoryPosition]
     );
 
     const syncFreeTextCategoryOrderToLane = useCallback(

@@ -292,6 +292,8 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
     const pointerEventsClass = isMobileSelected ? 'pointer-events-auto' : 'pointer-events-none md:group-hover:pointer-events-auto';
     const usesDeleteAction = isFreeText || isPristineNewDefault;
     const flowDirections = handlers.getFlowControlDirections?.(selectionType, selectionId) || { before: 'top', after: 'bottom' };
+    const addBeforeDirection: FlowDirection = showGridMoveControls ? 'top' : flowDirections.before;
+    const addAfterDirection: FlowDirection = showGridMoveControls ? 'bottom' : flowDirections.after;
     const controlPadding = denseControls ? 'p-0.5' : compactControls ? (mobileExpandedControls ? 'p-2.5 md:p-1.5' : 'p-1.5') : 'p-2.5';
     const movePadding = denseControls ? 'p-0.5' : compactControls ? (mobileExpandedControls ? 'p-2 md:p-1.5' : 'p-1.5') : 'p-2';
     const iconSize = denseControls ? 12 : compactControls ? 15 : 24;
@@ -355,24 +357,24 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
             <>
                 {showTopAddControl && (
                     <ResponsiveMoveButton
-                        flowDirection={flowDirections.before}
+                        flowDirection={addBeforeDirection}
                         controlGroup="add"
-                        className={`absolute ${getEdgeControlClass(flowDirections.before)} text-white p-1 rounded-full ${selectionLayerClasses.controls} transition-transform cursor-pointer ${addControlClass}`}
+                        className={`absolute ${getEdgeControlClass(addBeforeDirection)} text-white p-1 rounded-full ${selectionLayerClasses.controls} transition-transform cursor-pointer ${addControlClass}`}
                         onPointerDown={e => e.stopPropagation()}
                         onClick={(e) => handlers.handleAddClick?.(e, catName, type === 'category', 'before', id)}
-                        title={`${type === 'category' ? 'Adicionar categoria' : 'Adicionar item'} ${getDirectionLabel(flowDirections.before)}`}
+                        title={`${type === 'category' ? 'Adicionar categoria' : 'Adicionar item'} ${getDirectionLabel(addBeforeDirection)}`}
                     >
                         <Plus size={12}/>
                     </ResponsiveMoveButton>
                 )}
                 {showBottomAddControl && (
                     <ResponsiveMoveButton
-                        flowDirection={flowDirections.after}
+                        flowDirection={addAfterDirection}
                         controlGroup="add"
-                        className={`absolute ${getEdgeControlClass(flowDirections.after)} text-white p-1 rounded-full ${selectionLayerClasses.controls} transition-transform cursor-pointer ${addControlClass}`}
+                        className={`absolute ${getEdgeControlClass(addAfterDirection)} text-white p-1 rounded-full ${selectionLayerClasses.controls} transition-transform cursor-pointer ${addControlClass}`}
                         onPointerDown={e => e.stopPropagation()}
                         onClick={(e) => handlers.handleAddClick?.(e, catName, type === 'category', 'after', id)}
-                        title={`${type === 'category' ? 'Adicionar categoria' : 'Adicionar item'} ${getDirectionLabel(flowDirections.after)}`}
+                        title={`${type === 'category' ? 'Adicionar categoria' : 'Adicionar item'} ${getDirectionLabel(addAfterDirection)}`}
                     >
                         <Plus size={12}/>
                     </ResponsiveMoveButton>
@@ -898,7 +900,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         
         return (
             <div key={`row-${idx}`} className="grid" style={{ gridTemplateColumns: `repeat(${productColumnCount}, minmax(0, 1fr))`, gap: `${productGridGap}px`, marginBottom: contentSpacing.betweenProducts }}>
-                {(item.data as Product[]).map((product) => {
+                {(item.data as Product[]).map((product, productColumnIndex) => {
                      const isSelected = handlers.isSelected?.('product', product.id) ?? handlers.selectedId === product.id;
                      const nameStyle = style.elementStyles?.productName || {};
                      const priceStyle = style.elementStyles?.productPrice || {};
@@ -915,8 +917,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                      const hasMovableSiblings = visibleCatProducts.length > 1 && pIndex >= 0;
                      const canMoveUp = hasMovableSiblings && (productColumnCount > 1 ? pIndex - productColumnCount >= 0 : pIndex > 0);
                      const canMoveDown = hasMovableSiblings && (productColumnCount > 1 ? pIndex + productColumnCount < visibleCatProducts.length : pIndex < visibleCatProducts.length - 1);
-                     const canMoveLeft = hasMovableSiblings && productColumnCount > 1 && pIndex % productColumnCount > 0;
-                     const canMoveRight = hasMovableSiblings && productColumnCount > 1 && pIndex % productColumnCount < productColumnCount - 1 && pIndex < visibleCatProducts.length - 1;
+                     const canMoveLeft = productColumnCount > 1 && productColumnIndex > 0;
+                     const canMoveRight = productColumnCount > 1 && productColumnIndex < productColumnCount - 1;
                      const isBeingDragged = handlers.draggedItem?.id === product.id;
                      const isEditing = handlers.editingId === product.id;
                      const productAddControls = handlers.getSelectionAddControls?.('product', product.id) || { top: true, bottom: true };

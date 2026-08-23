@@ -475,10 +475,11 @@ const buildLockedPagination = (
         if (visibleProducts.length === 0) return;
 
         const freePosition = style.categoryPositions?.[category];
+        const assignedPlacement = categoryPlacementAssignments[category];
         const placement = normalizePlacement(
             freePosition
                 ? { pageIndex: freePosition.pageIndex, columnIndex: freePosition.columnIndex }
-                : categoryPlacementAssignments[category] || fallbackPlacement
+                : assignedPlacement || fallbackPlacement
         );
         fallbackPlacement = placement;
 
@@ -537,7 +538,7 @@ const buildLockedPagination = (
         let currentPlacement = placement;
         let startsCategory = true;
 
-        if (!style.categoryPositions?.[category] && placement.columnIndex > 0) {
+        if (!freePosition && !assignedPlacement && placement.columnIndex > 0) {
             for (let columnIndex = 0; columnIndex < placement.columnIndex; columnIndex += 1) {
                 const candidatePlacement = { pageIndex: placement.pageIndex, columnIndex };
                 const candidateCalculator = createPageItemHeightCalculator(style, lockedPage.columns.length, columnIndex);

@@ -72,6 +72,24 @@ interface FontTip {
     safeFontSize: number;
 }
 
+interface RenderedMoveEntry {
+    id: string;
+    pageIndex: number;
+    columnIndex: number;
+    left: number;
+    right: number;
+    top: number;
+    bottom: number;
+    centerX: number;
+    centerY: number;
+}
+
+const insertItemAtOriginalIndex = (order: string[], itemId: string, insertionIndex: number) => {
+    const nextOrder = order.filter((id) => id !== itemId);
+    nextOrder.splice(Math.max(0, Math.min(insertionIndex, nextOrder.length)), 0, itemId);
+    return nextOrder;
+};
+
 const WORD_FIT_SCOPE_LABELS: Record<WordFitScope, string> = {
     menuTitle: 'títulos principais',
     menuSubtitle: 'subtítulos',
@@ -651,6 +669,13 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         const newCategoryName = `Nova categoria ${Math.floor(Math.random() * 1000)}`;
         const newId = crypto.randomUUID();
         const categoryId = crypto.randomUUID();
+        const nearCategoryElement = Array.from(
+            containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"] [data-drag-type="category"][data-drag-id]') || []
+        ).find((element) => element.dataset.dragId === nearCategory);
+        const nearCategoryPlacement = nearCategoryElement && (style.categoryColumnCount || 1) > 1 ? {
+            pageIndex: Number(nearCategoryElement.dataset.dragPageIndex ?? 0),
+            columnIndex: Number(nearCategoryElement.dataset.dragColumnIndex ?? 0),
+        } : null;
         setProducts(prev => [...prev, { id: newId, name: 'Novo item', price: 0, description: 'Descrição', category: newCategoryName, categoryId, image: '' }]);
         setStyle(prev => {
             const distinctCategories = Array.from(new Set(displayProducts.map(p => p.category))).sort();
@@ -661,21 +686,19 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 if (position === 'before') { currentOrder.splice(targetIdx, 0, newCategoryName); }
                 else { currentOrder.splice(targetIdx + 1, 0, newCategoryName); }
             } else { currentOrder.push(newCategoryName); }
-            return { ...prev, customCategoryOrder: currentOrder, name: 'Custom' };
+            return {
+                ...prev,
+                customCategoryOrder: currentOrder,
+                categoryPlacements: nearCategoryPlacement
+                    ? { ...(prev.categoryPlacements || {}), [newCategoryName]: nearCategoryPlacement }
+                    : prev.categoryPlacements,
+                name: 'Custom',
+            };
         });
     };
 
     const getVisibleMoveNeighborId = (
-        entries: Array<{
-            id: string;
-            pageIndex: number;
-            left: number;
-            right: number;
-            top: number;
-            bottom: number;
-            centerX: number;
-            centerY: number;
-        }>,
+        entries: RenderedMoveEntry[],
         currentId: string,
         direction: MoveDirection,
     ) => {
@@ -735,6 +758,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 return {
                     id: element.dataset.dragId || '',
                     pageIndex: Number(page?.dataset.pageIndex ?? 0),
+                    columnIndex: Number(element.dataset.dragColumnIndex ?? 0),
                     left: rect.left,
                     right: rect.right,
                     top: rect.top,
@@ -748,8 +772,89 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         return getVisibleMoveNeighborId(categoryElements, category, direction);
     };
 
+    const getHorizontalCategoryInsertion = (category: string, direction: 'left' | 'right') => {
+        const categoryElements: RenderedMoveEntry[] = Array.from(
+            containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"] [data-drag-type="category"][data-drag-id]') || []
+        )
+            .filter((element) => element.isConnected && element.getClientRects().length > 0)
+            .map((element) => {
+                const page = element.closest<HTMLElement>('[data-page-index]');
+                const rect = element.getBoundingClientRect();
+                return {
+                    id: element.dataset.dragId || '',
+                    pageIndex: Number(page?.dataset.pageIndex ?? 0),
+                    columnIndex: Number(element.dataset.dragColumnIndex ?? 0),
+                    left: rect.left,
+                    right: rect.right,
+                    top: rect.top,
+                    bottom: rect.bottom,
+                    centerX: rect.left + rect.width / 2,
+                    centerY: rect.top + rect.height / 2,
+                };
+            })
+            .filter((entry) => Boolean(entry.id));
+        const current = categoryElements.find((entry) => entry.id === category);
+        if (!current) return null;
+
+        const targetColumnIndex = current.columnIndex + (direction === 'left' ? -1 : 1);
+        if (targetColumnIndex < 0) return null;
+        const laneExists = containerRef.current?.querySelector(
+            `[data-menu-print-page="true"][data-page-index="${current.pageIndex}"] [data-drag-column-container="category"][data-drag-column-index="${targetColumnIndex}"]`
+        );
+        if (!laneExists) return null;
+
+        const laneEntries = categoryElements
+            .filter((entry) => entry.pageIndex === current.pageIndex && entry.columnIndex === targetColumnIndex)
+            .sort((left, right) => left.top - right.top);
+        const overlappingEntries = laneEntries
+            .map((entry) => ({
+                entry,
+                overlap: Math.max(0, Math.min(current.bottom, entry.bottom) - Math.max(current.top, entry.top)),
+            }))
+            .filter((candidate) => candidate.overlap > 0)
+            .sort((left, right) => right.overlap - left.overlap || Math.abs(left.entry.centerY - current.centerY) - Math.abs(right.entry.centerY - current.centerY));
+        const overlapping = overlappingEntries[0]?.entry;
+        if (overlapping) {
+            return {
+                anchorId: overlapping.id,
+                position: 'before' as const,
+                pageIndex: current.pageIndex,
+                columnIndex: targetColumnIndex,
+            };
+        }
+
+        const nextEntry = laneEntries.find((entry) => entry.centerY >= current.centerY);
+        const anchor = nextEntry || laneEntries[laneEntries.length - 1];
+        if (anchor) {
+            return {
+                anchorId: anchor.id,
+                position: nextEntry ? 'before' as const : 'after' as const,
+                pageIndex: current.pageIndex,
+                columnIndex: targetColumnIndex,
+            };
+        }
+
+        const nextLaneEntry = categoryElements
+            .filter((entry) => entry.pageIndex > current.pageIndex
+                || (entry.pageIndex === current.pageIndex && entry.columnIndex > targetColumnIndex))
+            .sort((left, right) => left.pageIndex - right.pageIndex || left.columnIndex - right.columnIndex || left.top - right.top)[0];
+        const previousLaneEntry = categoryElements
+            .filter((entry) => entry.pageIndex < current.pageIndex
+                || (entry.pageIndex === current.pageIndex && entry.columnIndex < targetColumnIndex))
+            .sort((left, right) => right.pageIndex - left.pageIndex || right.columnIndex - left.columnIndex || right.top - left.top)[0];
+        return {
+            anchorId: nextLaneEntry?.id || previousLaneEntry?.id || null,
+            position: nextLaneEntry ? 'before' as const : 'after' as const,
+            pageIndex: current.pageIndex,
+            columnIndex: targetColumnIndex,
+        };
+    };
+
     const handleMoveCategory = (category: string, direction: MoveDirection) => {
-        const visibleNeighborId = getVisibleCategoryNeighborId(category, direction);
+        const horizontalInsertion = direction === 'left' || direction === 'right'
+            ? getHorizontalCategoryInsertion(category, direction)
+            : null;
+        const visibleNeighborId = horizontalInsertion?.anchorId || getVisibleCategoryNeighborId(category, direction);
 
         setStyle(prev => {
             const distinctCategories = Array.from(new Set(displayProducts.map(p => p.category))).sort();
@@ -757,11 +862,22 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             distinctCategories.forEach(c => { if (!currentOrder.includes(c)) currentOrder.push(c); });
             const idx = currentOrder.indexOf(category);
             if (idx === -1) return prev;
-            const newOrder = [...currentOrder];
+            let newOrder = [...currentOrder];
             const neighborIndex = visibleNeighborId ? currentOrder.indexOf(visibleNeighborId) : -1;
             let orderChanged = false;
 
-            if (neighborIndex !== -1) {
+            if (horizontalInsertion) {
+                const orderWithoutCategory = currentOrder.filter((id) => id !== category);
+                const anchorIndex = horizontalInsertion.anchorId
+                    ? orderWithoutCategory.indexOf(horizontalInsertion.anchorId)
+                    : -1;
+                const insertionIndex = anchorIndex === -1
+                    ? orderWithoutCategory.length
+                    : anchorIndex + (horizontalInsertion.position === 'after' ? 1 : 0);
+                newOrder = [...orderWithoutCategory];
+                newOrder.splice(insertionIndex, 0, category);
+                orderChanged = newOrder.some((id, index) => id !== currentOrder[index]);
+            } else if (neighborIndex !== -1) {
                 [newOrder[idx], newOrder[neighborIndex]] = [newOrder[neighborIndex], newOrder[idx]];
                 orderChanged = neighborIndex !== idx;
             } else if (direction === 'up' || direction === 'left') {
@@ -777,11 +893,24 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             }
             const nextCategoryPositions = { ...(prev.categoryPositions || {}) };
             const hadFreePosition = Boolean(nextCategoryPositions[category]);
-            if (!orderChanged && !hadFreePosition) return prev;
+            const placementChanged = Boolean(horizontalInsertion && (
+                prev.categoryPlacements?.[category]?.pageIndex !== horizontalInsertion.pageIndex
+                || prev.categoryPlacements?.[category]?.columnIndex !== horizontalInsertion.columnIndex
+            ));
+            if (!orderChanged && !hadFreePosition && !placementChanged) return prev;
             delete nextCategoryPositions[category];
             return {
                 ...prev,
                 customCategoryOrder: newOrder,
+                categoryPlacements: horizontalInsertion
+                    ? {
+                        ...(prev.categoryPlacements || {}),
+                        [category]: {
+                            pageIndex: horizontalInsertion.pageIndex,
+                            columnIndex: horizontalInsertion.columnIndex,
+                        },
+                    }
+                    : prev.categoryPlacements,
                 categoryPositions: nextCategoryPositions,
                 name: 'Custom',
             };
@@ -822,6 +951,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 return {
                     id: element.dataset.dragId || '',
                     pageIndex: Number(page?.dataset.pageIndex ?? 0),
+                    columnIndex: 0,
                     top: rect.top,
                     left: rect.left,
                     right: rect.right,
@@ -831,6 +961,17 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 };
             })
             .filter((entry) => Boolean(entry.id));
+
+        if (direction === 'left' || direction === 'right') {
+            const current = productElements.find((entry) => entry.id === productId);
+            if (!current) return null;
+            return productElements
+                .filter((entry) => entry.id !== productId
+                    && entry.pageIndex === current.pageIndex
+                    && (direction === 'left' ? entry.centerX < current.centerX - 1 : entry.centerX > current.centerX + 1)
+                    && Math.min(current.bottom, entry.bottom) - Math.max(current.top, entry.top) > 0)
+                .sort((left, right) => Math.abs(left.centerX - current.centerX) - Math.abs(right.centerX - current.centerX))[0]?.id || null;
+        }
 
         return getVisibleMoveNeighborId(productElements, productId, direction);
     };
@@ -846,14 +987,21 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             displayProducts.filter(p => p.category === category).forEach(p => { if (!currentOrder.includes(p.id)) currentOrder.push(p.id); });
             const idx = currentOrder.indexOf(productId);
             if (idx === -1) return prev;
-            const newOrder = [...currentOrder];
+            let newOrder = [...currentOrder];
             const neighborIndex = visibleNeighborId && validIds.has(visibleNeighborId)
                 ? currentOrder.indexOf(visibleNeighborId)
                 : -1;
 
-            if (neighborIndex !== -1) {
+            if (neighborIndex !== -1 && (direction === 'left' || direction === 'right')) {
+                newOrder = insertItemAtOriginalIndex(currentOrder, productId, neighborIndex);
+            } else if (neighborIndex !== -1) {
                 [newOrder[idx], newOrder[neighborIndex]] = [newOrder[neighborIndex], newOrder[idx]];
-            } else if (direction === 'up' || direction === 'left') {
+            } else if (direction === 'left' || direction === 'right') {
+                const columnCount = Math.max(1, prev.columnCount || 1);
+                const targetIndex = idx + (direction === 'left' ? -1 : 1);
+                if (targetIndex < 0 || targetIndex >= columnCount * Math.ceil(currentOrder.length / columnCount)) return prev;
+                newOrder = insertItemAtOriginalIndex(currentOrder, productId, targetIndex);
+            } else if (direction === 'up') {
                 if (idx === 0) return prev;
                 [newOrder[idx - 1], newOrder[idx]] = [newOrder[idx], newOrder[idx - 1]];
             } else {

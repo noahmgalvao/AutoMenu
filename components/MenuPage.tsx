@@ -216,6 +216,8 @@ export const MenuPage: React.FC<MenuPageProps> = ({
         const isCategoryDragged = isCategoryTarget && handlers.draggedItem?.type === 'category' && handlers.draggedItem?.id === chunk.category;
         const categoryAddControls = handlers.getSelectionAddControls?.('category', chunk.category) || { top: true, bottom: true };
         const categoryFlowDirections = handlers.getFlowControlDirections?.('category', chunk.category) || { before: 'top', after: 'bottom' };
+        const categoryAddBeforeDirection: FlowDirection = renderedColumnCount > 1 ? 'top' : categoryFlowDirections.before;
+        const categoryAddAfterDirection: FlowDirection = renderedColumnCount > 1 ? 'bottom' : categoryFlowDirections.after;
         const flowIndex = isDragTarget ? handlers.sortedCategories.indexOf(chunk.category) : -1;
         const categoryPosition = handlers.liveCategoryPositions !== null
             && handlers.liveCategoryPositions !== undefined
@@ -280,32 +282,48 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                     <>
                         {categoryAddControls.top && (
                             <ResponsiveMoveButton
-                                flowDirection={categoryFlowDirections.before}
+                                flowDirection={categoryAddBeforeDirection}
                                 controlGroup="category-add"
-                                className={`absolute ${getEdgeControlClass(categoryFlowDirections.before)} bg-indigo-600 text-white p-1 rounded-full ${selectionLayerClasses.controls} shadow-md hover:scale-110 hover:bg-indigo-700 transition-transform cursor-pointer pointer-events-auto`}
+                                className={`absolute ${getEdgeControlClass(categoryAddBeforeDirection)} bg-indigo-600 text-white p-1 rounded-full ${selectionLayerClasses.controls} shadow-md hover:scale-110 hover:bg-indigo-700 transition-transform cursor-pointer pointer-events-auto`}
                                 onPointerDown={(e) => e.stopPropagation()}
                                 onClick={(e) => handlers.handleAddClick?.(e, chunk.category, true, 'before')}
-                                title={`Adicionar categoria ${getDirectionLabel(categoryFlowDirections.before)}`}
+                                title={`Adicionar categoria ${getDirectionLabel(categoryAddBeforeDirection)}`}
                             >
                                 <Plus size={12} />
                             </ResponsiveMoveButton>
                         )}
                         {categoryAddControls.bottom && (
                             <ResponsiveMoveButton
-                                flowDirection={categoryFlowDirections.after}
+                                flowDirection={categoryAddAfterDirection}
                                 controlGroup="category-add"
-                                className={`absolute ${getEdgeControlClass(categoryFlowDirections.after)} bg-indigo-600 text-white p-1 rounded-full ${selectionLayerClasses.controls} shadow-md hover:scale-110 hover:bg-indigo-700 transition-transform cursor-pointer pointer-events-auto`}
+                                className={`absolute ${getEdgeControlClass(categoryAddAfterDirection)} bg-indigo-600 text-white p-1 rounded-full ${selectionLayerClasses.controls} shadow-md hover:scale-110 hover:bg-indigo-700 transition-transform cursor-pointer pointer-events-auto`}
                                 onPointerDown={(e) => e.stopPropagation()}
                                 onClick={(e) => handlers.handleAddClick?.(e, chunk.category, true, 'after')}
-                                title={`Adicionar categoria ${getDirectionLabel(categoryFlowDirections.after)}`}
+                                title={`Adicionar categoria ${getDirectionLabel(categoryAddAfterDirection)}`}
                             >
                                 <Plus size={12} />
                             </ResponsiveMoveButton>
                         )}
-                        {renderCategoryMoveButton(categoryFlowDirections.before, flowIndex > 0)}
-                        {renderCategoryMoveButton(
-                            categoryFlowDirections.after,
-                            flowIndex >= 0 && flowIndex < handlers.sortedCategories.length - 1
+                        {renderedColumnCount > 1 ? (
+                            <>
+                                {renderCategoryMoveButton('top', flowIndex > 0 && categoryFlowDirections.before === 'top')}
+                                {renderCategoryMoveButton(
+                                    'bottom',
+                                    flowIndex >= 0
+                                        && flowIndex < handlers.sortedCategories.length - 1
+                                        && categoryFlowDirections.after === 'bottom'
+                                )}
+                                {renderCategoryMoveButton('left', chunk.columnIndex > 0)}
+                                {renderCategoryMoveButton('right', chunk.columnIndex < renderedColumnCount - 1)}
+                            </>
+                        ) : (
+                            <>
+                                {renderCategoryMoveButton(categoryFlowDirections.before, flowIndex > 0)}
+                                {renderCategoryMoveButton(
+                                    categoryFlowDirections.after,
+                                    flowIndex >= 0 && flowIndex < handlers.sortedCategories.length - 1
+                                )}
+                            </>
                         )}
                     </>
                 )}
