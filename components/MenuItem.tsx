@@ -159,7 +159,12 @@ const registerResponsiveControl = (root: HTMLElement) => {
             });
         };
 
-        mutationObserver.observe(root, { childList: true, subtree: true });
+        mutationObserver.observe(root, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['class', 'data-responsive-control-active', 'data-responsive-control-obstacle'],
+        });
         window.addEventListener('resize', schedule);
 
         const reposition = () => {
@@ -171,6 +176,7 @@ const registerResponsiveControl = (root: HTMLElement) => {
                 root.querySelectorAll<HTMLButtonElement>('[data-responsive-edge-control="true"]')
             ).filter((control) => (
                 control.getClientRects().length > 0
+                && control.dataset.responsiveControlActive === 'true'
                 && control.closest<HTMLElement>('[data-category-chunk], .automenu-drag-item') === root
             ));
             if (controls.length === 0) return;
@@ -178,9 +184,11 @@ const registerResponsiveControl = (root: HTMLElement) => {
             const page = root.closest<HTMLElement>('[data-menu-print-page="true"]');
             const bounds = page?.getBoundingClientRect() || root.getBoundingClientRect();
             const obstacleScope = page || root;
-            const occupiedRects = Array.from(
-                obstacleScope.querySelectorAll<HTMLButtonElement>('[data-responsive-control-obstacle="true"]')
-            )
+            const ownControls = new Set<HTMLElement>(controls);
+            const occupiedRects = Array.from(obstacleScope.querySelectorAll<HTMLElement>(
+                '[data-responsive-control-obstacle="true"], [data-responsive-edge-control="true"][data-responsive-control-active="true"]'
+            ))
+                .filter((candidate) => !ownControls.has(candidate))
                 .filter((candidate) => candidate.getClientRects().length > 0)
                 .map((candidate) => candidate.getBoundingClientRect());
             const groups = new Map<string, { axis: ResponsiveControlAxis; controls: HTMLButtonElement[] }>();
@@ -273,8 +281,12 @@ const registerResponsiveControl = (root: HTMLElement) => {
 };
 
 export const ResponsiveMoveButton: React.FC<
-    React.ButtonHTMLAttributes<HTMLButtonElement> & { flowDirection: FlowDirection; controlGroup?: string }
-> = ({ flowDirection, controlGroup = 'move', children, ...buttonProps }) => {
+    React.ButtonHTMLAttributes<HTMLButtonElement> & {
+        flowDirection: FlowDirection;
+        controlGroup?: string;
+        responsiveActive?: boolean;
+    }
+> = ({ flowDirection, controlGroup = 'move', responsiveActive = true, children, ...buttonProps }) => {
     const buttonRef = React.useRef<HTMLButtonElement>(null);
 
     React.useLayoutEffect(() => {
@@ -298,6 +310,7 @@ export const ResponsiveMoveButton: React.FC<
             ref={buttonRef}
             type="button"
             data-responsive-edge-control="true"
+            data-responsive-control-active={responsiveActive ? 'true' : 'false'}
             data-responsive-control-group={controlGroup}
             data-responsive-flow-direction={flowDirection}
             {...buttonProps}
@@ -321,10 +334,13 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
     const iconSize = denseControls ? 12 : compactControls ? 15 : 24;
     const iconClass = compactControls && mobileExpandedControls && !denseControls ? 'h-6 w-6 md:h-[15px] md:w-[15px]' : undefined;
     const generalControlsPosition = compactControls && containMobileControls
-        ? 'top-1 right-1'
+        ? 'top-1 right-8 md:-top-[38px]'
         : compactControls
-            ? 'top-[-38px] right-0'
+            ? 'top-[-38px] right-8'
             : 'top-[-10px] right-[-10px]';
+    const generalControlsMaxWidth = compactControls
+        ? 'max-w-[calc(100%_-_2.5rem)]'
+        : 'max-w-[calc(100%_-_0.5rem)]';
     
     let effectiveHideGeneralControls = hideGeneralControls;
     if (handlers.multiSelectMode && handlers.selectedItems && handlers.selectedItems.length > 1) {
@@ -359,6 +375,7 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
             <ResponsiveMoveButton
                 flowDirection={flowDirection}
                 controlGroup="move"
+                responsiveActive={isSelected}
                 onClick={(e) => handlers.handleGlobalMove(e, type, id || catName, catName, direction)}
                 className={`absolute ${getEdgeControlClass(flowDirection, 'leading')} ${movePadding} ${pointerEventsClass} bg-white border border-slate-200 shadow-sm rounded-full text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all cursor-pointer`}
                 onPointerDown={(e) => e.stopPropagation()}
@@ -406,7 +423,10 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
 
         {!isDragging && !handlers.editingId && <div className={`absolute inset-0 pointer-events-none ${selectionLayerClasses.controls} transition-opacity duration-200 ${isMobileSelected ? 'opacity-100' : 'opacity-0 md:group-hover:opacity-100'}`}>
            {!effectiveHideGeneralControls && (
-               <div className={`absolute ${generalControlsPosition} ${pointerEventsClass} flex max-w-[calc(100%_-_0.5rem)] flex-wrap justify-end gap-1 ${selectionLayerClasses.controls}`}>
+               <div
+                    data-responsive-control-obstacle={isSelected ? 'true' : undefined}
+                    className={`absolute ${generalControlsPosition} ${pointerEventsClass} flex ${generalControlsMaxWidth} flex-wrap justify-end gap-1 ${selectionLayerClasses.controls}`}
+               >
                     {onEdit && (
                         <button
                             onClick={onEdit}
@@ -458,6 +478,7 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
                     <ResponsiveMoveButton
                         flowDirection={flowDirections.before}
                         controlGroup="move"
+                        responsiveActive={isSelected}
                         onClick={(e) => handlers.handleGlobalMove(e, type, id || catName, catName, 'up')}
                         className={`absolute ${getEdgeControlClass(flowDirections.before, 'leading')} ${movePadding} ${pointerEventsClass} bg-white border border-slate-200 shadow-sm rounded-full text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all cursor-pointer`}
                         onPointerDown={(e) => e.stopPropagation()}
@@ -470,6 +491,7 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
                     <ResponsiveMoveButton
                         flowDirection={flowDirections.after}
                         controlGroup="move"
+                        responsiveActive={isSelected}
                         onClick={(e) => handlers.handleGlobalMove(e, type, id || catName, catName, 'down')}
                         className={`absolute ${getEdgeControlClass(flowDirections.after, 'leading')} ${movePadding} ${pointerEventsClass} bg-white border border-slate-200 shadow-sm rounded-full text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all cursor-pointer`}
                         onPointerDown={(e) => e.stopPropagation()}

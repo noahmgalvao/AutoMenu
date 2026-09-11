@@ -59,4 +59,5 @@ export interface InteractionProps {
     onSelectionChange?: (selection: { type: SelectionType, id: string | null }) => void;
     selection?: { type: SelectionType, id: string | null };
     productsCanChangeCategory?: boolean;
+    splitCategoryAcrossPages?: boolean;
 }

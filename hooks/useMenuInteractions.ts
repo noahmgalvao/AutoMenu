@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { InteractionProps, DraftItem, NUDGE_STEP } from './interactions/types';
 
 import { useMenuData } from './interactions/useMenuData';
@@ -27,7 +27,13 @@ export const useMenuInteractions = (props: InteractionProps) => {
 
     // 3. Image Manipulation
     const imageInteractions = useImageManipulation(props, selectionState.handleSelection, selectionState.selectedItems);
-    const columnResizeInteractions = useCategoryColumnResize(style, props.onStyleUpdate);
+    const columnResizeContext = useMemo(() => ({
+        products,
+        groupedProducts: groupedProductsBase,
+        sortedCategories: sortedCategoriesBase,
+        splitCategoryAcrossPages: props.splitCategoryAcrossPages,
+    }), [groupedProductsBase, products, props.splitCategoryAcrossPages, sortedCategoriesBase]);
+    const columnResizeInteractions = useCategoryColumnResize(style, props.onStyleUpdate, columnResizeContext);
 
     // 4. Draggable Interactions (Heavy Logic)
     // Calculates the *FINAL* sorted/grouped data (Live vs Saved)

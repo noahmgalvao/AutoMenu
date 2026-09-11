@@ -230,7 +230,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
             : undefined;
         const renderCategoryMoveButton = (direction: FlowDirection, enabled: boolean) => {
             if (!enabled) return null;
-            const lane = direction === 'left' || direction === 'right' ? 'center' : 'leading';
+            const lane = 'leading';
 
             return (
                 <ResponsiveMoveButton

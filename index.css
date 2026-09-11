@@ -97,6 +97,17 @@ body {
   box-shadow: 0 0 0 2px rgb(239 68 68 / 0.28), 0 0 12px rgb(239 68 68 / 0.45) !important;
 }
 
+@keyframes column-resize-limit-shake {
+  10%, 90% { transform: translate3d(-1px, -50%, 0); }
+  20%, 80% { transform: translate3d(2px, -50%, 0); }
+  30%, 50%, 70% { transform: translate3d(-4px, -50%, 0); }
+  40%, 60% { transform: translate3d(4px, -50%, 0); }
+}
+
+[data-column-resize-handle="true"].automenu-limit-feedback {
+  animation-name: column-resize-limit-shake;
+}
+
 .automenu-tip-font-highlight {
   outline: 3px solid rgb(245 158 11) !important;
   outline-offset: 3px;

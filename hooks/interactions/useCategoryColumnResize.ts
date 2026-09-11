@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import type { MenuStyle } from '../../types';
-import { A4_WIDTH_PX } from '../../utils/menuPagination';
+import type { MenuStyle, Product } from '../../types';
+import { A4_WIDTH_PX, calculatePagination, type PageItem } from '../../utils/menuPagination';
 import { normalizeColumnWidths } from '../../utils/categoryColumns';
 import { resolveMenuMargins } from '../../utils/styleRules';
+import { canApplyLiveColumnWidths, triggerLimitFeedback } from '../../utils/textFit';
 
 type ResizeEdge = 'left' | 'right';
 
@@ -20,14 +21,66 @@ interface ResizeSession {
     page: HTMLElement;
     pointerId: number;
     initialWidths: number[];
+    paginationSignature: string;
+    source: HTMLElement;
+    feedbackUntil: number;
 }
 
 const MIN_COLUMN_WIDTH_PX = 96;
 const CENTER_SNAP_DISTANCE_PX = 18;
 
+interface CategoryColumnResizeContext {
+    products: Product[];
+    groupedProducts: Record<string, Product[]>;
+    sortedCategories: string[];
+    splitCategoryAcrossPages?: boolean;
+}
+
+const getPageItemSignature = (item: PageItem) => {
+    if (item.type === 'main-header') return 'header';
+    if (item.type === 'category-header') return `category:${item.data}`;
+    if (item.type === 'product-item') return `product:${item.data.id}`;
+    return `row:${item.data.map((product) => product.id).join(',')}`;
+};
+
+const getPaginationSignature = (
+    style: MenuStyle,
+    context: CategoryColumnResizeContext,
+) => {
+    const positionAssignments = Object.entries(style.categoryPositions || {}).reduce<Record<string, { pageIndex: number; columnIndex: number }>>(
+        (assignments, [category, position]) => {
+            assignments[category] = { pageIndex: position.pageIndex, columnIndex: position.columnIndex };
+            return assignments;
+        },
+        {},
+    );
+    const placements = Object.keys(style.categoryPlacements || {}).length > 0
+        ? { ...positionAssignments, ...style.categoryPlacements }
+        : Object.keys(positionAssignments).length > 0
+            ? positionAssignments
+            : null;
+    const pages = calculatePagination(
+        context.products,
+        style,
+        context.groupedProducts,
+        context.sortedCategories,
+        placements,
+        { splitCategoryAcrossPages: context.splitCategoryAcrossPages },
+    );
+
+    return JSON.stringify(pages.map((page) => page.columns.map((column) => (
+        column.chunks.map((chunk) => ({
+            category: chunk.category,
+            startsCategory: chunk.startsCategory,
+            items: chunk.items.map(getPageItemSignature),
+        }))
+    ))));
+};
+
 export const useCategoryColumnResize = (
     style: MenuStyle,
     onStyleUpdate?: React.Dispatch<React.SetStateAction<MenuStyle>>,
+    context?: CategoryColumnResizeContext,
 ) => {
     const [liveCategoryColumnWidths, setLiveCategoryColumnWidths] = useState<number[] | null>(null);
     const [columnResizeGuide, setColumnResizeGuide] = useState<ColumnResizeGuide | null>(null);
@@ -93,6 +146,20 @@ export const useCategoryColumnResize = (
             nextWidths[session.boundaryIndex] = nextLeftWidth;
             nextWidths[session.boundaryIndex + 1] = nextRightWidth;
             const normalized = normalizeColumnWidths(nextWidths, session.columnCount);
+            const currentWidths = liveWidthsRef.current || session.initialWidths;
+            const nextStyle = { ...style, categoryColumnWidths: normalized };
+            const keepsTextReadable = style.allowSameWordBreak
+                || canApplyLiveColumnWidths(session.grid, currentWidths, normalized);
+            const keepsPagination = !context
+                || getPaginationSignature(nextStyle, context) === session.paginationSignature;
+            if (!keepsTextReadable || !keepsPagination) {
+                const now = performance.now();
+                if (now >= session.feedbackUntil) {
+                    triggerLimitFeedback(session.source);
+                    session.feedbackUntil = now + 650;
+                }
+                return;
+            }
             liveWidthsRef.current = normalized;
             setLiveCategoryColumnWidths(normalized);
             setColumnResizeGuide({
@@ -118,7 +185,7 @@ export const useCategoryColumnResize = (
             window.removeEventListener('pointerup', handlePointerUp);
             window.removeEventListener('pointercancel', handlePointerCancel);
         };
-    }, [finishResize, style]);
+    }, [context, finishResize, style]);
 
     const startCategoryColumnResize = useCallback((
         event: React.PointerEvent<HTMLElement>,
@@ -160,12 +227,15 @@ export const useCategoryColumnResize = (
             page,
             pointerId: event.pointerId,
             initialWidths,
+            paginationSignature: context ? getPaginationSignature(style, context) : '',
+            source,
+            feedbackUntil: 0,
         };
         liveWidthsRef.current = initialWidths;
         setLiveCategoryColumnWidths(liveWidthsRef.current);
         document.body.style.cursor = 'col-resize';
         document.body.style.userSelect = 'none';
-    }, [style.categoryColumnCount, style.categoryColumnWidths]);
+    }, [context, style]);
 
     return {
         liveCategoryColumnWidths,
