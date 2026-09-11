@@ -169,14 +169,15 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             frameId = null;
             const elements = Array.from(root.querySelectorAll<HTMLElement>('[data-word-fit="true"]'))
                 .filter(element => element.isConnected && element.getClientRects().length > 0);
-            const reducedElements = elements.filter(element => element.dataset.wordFitReduced === 'true');
+            const eligibleElements = elements.filter(element => element.dataset.wordOverflow !== 'true');
+            const reducedElements = eligibleElements.filter(element => element.dataset.wordFitReduced === 'true');
             const scopes = Array.from(new Set(
                 reducedElements
                     .map(element => element.dataset.wordFitScope as WordFitScope | undefined)
                     .filter((scope): scope is WordFitScope => Boolean(scope && WORD_FIT_SCOPE_LABELS[scope]))
             ));
             const nextTips = scopes.map(scope => {
-                const scopeElements = elements.filter(element => element.dataset.wordFitScope === scope);
+                const scopeElements = eligibleElements.filter(element => element.dataset.wordFitScope === scope);
                 const maximumFontSize = Math.max(
                     ...scopeElements.map(element => Number(element.dataset.wordFitBaseSize) || 10),
                 );
@@ -209,7 +210,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             childList: true,
             characterData: true,
             attributes: true,
-            attributeFilter: ['data-word-fit-reduced', 'data-word-fit-size', 'data-word-fit-base-size'],
+            attributeFilter: ['data-word-fit-reduced', 'data-word-fit-size', 'data-word-fit-base-size', 'data-word-overflow'],
         });
         scheduleScan();
 
@@ -1233,6 +1234,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         const elements = Array.from(root.querySelectorAll<HTMLElement>('[data-word-fit="true"]'))
             .filter(element => (
                 element.dataset.wordFitScope === scope
+                && element.dataset.wordOverflow !== 'true'
                 && element.isConnected
                 && element.getClientRects().length > 0
             ));

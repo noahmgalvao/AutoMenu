@@ -10,6 +10,8 @@ import React, {
 import { createPortal } from 'react-dom';
 import {
   Check,
+  ChevronLeft,
+  ChevronRight,
   FileImage,
   ImagePlus,
   Images,
@@ -48,6 +50,7 @@ type CornerName = keyof DocumentCorners;
 type FlowScreen = 'camera' | 'editor';
 type FileIntent = 'initial' | 'add' | 'replace';
 type PreviewTab = 'menu' | 'items';
+type MobileViewTab = 'original' | 'preview';
 
 interface PendingPage {
   id: string;
@@ -134,14 +137,21 @@ const PreviewCanvas: React.FC<{
   sortOption: SortOption;
   splitCategoryAcrossPages?: boolean;
   productsCanChangeCategory?: boolean;
-}> = ({ products, style, sortOption, splitCategoryAcrossPages, productsCanChangeCategory }) => {
+  paginate?: boolean;
+}> = ({ products, style, sortOption, splitCategoryAcrossPages, productsCanChangeCategory, paginate = false }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const fitScaleRef = useRef(0.42);
   const manualZoomRef = useRef(false);
   const scaleRef = useRef(0.42);
   const pinchStartRef = useRef<{ distance: number; scale: number } | null>(null);
   const [scale, setScale] = useState(0.42);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageCount, setPageCount] = useState(1);
   scaleRef.current = scale;
+
+  useEffect(() => {
+    setPageIndex((current) => Math.min(current, Math.max(0, pageCount - 1)));
+  }, [pageCount]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -233,9 +243,18 @@ const PreviewCanvas: React.FC<{
             splitCategoryAcrossPages={splitCategoryAcrossPages}
             productsCanChangeCategory={productsCanChangeCategory}
             readOnly
+            visiblePageIndex={paginate ? pageIndex : undefined}
+            onPageCountChange={paginate ? setPageCount : undefined}
           />
         </div>
       </div>
+      {paginate && (
+        <nav className="flex shrink-0 items-center justify-center gap-3" aria-label="NavegaÃ§Ã£o entre pÃ¡ginas do preview">
+          <button type="button" onClick={() => setPageIndex((current) => Math.max(0, current - 1))} disabled={pageIndex === 0} className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm disabled:opacity-35" aria-label="PÃ¡gina anterior"><ChevronLeft size={18} /></button>
+          <span className="min-w-24 text-center text-xs font-bold text-slate-600">PÃ¡gina {pageIndex + 1} de {pageCount}</span>
+          <button type="button" onClick={() => setPageIndex((current) => Math.min(pageCount - 1, current + 1))} disabled={pageIndex >= pageCount - 1} className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm disabled:opacity-35" aria-label="PrÃ³xima pÃ¡gina"><ChevronRight size={18} /></button>
+        </nav>
+      )}
     </div>
   );
 };
@@ -309,6 +328,8 @@ const ImportedItemsEditor: React.FC<{
           remove={logic.remove}
           handleToggleVisibility={logic.handleToggleVisibility}
           initiateAdd={logic.initiateAdd}
+          onCategoryImageClick={logic.onCategoryImageClick}
+          onRemoveCategoryImage={logic.onRemoveCategoryImage}
           onProductImageClick={logic.onProductImageClick}
           onRemoveProductImage={logic.onRemoveProductImage}
         />
@@ -322,6 +343,13 @@ const ImportedItemsEditor: React.FC<{
         type="file"
         className="hidden"
         onChange={logic.handleProductImageUpload}
+        accept="image/*"
+      />
+      <input
+        ref={logic.categoryFileInputRef}
+        type="file"
+        className="hidden"
+        onChange={logic.handleCategoryImageUpload}
         accept="image/*"
       />
     </div>
@@ -355,6 +383,8 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
     const [previewResult, setPreviewResult] = useState<ProcessedMenuImport | null>(null);
     const [previewStale, setPreviewStale] = useState(false);
     const [previewTab, setPreviewTab] = useState<PreviewTab>('menu');
+    const [mobileViewTab, setMobileViewTab] = useState<MobileViewTab>('original');
+    const [useMobileLayout, setUseMobileLayout] = useState(isMobileDevice);
     const [draftProducts, setDraftProducts] = useState<Product[]>([]);
     const [draftStyle, setDraftStyle] = useState<MenuStyle | null>(null);
     const [draftDirty, setDraftDirty] = useState(false);
@@ -403,6 +433,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
       setPreviewStale(false);
       setProcessingError('');
       setPreviewTab('menu');
+      setMobileViewTab('original');
     }, []);
 
     const close = useCallback(() => {
@@ -584,6 +615,14 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
     }, [screen, stopCamera, visible]);
 
     useEffect(() => {
+      const mediaQuery = window.matchMedia('(max-width: 767px)');
+      const updateLayout = () => setUseMobileLayout(isMobileDevice());
+      updateLayout();
+      mediaQuery.addEventListener('change', updateLayout);
+      return () => mediaQuery.removeEventListener('change', updateLayout);
+    }, []);
+
+    useEffect(() => {
       const viewport = editorViewportRef.current;
       if (!viewport || !visible || screen !== 'editor') return;
       const updateSize = () => {
@@ -594,7 +633,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
       const observer = new ResizeObserver(updateSize);
       observer.observe(viewport);
       return () => observer.disconnect();
-    }, [screen, visible]);
+    }, [mobileViewTab, screen, useMobileLayout, visible]);
 
     useEffect(() => { pagesRef.current = pages; }, [pages]);
     useEffect(() => {
@@ -782,7 +821,17 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
       </div>
     );
 
-    const renderOriginalImage = () => {
+    const renderScanActions = (compact = false) => (
+      <div className={`grid grid-cols-3 overflow-hidden border border-slate-200 bg-white ${compact ? 'rounded-xl shadow-sm' : 'rounded-2xl shadow-lg'}`}>
+        <button type="button" onClick={() => void runProcessing(pages, mode)} disabled={busy || pages.length === 0 || pages.some((page) => page.detecting)} className={`flex flex-col items-center justify-center gap-1 border-r border-slate-100 text-center text-xs font-semibold text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-40 ${compact ? 'min-h-[72px] px-1.5 py-2' : 'min-h-16 px-2 py-2'}`}>
+          {processing ? <Loader2 size={20} className="animate-spin" /> : <RefreshCw size={20} />}<span>Escanear Novamente</span>
+        </button>
+        <button type="button" onClick={() => void redetectActivePage()} disabled={busy || !activePage} className={`flex flex-col items-center justify-center gap-1 border-r border-slate-100 text-center text-xs font-semibold text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-40 ${compact ? 'min-h-[72px] px-1.5 py-2' : 'min-h-16 px-2 py-2'}`}><ScanLine size={20} /><span>Detectar Bordas</span></button>
+        <button type="button" onClick={() => openFilePicker('replace')} disabled={busy || !activePage} className={`flex flex-col items-center justify-center gap-1 text-center text-xs font-semibold text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-40 ${compact ? 'min-h-[72px] px-1.5 py-2' : 'min-h-16 px-2 py-2'}`}><FileImage size={20} /><span>Substituir Arquivo</span></button>
+      </div>
+    );
+
+    const renderOriginalViewport = (className: string) => {
       const cornerLabels: Record<CornerName, string> = {
         topLeft: 'Canto superior esquerdo',
         topRight: 'Canto superior direito',
@@ -790,16 +839,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
         bottomLeft: 'Canto inferior esquerdo',
       };
       return (
-        <section className="flex min-h-0 flex-col gap-3">
-          <h2 className="text-center text-xl font-bold text-slate-900">Imagem Original</h2>
-          <div className="grid grid-cols-3 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
-            <button type="button" onClick={() => void runProcessing(pages, mode)} disabled={busy || pages.length === 0 || pages.some((page) => page.detecting)} className="flex min-h-16 flex-col items-center justify-center gap-1 border-r border-slate-100 px-2 py-2 text-xs font-semibold text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-40">
-              {processing ? <Loader2 size={20} className="animate-spin" /> : <RefreshCw size={20} />}Escanear Novamente
-            </button>
-            <button type="button" onClick={() => void redetectActivePage()} disabled={busy || !activePage} className="flex min-h-16 flex-col items-center justify-center gap-1 border-r border-slate-100 px-2 py-2 text-xs font-semibold text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-40"><ScanLine size={20} />Detectar Bordas</button>
-            <button type="button" onClick={() => openFilePicker('replace')} disabled={busy || !activePage} className="flex min-h-16 flex-col items-center justify-center gap-1 px-2 py-2 text-xs font-semibold text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-40"><FileImage size={20} />Substituir Arquivo</button>
-          </div>
-          <div ref={editorViewportRef} className="relative h-[52vh] min-h-[360px] lg:h-[calc(100vh-235px)] lg:min-h-[430px]">
+          <div ref={editorViewportRef} className={className}>
             {activePage && displayGeometry && (
               <div
                 className="absolute rounded-2xl bg-slate-950 shadow-xl"
@@ -845,9 +885,16 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
               </div>
             )}
           </div>
-        </section>
       );
     };
+
+    const renderOriginalImage = () => (
+      <section className="flex min-h-0 flex-col gap-3">
+        <h2 className="text-center text-xl font-bold text-slate-900">Imagem Original</h2>
+        {renderScanActions()}
+        {renderOriginalViewport('relative h-[52vh] min-h-[360px] lg:h-[calc(100vh-235px)] lg:min-h-[430px]')}
+      </section>
+    );
 
     const renderProcessingOptions = () => (
       <section className="flex min-h-0 flex-col justify-center gap-5 lg:pt-20">
@@ -938,7 +985,120 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
       );
     };
 
-    const renderEditor = () => (
+    const renderMobilePages = () => (
+      <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm" aria-label="PÃ¡ginas importadas">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-xs font-bold uppercase tracking-wide text-slate-500">PÃ¡ginas</span>
+          <span className="text-xs text-slate-400">{pages.length}</span>
+        </div>
+        <div className="flex gap-2 overflow-x-auto px-0.5 pb-1 pt-0.5 custom-scrollbar">
+          {pages.map((page, index) => (
+            <div
+              key={page.id}
+              role="button"
+              tabIndex={busy ? -1 : 0}
+              onClick={() => { if (!busy) setActivePageId(page.id); }}
+              onKeyDown={(event) => {
+                if (!busy && (event.key === 'Enter' || event.key === ' ')) {
+                  event.preventDefault();
+                  setActivePageId(page.id);
+                }
+              }}
+              className={`relative h-[76px] w-[54px] flex-none overflow-hidden rounded-lg border-2 bg-slate-100 transition-all ${page.id === activePage?.id ? 'border-violet-600 ring-2 ring-violet-200' : 'border-transparent'} ${busy ? 'opacity-50' : 'cursor-pointer'}`}
+              aria-label={`Selecionar pÃ¡gina ${index + 1}`}
+            >
+              <img src={page.previewUrl} alt={`PÃ¡gina ${index + 1}`} className="h-full w-full object-cover" />
+              <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-bold text-white">{index + 1}</span>
+              {pages.length > 1 && (
+                <button type="button" onClick={(event) => { event.stopPropagation(); removePage(page.id); }} disabled={busy} className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-white shadow disabled:opacity-40" aria-label={`Excluir pÃ¡gina ${index + 1}`}><Trash2 size={11} /></button>
+              )}
+              {page.detecting && <span className="absolute inset-0 flex items-center justify-center bg-black/55 text-white"><Loader2 size={16} className="animate-spin" /></span>}
+            </div>
+          ))}
+          <button type="button" onClick={addAnotherPage} disabled={busy} className="flex h-[76px] w-[72px] flex-none flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-violet-300 bg-violet-50 px-1 text-[10px] font-bold leading-tight text-violet-700 disabled:opacity-40"><ImagePlus size={21} />Adicionar pÃ¡gina</button>
+        </div>
+      </section>
+    );
+
+    const renderMobilePreview = () => {
+      const showMenuTab = mode !== 'products';
+      const showItemsTab = mode !== 'visual';
+      return (
+        <section className="flex min-h-0 flex-col gap-3">
+          <div className="mx-auto flex rounded-full border border-slate-200 bg-white p-1 shadow-sm" role="tablist" aria-label="VisualizaÃ§Ã£o do resultado">
+            {showMenuTab && <button type="button" role="tab" aria-selected={previewTab === 'menu'} onClick={() => setPreviewTab('menu')} className={`rounded-full px-5 py-2 text-xs font-bold transition-all ${previewTab === 'menu' ? 'bg-violet-600 text-white shadow' : 'text-slate-500'}`}>Ver CardÃ¡pio</button>}
+            {showItemsTab && <button type="button" role="tab" aria-selected={previewTab === 'items'} onClick={() => setPreviewTab('items')} className={`rounded-full px-5 py-2 text-xs font-bold transition-all ${previewTab === 'items' ? 'bg-violet-600 text-white shadow' : 'text-slate-500'}`}>Ver Itens</button>}
+          </div>
+          {previewStale && previewResult && !processing && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-800">Preview desatualizado â€” ao concluir, serÃ¡ usado o Ãºltimo scan.</div>}
+          <div className="relative h-[50vh] min-h-[340px] max-h-[560px]">
+            {finalizedPreview && previewTab === 'menu' && <PreviewCanvas products={finalizedPreview.products} style={finalizedPreview.style} sortOption={sortOption} splitCategoryAcrossPages={splitCategoryAcrossPages} productsCanChangeCategory={productsCanChangeCategory} paginate />}
+            {previewResult && draftStyle && previewTab === 'items' && (
+              <ImportedItemsEditor products={draftProducts} setProducts={updateDraftProducts} style={draftStyle} setStyle={updateDraftStyle} sortOption={sortOption} workspaceId={workspaceId} currentUserId={currentUserId} currentMenuId={currentMenuId} productsCanChangeCategory={productsCanChangeCategory} />
+            )}
+            {!previewResult && !processing && <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 text-center text-sm text-slate-500">O resultado aparecerÃ¡ aqui apÃ³s o processamento.</div>}
+            {processing && <div className="absolute inset-0 z-30 flex items-center justify-center rounded-2xl bg-white/90 backdrop-blur-sm"><div className="text-center"><Loader2 size={34} className="mx-auto mb-3 animate-spin text-violet-600" /><p className="font-bold text-slate-800">Processando cardÃ¡pio...</p><p className="mt-1 text-xs text-slate-500">Preparando produtos, imagens e visual.</p></div></div>}
+          </div>
+        </section>
+      );
+    };
+
+    const renderMobileProcessingOptions = () => (
+      <section>
+        <h2 className="mb-3 text-base font-bold text-slate-900">OpÃ§Ãµes de Processamento</h2>
+        <fieldset className="grid grid-cols-3 gap-2" aria-label="Tipo de importaÃ§Ã£o">
+          {IMPORT_MODES.map((importMode) => {
+            const selected = importMode.value === mode;
+            const Icon = importMode.icon;
+            return (
+              <label key={importMode.value} className={`relative flex min-h-[92px] min-w-0 cursor-pointer flex-col items-center justify-center rounded-xl border px-1.5 py-2 text-center shadow-sm transition-all ${selected ? 'border-violet-600 bg-violet-50 text-violet-800 ring-1 ring-violet-600' : 'border-slate-200 bg-white text-slate-600'} ${busy ? 'pointer-events-none opacity-50' : ''}`}>
+                <input type="radio" name="menu-import-mode-mobile" value={importMode.value} checked={selected} onChange={() => handleModeChange(importMode.value)} className="sr-only" />
+                <Icon size={22} className="mb-2" />
+                <span className="text-[11px] font-bold leading-tight">{importMode.label}</span>
+                {selected && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-violet-600" />}
+              </label>
+            );
+          })}
+        </fieldset>
+      </section>
+    );
+
+    const renderMobileEditor = () => (
+      <div className="fixed inset-x-0 bottom-0 top-16 z-[1000] flex flex-col overflow-hidden bg-slate-100 text-slate-900" onPointerDownCapture={() => { document.body.dataset.automenuDeleteContext = 'import-preview'; }}>
+        <main className="min-h-0 flex-1 overflow-y-auto px-3 pb-28 pt-4 custom-scrollbar" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
+          <div className="mx-auto max-w-xl space-y-4">
+            <header className="flex min-h-11 items-center justify-between gap-3">
+              <h1 className="text-lg font-bold text-slate-900">Importar CardÃ¡pio</h1>
+              <button type="button" onClick={close} disabled={busy} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm disabled:opacity-40" aria-label="Fechar importaÃ§Ã£o"><X size={22} /></button>
+            </header>
+
+            <div className="grid grid-cols-2 rounded-xl bg-slate-200/80 p-1" role="tablist" aria-label="Etapa de revisÃ£o da importaÃ§Ã£o">
+              <button type="button" role="tab" aria-selected={mobileViewTab === 'original'} onClick={() => setMobileViewTab('original')} className={`min-h-10 rounded-lg px-2 text-xs font-bold transition-all ${mobileViewTab === 'original' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500'}`}>Imagem Original</button>
+              <button type="button" role="tab" aria-selected={mobileViewTab === 'preview'} onClick={() => setMobileViewTab('preview')} className={`min-h-10 rounded-lg px-2 text-xs font-bold transition-all ${mobileViewTab === 'preview' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500'}`}>Preview do Resultado</button>
+            </div>
+
+            {mobileViewTab === 'original' ? (
+              <>
+                <section className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+                  {previewResult && !previewStale && <span className="absolute right-3 top-3 z-30 rounded-full bg-violet-100 px-2.5 py-1 text-[10px] font-bold text-violet-700">Processado</span>}
+                  {renderOriginalViewport('relative h-[46vh] min-h-[300px] max-h-[500px]')}
+                </section>
+                {renderMobilePages()}
+              </>
+            ) : renderMobilePreview()}
+
+            {renderScanActions(true)}
+            {processingError && <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{processingError}</div>}
+            {renderMobileProcessingOptions()}
+            {previewStale && previewResult && mobileViewTab === 'original' && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-800">AlteraÃ§Ãµes pendentes. Ao concluir, serÃ¡ usado o Ãºltimo scan processado.</div>}
+          </div>
+        </main>
+        <footer className="absolute inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-3 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+          <button type="button" onClick={complete} disabled={!previewResult || !finalizedPreview || busy} className="mx-auto flex h-12 w-full max-w-xl items-center justify-center gap-2 rounded-xl bg-violet-600 px-6 text-sm font-bold text-white shadow-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40"><Check size={19} />Concluir ImportaÃ§Ã£o</button>
+        </footer>
+      </div>
+    );
+
+    const renderDesktopEditor = () => (
       <div className="fixed inset-x-0 bottom-0 top-16 z-[1000] flex flex-col overflow-hidden bg-slate-100 text-slate-900" onPointerDownCapture={() => { document.body.dataset.automenuDeleteContext = 'import-preview'; }}>
         <button type="button" onClick={close} disabled={busy} className="absolute right-4 top-4 z-50 flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-lg hover:text-slate-900 disabled:opacity-40" style={{ marginTop: 'env(safe-area-inset-top)' }} aria-label="Fechar importação"><X size={23} /></button>
         <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-28 pt-16 custom-scrollbar md:px-6 lg:overflow-hidden lg:pb-24">
@@ -954,6 +1114,8 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
         </footer>
       </div>
     );
+
+    const renderEditor = () => (useMobileLayout ? renderMobileEditor() : renderDesktopEditor());
 
     return createPortal(
       <>

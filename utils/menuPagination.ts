@@ -231,12 +231,21 @@ export const calculateItemHeight = (
         const formattedPriceLength = product.price.toFixed(2).length + 2;
         const priceColumnReserve = Math.max(36, formattedPriceLength * priceSize * 0.58) + spacing.productNameToPrice;
         const editButtonReserve = compactLayout ? 0 : 48;
+        const longestNameWordWidth = Math.max(
+            0,
+            ...product.name.split(/\s+/).filter(Boolean).map((word) => word.length * nameCharWidth),
+        );
+        const wrapsPrice = longestNameWordWidth + priceColumnReserve + editButtonReserve > textWidth;
         const nameLines = getSafeLineCount(
             product.name,
-            Math.max(48, textWidth - priceColumnReserve - editButtonReserve),
+            Math.max(48, textWidth - editButtonReserve - (wrapsPrice ? 0 : priceColumnReserve)),
             nameCharWidth,
         );
-        const nameAndPriceHeight = Math.max(fontSize * 1.375 * nameLines, priceSize * 1.375);
+        const nameHeight = fontSize * 1.375 * nameLines;
+        const priceHeight = priceSize * 1.375;
+        const nameAndPriceHeight = wrapsPrice
+            ? nameHeight + priceHeight + 2
+            : Math.max(nameHeight, priceHeight);
         textHeight += nameAndPriceHeight;
 
         if (product.description) {
@@ -323,14 +332,17 @@ const createPageItemHeightCalculator = (
         if (item.type === 'category-header') {
             const editButtonReserve = categoryColumnCount > 1 ? 32 : 52;
             const dividerReserve = categoryStyle.textAlign === 'center' ? 64 : 32;
+            const categoryImage = style.categoryImages?.[item.data];
+            const imageReserve = categoryImage?.url ? (categoryImage.width || 36) + 8 : 0;
             const letterSpacing = categoryStyle.letterSpacing || 0;
             const categoryCharWidth = (categoryFontSize * 0.6) + letterSpacing;
             const lines = getSafeLineCount(
                 item.data,
-                Math.max(24, categoryColumnWidth - editButtonReserve - dividerReserve),
+                Math.max(24, categoryColumnWidth - editButtonReserve - dividerReserve - imageReserve),
                 categoryCharWidth
             );
-            return Math.max(categoryFontSize * 1.25 * lines, 28) + spacing.categoryToProduct + 8;
+            const imageHeight = categoryImage?.url ? categoryImage.height || 36 : 0;
+            return Math.max(categoryFontSize * 1.25 * lines, imageHeight, 28) + spacing.categoryToProduct + 8;
         }
         if (item.type === 'product-item') return calculateItemHeight(item.data, style, false, 1, categoryColumnWidth, categoryColumnCount);
         if (item.type === 'product-row') {

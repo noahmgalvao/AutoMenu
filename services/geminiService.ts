@@ -54,6 +54,8 @@ export const analyzeMenuImage = async (
   - **DO NOT CLASSIFY TEXT AS AN IMAGE:** Titles, category headers and prices have text bounding boxes in their own JSON objects, never in the images array.
   - **TARGETS:** Only extract distinct visual assets: Food plates, Isolated Icons, Specific Illustrations, or Separator Lines.
   - **PRECISION:** Define boundingBox { x, y, width, height } tightly around the object's visible pixels.
+  - **CATEGORY IMAGES:** An icon or illustration placed directly beside a category heading belongs to that category. Return the category name exactly in relatedCategoryName and leave relatedProductName empty. Do this for every category icon, even when the icons are small or visually similar.
+  - Product photos must use relatedProductName (and relatedCategoryName when known). Purely decorative images that belong to neither a category nor a product must leave both relationships empty.
 
   ### 2. LAYOUT INTELLIGENCE
   - **Category Columns:** Look at the Category Headers. Are they arranged in a Grid/Multi-column layout?

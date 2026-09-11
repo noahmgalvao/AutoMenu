@@ -2,6 +2,7 @@ import {
   AddedImage,
   Asset,
   Category,
+  CategoryImage,
   LoadedWorkspaceData,
   Menu,
   MenuEditorState,
@@ -101,6 +102,9 @@ const collectStyleAssetIds = (style?: Partial<MenuStyle> | null) => {
   });
   (Array.isArray(style.addedImages) ? style.addedImages : []).forEach((image) => {
     if (isRecord(image)) addAssetId(assetIds, image.assetId);
+  });
+  Object.values(isRecord(style.categoryImages) ? style.categoryImages : {}).forEach((image) => {
+    if (isRecord(image)) addAssetId(assetIds, image.assetId as string | null | undefined);
   });
 
   return assetIds;
@@ -361,6 +365,9 @@ const withStyleDefaults = (style: MenuStyle | null | undefined): MenuStyle => {
       : {},
     floatingText: Array.isArray(source.floatingText) ? source.floatingText.filter(isRecord) as any : [],
     addedImages: Array.isArray(source.addedImages) ? source.addedImages.filter(isRecord) as any : [],
+    categoryImages: isRecord(source.categoryImages)
+      ? Object.fromEntries(Object.entries(source.categoryImages).filter(([, image]) => isRecord(image))) as MenuStyle['categoryImages']
+      : {},
     pageBackgrounds: Array.isArray(source.pageBackgrounds) ? source.pageBackgrounds.filter(isRecord) as any : [],
     pageBreaks: stringArray(source.pageBreaks),
     fontSizeLimits: {
@@ -618,6 +625,25 @@ const normalizeStyleAssets = async (workspaceId: string, userId: string, style: 
     }),
   );
 
+  const categoryImages: Record<string, CategoryImage> = Object.fromEntries(await Promise.all(
+    Object.entries(style.categoryImages || {}).map(async ([category, image]) => {
+      const assetRef = await ensureAssetReference({
+        url: image.url,
+        existingAssetId: image.assetId,
+        workspaceId,
+        userId,
+        assetType: 'added_image',
+        bucket: 'menu-assets',
+        metadata: { style_id: style.id, category_name: category, role: 'category_image' },
+      });
+      return [category, {
+        ...image,
+        assetId: assetRef.assetId,
+        url: assetRef.url || image.url,
+      } satisfies CategoryImage] as const;
+    }),
+  ));
+
   return withStyleDefaults({
     ...style,
     backgroundAssetId: backgroundRef.assetId,
@@ -626,6 +652,7 @@ const normalizeStyleAssets = async (workspaceId: string, userId: string, style: 
     sourceImage: sourceRef.url || style.sourceImage,
     pageBackgrounds,
     addedImages,
+    categoryImages,
   });
 };
 
@@ -644,6 +671,13 @@ const hydrateStyleAssets = (style: MenuStyle, assetUrlMap: Map<string, string>) 
       ...image,
       url: image.assetId ? assetUrlMap.get(image.assetId) || image.url : image.url,
     })),
+    categoryImages: Object.fromEntries(Object.entries(nextStyle.categoryImages || {}).map(([category, image]) => [
+      category,
+      {
+        ...image,
+        url: image.assetId ? assetUrlMap.get(image.assetId) || image.url : image.url,
+      },
+    ])),
   };
 };
 

@@ -3,7 +3,6 @@ import React, { useRef } from 'react';
 import { MenuStyle, Product, ElementStyle, SortOption, AddedImage, FontSizeLimitKey } from '../../types';
 import { isMiniFoodTexture, normalizeTextureUrl } from '../../constants';
 import { resolveFontSizeLimits, resolveMenuContentSpacing, resolveMenuMargins, resolveMinimumFontSize } from '../../utils/styleRules';
-import { canApplyCanvasColumnCounts, triggerLimitFeedback } from '../../utils/textFit';
 import { StyleControls } from './StyleControls';
 import { FontSelect, MiniFoodTextureSelect, TemplateSelect, TextureSelect } from './SearchableSelects';
 import { 
@@ -248,10 +247,6 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle, h
     nextCategoryColumnCount: number,
     nextProductColumnCount: number,
   ) => {
-    if (!canApplyCanvasColumnCounts(style, nextCategoryColumnCount, nextProductColumnCount)) {
-      triggerLimitFeedback(event.currentTarget);
-      return;
-    }
     setStyle((previous) => ({
       ...previous,
       columnCount: nextProductColumnCount as 1 | 2 | 3,

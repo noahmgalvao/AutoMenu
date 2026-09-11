@@ -42,6 +42,8 @@ interface MenuPreviewProps {
     splitCategoryAcrossPages?: boolean;
     productsCanChangeCategory?: boolean;
     readOnly?: boolean;
+    visiblePageIndex?: number;
+    onPageCountChange?: (pageCount: number) => void;
 }
 
 type ObjectSelectionItem = SelectionItem & { type: 'product' | 'category' | 'freeText' | 'addedImage' };
@@ -151,7 +153,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const [marqueeRect, setMarqueeRect] = useState<MarqueeRect | null>(null);
     const {
         products, style, onAddProduct, onStyleUpdate, onDeleteProduct, onToggleProductVisibility, onSelectedItemsChange,
-        readOnly = false,
+        readOnly = false, visiblePageIndex, onPageCountChange,
     } = props;
 
     useEffect(() => {
@@ -306,6 +308,10 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
         return result;
     }, [basePages, style.addedImages, style.blankPages, style.categoryColumnCount, style.pageBackgrounds]);
+
+    useEffect(() => {
+        onPageCountChange?.(pages.length);
+    }, [onPageCountChange, pages.length]);
 
     const getFlowControlDirections = useMemo(() => {
         const categoryPositions = new Map<string, FlowPosition>();
@@ -1851,6 +1857,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
             <div className={`flex flex-row items-start w-fit mx-auto ${readOnly ? 'gap-4 p-0 min-h-0' : 'gap-8 px-8 pb-20 pt-16 min-h-full'}`}>
                 {pages.map((pageContent, i) => (
+                    visiblePageIndex != null && i !== visiblePageIndex ? null :
                     <MenuPage
                         key={i}
                         pageIndex={i}

@@ -618,6 +618,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const isBeingDragged = handlers.draggedItem?.type === 'category' && handlers.draggedItem?.id === item.data;
         const compactControls = (style.categoryColumnCount || 1) > 1;
         const categoryAlign = catStyle.textAlign || 'left';
+        const categoryImage = style.categoryImages?.[item.data];
         const renderCategoryDivider = (key: string) => (
             <div key={key} className="h-px min-w-0 flex-grow opacity-40" style={{ backgroundColor: style.primaryColor }} />
         );
@@ -647,6 +648,19 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 <ProductControls type="category" catName={item.data} isMobileSelected={isSelected} index={idx} total={0} isLastInBlock={false} canMoveUp={false} canMoveDown={false} canMoveLeft={false} canMoveRight={false} hideGeneralControls={false} isPristineNewDefault={isPristineNewDefault} handlers={handlers} onEdit={(e: React.MouseEvent) => handlers.startEditing(e, item.data, elementId, 'category')} isDragging={isBeingDragged} showSelectionOutline={false} showAddControls={false} compactControls={compactControls} showGridMoveControls={false}/>
                 <div className={`flex w-full max-w-full min-w-0 items-center gap-0 ${compactControls ? 'px-1' : 'px-2'} ${categoryAlign === 'center' ? 'justify-center' : categoryAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
                     {(categoryAlign === 'center' || categoryAlign === 'right') && renderCategoryDivider('before')}
+                    {categoryImage?.url && (
+                        <img
+                            src={categoryImage.url}
+                            alt=""
+                            draggable={false}
+                            className="mr-2 shrink-0 object-contain"
+                            style={{
+                                width: `${categoryImage.width || 36}px`,
+                                height: `${categoryImage.height || 36}px`,
+                                maxWidth: '35%',
+                            }}
+                        />
+                    )}
                     <AutoFitText
                         as="h2"
                         text={item.data}
@@ -796,13 +810,14 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     )}
                     <div className={`flex-grow min-w-0 ${isNameCentered ? 'text-center' : isNameRight ? 'text-right' : 'text-left'}`}>
                          <div
-                            className={`grid grid-cols-[minmax(0,1fr)_auto] ${isNameCentered ? 'items-center' : 'items-start'}`}
+                            className={`flex min-w-0 flex-wrap ${isNameCentered ? 'items-center' : 'items-start'}`}
                             style={{
                                 marginBottom: contentSpacing.productNameToDescription,
                                 columnGap: contentSpacing.productNameToPrice,
+                                rowGap: 2,
                             }}
                          >
-                            <div className={`flex items-center gap-2 min-w-0 ${isNameCentered ? 'justify-center w-full' : isNameRight ? 'justify-end' : ''}`}>
+                            <div className={`flex items-center gap-2 ${isNameCentered ? 'justify-center' : isNameRight ? 'justify-end' : ''}`} style={{ flex: '1 1 min-content', minWidth: 'min-content' }}>
                                 <AutoFitText
                                     as="h3"
                                     text={product.name}
@@ -829,7 +844,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 <button data-product-edit-id={product.id} onClick={(e) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name')} className={`relative ${selectionLayerClasses.controls} ${compactControls ? 'hidden' : ''} p-2.5 bg-white border border-slate-200 shadow-sm rounded-md text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all flex-shrink-0 ${isSelected || handlers.editingId === product.id ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'}`} onPointerDown={(e) => e.stopPropagation()}><Edit3 size={24} /></button>
                             </div>
                             <div 
-                              className="flex min-w-0 shrink-0 items-center gap-1 whitespace-nowrap"
+                              className="ml-auto flex min-w-0 shrink-0 items-center gap-1 whitespace-nowrap"
                               style={{ 
                                 justifyContent: priceStyle.textAlign === 'left' ? 'flex-start' : (priceStyle.textAlign === 'center' ? 'center' : 'flex-end'), 
                                 display: 'flex',
@@ -975,13 +990,14 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                         )}
                                         <div className={`${isCardLayout ? (categoryColumnCount > 1 || productColumnCount > 2 ? 'p-1.5' : productColumnCount > 1 ? 'p-2' : 'p-4') : 'py-2'} flex min-w-0 flex-col flex-grow ${textAlignClass}`}>
                                             <div
-                                                className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start"
+                                                className="flex min-w-0 flex-wrap items-start"
                                                 style={{
                                                     marginBottom: contentSpacing.productNameToDescription,
                                                     columnGap: contentSpacing.productNameToPrice,
+                                                    rowGap: 2,
                                                 }}
                                             >
-                                                <div className={`flex min-w-0 items-center gap-1 ${nameStyle.textAlign === 'center' ? 'justify-center' : nameStyle.textAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
+                                                <div className={`flex items-center gap-1 ${nameStyle.textAlign === 'center' ? 'justify-center' : nameStyle.textAlign === 'right' ? 'justify-end' : 'justify-start'}`} style={{ flex: '1 1 min-content', minWidth: 'min-content' }}>
                                                     <AutoFitText
                                                         as="h3"
                                                         text={product.name}
@@ -1015,7 +1031,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                     </button>
                                                 </div>
                                                 <div
-                                                    className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap justify-self-end ${isCardLayout ? `rounded-full bg-white/90 border border-black/5 shadow-sm ${compactControls ? 'px-1.5 py-0.5' : 'px-2.5 py-1'}` : ''}`}
+                                                    className={`ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap ${isCardLayout ? `rounded-full bg-white/90 border border-black/5 shadow-sm ${compactControls ? 'px-1.5 py-0.5' : 'px-2.5 py-1'}` : ''}`}
                                                     style={{ color: priceStyle.color, fontFamily: priceStyle.fontFamily, fontSize: clampFontSize(style, 'productPrice', priceStyle.fontSize, 18), fontWeight: priceStyle.fontWeight, fontStyle: priceStyle.italic ? 'italic' : 'normal', textDecoration: priceStyle.underline ? 'underline' : 'none' }}
                                                 >
                                                     <span className="opacity-70 select-none touch-none">$</span>

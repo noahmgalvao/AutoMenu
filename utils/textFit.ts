@@ -69,6 +69,7 @@ export const fitTextToUnbrokenWords = (
   options: MeasureOptions = {},
 ): WordFitMeasurement => {
   const base = Math.max(minimumFontSize, Number(baseFontSize) || minimumFontSize);
+  const readableMinimum = Math.min(base, Math.max(minimumFontSize, Math.ceil(base * 0.78)));
   if (allowSameWordBreak || !text.trim() || availableWidth <= 0) {
     return { fontSize: base, fits: true };
   }
@@ -78,9 +79,9 @@ export const fitTextToUnbrokenWords = (
   if (widthAtBase <= safeWidth) return { fontSize: base, fits: true };
 
   const requiredSize = Math.floor((base * safeWidth) / Math.max(1, widthAtBase));
-  const fittedSize = Math.max(minimumFontSize, Math.min(base, requiredSize));
-  const widthAtMinimum = getLongestWordWidth(text, minimumFontSize, options);
-  return { fontSize: fittedSize, fits: widthAtMinimum <= safeWidth };
+  const fittedSize = Math.max(readableMinimum, Math.min(base, requiredSize));
+  const widthAtReadableMinimum = getLongestWordWidth(text, readableMinimum, options);
+  return { fontSize: fittedSize, fits: widthAtReadableMinimum <= safeWidth };
 };
 
 const getElementAvailableWidth = (element: HTMLElement) => {
@@ -136,8 +137,9 @@ export const getLargestSafeFontSizeForElements = (
 ) => {
   const maximum = Math.max(minimumFontSize, Math.floor(Number(maximumFontSize) || minimumFontSize));
   const minimum = Math.max(1, Math.ceil(Number(minimumFontSize) || 10));
+  const readableMinimum = Math.min(maximum, Math.max(minimum, Math.ceil(maximum * 0.78)));
 
-  for (let fontSize = maximum; fontSize >= minimum; fontSize -= 1) {
+  for (let fontSize = maximum; fontSize >= readableMinimum; fontSize -= 1) {
     const allFit = elements.every((element) => {
       if (element.dataset.wordFitAllowBreak === 'true') return true;
       const result = measureWordFitElement(element, { baseFontSize: fontSize });
@@ -146,7 +148,7 @@ export const getLargestSafeFontSizeForElements = (
     if (allFit) return fontSize;
   }
 
-  return minimum;
+  return readableMinimum;
 };
 
 const getCanvasWordFitElements = () => Array.from(

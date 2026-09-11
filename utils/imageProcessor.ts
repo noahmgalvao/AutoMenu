@@ -4,9 +4,32 @@ import type {
     MenuCategory,
 } from '../types';
 
-const MIN_ERASE_PADDING = 32;
-const MAX_ERASE_PADDING = 72;
+const MIN_ERASE_PADDING = 6;
+const MAX_ERASE_PADDING = 24;
 const SPATIAL_ROW_TOLERANCE = 30;
+
+let openCvPromise: Promise<any> | null = null;
+
+const loadOpenCv = () => {
+    if (openCvPromise) return openCvPromise;
+
+    openCvPromise = (async () => {
+        const { default: cvModule } = await import('@techstark/opencv-js');
+        if (cvModule instanceof Promise) return cvModule;
+        if (cvModule?.Mat) return cvModule;
+
+        await new Promise<void>((resolve) => {
+            const previousHandler = cvModule.onRuntimeInitialized;
+            cvModule.onRuntimeInitialized = () => {
+                previousHandler?.();
+                resolve();
+            };
+        });
+        return cvModule;
+    })();
+
+    return openCvPromise;
+};
 
 type CanvasImageSourceInput = File | string;
 type SpatialElement = { boundingBox?: BoundingBox };
@@ -77,7 +100,7 @@ const getErasePadding = (box: BoundingBox) => Math.max(
     MIN_ERASE_PADDING,
     Math.min(
         MAX_ERASE_PADDING,
-        Math.round(Math.max(Number(box.width) || 0, Number(box.height) || 0) * 0.11),
+        Math.round(Math.max(Number(box.width) || 0, Number(box.height) || 0) * 0.035),
     ),
 );
 
@@ -371,6 +394,44 @@ const smoothFilledRegions = (
     return current;
 };
 
+const inpaintRemovalMask = async (
+    sourceCanvas: HTMLCanvasElement,
+    sourcePixels: Uint8ClampedArray,
+    removalMask: Uint8Array,
+    imageWidth: number,
+    imageHeight: number,
+) => {
+    const cv = await loadOpenCv();
+    const sourceRgba = cv.imread(sourceCanvas);
+    const sourceRgb = new cv.Mat();
+    const mask = cv.Mat.zeros(imageHeight, imageWidth, cv.CV_8UC1);
+    const resultRgb = new cv.Mat();
+
+    try {
+        cv.cvtColor(sourceRgba, sourceRgb, cv.COLOR_RGBA2RGB);
+        for (let pixelIndex = 0; pixelIndex < removalMask.length; pixelIndex += 1) {
+            mask.data[pixelIndex] = removalMask[pixelIndex] === 1 ? 255 : 0;
+        }
+        cv.inpaint(sourceRgb, mask, resultRgb, 5, cv.INPAINT_TELEA);
+
+        const outputPixels = new Uint8ClampedArray(sourcePixels);
+        for (let pixelIndex = 0; pixelIndex < removalMask.length; pixelIndex += 1) {
+            if (removalMask[pixelIndex] === 0) continue;
+            const sourceOffset = pixelIndex * 3;
+            const destinationOffset = pixelIndex * 4;
+            outputPixels[destinationOffset] = resultRgb.data[sourceOffset];
+            outputPixels[destinationOffset + 1] = resultRgb.data[sourceOffset + 1];
+            outputPixels[destinationOffset + 2] = resultRgb.data[sourceOffset + 2];
+        }
+        return outputPixels;
+    } finally {
+        sourceRgba.delete();
+        sourceRgb.delete();
+        mask.delete();
+        resultRgb.delete();
+    }
+};
+
 const patchBoundingBox = (
     context: CanvasRenderingContext2D,
     sourcePixels: Uint8ClampedArray,
@@ -530,7 +591,7 @@ export const createCleanBackground = async (
     if (!outputContext) {
         throw new Error('Não foi possível criar o contexto Canvas de saída.');
     }
-    outputContext.imageSmoothingEnabled = false;
+    outputContext.imageSmoothingEnabled = true;
     outputContext.drawImage(sourceCanvas, 0, 0);
 
     const validBoxes = mergeOverlappingBoxes(elements
@@ -553,12 +614,24 @@ export const createCleanBackground = async (
         image.naturalWidth,
         image.naturalHeight,
     ).data;
-    const filledPixels = smoothFilledRegions(fillRemovalMask(
-        sourcePixels,
-        removalMask,
-        image.naturalWidth,
-        image.naturalHeight,
-    ), removalMask, image.naturalWidth, image.naturalHeight);
+    let filledPixels: Uint8ClampedArray;
+    try {
+        filledPixels = await inpaintRemovalMask(
+            sourceCanvas,
+            sourcePixels,
+            removalMask,
+            image.naturalWidth,
+            image.naturalHeight,
+        );
+    } catch (error) {
+        console.warn('OpenCV indisponível para reconstrução do fundo; usando fallback Canvas.', error);
+        filledPixels = smoothFilledRegions(fillRemovalMask(
+            sourcePixels,
+            removalMask,
+            image.naturalWidth,
+            image.naturalHeight,
+        ), removalMask, image.naturalWidth, image.naturalHeight, 4);
+    }
     const filledImageData = outputContext.createImageData(
         image.naturalWidth,
         image.naturalHeight,

@@ -135,6 +135,13 @@ export interface AddedImage {
   boundingBox?: BoundingBox;
 }
 
+export interface CategoryImage {
+  url: string;
+  assetId?: string | null;
+  width?: number;
+  height?: number;
+}
+
 export interface PageBackground {
   pageIndex: number;
   url: string;
@@ -181,6 +188,7 @@ export interface MenuStyle {
   hiddenProductIds: string[];
   floatingText?: FloatingTextItem[];
   addedImages?: AddedImage[];
+  categoryImages?: Record<string, CategoryImage>;
   blankPages?: BlankPageSlot[];
   pageBreaks?: string[];
   contentLayer?: 'front' | 'back';

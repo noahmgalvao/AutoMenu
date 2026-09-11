@@ -29,6 +29,8 @@ interface ProductListProps {
   remove: (id: string, type: 'product' | 'category') => void;
   handleToggleVisibility: (id: string, visible: boolean) => void;
   initiateAdd: (categoryId: string, type: 'product' | 'category') => void;
+  onCategoryImageClick: (category: string) => void;
+  onRemoveCategoryImage: (category: string) => void;
   onProductImageClick: (id: string) => void;
   onRemoveProductImage: (id: string) => void;
 }
@@ -52,6 +54,8 @@ export const ProductList: React.FC<ProductListProps> = ({
   remove,
   handleToggleVisibility,
   initiateAdd,
+  onCategoryImageClick,
+  onRemoveCategoryImage,
   onProductImageClick,
   onRemoveProductImage
 }) => {
@@ -140,6 +144,32 @@ export const ProductList: React.FC<ProductListProps> = ({
                   >
                     <div className="flex items-center gap-2 font-bold text-slate-700 text-sm min-w-0">
                       <GripVertical size={14} className="text-slate-400" />
+                      <div className="group/category-image relative h-8 w-8 shrink-0">
+                        <button
+                          type="button"
+                          className="flex h-full w-full items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-white text-slate-300 hover:border-indigo-300 hover:text-indigo-500"
+                          onClick={(e) => { e.stopPropagation(); onCategoryImageClick(cat); }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          title={style.categoryImages?.[cat]?.url ? 'Trocar imagem da categoria' : 'Adicionar imagem à categoria'}
+                        >
+                          {style.categoryImages?.[cat]?.url ? (
+                            <img src={style.categoryImages[cat].url} className="h-full w-full object-contain" alt="" draggable={false} />
+                          ) : (
+                            <ImagePlus size={15} />
+                          )}
+                        </button>
+                        {style.categoryImages?.[cat]?.url && (
+                          <button
+                            type="button"
+                            className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-white opacity-100 lg:opacity-0 lg:group-hover/category-image:opacity-100"
+                            onClick={(e) => { e.stopPropagation(); onRemoveCategoryImage(cat); }}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            title="Remover imagem da categoria"
+                          >
+                            <X size={10} />
+                          </button>
+                        )}
+                      </div>
                       <span className="truncate">{cat}</span>
                     </div>
                     <div className="relative">

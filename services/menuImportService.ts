@@ -1,6 +1,7 @@
 import type {
   AddedImage,
   BoundingBox,
+  CategoryImage,
   ExtractedImage,
   MenuImportMode,
   MenuStyle,
@@ -472,6 +473,62 @@ const normalizeEntityName = (value: string) => (
     .toLocaleLowerCase('pt-BR')
 );
 
+const getCategoryImageTarget = (
+  page: AnalyzedPage,
+  processedImage: ProcessedImage,
+  availableCategoryByKey: Map<string, string>,
+) => {
+  const image = processedImage.extractedImage;
+  if (image.relatedProductName || !['icon', 'logo', 'illustration'].includes(image.type)) {
+    return null;
+  }
+
+  const explicitCategory = availableCategoryByKey.get(normalizeEntityName(image.relatedCategoryName || ''));
+  if (explicitCategory) return explicitCategory;
+  if (!image.boundingBox) return null;
+
+  const imageBox = image.boundingBox;
+  const imageCenterX = imageBox.x + (imageBox.width / 2);
+  const imageCenterY = imageBox.y + (imageBox.height / 2);
+  let nearest: { name: string; score: number } | null = null;
+
+  for (const category of page.categories) {
+    const categoryName = availableCategoryByKey.get(normalizeEntityName(category.name));
+    const categoryBox = category.nameBoundingBox || category.boundingBox;
+    if (!categoryName || !categoryBox) continue;
+
+    const categoryCenterX = categoryBox.x + (categoryBox.width / 2);
+    const categoryCenterY = categoryBox.y + (categoryBox.height / 2);
+    const verticalDistance = Math.abs(imageCenterY - categoryCenterY);
+    const horizontalGap = imageBox.x + imageBox.width < categoryBox.x
+      ? categoryBox.x - (imageBox.x + imageBox.width)
+      : categoryBox.x + categoryBox.width < imageBox.x
+        ? imageBox.x - (categoryBox.x + categoryBox.width)
+        : 0;
+    const maximumVerticalDistance = Math.max(28, categoryBox.height * 1.25, imageBox.height * 1.25);
+    const maximumHorizontalGap = Math.max(72, categoryBox.height * 4, imageBox.width * 3);
+    if (verticalDistance > maximumVerticalDistance || horizontalGap > maximumHorizontalGap) continue;
+
+    const score = verticalDistance + (horizontalGap * 0.75) + (Math.abs(imageCenterX - categoryCenterX) * 0.05);
+    if (!nearest || score < nearest.score) nearest = { name: categoryName, score };
+  }
+
+  return nearest?.name || null;
+};
+
+const getCategoryImageSize = (page: AnalyzedPage, image: ProcessedImage) => {
+  const box = image.extractedImage.boundingBox;
+  if (!box) return { width: 36, height: 36 };
+  const rawWidth = (box.width / page.imageDimensions.width) * 794;
+  const rawHeight = (box.height / page.imageDimensions.height) * 1123;
+  const largestEdge = Math.max(1, rawWidth, rawHeight);
+  const scale = Math.min(72 / largestEdge, Math.max(1, 18 / largestEdge));
+  return {
+    width: Math.max(12, Math.round(rawWidth * scale)),
+    height: Math.max(12, Math.round(rawHeight * scale)),
+  };
+};
+
 const appendUnique = <T,>(values: T[], value: T) => {
   if (!values.includes(value)) values.push(value);
 };
@@ -667,7 +724,19 @@ export const processMenuImport = async ({
     const allBoundingBoxes: BoundingBox[] = [
       ...result.categories.flatMap((category) => [
         category.nameBoundingBox || category.boundingBox,
-        ...category.products.map((product) => product.boundingBox),
+        ...category.products.flatMap((product) => {
+          const hasCompleteTextBoxes = Boolean(
+            product.nameBoundingBox
+            && product.priceBoundingBox
+            && (!product.description || product.descriptionBoundingBox),
+          );
+          const textBoxes = [
+            product.nameBoundingBox,
+            product.descriptionBoundingBox,
+            product.priceBoundingBox,
+          ].filter(isBoundingBox);
+          return hasCompleteTextBoxes ? textBoxes : [product.boundingBox];
+        }),
       ]),
       ...result.extractedImages.map((image) => image.boundingBox),
       typography.mainTitle?.boundingBox,
@@ -807,6 +876,30 @@ export const processMenuImport = async ({
     currentStyle,
   );
   const finalProducts = [...mergedImport.products, ...freeTextProducts];
+  const availableCategoryByKey = new Map<string, string>();
+  (importsProducts ? finalProducts : currentProducts).forEach((product) => {
+    if (!product.isFreeText) availableCategoryByKey.set(normalizeEntityName(product.category), product.category);
+  });
+  const categoryImages: Record<string, CategoryImage> = {};
+  Object.entries(currentStyle.categoryImages || {}).forEach(([category, image]) => {
+    const resolvedCategory = availableCategoryByKey.get(normalizeEntityName(category));
+    if (resolvedCategory) categoryImages[resolvedCategory] = image;
+  });
+  const categoryLinkedImageIds = new Set<string>();
+  const importedCategoryImageNames = new Set<string>();
+  analyzedPages.forEach((page) => {
+    page.processedImages.forEach((processedImage) => {
+      const categoryName = getCategoryImageTarget(page, processedImage, availableCategoryByKey);
+      if (!categoryName || importedCategoryImageNames.has(categoryName)) return;
+      categoryImages[categoryName] = {
+        url: processedImage.addedImage.url,
+        assetId: processedImage.addedImage.assetId,
+        ...getCategoryImageSize(page, processedImage),
+      };
+      importedCategoryImageNames.add(categoryName);
+      categoryLinkedImageIds.add(processedImage.addedImage.id);
+    });
+  });
   const customProductOrder: Record<string, string[]> = {
     ...mergedImport.customProductOrder,
   };
@@ -1016,7 +1109,10 @@ export const processMenuImport = async ({
         })),
       sourceImage: firstPage.sourceUpload.url,
       sourceAssetId: firstPage.sourceUpload.asset.id,
-      addedImages: processedImages.map(({ addedImage }) => addedImage),
+      categoryImages,
+      addedImages: processedImages
+        .filter(({ addedImage }) => !categoryLinkedImageIds.has(addedImage.id))
+        .map(({ addedImage }) => addedImage),
       contentLayer: 'front',
       layoutMode: 'list',
       showImages: false,
@@ -1208,6 +1304,15 @@ export const finalizeMenuImport = (
     ...(editedImportStyle.hiddenProductIds || [])
       .filter((productId) => editedProductIdSet.has(productId)),
   ]);
+  const categoryImages: Record<string, CategoryImage> = {};
+  retainedCategories.forEach((category) => {
+    const image = processed.previewStyle.categoryImages?.[category];
+    if (image) categoryImages[category] = image;
+  });
+  editedCategories.forEach((category) => {
+    const image = editedImportStyle.categoryImages?.[category];
+    if (image) categoryImages[category] = image;
+  });
 
   return {
     products,
@@ -1216,6 +1321,7 @@ export const finalizeMenuImport = (
       customCategoryOrder,
       customProductOrder,
       hiddenProductIds,
+      categoryImages,
     },
   };
 };

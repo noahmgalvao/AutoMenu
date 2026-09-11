@@ -64,12 +64,16 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
         setBulkAdjustmentMode,
         setFormData,
         productFileInputRef,
+        categoryFileInputRef,
         handlers,
         toggleCollapse,
         handleBulkAdjust,
         handleProductImageUpload,
         onProductImageClick,
         onRemoveProductImage,
+        handleCategoryImageUpload,
+        onCategoryImageClick,
+        onRemoveCategoryImage,
         startEdit,
         cancelEdit,
         initiateAdd,
@@ -213,6 +217,8 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                         remove={remove}
                         handleToggleVisibility={handleToggleVisibility}
                         initiateAdd={initiateAdd}
+                        onCategoryImageClick={onCategoryImageClick}
+                        onRemoveCategoryImage={onRemoveCategoryImage}
                         onProductImageClick={onProductImageClick}
                         onRemoveProductImage={onRemoveProductImage}
                     />
@@ -230,6 +236,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
             )}
 
             <input type="file" ref={productFileInputRef} className="hidden" onChange={handleProductImageUpload} accept="image/*" />
+            <input type="file" ref={categoryFileInputRef} className="hidden" onChange={handleCategoryImageUpload} accept="image/*" />
             <MenuImportFlow
                 ref={importFlowRef}
                 disabled={isUploading}

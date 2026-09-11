@@ -68,10 +68,12 @@ export const useProductDesignerLogic = ({
     // Form State
     const [formData, setFormData] = useState<Partial<Product>>({});
     const [uploadTargetId, setUploadTargetId] = useState<string | null>(null);
+    const [categoryUploadTarget, setCategoryUploadTarget] = useState<string | null>(null);
 
     // Refs
     const fileInputRef = useRef<HTMLInputElement>(null);
     const productFileInputRef = useRef<HTMLInputElement>(null);
+    const categoryFileInputRef = useRef<HTMLInputElement>(null);
 
     const resolveCategoryId = (categoryName: string) => {
         return products.find((product) => !product.isFreeText && product.category === categoryName)?.categoryId || crypto.randomUUID();
@@ -213,6 +215,60 @@ export const useProductDesignerLogic = ({
         setProducts(prev => prev.map(p => p.id === id ? { ...p, image: '', imageAssetId: null } : p));
     };
 
+    const handleCategoryImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !categoryUploadTarget) return;
+        try {
+            const [imageDimensions, { asset, url }] = await Promise.all([
+                getImageDimensions(file),
+                uploadFileAsset({
+                    workspaceId,
+                    userId: currentUserId,
+                    bucket: 'menu-assets',
+                    assetType: 'added_image',
+                    file,
+                    metadata: {
+                        menu_id: currentMenuId,
+                        category_name: categoryUploadTarget,
+                        role: 'category_image',
+                    },
+                }),
+            ]);
+            const scale = 40 / Math.max(1, imageDimensions.width, imageDimensions.height);
+            setStyle(prev => ({
+                ...prev,
+                name: 'Custom',
+                categoryImages: {
+                    ...(prev.categoryImages || {}),
+                    [categoryUploadTarget]: {
+                        url,
+                        assetId: asset.id,
+                        width: Math.max(12, Math.round(imageDimensions.width * scale)),
+                        height: Math.max(12, Math.round(imageDimensions.height * scale)),
+                    },
+                },
+            }));
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setCategoryUploadTarget(null);
+            if (categoryFileInputRef.current) categoryFileInputRef.current.value = '';
+        }
+    };
+
+    const onCategoryImageClick = (category: string) => {
+        setCategoryUploadTarget(category);
+        categoryFileInputRef.current?.click();
+    };
+
+    const onRemoveCategoryImage = (category: string) => {
+        setStyle(prev => {
+            const categoryImages = { ...(prev.categoryImages || {}) };
+            delete categoryImages[category];
+            return { ...prev, categoryImages, name: 'Custom' };
+        });
+    };
+
     const startEdit = (id: string, initialData: Partial<Product>) => {
         const product = products.find(candidate => candidate.id === id);
         handlers.handleSelection(
@@ -308,7 +364,12 @@ export const useProductDesignerLogic = ({
                             newProdOrder[newName] = newProdOrder[oldName];
                             delete newProdOrder[oldName];
                         }
-                        return { ...prev, customCategoryOrder: newOrder, customProductOrder: newProdOrder, name: 'Custom' };
+                        const categoryImages = { ...(prev.categoryImages || {}) };
+                        if (categoryImages[oldName]) {
+                            categoryImages[newName] = categoryImages[oldName];
+                            delete categoryImages[oldName];
+                        }
+                        return { ...prev, customCategoryOrder: newOrder, customProductOrder: newProdOrder, categoryImages, name: 'Custom' };
                     });
                 }
             }
@@ -347,6 +408,8 @@ export const useProductDesignerLogic = ({
                 const newHidden = (prev.hiddenProductIds || []).filter(hiddenId => !deletedProductIds.has(hiddenId));
                 const newCatOrder = (prev.customCategoryOrder || []).filter(category => !categoriesToDelete.has(category));
                 const newProdOrder = { ...prev.customProductOrder };
+                const categoryImages = { ...(prev.categoryImages || {}) };
+                categoriesToDelete.forEach(category => delete categoryImages[category]);
                 Object.keys(newProdOrder).forEach(category => {
                     if (categoriesToDelete.has(category)) {
                         delete newProdOrder[category];
@@ -360,6 +423,7 @@ export const useProductDesignerLogic = ({
                     hiddenProductIds: newHidden,
                     customCategoryOrder: newCatOrder,
                     customProductOrder: newProdOrder,
+                    categoryImages,
                     name: 'Custom'
                 };
             });
@@ -726,6 +790,7 @@ export const useProductDesignerLogic = ({
         // Refs
         fileInputRef,
         productFileInputRef,
+        categoryFileInputRef,
 
         // Handlers
         handlers,
@@ -734,6 +799,9 @@ export const useProductDesignerLogic = ({
         handleProductImageUpload,
         onProductImageClick,
         onRemoveProductImage,
+        handleCategoryImageUpload,
+        onCategoryImageClick,
+        onRemoveCategoryImage,
         startEdit,
         cancelEdit,
         initiateAdd,

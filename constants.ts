@@ -87,6 +87,7 @@ const createTemplate = (template: Omit<MenuStyle, 'scope' | 'sourceType' | 'isLo
   categoryPlacements: {},
   hiddenProductIds: [],
   floatingText: [],
+  categoryImages: {},
   pageBreaks: [],
   cardBackgroundColor: '#ffffff',
   fontSizeLimits: { ...DEFAULT_FONT_SIZE_LIMITS },
