@@ -332,6 +332,8 @@ const ImportedItemsEditor: React.FC<{
           onRemoveCategoryImage={logic.onRemoveCategoryImage}
           onProductImageClick={logic.onProductImageClick}
           onRemoveProductImage={logic.onRemoveProductImage}
+          productImageUpload={logic.productImageUpload}
+          categoryImageUpload={logic.categoryImageUpload}
         />
       ) : (
         <div className="flex h-full min-h-56 items-center justify-center text-center text-sm text-slate-500">

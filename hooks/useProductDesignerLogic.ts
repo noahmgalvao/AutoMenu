@@ -27,6 +27,7 @@ import {
 } from '../services/menuImportService';
 import { roundPrice } from '../utils/price';
 import { roundFontSize } from '../utils/styleRules';
+import { optimizeImageForUpload, preloadImage } from '../utils/imageUpload';
 
 interface UseProductDesignerLogicProps {
     products: Product[];
@@ -70,6 +71,8 @@ export const useProductDesignerLogic = ({
     const [formData, setFormData] = useState<Partial<Product>>({});
     const [uploadTargetId, setUploadTargetId] = useState<string | null>(null);
     const [categoryUploadTarget, setCategoryUploadTarget] = useState<string | null>(null);
+    const [productImageUpload, setProductImageUpload] = useState<{ id: string; previewUrl: string } | null>(null);
+    const [categoryImageUpload, setCategoryImageUpload] = useState<{ id: string; previewUrl: string } | null>(null);
 
     // Refs
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -189,19 +192,26 @@ export const useProductDesignerLogic = ({
     const handleProductImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !uploadTargetId) return;
+        const targetId = uploadTargetId;
+        const previewUrl = URL.createObjectURL(file);
+        setProductImageUpload({ id: targetId, previewUrl });
         try {
+            const optimizedFile = await optimizeImageForUpload(file, 1400);
             const { asset, url } = await uploadFileAsset({
                 workspaceId,
                 userId: currentUserId,
                 bucket: 'product-images',
                 assetType: 'product_image',
-                file,
-                metadata: { product_id: uploadTargetId }
+                file: optimizedFile,
+                metadata: { product_id: targetId }
             });
-            setProducts(prev => prev.map(p => p.id === uploadTargetId ? { ...p, image: url, imageAssetId: asset.id } : p));
+            setProducts(prev => prev.map(p => p.id === targetId ? { ...p, image: url, imageAssetId: asset.id } : p));
+            await preloadImage(url);
         } catch (err) {
             console.error(err);
         } finally {
+            setProductImageUpload(current => current?.id === targetId ? null : current);
+            URL.revokeObjectURL(previewUrl);
             setUploadTargetId(null);
             if (productFileInputRef.current) productFileInputRef.current.value = '';
         }
@@ -219,18 +229,24 @@ export const useProductDesignerLogic = ({
     const handleCategoryImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !categoryUploadTarget) return;
+        const targetCategory = categoryUploadTarget;
+        const previewUrl = URL.createObjectURL(file);
+        setCategoryImageUpload({ id: targetCategory, previewUrl });
         try {
+            const optimizedFilePromise = optimizeImageForUpload(file, 900);
+            const imageDimensionsPromise = getImageDimensions(file);
+            const optimizedFile = await optimizedFilePromise;
             const [imageDimensions, { asset, url }] = await Promise.all([
-                getImageDimensions(file),
+                imageDimensionsPromise,
                 uploadFileAsset({
                     workspaceId,
                     userId: currentUserId,
                     bucket: 'menu-assets',
                     assetType: 'added_image',
-                    file,
+                    file: optimizedFile,
                     metadata: {
                         menu_id: currentMenuId,
-                        category_name: categoryUploadTarget,
+                        category_name: targetCategory,
                         role: 'category_image',
                     },
                 }),
@@ -241,7 +257,7 @@ export const useProductDesignerLogic = ({
                 name: 'Custom',
                 categoryImages: {
                     ...(prev.categoryImages || {}),
-                    [categoryUploadTarget]: {
+                    [targetCategory]: {
                         url,
                         assetId: asset.id,
                         width: Math.max(12, Math.round(imageDimensions.width * scale)),
@@ -249,9 +265,12 @@ export const useProductDesignerLogic = ({
                     },
                 },
             }));
+            await preloadImage(url);
         } catch (err) {
             console.error(err);
         } finally {
+            setCategoryImageUpload(current => current?.id === targetCategory ? null : current);
+            URL.revokeObjectURL(previewUrl);
             setCategoryUploadTarget(null);
             if (categoryFileInputRef.current) categoryFileInputRef.current.value = '';
         }
@@ -780,6 +799,8 @@ export const useProductDesignerLogic = ({
         isUploading,
         newItemDraft,
         formData,
+        productImageUpload,
+        categoryImageUpload,
 
         // Setters
         setMenuOpenId,

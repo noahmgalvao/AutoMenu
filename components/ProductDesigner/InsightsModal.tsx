@@ -1,18 +1,20 @@
 
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Product } from '../../types';
+import { MenuStyle, Product } from '../../types';
 import { BarChart as BarChartIcon, X } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { formatMenuPriceValue } from '../../utils/price';
 
 interface InsightsModalProps {
   products: Product[];
   categories: string[];
   grouped: Record<string, Product[]>;
+  style: MenuStyle;
   onClose: () => void;
 }
 
-export const InsightsModal: React.FC<InsightsModalProps> = ({ products, categories, grouped, onClose }) => {
+export const InsightsModal: React.FC<InsightsModalProps> = ({ products, categories, grouped, style, onClose }) => {
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in"
@@ -33,7 +35,9 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({ products, categori
               <div className="text-xs text-indigo-400 uppercase font-bold mt-1">Total de itens</div>
             </div>
             <div className="p-4 bg-emerald-50 rounded-lg text-center">
-              <div className="text-3xl font-bold text-emerald-600">${(products.reduce((acc, p) => acc + p.price, 0) / (products.length || 1)).toFixed(2)}</div>
+              <div className="text-3xl font-bold text-emerald-600">
+                {style.showCurrencySymbol !== false ? 'R$ ' : ''}{formatMenuPriceValue(products.reduce((acc, p) => acc + p.price, 0) / (products.length || 1), style)}
+              </div>
               <div className="text-xs text-emerald-400 uppercase font-bold mt-1">Preço médio</div>
             </div>
             <div className="p-4 bg-blue-50 rounded-lg text-center">

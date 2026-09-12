@@ -435,8 +435,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       onChange={(event) => setPriceDecimalSeparator(resolvePriceDecimalSeparator(event.target.value))}
                       className="h-9 w-20 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
                     >
-                      <option value=",">Vírgula (,)</option>
-                      <option value=".">Ponto (.)</option>
+                      <option value=",">,</option>
+                      <option value=".">.</option>
                     </select>
                   </label>
                 </div>

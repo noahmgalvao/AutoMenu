@@ -3,10 +3,61 @@ import React from 'react';
 import { Product, MenuStyle } from '../../types';
 import { 
   GripVertical, MoreVertical, ChevronUp, ChevronDown, 
-  Plus, Edit3, Trash2, Eye, EyeOff, ImagePlus, X
+  Plus, Edit3, Trash2, Eye, EyeOff, ImagePlus, Loader2, X
 } from 'lucide-react';
 import { EditForm } from './EditForm';
 import { isPristineNewCategory, isPristineNewProduct } from '../../utils/pristineItems';
+import { formatMenuPriceValue } from '../../utils/price';
+
+interface PendingImageUpload {
+  id: string;
+  previewUrl: string;
+}
+
+const ImageThumbnail: React.FC<{
+  src?: string;
+  fit: 'contain' | 'cover';
+  uploading?: boolean;
+  iconSize?: number;
+}> = ({ src, fit, uploading = false, iconSize = 16 }) => {
+  const [loadedSource, setLoadedSource] = React.useState<string | null>(null);
+  const [failedSource, setFailedSource] = React.useState<string | null>(null);
+  const isLoading = Boolean(src && loadedSource !== src && failedSource !== src);
+  const hasFailed = Boolean(src && failedSource === src);
+
+  React.useEffect(() => {
+    if (!src || loadedSource === src || failedSource === src) return;
+    const timeoutId = window.setTimeout(() => setFailedSource(src), 12000);
+    return () => window.clearTimeout(timeoutId);
+  }, [failedSource, loadedSource, src]);
+
+  return (
+    <>
+      {src && !hasFailed && (
+        <img
+          src={src}
+          className={`h-full w-full ${fit === 'contain' ? 'object-contain' : 'object-cover'} ${isLoading ? 'opacity-0' : 'opacity-100'} transition-opacity`}
+          alt=""
+          draggable={false}
+          loading="eager"
+          decoding="async"
+          onLoad={() => { setLoadedSource(src); setFailedSource(null); }}
+          onError={() => setFailedSource(src)}
+        />
+      )}
+      {!src || hasFailed ? (
+        <div className={`absolute inset-0 flex items-center justify-center ${hasFailed ? 'text-red-400' : 'text-slate-300'}`} title={hasFailed ? 'Não foi possível carregar a imagem' : undefined}>
+          <ImagePlus size={iconSize} />
+        </div>
+      ) : null}
+      {(uploading || isLoading) && (
+        <div className="absolute inset-0 flex items-center justify-center bg-white/75 text-indigo-600">
+          <Loader2 size={Math.max(13, iconSize)} className="animate-spin" />
+        </div>
+      )}
+    </>
+  );
+};
 
 interface ProductListProps {
   categories: string[];
@@ -33,6 +84,8 @@ interface ProductListProps {
   onRemoveCategoryImage: (category: string) => void;
   onProductImageClick: (id: string) => void;
   onRemoveProductImage: (id: string) => void;
+  productImageUpload: PendingImageUpload | null;
+  categoryImageUpload: PendingImageUpload | null;
 }
 
 export const ProductList: React.FC<ProductListProps> = ({
@@ -57,7 +110,9 @@ export const ProductList: React.FC<ProductListProps> = ({
   onCategoryImageClick,
   onRemoveCategoryImage,
   onProductImageClick,
-  onRemoveProductImage
+  onRemoveProductImage,
+  productImageUpload,
+  categoryImageUpload,
 }) => {
   const [shakingCategory, setShakingCategory] = React.useState<string | null>(null);
 
@@ -121,6 +176,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                 {isEditing ? (
                   <EditForm 
                     type="category" 
+                    style={style}
                     formData={formData} 
                     setFormData={setFormData} 
                     saveEdit={saveEdit} 
@@ -152,11 +208,12 @@ export const ProductList: React.FC<ProductListProps> = ({
                           onPointerDown={(e) => e.stopPropagation()}
                           title={style.categoryImages?.[cat]?.url ? 'Trocar imagem da categoria' : 'Adicionar imagem à categoria'}
                         >
-                          {style.categoryImages?.[cat]?.url ? (
-                            <img src={style.categoryImages[cat].url} className="h-full w-full object-contain" alt="" draggable={false} />
-                          ) : (
-                            <ImagePlus size={15} />
-                          )}
+                          <ImageThumbnail
+                            src={categoryImageUpload?.id === cat ? categoryImageUpload.previewUrl : style.categoryImages?.[cat]?.url}
+                            fit="contain"
+                            uploading={categoryImageUpload?.id === cat}
+                            iconSize={15}
+                          />
                         </button>
                         {style.categoryImages?.[cat]?.url && (
                           <button
@@ -242,6 +299,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                     {pIsEditing ? (
                       <EditForm 
                         type="product" 
+                        style={style}
                         formData={formData} 
                         setFormData={setFormData} 
                         saveEdit={saveEdit} 
@@ -265,11 +323,11 @@ export const ProductList: React.FC<ProductListProps> = ({
                           onClick={() => onProductImageClick(product.id)}
                           onPointerDown={e => e.stopPropagation()}
                         >
-                          {product.image ? (
-                            <img src={product.image} className="w-full h-full object-cover" alt="" draggable={false} />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-slate-300"><ImagePlus size={16}/></div>
-                          )}
+                          <ImageThumbnail
+                            src={productImageUpload?.id === product.id ? productImageUpload.previewUrl : product.image}
+                            fit="cover"
+                            uploading={productImageUpload?.id === product.id}
+                          />
                           <div className="absolute inset-0 bg-black/50 opacity-0 group-hover/img:opacity-100 flex items-center justify-center text-white transition-opacity">
                             <Edit3 size={12} />
                           </div>
@@ -291,7 +349,11 @@ export const ProductList: React.FC<ProductListProps> = ({
                         >
                           <div className="flex justify-between items-start">
                             <h4 className="text-sm font-medium text-slate-800 truncate">{product.name}</h4>
-                            <span className="text-xs font-mono font-bold text-slate-600">${product.price.toFixed(2)}</span>
+                            {style.showPrices !== false && (
+                              <span className="text-xs font-mono font-bold text-slate-600">
+                                {style.showCurrencySymbol !== false ? 'R$ ' : ''}{formatMenuPriceValue(product.price, style)}
+                              </span>
+                            )}
                           </div>
                           <p className="text-xs text-slate-400 truncate">{product.description}</p>
                         </div>
@@ -343,6 +405,7 @@ export const ProductList: React.FC<ProductListProps> = ({
               {newItemDraft?.type === 'product' && newItemDraft.categoryId === cat && (
                 <EditForm 
                   type="product" 
+                  style={style}
                   formData={formData} 
                   setFormData={setFormData} 
                   saveEdit={saveEdit} 
@@ -364,6 +427,7 @@ export const ProductList: React.FC<ProductListProps> = ({
               <div className="mb-4 ml-4 pl-4 border-l-2 border-indigo-200">
                 <EditForm 
                   type="category" 
+                  style={style}
                   formData={formData} 
                   setFormData={setFormData} 
                   saveEdit={saveEdit} 

@@ -1593,7 +1593,7 @@ export const loadWorkspaceData = async (userId: string, menuId?: string | null):
   }
 
   const workspace = mapWorkspaceRow(workspaceRow);
-  let templatesPromise: Promise<MenuStyle[]> | null = null;
+  const templatesPromise = loadTemplatesForWorkspace(workspace.id);
   let menus = await listWorkspaceMenus(workspace.id);
   let menu: Menu;
   if (menus.length === 0) {
@@ -1603,7 +1603,6 @@ export const loadWorkspaceData = async (userId: string, menuId?: string | null):
     });
     menus = [menu];
   } else {
-    templatesPromise = loadTemplatesForWorkspace(workspace.id);
     menu = (menuId ? menus.find((candidate) => candidate.id === menuId) : undefined) || menus[0];
     if (!menu.currentDraftVersionId) {
       menu = await ensureWorkspaceMenuForCurrentUser({
@@ -1628,7 +1627,7 @@ export const loadWorkspaceData = async (userId: string, menuId?: string | null):
         .select('*')
         .eq('id', menu.currentDraftVersionId)
         .maybeSingle(),
-      templatesPromise || loadTemplatesForWorkspace(workspace.id),
+      templatesPromise,
     ]);
 
     if (error) throw error;
@@ -1672,7 +1671,7 @@ export const loadWorkspaceData = async (userId: string, menuId?: string | null):
     }
   }
 
-  templates = templates || await (templatesPromise || loadTemplatesForWorkspace(workspace.id));
+  templates = templates || await templatesPromise;
 
   if (!currentVersionRow) {
     const bootstrapped = await bootstrapWorkspaceFromLocalState(workspace.id, userId);

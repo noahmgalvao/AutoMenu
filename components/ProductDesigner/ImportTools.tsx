@@ -56,7 +56,7 @@ export const ImportTools: React.FC<ImportToolsProps> = ({
               onChange={e => setBulkPercentage(e.target.value)}
             />
             <span className="shrink-0 text-lg font-semibold text-slate-400">
-              {bulkAdjustmentMode === 'percentage' ? '%' : '$'}
+              {bulkAdjustmentMode === 'percentage' ? '%' : 'R$'}
             </span>
             <label className="relative block w-[108px] shrink-0">
               <select

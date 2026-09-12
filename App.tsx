@@ -74,11 +74,75 @@ interface LocalPendingSnapshot {
   updatedAt: string;
 }
 
+interface WorkspaceViewCache {
+  version: 1;
+  userId: string;
+  signature: string;
+  data: LoadedWorkspaceData;
+}
+
 const getPendingStorageKey = (workspaceId: string, menuId: string) =>
   `automenu_pending_workspace_${workspaceId}_${menuId}`;
 
 const getLastActiveMenuStorageKey = (userId: string) =>
   `automenu_last_active_menu_${userId}`;
+
+const getWorkspaceViewCacheKey = (userId: string) =>
+  `automenu_workspace_view_v1_${userId}`;
+
+const readWorkspaceViewCache = (userId: string): WorkspaceViewCache | null => {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.localStorage.getItem(getWorkspaceViewCacheKey(userId));
+    if (!raw) return null;
+    const cached = JSON.parse(raw) as WorkspaceViewCache;
+    if (
+      cached.version !== 1
+      || cached.userId !== userId
+      || !cached.signature
+      || cached.data?.profile?.userId !== userId
+      || !cached.data?.workspace?.id
+      || !cached.data?.menu?.id
+      || !cached.data?.currentVersion?.id
+    ) {
+      return null;
+    }
+    return cached;
+  } catch {
+    return null;
+  }
+};
+
+const writeWorkspaceViewCache = (userId: string, data: LoadedWorkspaceData) => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    const cached: WorkspaceViewCache = {
+      version: 1,
+      userId,
+      signature: getPersistSignature(data),
+      data,
+    };
+    window.localStorage.setItem(getWorkspaceViewCacheKey(userId), JSON.stringify(cached));
+  } catch {
+    // O cache é uma otimização; falhas de cota não interferem no salvamento principal.
+  }
+};
+
+const scheduleWorkspaceViewCacheWrite = (userId: string, data: LoadedWorkspaceData) => {
+  if (typeof window === 'undefined') return;
+  window.setTimeout(() => writeWorkspaceViewCache(userId, data), 0);
+};
+
+const clearWorkspaceViewCache = (userId: string) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(getWorkspaceViewCacheKey(userId));
+  } catch {
+    // Sem ação necessária quando o armazenamento local está indisponível.
+  }
+};
 
 const readLastActiveMenuId = (userId: string) => {
   if (typeof window === 'undefined') return null;
@@ -275,6 +339,21 @@ const App: React.FC = () => {
 
       lastSavedSignatureRef.current = normalizedSignature;
       menuSavedSignatureCacheRef.current[result.menu.id] = normalizedSignature;
+      const cachedMenuData = menuCacheRef.current[result.menu.id];
+      if (cachedMenuData && getPersistSignature(cachedMenuData) === signature) {
+        const savedMenuData: LoadedWorkspaceData = {
+          ...cachedMenuData,
+          menu: result.menu,
+          menus: cachedMenuData.menus.map((menu) => menu.id === result.menu.id ? result.menu : menu),
+          currentVersion: result.currentVersion,
+          products: result.products,
+          style: result.style,
+          templates: result.templates,
+          sortOption: result.sortOption,
+        };
+        menuCacheRef.current[result.menu.id] = savedMenuData;
+        scheduleWorkspaceViewCacheWrite(payload.userId, savedMenuData);
+      }
       clearLocalPendingSnapshot(payload.workspaceId, payload.menuId);
 
       if (latestSignature === signature) {
@@ -383,7 +462,7 @@ const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyboardUndoRedo);
   }, [history, future, products, style]);
 
-  const hydrateWorkspaceState = useCallback((data: LoadedWorkspaceData, options: { preserveSavedSignature?: boolean } = {}) => {
+  const hydrateWorkspaceState = useCallback((data: LoadedWorkspaceData, options: { preserveSavedSignature?: boolean; knownSavedSignature?: string } = {}) => {
     const pendingSnapshot = readLocalPendingSnapshot(data.workspace.id, data.menu.id);
     const pendingUpdatedAt = pendingSnapshot ? Date.parse(pendingSnapshot.updatedAt) : 0;
     const serverUpdatedAt = Date.parse(data.currentVersion.createdAt || '') || 0;
@@ -391,21 +470,23 @@ const App: React.FC = () => {
     const restoredState = shouldRestorePending && pendingSnapshot
       ? normalizeWorkspaceClientState(pendingSnapshot)
       : data;
-    const serverSignature = getPersistSignature({
-      products: data.products,
-      style: data.style,
-      templates: data.templates,
-      sortOption: data.sortOption,
-    });
+    const serverSignature = options.knownSavedSignature || getPersistSignature({
+        products: data.products,
+        style: data.style,
+        templates: data.templates,
+        sortOption: data.sortOption,
+      });
     const savedSignature = options.preserveSavedSignature
       ? menuSavedSignatureCacheRef.current[data.menu.id] || serverSignature
       : serverSignature;
-    const restoredSignature = getPersistSignature({
-      products: restoredState.products,
-      style: restoredState.style,
-      templates: restoredState.templates,
-      sortOption: restoredState.sortOption,
-    });
+    const restoredSignature = shouldRestorePending
+      ? getPersistSignature({
+          products: restoredState.products,
+          style: restoredState.style,
+          templates: restoredState.templates,
+          sortOption: restoredState.sortOption,
+        })
+      : serverSignature;
 
     if (!options.preserveSavedSignature) {
       menuSavedSignatureCacheRef.current[data.menu.id] = serverSignature;
@@ -413,13 +494,17 @@ const App: React.FC = () => {
 
     activeMenuIdRef.current = data.menu.id;
     writeLastActiveMenuId(data.profile.userId, data.menu.id);
-    menuCacheRef.current[data.menu.id] = {
+    const hydratedData: LoadedWorkspaceData = {
       ...data,
       products: restoredState.products,
       style: restoredState.style,
       templates: restoredState.templates,
       sortOption: restoredState.sortOption,
     };
+    menuCacheRef.current[data.menu.id] = hydratedData;
+    if (!shouldRestorePending && restoredSignature === savedSignature) {
+      scheduleWorkspaceViewCacheWrite(data.profile.userId, hydratedData);
+    }
     skipNextPersistRef.current = restoredSignature === savedSignature;
     lastSavedSignatureRef.current = savedSignature;
     setWorkspaceData(data);
@@ -437,12 +522,26 @@ const App: React.FC = () => {
 
   const loadWorkspace = useCallback(async (userId: string, menuId?: string | null) => {
     const requestId = ++workspaceLoadRequestRef.current;
+    const baselineMenuId = activeMenuIdRef.current;
+    const baselineData = baselineMenuId ? menuCacheRef.current[baselineMenuId] : null;
+    const baselineSignature = baselineMenuId
+      ? menuSavedSignatureCacheRef.current[baselineMenuId] || (baselineData ? getPersistSignature(baselineData) : null)
+      : null;
     setIsWorkspaceLoading(true);
     setLoadError(null);
 
     try {
       const data = await loadWorkspaceData(userId, menuId);
       if (requestId !== workspaceLoadRequestRef.current) return;
+      const latestCachedData = menuCacheRef.current[data.menu.id];
+      if (
+        baselineMenuId === data.menu.id
+        && baselineSignature
+        && latestCachedData
+        && getPersistSignature(latestCachedData) !== baselineSignature
+      ) {
+        return;
+      }
       hydrateWorkspaceState(data);
     } catch (error) {
       if (requestId !== workspaceLoadRequestRef.current) return;
@@ -520,7 +619,13 @@ const App: React.FC = () => {
       return;
     }
 
-    loadWorkspace(authenticatedUserId, readLastActiveMenuId(authenticatedUserId));
+    const preferredMenuId = readLastActiveMenuId(authenticatedUserId);
+    const cachedView = readWorkspaceViewCache(authenticatedUserId);
+    const cachedData = cachedView?.data;
+    if (cachedView && (!preferredMenuId || cachedView.data.menu.id === preferredMenuId)) {
+      hydrateWorkspaceState(cachedView.data, { knownSavedSignature: cachedView.signature });
+    }
+    loadWorkspace(authenticatedUserId, preferredMenuId || cachedData?.menu.id);
   }, [authenticatedUserId, loadWorkspace]);
 
   useEffect(() => {
@@ -660,6 +765,21 @@ const App: React.FC = () => {
 
         clearLocalPendingSnapshot(payload.workspaceId, payload.menuId);
         menuSavedSignatureCacheRef.current[result.menu.id] = resultSignature;
+        const cachedMenuData = menuCacheRef.current[result.menu.id];
+        if (cachedMenuData && getPersistSignature(cachedMenuData) === signature) {
+          const savedMenuData: LoadedWorkspaceData = {
+            ...cachedMenuData,
+            menu: result.menu,
+            menus: cachedMenuData.menus.map((menu) => menu.id === result.menu.id ? result.menu : menu),
+            currentVersion: result.currentVersion,
+            products: result.products,
+            style: result.style,
+            templates: result.templates,
+            sortOption: result.sortOption,
+          };
+          menuCacheRef.current[result.menu.id] = savedMenuData;
+          scheduleWorkspaceViewCacheWrite(payload.userId, savedMenuData);
+        }
         setWorkspaceData((prev) => {
           if (!prev) return prev;
           const isActiveSavedMenu = prev.menu.id === result.menu.id;
@@ -1068,6 +1188,7 @@ const App: React.FC = () => {
     try {
       await deleteWorkspaceMenu({ workspaceId: workspaceData.workspace.id, menuId });
       clearLocalPendingSnapshot(workspaceData.workspace.id, menuId);
+      if (deletingActiveMenu) clearWorkspaceViewCache(session.user.id);
 
       if (!deletingActiveMenu) {
         setWorkspaceData((prev) => prev ? { ...prev, menus: prev.menus.filter((menu) => menu.id !== menuId) } : prev);

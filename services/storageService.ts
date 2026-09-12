@@ -78,14 +78,40 @@ export const resolveAssetUrl = async (asset: Asset) => {
 };
 
 export const resolveAssetMap = async (assets: Asset[]) => {
-  const entries = await Promise.all(
-    assets.map(async (asset) => {
-      const url = await resolveAssetUrl(asset);
-      return [asset.id, url] as const;
-    }),
-  );
+  const resolved = new Map<string, string>();
+  const assetsByBucket = new Map<string, Asset[]>();
 
-  return new Map(entries);
+  assets.forEach((asset) => {
+    if (asset.sourceUrl) {
+      resolved.set(asset.id, asset.sourceUrl);
+      return;
+    }
+    if (!asset.bucket || !asset.path) {
+      resolved.set(asset.id, '');
+      return;
+    }
+    const bucketAssets = assetsByBucket.get(asset.bucket) || [];
+    bucketAssets.push(asset);
+    assetsByBucket.set(asset.bucket, bucketAssets);
+  });
+
+  const supabase = getSupabaseClient();
+  await Promise.all(Array.from(assetsByBucket.entries()).map(async ([bucket, bucketAssets]) => {
+    const batches = Array.from(
+      { length: Math.ceil(bucketAssets.length / 100) },
+      (_, index) => bucketAssets.slice(index * 100, (index + 1) * 100),
+    );
+    await Promise.all(batches.map(async (batch) => {
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .createSignedUrls(batch.map((asset) => asset.path!), 60 * 60 * 24 * 365);
+
+      if (error) throw error;
+      batch.forEach((asset, index) => resolved.set(asset.id, data?.[index]?.signedUrl || ''));
+    }));
+  }));
+
+  return resolved;
 };
 
 export const resolveAssetMapForIds = async (workspaceId: string, assetIds: string[]) => {

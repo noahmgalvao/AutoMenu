@@ -146,6 +146,13 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const handledExternalActionIdRef = useRef<number | null>(null);
     const marqueeDragRef = useRef<MarqueeDragState | null>(null);
     const suppressMarqueeClickRef = useRef(false);
+    const suppressBackgroundPressClickRef = useRef(false);
+    const backgroundPressRef = useRef<{
+        pointerId: number;
+        startX: number;
+        startY: number;
+        timeoutId: number;
+    } | null>(null);
     const lastPreviewPointerTypeRef = useRef<string | null>(null);
     const [clipboardVersion, setClipboardVersion] = useState(0);
     const [nativeClipboardAvailable, setNativeClipboardAvailable] = useState(false);
@@ -156,6 +163,19 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         products, style, onAddProduct, onStyleUpdate, onDeleteProduct, onToggleProductVisibility, onSelectedItemsChange,
         readOnly = false, visiblePageIndex, onPageCountChange,
     } = props;
+
+    useEffect(() => () => {
+        if (backgroundPressRef.current) {
+            window.clearTimeout(backgroundPressRef.current.timeoutId);
+            backgroundPressRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => () => {
+        if (backgroundPressRef.current) {
+            window.clearTimeout(backgroundPressRef.current.timeoutId);
+        }
+    }, []);
 
     useEffect(() => {
         onSelectedItemsChange?.(handlers.selectedItems || []);
@@ -720,15 +740,44 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     }, [getMarqueeItems, handlers]);
 
   const handlePreviewPointerDownCapture = (event: React.PointerEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('[data-canvas-object-menu="true"]')) return;
+
     document.body.dataset.automenuDeleteContext = 'canvas';
     lastPreviewPointerTypeRef.current = event.pointerType;
     if (event.pointerType === 'touch') {
       setObjectMenu(null);
     }
-        const target = event.target as HTMLElement | null;
         const pageElement = target?.closest<HTMLElement>('[data-menu-print-page="true"][data-page-index]');
         if (pageElement) {
             lastCanvasPointRef.current = { x: event.clientX, y: event.clientY };
+        }
+
+        const isBlankTouchTarget = Boolean(
+            pageElement
+            && event.pointerType === 'touch'
+            && !target?.closest(
+                '[data-drag-type], [data-added-image-drag="true"], #menu-title-text, #menu-subtitle-text, button, input, textarea, select, [contenteditable="true"], [data-drag-ignore="true"], [data-inline-format-toolbar="true"]'
+            )
+        );
+        if (isBlankTouchTarget) {
+            if (backgroundPressRef.current) window.clearTimeout(backgroundPressRef.current.timeoutId);
+            const pointerId = event.pointerId;
+            const startX = event.clientX;
+            const startY = event.clientY;
+            const timeoutId = window.setTimeout(() => {
+                const press = backgroundPressRef.current;
+                if (!press || press.pointerId !== pointerId) return;
+                backgroundPressRef.current = null;
+                suppressBackgroundPressClickRef.current = true;
+                handlers.handleSelection(null, null);
+                handlers.setEditingId(null);
+                handlers.setSelectedPageIndex(null);
+                setObjectMenuPosition(null);
+                setObjectMenu({ x: startX, y: startY, item: null });
+                window.setTimeout(() => { suppressBackgroundPressClickRef.current = false; }, 800);
+            }, 480);
+            backgroundPressRef.current = { pointerId, startX, startY, timeoutId };
         }
 
         if (
@@ -757,6 +806,15 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     };
 
     const handlePreviewPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+        const backgroundPress = backgroundPressRef.current;
+        if (
+            backgroundPress
+            && backgroundPress.pointerId === event.pointerId
+            && Math.hypot(event.clientX - backgroundPress.startX, event.clientY - backgroundPress.startY) >= 8
+        ) {
+            window.clearTimeout(backgroundPress.timeoutId);
+            backgroundPressRef.current = null;
+        }
         const drag = marqueeDragRef.current;
         if (!drag || drag.pointerId !== event.pointerId) return;
         if (document.body.dataset.automenuImageInteraction) {
@@ -787,6 +845,11 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     };
 
     const handlePreviewPointerEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+        const backgroundPress = backgroundPressRef.current;
+        if (backgroundPress?.pointerId === event.pointerId) {
+            window.clearTimeout(backgroundPress.timeoutId);
+            backgroundPressRef.current = null;
+        }
         const drag = marqueeDragRef.current;
         if (!drag || drag.pointerId !== event.pointerId) return;
 
@@ -1684,12 +1747,6 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     }, [handlers.draggedImageId, handlers.draggedItem]);
 
     const openBackgroundMenu = useCallback((event: React.MouseEvent) => {
-        if (event.type === 'contextmenu' && lastPreviewPointerTypeRef.current === 'touch') {
-            event.preventDefault();
-            event.stopPropagation();
-            setObjectMenu(null);
-            return;
-        }
         const target = event.target as HTMLElement | null;
         if (target?.closest([
             '[data-drag-type]',
@@ -1841,6 +1898,14 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             onPointerUp={readOnly ? undefined : handlePreviewPointerEnd}
             onPointerCancel={readOnly ? undefined : handlePreviewPointerEnd}
             onClickCapture={readOnly ? undefined : (event) => {
+                const target = event.target as HTMLElement | null;
+                if (target?.closest('[data-canvas-object-menu="true"]')) return;
+                if (suppressBackgroundPressClickRef.current) {
+                    suppressBackgroundPressClickRef.current = false;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
+                }
                 if (!suppressMarqueeClickRef.current) return;
                 suppressMarqueeClickRef.current = false;
                 event.preventDefault();
@@ -1891,6 +1956,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             {!readOnly && objectMenu && createPortal(
                 <div
                     ref={objectMenuRef}
+                    data-canvas-object-menu="true"
                     className="fixed z-[10000] min-w-52 max-h-[calc(100vh-16px)] overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-2xl text-sm text-slate-700"
                     style={{ left: menuLeft, top: menuTop }}
                     onClick={(event) => event.stopPropagation()}
@@ -1914,7 +1980,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                         </button>
                     ) : (
                     <>
-                    <button onClick={() => { handlers.setMultiSelectMode?.(!handlers.multiSelectMode); setObjectMenu(null); }} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2"><ListChecks size={15} /> Seleção múltipla</button>
+                    <button onClick={() => { handlers.setMultiSelectMode?.(!handlers.multiSelectMode); setObjectMenu(null); }} className={`w-full px-3 py-2 text-left flex items-center gap-2 ${handlers.multiSelectMode ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-slate-50'}`}><ListChecks size={15} /> Seleção múltipla</button>
                     <button disabled={isBackgroundMenu} onClick={() => runObjectAction('copy', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Copy size={15} /> Copiar</button>
                     <button disabled={isBackgroundMenu} onClick={() => runObjectAction('copyFormat', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Paintbrush size={15} /> Copiar formatacao</button>
                     <button

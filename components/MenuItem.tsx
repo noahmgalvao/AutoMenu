@@ -807,7 +807,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             showOverflowFeedback={isEditing}
                             id={`product-name-${product.id}`} data-product-edit-id={product.id} className={`whitespace-pre-wrap break-words [overflow-wrap:anywhere] outline-none rounded ${isEditing ? 'bg-white ring-2 ring-blue-500 cursor-text px-1' : ''}`}
                             style={{ 
-                                color: nameStyle.color,
+                                color: nameStyle.color || style.textColor,
                                 fontFamily: nameStyle.fontFamily,
                                 fontSize: `${clampFontSize(style, 'freeText', nameStyle.fontSize, 18)}px`,
                                 fontWeight: nameStyle.fontWeight,
@@ -875,12 +875,17 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                               style={{ 
                                 justifyContent: priceStyle.textAlign === 'left' ? 'flex-start' : (priceStyle.textAlign === 'center' ? 'center' : 'flex-end'), 
                                 display: 'flex',
+                                color: priceStyle.color || style.textColor,
                                 fontFamily: priceStyle.fontFamily,
                                 fontSize: `${clampFontSize(style, 'productPrice', priceStyle.fontSize, 18)}px`,
                                 fontWeight: priceStyle.fontWeight,
+                                fontStyle: priceStyle.italic ? 'italic' : 'normal',
+                                textDecoration: priceStyle.underline ? 'underline' : 'none',
+                                textTransform: priceStyle.textTransform,
+                                letterSpacing: priceStyle.letterSpacing ? `${priceStyle.letterSpacing}px` : undefined,
                               }}
                             >
-                                {style.showCurrencySymbol !== false && <span className="opacity-70 mr-[1px] select-none touch-auto" style={{ color: priceStyle.color }}>R$</span>}
+                                {style.showCurrencySymbol !== false && <span className="mr-[1px] select-none touch-auto">R$</span>}
                                 <AutoFitText
                                     as="span"
                                     text={formatMenuPriceValue(product.price, style)}
@@ -892,7 +897,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                     showOverflowFeedback={isEditing}
                                     id={`product-price-${product.id}`} data-product-edit-id={product.id} className={`whitespace-nowrap outline-none rounded ${isEditing ? 'bg-white ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : ''}`}
                                     style={{ 
-                                        color: priceStyle.color,
+                                        color: priceStyle.color || style.textColor,
                                         fontFamily: priceStyle.fontFamily,
                                         fontSize: `${clampFontSize(style, 'productPrice', priceStyle.fontSize, 18)}px`,
                                         fontWeight: priceStyle.fontWeight,
@@ -916,7 +921,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             showOverflowFeedback={isEditing}
                             id={`product-description-${product.id}`} data-product-edit-id={product.id} className={`max-w-full opacity-80 break-words [overflow-wrap:anywhere] [word-break:normal] leading-relaxed outline-none rounded ${isEditing ? 'min-h-[1.5em] bg-white ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : ''}`}
                             style={{ 
-                                color: descStyle.color,
+                                color: descStyle.color || style.textColor,
                                 fontFamily: descStyle.fontFamily,
                                 fontSize: `${clampFontSize(style, 'productDescription', descStyle.fontSize, 14)}px`,
                                 fontWeight: descStyle.fontWeight,
@@ -1059,9 +1064,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                 </div>
                                                 {style.showPrices !== false && <div
                                                     className={`ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap ${isCardLayout ? `rounded-full bg-white/90 border border-black/5 shadow-sm ${compactControls ? 'px-1.5 py-0.5' : 'px-2.5 py-1'}` : ''}`}
-                                                    style={{ color: priceStyle.color, fontFamily: priceStyle.fontFamily, fontSize: clampFontSize(style, 'productPrice', priceStyle.fontSize, 18), fontWeight: priceStyle.fontWeight, fontStyle: priceStyle.italic ? 'italic' : 'normal', textDecoration: priceStyle.underline ? 'underline' : 'none' }}
+                                                    style={{ color: priceStyle.color || style.textColor, fontFamily: priceStyle.fontFamily, fontSize: clampFontSize(style, 'productPrice', priceStyle.fontSize, 18), fontWeight: priceStyle.fontWeight, fontStyle: priceStyle.italic ? 'italic' : 'normal', textDecoration: priceStyle.underline ? 'underline' : 'none', textTransform: priceStyle.textTransform, letterSpacing: priceStyle.letterSpacing ? `${priceStyle.letterSpacing}px` : undefined }}
                                                 >
-                                                    {style.showCurrencySymbol !== false && <span className="opacity-70 select-none touch-auto">R$</span>}
+                                                    {style.showCurrencySymbol !== false && <span className="select-none touch-auto">R$</span>}
                                                     <AutoFitText
                                                         as="span"
                                                         text={formatMenuPriceValue(product.price, style)}
@@ -1100,7 +1105,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                 id={`product-description-${product.id}`}
                                                 data-product-edit-id={product.id}
                                                 className={`max-w-full opacity-75 break-words [overflow-wrap:anywhere] [word-break:normal] flex-grow outline-none rounded ${isEditing ? 'min-h-[1.5em] bg-white ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : 'line-clamp-4'}`}
-                                                style={{ color: descStyle.color, fontFamily: descStyle.fontFamily, fontSize: clampFontSize(style, 'productDescription', descStyle.fontSize, 14), fontWeight: descStyle.fontWeight, fontStyle: descStyle.italic ? 'italic' : 'normal', textDecoration: descStyle.underline ? 'underline' : 'none', textAlign: descStyle.textAlign }}
+                                                style={{ color: descStyle.color || style.textColor, fontFamily: descStyle.fontFamily, fontSize: clampFontSize(style, 'productDescription', descStyle.fontSize, 14), fontWeight: descStyle.fontWeight, fontStyle: descStyle.italic ? 'italic' : 'normal', textDecoration: descStyle.underline ? 'underline' : 'none', textAlign: descStyle.textAlign }}
                                                 contentEditable={isEditing}
                                                 tabIndex={isEditing ? 0 : undefined}
                                                 suppressContentEditableWarning

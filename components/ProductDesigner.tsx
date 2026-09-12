@@ -58,6 +58,8 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
         isUploading,
         newItemDraft,
         formData,
+        productImageUpload,
+        categoryImageUpload,
         setMenuOpenId,
         setShowInsights,
         setBulkPercentage,
@@ -221,6 +223,8 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                         onRemoveCategoryImage={onRemoveCategoryImage}
                         onProductImageClick={onProductImageClick}
                         onRemoveProductImage={onRemoveProductImage}
+                        productImageUpload={productImageUpload}
+                        categoryImageUpload={categoryImageUpload}
                     />
                 </div>
             </div>
@@ -231,6 +235,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                     products={products}
                     categories={categories}
                     grouped={grouped}
+                    style={style}
                     onClose={() => setShowInsights(false)}
                 />
             )}

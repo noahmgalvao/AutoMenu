@@ -396,7 +396,9 @@ export const useDraggableInteractions = (
         document.body.style.webkitUserSelect = bodyStyleRef.current.webkitUserSelect;
         document.body.style.cursor = bodyStyleRef.current.cursor;
         document.body.style.touchAction = bodyStyleRef.current.touchAction;
+        document.body.style.overflow = bodyStyleRef.current.overflow;
         document.body.style.overscrollBehavior = bodyStyleRef.current.overscrollBehavior;
+        root.style.overflow = bodyStyleRef.current.htmlOverflow;
         root.style.overscrollBehavior = bodyStyleRef.current.htmlOverscrollBehavior;
         root.style.touchAction = bodyStyleRef.current.htmlTouchAction;
         window.scrollTo(bodyStyleRef.current.scrollX, bodyStyleRef.current.scrollY);
@@ -424,7 +426,9 @@ export const useDraggableInteractions = (
         document.body.style.webkitUserSelect = 'none';
         document.body.style.cursor = 'grabbing';
         document.body.style.touchAction = 'none';
+        document.body.style.overflow = 'hidden';
         document.body.style.overscrollBehavior = 'none';
+        root.style.overflow = 'hidden';
         root.style.overscrollBehavior = 'none';
         root.style.touchAction = 'none';
     }, []);
@@ -459,6 +463,9 @@ export const useDraggableInteractions = (
         }));
 
         scrollContainerStyleRef.current.forEach(({ element }) => {
+            element.style.overflow = 'hidden';
+            element.style.overflowX = 'hidden';
+            element.style.overflowY = 'hidden';
             element.style.touchAction = 'none';
             element.style.overscrollBehavior = 'none';
         });
@@ -477,6 +484,9 @@ export const useDraggableInteractions = (
 
     const restoreScrollableAncestors = useCallback(() => {
         scrollContainerStyleRef.current.forEach((snapshot) => {
+            snapshot.element.style.overflow = snapshot.overflow;
+            snapshot.element.style.overflowX = snapshot.overflowX;
+            snapshot.element.style.overflowY = snapshot.overflowY;
             snapshot.element.style.touchAction = snapshot.touchAction;
             snapshot.element.style.overscrollBehavior = snapshot.overscrollBehavior;
             snapshot.element.scrollTop = snapshot.scrollTop;

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Product, MenuStyle } from '../../types';
 import { FREE_TEXT_PREFIX, FormattingField, FormattingTarget, InteractionProps, SelectableType, SelectionItem, SelectionType } from './types';
 import { formatMenuPriceValue, parseAndRoundPrice } from '../../utils/price';
@@ -36,6 +36,15 @@ export const useSelectionState = (
     const [selectedPageIndex, setSelectedPageIndex] = useState<number | null>(null);
     const lastRangeAnchorRef = useRef<SelectionItem | null>(null);
     const lastEmittedSelectionRef = useRef<string | null>(null);
+    const previousSelectionCountRef = useRef(0);
+
+    useEffect(() => {
+        const previousCount = previousSelectionCountRef.current;
+        previousSelectionCountRef.current = selectedItems.length;
+        if (multiSelectMode && previousCount > 0 && selectedItems.length === 0) {
+            setMultiSelectMode(false);
+        }
+    }, [multiSelectMode, selectedItems.length]);
     
     // Delete Confirmation State
     const [showDeletePageConfirm, setShowDeletePageConfirm] = useState(false);
@@ -336,6 +345,7 @@ export const useSelectionState = (
     const clearMultiSelectionTo = useCallback((type: SelectionType, id: string | null) => {
         const item = getSingleSelectionItem(type, id);
         setSelectedItems(item ? [item] : []);
+        if (!item) setMultiSelectMode(false);
         lastRangeAnchorRef.current = item;
 
         if (type === 'page') {
