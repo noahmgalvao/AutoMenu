@@ -25,7 +25,12 @@ import {
   resolveAssetMapForIds,
   uploadDataUrlAsset,
 } from './storageService';
-import { roundPrice } from '../utils/price';
+import {
+  resolvePriceDecimalPlaces,
+  resolvePriceDecimalSeparator,
+  roundPrice,
+} from '../utils/price';
+import { resolveFontSizeLimits, roundFontSize } from '../utils/styleRules';
 
 const LOCAL_STORAGE_KEYS = {
   products: 'automenu_products',
@@ -69,6 +74,9 @@ const normalizePersistedProducts = (value: unknown): Product[] => {
         categoryId: isFreeText ? null : product.categoryId,
         image: typeof product.image === 'string' ? product.image : '',
         isFreeText,
+        styles: isRecord(product.styles) && Number.isFinite(Number(product.styles.fontSize))
+          ? { ...product.styles, fontSize: roundFontSize(product.styles.fontSize) }
+          : product.styles,
       } satisfies Product;
     });
 };
@@ -351,6 +359,12 @@ const withStyleDefaults = (style: MenuStyle | null | undefined): MenuStyle => {
         Object.entries(source.customProductOrder).map(([category, ids]) => [category, stringArray(ids)])
       )
     : {};
+  const withRoundedFontSize = (baseStyle: Record<string, any> | undefined, sourceStyle: Record<string, any> | undefined) => {
+    const merged = { ...(baseStyle || {}), ...(sourceStyle || {}) };
+    return Number.isFinite(Number(merged.fontSize))
+      ? { ...merged, fontSize: roundFontSize(merged.fontSize) }
+      : merged;
+  };
 
   return {
     ...base,
@@ -370,14 +384,15 @@ const withStyleDefaults = (style: MenuStyle | null | undefined): MenuStyle => {
       : {},
     pageBackgrounds: Array.isArray(source.pageBackgrounds) ? source.pageBackgrounds.filter(isRecord) as any : [],
     pageBreaks: stringArray(source.pageBreaks),
-    fontSizeLimits: {
-      ...(base.fontSizeLimits || {}),
-      ...(isRecord(source.fontSizeLimits) ? source.fontSizeLimits : {}),
-    } as MenuStyle['fontSizeLimits'],
+    fontSizeLimits: resolveFontSizeLimits({ ...base, ...source } as MenuStyle),
     minimumFontSize: Number.isFinite(Number(source.minimumFontSize))
-      ? Math.min(300, Math.max(1, Number(source.minimumFontSize)))
+      ? roundFontSize(Math.min(300, Math.max(1, Number(source.minimumFontSize))))
       : base.minimumFontSize,
     allowSameWordBreak: source.allowSameWordBreak === true,
+    priceDecimalPlaces: resolvePriceDecimalPlaces(source.priceDecimalPlaces),
+    priceDecimalSeparator: resolvePriceDecimalSeparator(source.priceDecimalSeparator),
+    showPrices: source.showPrices !== false,
+    showCurrencySymbol: source.showCurrencySymbol !== false,
     margins: {
       ...(base.margins || {}),
       ...(isRecord(source.margins) ? source.margins : {}),
@@ -389,12 +404,13 @@ const withStyleDefaults = (style: MenuStyle | null | undefined): MenuStyle => {
     elementStyles: {
       ...base.elementStyles,
       ...(isRecord(source.elementStyles) ? source.elementStyles : {}),
-      menuTitle: { ...(base.elementStyles.menuTitle || {}), ...(source.elementStyles?.menuTitle || {}) },
-      menuSubtitle: { ...(base.elementStyles.menuSubtitle || {}), ...(source.elementStyles?.menuSubtitle || {}) },
-      category: { ...base.elementStyles.category, ...(source.elementStyles?.category || {}) },
-      productName: { ...base.elementStyles.productName, ...(source.elementStyles?.productName || {}) },
-      productPrice: { ...base.elementStyles.productPrice, ...(source.elementStyles?.productPrice || {}) },
-      productDescription: { ...base.elementStyles.productDescription, ...(source.elementStyles?.productDescription || {}) },
+      menuTitle: withRoundedFontSize(base.elementStyles.menuTitle, source.elementStyles?.menuTitle),
+      menuSubtitle: withRoundedFontSize(base.elementStyles.menuSubtitle, source.elementStyles?.menuSubtitle),
+      pageNumber: withRoundedFontSize(base.elementStyles.pageNumber, source.elementStyles?.pageNumber),
+      category: withRoundedFontSize(base.elementStyles.category, source.elementStyles?.category),
+      productName: withRoundedFontSize(base.elementStyles.productName, source.elementStyles?.productName),
+      productPrice: withRoundedFontSize(base.elementStyles.productPrice, source.elementStyles?.productPrice),
+      productDescription: withRoundedFontSize(base.elementStyles.productDescription, source.elementStyles?.productDescription),
     },
   };
 };
@@ -1023,7 +1039,7 @@ export const loadWorkspaceMenuData = async ({
   if (menus.length === 0) {
     return loadWorkspaceData(userId, menuId);
   }
-  const menu = await resolveActiveMenu(workspace.id, menuId);
+  const menu = menus.find((candidate) => candidate.id === menuId) || menus[0];
 
   if (!menu.currentDraftVersionId) {
     return loadWorkspaceData(userId, menuId);
@@ -1577,6 +1593,7 @@ export const loadWorkspaceData = async (userId: string, menuId?: string | null):
   }
 
   const workspace = mapWorkspaceRow(workspaceRow);
+  let templatesPromise: Promise<MenuStyle[]> | null = null;
   let menus = await listWorkspaceMenus(workspace.id);
   let menu: Menu;
   if (menus.length === 0) {
@@ -1586,7 +1603,8 @@ export const loadWorkspaceData = async (userId: string, menuId?: string | null):
     });
     menus = [menu];
   } else {
-    menu = await resolveActiveMenu(workspace.id, menuId);
+    templatesPromise = loadTemplatesForWorkspace(workspace.id);
+    menu = (menuId ? menus.find((candidate) => candidate.id === menuId) : undefined) || menus[0];
     if (!menu.currentDraftVersionId) {
       menu = await ensureWorkspaceMenuForCurrentUser({
         workspaceId: workspace.id,
@@ -1610,7 +1628,7 @@ export const loadWorkspaceData = async (userId: string, menuId?: string | null):
         .select('*')
         .eq('id', menu.currentDraftVersionId)
         .maybeSingle(),
-      loadTemplatesForWorkspace(workspace.id),
+      templatesPromise || loadTemplatesForWorkspace(workspace.id),
     ]);
 
     if (error) throw error;
@@ -1654,7 +1672,7 @@ export const loadWorkspaceData = async (userId: string, menuId?: string | null):
     }
   }
 
-  templates = templates || await loadTemplatesForWorkspace(workspace.id);
+  templates = templates || await (templatesPromise || loadTemplatesForWorkspace(workspace.id));
 
   if (!currentVersionRow) {
     const bootstrapped = await bootstrapWorkspaceFromLocalState(workspace.id, userId);

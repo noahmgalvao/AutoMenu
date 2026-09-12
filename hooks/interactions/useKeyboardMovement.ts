@@ -50,6 +50,7 @@ export const useKeyboardMovement = (
         top: number;
         ghostCategory: string;
         anchorCategory: string | null;
+        forcePagePlacement: boolean;
         relocated: boolean;
     } | null>(null);
 
@@ -79,6 +80,23 @@ export const useKeyboardMovement = (
             const renderedPageIndex = Number(pageElement.dataset.pageIndex ?? 0);
             const renderedColumnIndex = Number(columnElement?.dataset.dragColumnIndex ?? 0);
             if (renderedPageIndex !== pendingPlacement.pageIndex || renderedColumnIndex !== pendingPlacement.columnIndex) {
+                if (!pendingPlacement.relocated && pendingPlacement.forcePagePlacement && onStyleUpdate) {
+                    pendingPlacement.relocated = true;
+                    onStyleUpdate(prev => ({
+                        ...prev,
+                        categoryPlacements: {
+                            ...(prev.categoryPlacements || {}),
+                            [pendingPlacement.ghostCategory]: {
+                                pageIndex: pendingPlacement.pageIndex,
+                                columnIndex: pendingPlacement.columnIndex,
+                            },
+                        },
+                        pageBreaks: Array.from(new Set([...(prev.pageBreaks || []), pendingPlacement.ghostCategory])),
+                        name: 'Custom',
+                    }));
+                    return;
+                }
+
                 if (!pendingPlacement.relocated && pendingPlacement.anchorCategory && onStyleUpdate) {
                     pendingPlacement.relocated = true;
                     onStyleUpdate(prev => {
@@ -144,7 +162,7 @@ export const useKeyboardMovement = (
             window.cancelAnimationFrame(frame);
             if (retryTimer !== null) window.clearTimeout(retryTimer);
         };
-    }, [onStyleUpdate, onUpdateProduct, products, scale, sortedCategories, style.customCategoryOrder, style.customProductOrder]);
+    }, [onStyleUpdate, onUpdateProduct, products, scale, sortedCategories, style.categoryPlacements, style.customCategoryOrder, style.customProductOrder, style.pageBreaks]);
 
     const getProductSelectionType = (product: Product | undefined): SelectionType => (
         product?.isFreeText ? 'freeText' : 'product'
@@ -260,6 +278,7 @@ export const useKeyboardMovement = (
         if (safeClientTop === null) return;
         clickY = (safeClientTop - pageRect.top) / currentScale;
         const allElements = searchRoot.querySelectorAll('[id^="product-container-"], [id^="category-header-"]');
+        const pageIsEmpty = !pageEl.querySelector('[id^="product-container-"], [id^="category-header-"], [data-menu-heading]');
         
         allElements.forEach(el => {
             const rect = el.getBoundingClientRect();
@@ -295,7 +314,9 @@ export const useKeyboardMovement = (
             floorId,
             floorBottom,
             ceilingId,
-            ceilingTop
+            ceilingTop,
+            forcePagePlacement: pageIsEmpty,
+            blankPageId: pageEl.dataset.blankPageId || null,
         });
 
         setTimeout(() => {
@@ -352,7 +373,9 @@ export const useKeyboardMovement = (
 
         const floorProduct = draftItem.floorId ? products.find(p => p.id === draftItem.floorId) : null;
         const ceilingProduct = draftItem.ceilingId ? products.find(p => p.id === draftItem.ceilingId) : null;
-        const newItemMargin = Math.max(0, draftItem.top - draftItem.floorBottom);
+        const newItemMargin = draftItem.forcePagePlacement
+            ? Math.max(0, draftItem.top - (style.pagePadding || 48))
+            : Math.max(0, draftItem.top - draftItem.floorBottom);
 
         pendingDraftPlacementRef.current = {
             id: newId,
@@ -364,6 +387,7 @@ export const useKeyboardMovement = (
                 || ceilingProduct?.category
                 || (draftItem.floorId && sortedCategories.includes(draftItem.floorId) ? draftItem.floorId : null)
                 || (draftItem.ceilingId && sortedCategories.includes(draftItem.ceilingId) ? draftItem.ceilingId : null),
+            forcePagePlacement: draftItem.forcePagePlacement === true,
             relocated: false,
         };
 
@@ -380,6 +404,12 @@ export const useKeyboardMovement = (
                 ...prev,
                 customCategoryOrder: currentOrder,
                 customProductOrder: newProdOrder,
+                blankPages: draftItem.blankPageId
+                    ? (prev.blankPages || []).filter((blankPage) => blankPage.id !== draftItem.blankPageId)
+                    : prev.blankPages,
+                pageBreaks: draftItem.forcePagePlacement
+                    ? Array.from(new Set([...(prev.pageBreaks || []), ghostCategoryName]))
+                    : prev.pageBreaks,
                 name: 'Custom'
             };
         });

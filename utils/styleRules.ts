@@ -17,15 +17,33 @@ const positiveNumber = (value: unknown, fallback: number) => {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 };
 
-export const resolveFontSizeLimits = (style: MenuStyle): FontSizeLimits => ({
-  ...DEFAULT_FONT_SIZE_LIMITS,
-  ...(style.fontSizeLimits || {}),
-});
+export const roundFontSize = (value: unknown, fallback = 1): number => {
+  const parsed = Number(value);
+  const safeValue = Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  return Math.round((safeValue + Number.EPSILON) * 10) / 10;
+};
+
+export const resolveFontSizeLimits = (style: MenuStyle): FontSizeLimits => {
+  const configured: Partial<FontSizeLimits> = style.fontSizeLimits || {};
+  const resolve = (key: FontSizeLimitKey) => roundFontSize(
+    configured[key],
+    DEFAULT_FONT_SIZE_LIMITS[key],
+  );
+  return {
+    menuTitle: resolve('menuTitle'),
+    menuSubtitle: resolve('menuSubtitle'),
+    category: resolve('category'),
+    productName: resolve('productName'),
+    productPrice: resolve('productPrice'),
+    productDescription: resolve('productDescription'),
+    freeText: resolve('freeText'),
+  };
+};
 
 export const resolveMinimumFontSize = (style: MenuStyle): number => {
   const parsed = Number(style.minimumFontSize);
   return Number.isFinite(parsed) && parsed >= 1
-    ? Math.min(300, parsed)
+    ? roundFontSize(Math.min(300, parsed), DEFAULT_MINIMUM_FONT_SIZE)
     : DEFAULT_MINIMUM_FONT_SIZE;
 };
 
@@ -70,8 +88,8 @@ export const clampFontSize = (
   fallback: number,
 ) => {
   const parsed = positiveNumber(value, fallback);
-  return Math.max(
+  return roundFontSize(Math.max(
     resolveMinimumFontSize(style),
     Math.min(resolveFontSizeLimits(style)[key], parsed),
-  );
+  ), fallback);
 };

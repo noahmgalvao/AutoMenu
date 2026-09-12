@@ -8,7 +8,7 @@ import { selectionLayerClasses } from './selectionLayers';
 import { getDirectionLabel, getEdgeControlClass, type FlowDirection } from '../utils/flowControls';
 import { normalizeTextureUrl } from '../constants';
 import { InlineStyleToolbar } from './MenuDesigner/InlineStyleToolbar';
-import { resolveMenuMargins, resolveMinimumFontSize } from '../utils/styleRules';
+import { resolveMenuMargins, resolveMinimumFontSize, roundFontSize } from '../utils/styleRules';
 import { getColumnGridTemplate, getPageColumnWidths } from '../utils/categoryColumns';
 import { ColumnResizeHandles } from './ColumnResizeHandles';
 
@@ -180,7 +180,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
         : { ...style, categoryColumnCount: renderedColumnCount as 1 | 2 | 3 };
     const pageNumberStyle = style.elementStyles?.pageNumber || {};
     const minimumFontSize = resolveMinimumFontSize(style);
-    const pageNumberFontSize = Math.max(minimumFontSize, Math.min(50, Number(pageNumberStyle.fontSize) || 14));
+    const pageNumberFontSize = roundFontSize(Math.max(minimumFontSize, Math.min(50, Number(pageNumberStyle.fontSize) || 14)), 14);
     const pageNumberElementId = `page-number-${pageIndex}`;
     const isFormattingPageNumber = handlers.formattingTarget?.type === 'pageNumber'
         && handlers.formattingTarget?.elementId === pageNumberElementId;
@@ -236,7 +236,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 <ResponsiveMoveButton
                     flowDirection={direction}
                     controlGroup="category-move"
-                    className={`absolute ${getEdgeControlClass(direction, lane)} p-2 bg-white border border-slate-200 shadow-md rounded-full text-slate-500 hover:text-indigo-600 hover:bg-slate-50 ${selectionLayerClasses.controls} transition-all cursor-pointer pointer-events-auto`}
+                    className={`absolute ${getEdgeControlClass(direction, lane)} p-2.5 md:p-2 bg-white border border-slate-200 shadow-md rounded-full text-slate-500 hover:text-indigo-600 hover:bg-slate-50 ${selectionLayerClasses.controls} transition-all cursor-pointer pointer-events-auto`}
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => handlers.handleGlobalMove?.(
                         event,
@@ -284,24 +284,24 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                             <ResponsiveMoveButton
                                 flowDirection={categoryAddBeforeDirection}
                                 controlGroup="category-add"
-                                className={`absolute ${getEdgeControlClass(categoryAddBeforeDirection)} bg-indigo-600 text-white p-1 rounded-full ${selectionLayerClasses.controls} shadow-md hover:scale-110 hover:bg-indigo-700 transition-transform cursor-pointer pointer-events-auto`}
+                                className={`absolute ${getEdgeControlClass(categoryAddBeforeDirection)} bg-indigo-600 text-white p-2 md:p-1 rounded-full ${selectionLayerClasses.controls} shadow-md hover:scale-110 hover:bg-indigo-700 transition-transform cursor-pointer pointer-events-auto`}
                                 onPointerDown={(e) => e.stopPropagation()}
                                 onClick={(e) => handlers.handleAddClick?.(e, chunk.category, true, 'before')}
                                 title={`Adicionar categoria ${getDirectionLabel(categoryAddBeforeDirection)}`}
                             >
-                                <Plus size={12} />
+                                <Plus size={12} className="h-5 w-5 md:h-3 md:w-3" />
                             </ResponsiveMoveButton>
                         )}
                         {categoryAddControls.bottom && (
                             <ResponsiveMoveButton
                                 flowDirection={categoryAddAfterDirection}
                                 controlGroup="category-add"
-                                className={`absolute ${getEdgeControlClass(categoryAddAfterDirection)} bg-indigo-600 text-white p-1 rounded-full ${selectionLayerClasses.controls} shadow-md hover:scale-110 hover:bg-indigo-700 transition-transform cursor-pointer pointer-events-auto`}
+                                className={`absolute ${getEdgeControlClass(categoryAddAfterDirection)} bg-indigo-600 text-white p-2 md:p-1 rounded-full ${selectionLayerClasses.controls} shadow-md hover:scale-110 hover:bg-indigo-700 transition-transform cursor-pointer pointer-events-auto`}
                                 onPointerDown={(e) => e.stopPropagation()}
                                 onClick={(e) => handlers.handleAddClick?.(e, chunk.category, true, 'after')}
                                 title={`Adicionar categoria ${getDirectionLabel(categoryAddAfterDirection)}`}
                             >
-                                <Plus size={12} />
+                                <Plus size={12} className="h-5 w-5 md:h-3 md:w-3" />
                             </ResponsiveMoveButton>
                         )}
                         {renderedColumnCount > 1 ? (
@@ -443,6 +443,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
             <div
                 data-menu-print-page="true"
                 data-page-index={pageIndex}
+                data-blank-page-id={page.blankPageId || undefined}
                 data-drag-scope={handlers.dragScope}
                 data-drag-page-container="category"
                 data-drag-page-index={pageIndex}

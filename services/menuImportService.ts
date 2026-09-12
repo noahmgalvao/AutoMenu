@@ -17,7 +17,7 @@ import {
   sortSpatialElements,
 } from '../utils/imageProcessor';
 import { isUnmodifiedInitialProduct } from '../utils/pristineItems';
-import { clampFontSize, resolveFontSizeLimits } from '../utils/styleRules';
+import { clampFontSize, resolveFontSizeLimits, roundFontSize } from '../utils/styleRules';
 import { FREE_TEXT_PREFIX } from '../utils/menuPagination';
 import { normalizeColumnWidths } from '../utils/categoryColumns';
 import { roundPrice } from '../utils/price';
@@ -440,7 +440,7 @@ const buildFreeTextProduct = (
     customMarginTop: 10,
     boundingBox: isBoundingBox(freeText.boundingBox) ? freeText.boundingBox : undefined,
     styles: {
-      fontSize: freeText.fontSize,
+      fontSize: roundFontSize(freeText.fontSize, 18),
       color: freeText.color,
       textAlign: freeText.alignment || 'left',
       fontFamily: freeText.fontFamily,

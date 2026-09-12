@@ -2,7 +2,7 @@
 import React, { useRef } from 'react';
 import { MenuStyle, Product, ElementStyle, SortOption, AddedImage, FontSizeLimitKey } from '../../types';
 import { isMiniFoodTexture, normalizeTextureUrl } from '../../constants';
-import { resolveFontSizeLimits, resolveMenuContentSpacing, resolveMenuMargins, resolveMinimumFontSize } from '../../utils/styleRules';
+import { resolveFontSizeLimits, resolveMenuContentSpacing, resolveMenuMargins, resolveMinimumFontSize, roundFontSize } from '../../utils/styleRules';
 import { StyleControls } from './StyleControls';
 import { FontSelect, MiniFoodTextureSelect, TemplateSelect, TextureSelect } from './SearchableSelects';
 import { 
@@ -326,16 +326,22 @@ const RuleNumberInput: React.FC<{
   value: number;
   min?: number;
   max?: number;
+  step?: number;
+  normalizeValue?: (value: number) => number;
   onChange: (value: number) => void;
-}> = ({ value, min = 0, max = 300, onChange }) => (
+}> = ({ value, min = 0, max = 300, step, normalizeValue, onChange }) => (
   <input
     type="number"
     min={min}
     max={max}
+    step={step}
     value={value}
     onChange={(event) => {
       const parsed = Number(event.target.value);
-      if (Number.isFinite(parsed)) onChange(Math.min(max, Math.max(min, parsed)));
+      if (Number.isFinite(parsed)) {
+        const clamped = Math.min(max, Math.max(min, parsed));
+        onChange(normalizeValue ? normalizeValue(clamped) : clamped);
+      }
     }}
     className="h-8 w-20 rounded border border-slate-200 bg-white px-2 text-right text-xs font-semibold text-slate-700 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
   />
@@ -371,18 +377,19 @@ export const GeneralRulesSection: React.FC<GeneralRulesSectionProps> = ({ style,
   ];
 
   const updateFontLimit = (key: FontSizeLimitKey, value: number) => {
+    const normalizedValue = roundFontSize(value);
     setStyle((previous) => {
       const nextElementStyles = { ...previous.elementStyles };
       if (key !== 'freeText') {
         const elementKey = key as keyof MenuStyle['elementStyles'];
         const currentElementStyle = nextElementStyles[elementKey];
-        if (currentElementStyle?.fontSize && currentElementStyle.fontSize > value) {
-          nextElementStyles[elementKey] = { ...currentElementStyle, fontSize: value };
+        if (currentElementStyle?.fontSize && currentElementStyle.fontSize > normalizedValue) {
+          nextElementStyles[elementKey] = { ...currentElementStyle, fontSize: normalizedValue };
         }
       }
       return {
         ...previous,
-        fontSizeLimits: { ...resolveFontSizeLimits(previous), [key]: value },
+        fontSizeLimits: { ...resolveFontSizeLimits(previous), [key]: normalizedValue },
         elementStyles: nextElementStyles,
         name: 'Custom',
       };
@@ -403,6 +410,8 @@ export const GeneralRulesSection: React.FC<GeneralRulesSectionProps> = ({ style,
             value={minimumFontSize}
             min={1}
             max={300}
+            step={0.1}
+            normalizeValue={roundFontSize}
             onChange={(value) => setStyle((previous) => ({
               ...previous,
               minimumFontSize: value,
@@ -433,7 +442,7 @@ export const GeneralRulesSection: React.FC<GeneralRulesSectionProps> = ({ style,
         {fontLimitRows.map(({ key, label }) => (
           <label key={key} className="flex items-center justify-between gap-3 text-xs text-slate-600">
             <span>{label}</span>
-            <RuleNumberInput value={fontSizeLimits[key]} min={minimumFontSize} max={300} onChange={(value) => updateFontLimit(key, value)} />
+            <RuleNumberInput value={fontSizeLimits[key]} min={minimumFontSize} max={300} step={0.1} normalizeValue={roundFontSize} onChange={(value) => updateFontLimit(key, value)} />
           </label>
         ))}
       </div>

@@ -249,10 +249,10 @@ const PreviewCanvas: React.FC<{
         </div>
       </div>
       {paginate && (
-        <nav className="flex shrink-0 items-center justify-center gap-3" aria-label="NavegaÃ§Ã£o entre pÃ¡ginas do preview">
-          <button type="button" onClick={() => setPageIndex((current) => Math.max(0, current - 1))} disabled={pageIndex === 0} className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm disabled:opacity-35" aria-label="PÃ¡gina anterior"><ChevronLeft size={18} /></button>
-          <span className="min-w-24 text-center text-xs font-bold text-slate-600">PÃ¡gina {pageIndex + 1} de {pageCount}</span>
-          <button type="button" onClick={() => setPageIndex((current) => Math.min(pageCount - 1, current + 1))} disabled={pageIndex >= pageCount - 1} className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm disabled:opacity-35" aria-label="PrÃ³xima pÃ¡gina"><ChevronRight size={18} /></button>
+        <nav className="flex shrink-0 items-center justify-center gap-3" aria-label="Navegação entre páginas do preview">
+          <button type="button" onClick={() => setPageIndex((current) => Math.max(0, current - 1))} disabled={pageIndex === 0} className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm disabled:opacity-35" aria-label="Página anterior"><ChevronLeft size={18} /></button>
+          <span className="min-w-24 text-center text-xs font-bold text-slate-600">Página {pageIndex + 1} de {pageCount}</span>
+          <button type="button" onClick={() => setPageIndex((current) => Math.min(pageCount - 1, current + 1))} disabled={pageIndex >= pageCount - 1} className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm disabled:opacity-35" aria-label="Próxima página"><ChevronRight size={18} /></button>
         </nav>
       )}
     </div>
@@ -986,9 +986,9 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
     };
 
     const renderMobilePages = () => (
-      <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm" aria-label="PÃ¡ginas importadas">
+      <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm" aria-label="Páginas importadas">
         <div className="mb-2 flex items-center justify-between">
-          <span className="text-xs font-bold uppercase tracking-wide text-slate-500">PÃ¡ginas</span>
+          <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Páginas</span>
           <span className="text-xs text-slate-400">{pages.length}</span>
         </div>
         <div className="flex gap-2 overflow-x-auto px-0.5 pb-1 pt-0.5 custom-scrollbar">
@@ -1005,17 +1005,17 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
                 }
               }}
               className={`relative h-[76px] w-[54px] flex-none overflow-hidden rounded-lg border-2 bg-slate-100 transition-all ${page.id === activePage?.id ? 'border-violet-600 ring-2 ring-violet-200' : 'border-transparent'} ${busy ? 'opacity-50' : 'cursor-pointer'}`}
-              aria-label={`Selecionar pÃ¡gina ${index + 1}`}
+              aria-label={`Selecionar página ${index + 1}`}
             >
-              <img src={page.previewUrl} alt={`PÃ¡gina ${index + 1}`} className="h-full w-full object-cover" />
+              <img src={page.previewUrl} alt={`Página ${index + 1}`} className="h-full w-full object-cover" />
               <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-bold text-white">{index + 1}</span>
               {pages.length > 1 && (
-                <button type="button" onClick={(event) => { event.stopPropagation(); removePage(page.id); }} disabled={busy} className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-white shadow disabled:opacity-40" aria-label={`Excluir pÃ¡gina ${index + 1}`}><Trash2 size={11} /></button>
+                <button type="button" onClick={(event) => { event.stopPropagation(); removePage(page.id); }} disabled={busy} className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-white shadow disabled:opacity-40" aria-label={`Excluir página ${index + 1}`}><Trash2 size={11} /></button>
               )}
               {page.detecting && <span className="absolute inset-0 flex items-center justify-center bg-black/55 text-white"><Loader2 size={16} className="animate-spin" /></span>}
             </div>
           ))}
-          <button type="button" onClick={addAnotherPage} disabled={busy} className="flex h-[76px] w-[72px] flex-none flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-violet-300 bg-violet-50 px-1 text-[10px] font-bold leading-tight text-violet-700 disabled:opacity-40"><ImagePlus size={21} />Adicionar pÃ¡gina</button>
+          <button type="button" onClick={addAnotherPage} disabled={busy} className="flex h-[76px] w-[72px] flex-none flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-violet-300 bg-violet-50 px-1 text-[10px] font-bold leading-tight text-violet-700 disabled:opacity-40"><ImagePlus size={21} />Adicionar página</button>
         </div>
       </section>
     );
@@ -1025,18 +1025,18 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
       const showItemsTab = mode !== 'visual';
       return (
         <section className="flex min-h-0 flex-col gap-3">
-          <div className="mx-auto flex rounded-full border border-slate-200 bg-white p-1 shadow-sm" role="tablist" aria-label="VisualizaÃ§Ã£o do resultado">
-            {showMenuTab && <button type="button" role="tab" aria-selected={previewTab === 'menu'} onClick={() => setPreviewTab('menu')} className={`rounded-full px-5 py-2 text-xs font-bold transition-all ${previewTab === 'menu' ? 'bg-violet-600 text-white shadow' : 'text-slate-500'}`}>Ver CardÃ¡pio</button>}
+          <div className="mx-auto flex rounded-full border border-slate-200 bg-white p-1 shadow-sm" role="tablist" aria-label="Visualização do resultado">
+            {showMenuTab && <button type="button" role="tab" aria-selected={previewTab === 'menu'} onClick={() => setPreviewTab('menu')} className={`rounded-full px-5 py-2 text-xs font-bold transition-all ${previewTab === 'menu' ? 'bg-violet-600 text-white shadow' : 'text-slate-500'}`}>Ver Cardápio</button>}
             {showItemsTab && <button type="button" role="tab" aria-selected={previewTab === 'items'} onClick={() => setPreviewTab('items')} className={`rounded-full px-5 py-2 text-xs font-bold transition-all ${previewTab === 'items' ? 'bg-violet-600 text-white shadow' : 'text-slate-500'}`}>Ver Itens</button>}
           </div>
-          {previewStale && previewResult && !processing && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-800">Preview desatualizado â€” ao concluir, serÃ¡ usado o Ãºltimo scan.</div>}
+          {previewStale && previewResult && !processing && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-800">Preview desatualizado — ao concluir, será usado o último scan.</div>}
           <div className="relative h-[50vh] min-h-[340px] max-h-[560px]">
             {finalizedPreview && previewTab === 'menu' && <PreviewCanvas products={finalizedPreview.products} style={finalizedPreview.style} sortOption={sortOption} splitCategoryAcrossPages={splitCategoryAcrossPages} productsCanChangeCategory={productsCanChangeCategory} paginate />}
             {previewResult && draftStyle && previewTab === 'items' && (
               <ImportedItemsEditor products={draftProducts} setProducts={updateDraftProducts} style={draftStyle} setStyle={updateDraftStyle} sortOption={sortOption} workspaceId={workspaceId} currentUserId={currentUserId} currentMenuId={currentMenuId} productsCanChangeCategory={productsCanChangeCategory} />
             )}
-            {!previewResult && !processing && <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 text-center text-sm text-slate-500">O resultado aparecerÃ¡ aqui apÃ³s o processamento.</div>}
-            {processing && <div className="absolute inset-0 z-30 flex items-center justify-center rounded-2xl bg-white/90 backdrop-blur-sm"><div className="text-center"><Loader2 size={34} className="mx-auto mb-3 animate-spin text-violet-600" /><p className="font-bold text-slate-800">Processando cardÃ¡pio...</p><p className="mt-1 text-xs text-slate-500">Preparando produtos, imagens e visual.</p></div></div>}
+            {!previewResult && !processing && <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 text-center text-sm text-slate-500">O resultado aparecerá aqui após o processamento.</div>}
+            {processing && <div className="absolute inset-0 z-30 flex items-center justify-center rounded-2xl bg-white/90 backdrop-blur-sm"><div className="text-center"><Loader2 size={34} className="mx-auto mb-3 animate-spin text-violet-600" /><p className="font-bold text-slate-800">Processando cardápio...</p><p className="mt-1 text-xs text-slate-500">Preparando produtos, imagens e visual.</p></div></div>}
           </div>
         </section>
       );
@@ -1044,8 +1044,8 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
 
     const renderMobileProcessingOptions = () => (
       <section>
-        <h2 className="mb-3 text-base font-bold text-slate-900">OpÃ§Ãµes de Processamento</h2>
-        <fieldset className="grid grid-cols-3 gap-2" aria-label="Tipo de importaÃ§Ã£o">
+        <h2 className="mb-3 text-base font-bold text-slate-900">Opções de Processamento</h2>
+        <fieldset className="grid grid-cols-3 gap-2" aria-label="Tipo de importação">
           {IMPORT_MODES.map((importMode) => {
             const selected = importMode.value === mode;
             const Icon = importMode.icon;
@@ -1067,11 +1067,11 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
         <main className="min-h-0 flex-1 overflow-y-auto px-3 pb-28 pt-4 custom-scrollbar" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
           <div className="mx-auto max-w-xl space-y-4">
             <header className="flex min-h-11 items-center justify-between gap-3">
-              <h1 className="text-lg font-bold text-slate-900">Importar CardÃ¡pio</h1>
-              <button type="button" onClick={close} disabled={busy} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm disabled:opacity-40" aria-label="Fechar importaÃ§Ã£o"><X size={22} /></button>
+              <h1 className="text-lg font-bold text-slate-900">Importar Cardápio</h1>
+              <button type="button" onClick={close} disabled={busy} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm disabled:opacity-40" aria-label="Fechar importação"><X size={22} /></button>
             </header>
 
-            <div className="grid grid-cols-2 rounded-xl bg-slate-200/80 p-1" role="tablist" aria-label="Etapa de revisÃ£o da importaÃ§Ã£o">
+            <div className="grid grid-cols-2 rounded-xl bg-slate-200/80 p-1" role="tablist" aria-label="Etapa de revisão da importação">
               <button type="button" role="tab" aria-selected={mobileViewTab === 'original'} onClick={() => setMobileViewTab('original')} className={`min-h-10 rounded-lg px-2 text-xs font-bold transition-all ${mobileViewTab === 'original' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500'}`}>Imagem Original</button>
               <button type="button" role="tab" aria-selected={mobileViewTab === 'preview'} onClick={() => setMobileViewTab('preview')} className={`min-h-10 rounded-lg px-2 text-xs font-bold transition-all ${mobileViewTab === 'preview' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500'}`}>Preview do Resultado</button>
             </div>
@@ -1089,11 +1089,11 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
             {renderScanActions(true)}
             {processingError && <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{processingError}</div>}
             {renderMobileProcessingOptions()}
-            {previewStale && previewResult && mobileViewTab === 'original' && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-800">AlteraÃ§Ãµes pendentes. Ao concluir, serÃ¡ usado o Ãºltimo scan processado.</div>}
+            {previewStale && previewResult && mobileViewTab === 'original' && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-800">Alterações pendentes. Ao concluir, será usado o último scan processado.</div>}
           </div>
         </main>
         <footer className="absolute inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-3 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
-          <button type="button" onClick={complete} disabled={!previewResult || !finalizedPreview || busy} className="mx-auto flex h-12 w-full max-w-xl items-center justify-center gap-2 rounded-xl bg-violet-600 px-6 text-sm font-bold text-white shadow-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40"><Check size={19} />Concluir ImportaÃ§Ã£o</button>
+          <button type="button" onClick={complete} disabled={!previewResult || !finalizedPreview || busy} className="mx-auto flex h-12 w-full max-w-xl items-center justify-center gap-2 rounded-xl bg-violet-600 px-6 text-sm font-bold text-white shadow-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40"><Check size={19} />Concluir Importação</button>
         </footer>
       </div>
     );

@@ -2,10 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js';
 import { AlertCircle, ChefHat, Loader2, Paintbrush, Plus, Save, ShoppingCart } from 'lucide-react';
 import MenuDesigner from './components/MenuDesigner';
-import { ProductDesigner } from './components/ProductDesigner';
 import { AuthScreen } from './components/AuthScreen';
 import { ProfileMenu } from './components/ProfileMenu';
-import { SettingsModal } from './components/SettingsModal';
 import { INITIAL_STYLE, PRESET_TEMPLATES } from './constants';
 import {
   FontSizeLimits,
@@ -13,6 +11,8 @@ import {
   MenuContentSpacing,
   MenuMargins,
   MenuStyle,
+  PriceDecimalPlaces,
+  PriceDecimalSeparator,
   Product,
   SortOption,
 } from './types';
@@ -37,6 +37,13 @@ import {
   updateAccountIdentity,
   updateWorkspaceRuleSettings,
 } from './services/workspaceService';
+
+const ProductDesigner = React.lazy(() => import('./components/ProductDesigner').then((module) => ({
+  default: module.ProductDesigner,
+})));
+const SettingsModal = React.lazy(() => import('./components/SettingsModal').then((module) => ({
+  default: module.SettingsModal,
+})));
 
 interface HistoryState {
   products: Product[];
@@ -173,6 +180,7 @@ const App: React.FC = () => {
   const [templates, setTemplatesRaw] = useState<MenuStyle[]>(PRESET_TEMPLATES);
   const [sortOption, setSortOption] = useState<SortOption>(DEFAULT_SORT_OPTION);
   const [activePanel, setActivePanel] = useState<'product' | 'style' | null>('style');
+  const [hasOpenedProductDesigner, setHasOpenedProductDesigner] = useState(false);
   const [printRequestId, setPrintRequestId] = useState(0);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -831,6 +839,10 @@ const App: React.FC = () => {
     productsCanChangeCategory: boolean;
     minimumFontSize: number;
     allowSameWordBreak: boolean;
+    priceDecimalPlaces: PriceDecimalPlaces;
+    priceDecimalSeparator: PriceDecimalSeparator;
+    showPrices: boolean;
+    showCurrencySymbol: boolean;
     fontSizeLimits: FontSizeLimits;
     margins: MenuMargins;
     contentSpacing: MenuContentSpacing;
@@ -857,6 +869,10 @@ const App: React.FC = () => {
         fontSizeLimits,
         minimumFontSize,
         allowSameWordBreak,
+        priceDecimalPlaces,
+        priceDecimalSeparator,
+        showPrices,
+        showCurrencySymbol,
         margins,
         contentSpacing,
       } = values;
@@ -865,6 +881,10 @@ const App: React.FC = () => {
         fontSizeLimits,
         minimumFontSize,
         allowSameWordBreak,
+        priceDecimalPlaces,
+        priceDecimalSeparator,
+        showPrices,
+        showCurrencySymbol,
         margins,
         contentSpacing,
         elementStyles: Object.fromEntries(Object.entries(previous.elementStyles).map(([key, elementStyle]) => {
@@ -1077,6 +1097,7 @@ const App: React.FC = () => {
   };
 
   const toggleProductDesigner = () => {
+    if (activePanel !== 'product') setHasOpenedProductDesigner(true);
     setActivePanel(activePanel === 'product' ? null : 'product');
   };
 
@@ -1208,18 +1229,22 @@ const App: React.FC = () => {
         </div>
       </nav>
 
-      <SettingsModal
-        open={isSettingsOpen}
-        profile={workspaceData.profile}
-        workspace={workspaceData.workspace}
-        menuStyle={style}
-        email={session.user.email || ''}
-        saving={isSettingsSaving}
-        onClose={() => setIsSettingsOpen(false)}
-        onSave={handleSaveSettings}
-        onRequestPasswordReset={handleRequestPasswordReset}
-        onUpdatePassword={handleUpdatePassword}
-      />
+      {isSettingsOpen && (
+        <React.Suspense fallback={null}>
+          <SettingsModal
+            open
+            profile={workspaceData.profile}
+            workspace={workspaceData.workspace}
+            menuStyle={style}
+            email={session.user.email || ''}
+            saving={isSettingsSaving}
+            onClose={() => setIsSettingsOpen(false)}
+            onSave={handleSaveSettings}
+            onRequestPasswordReset={handleRequestPasswordReset}
+            onUpdatePassword={handleUpdatePassword}
+          />
+        </React.Suspense>
+      )}
 
       {loadError && (
         <div className="absolute top-20 right-4 z-40 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-2xl shadow-lg max-w-md">
@@ -1255,23 +1280,27 @@ const App: React.FC = () => {
           </button>
         </div>
 
-        <ProductDesigner
-          products={products}
-          setProducts={setProducts}
-          style={style}
-          setStyle={setStyle}
-          setTemplates={setTemplates}
-          sortOption={sortOption}
-          isOpen={activePanel === 'product'}
-          onClose={() => setActivePanel(null)}
-          workspaceId={workspaceData.workspace.id}
-          currentUserId={session.user.id}
-          currentMenuId={workspaceData.menu.id}
-          productsCanChangeCategory={workspaceData.workspace.settings?.productsCanChangeCategory}
-          splitCategoryAcrossPages={workspaceData.workspace.settings.splitCategoryAcrossPages}
-          onPrint={requestPrint}
-          onImportVisibilityChange={setIsMenuImportOpen}
-        />
+        {hasOpenedProductDesigner && (
+          <React.Suspense fallback={null}>
+            <ProductDesigner
+              products={products}
+              setProducts={setProducts}
+              style={style}
+              setStyle={setStyle}
+              setTemplates={setTemplates}
+              sortOption={sortOption}
+              isOpen={activePanel === 'product'}
+              onClose={() => setActivePanel(null)}
+              workspaceId={workspaceData.workspace.id}
+              currentUserId={session.user.id}
+              currentMenuId={workspaceData.menu.id}
+              productsCanChangeCategory={workspaceData.workspace.settings?.productsCanChangeCategory}
+              splitCategoryAcrossPages={workspaceData.workspace.settings.splitCategoryAcrossPages}
+              onPrint={requestPrint}
+              onImportVisibilityChange={setIsMenuImportOpen}
+            />
+          </React.Suspense>
+        )}
 
         <div className="flex-1 min-w-0 h-full relative">
           <MenuDesigner

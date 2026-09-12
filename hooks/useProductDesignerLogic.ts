@@ -26,6 +26,7 @@ import {
     processMenuImport,
 } from '../services/menuImportService';
 import { roundPrice } from '../utils/price';
+import { roundFontSize } from '../utils/styleRules';
 
 interface UseProductDesignerLogicProps {
     products: Product[];
@@ -574,7 +575,7 @@ export const useProductDesignerLogic = ({
                 customMarginTop: 10,
                 boundingBox: isBoundingBox(freeText.boundingBox) ? freeText.boundingBox : undefined,
                 styles: {
-                    fontSize: freeText.fontSize,
+                    fontSize: roundFontSize(freeText.fontSize, 18),
                     color: freeText.color,
                     textAlign: freeText.alignment || 'left',
                     fontFamily: freeText.fontFamily,
@@ -633,7 +634,7 @@ export const useProductDesignerLogic = ({
                     menuTitle: {
                         ...style.elementStyles.menuTitle,
                         fontFamily: typo.mainTitle?.fontFamily,
-                        fontSize: typo.mainTitle?.fontSize ?? 48,
+                        fontSize: roundFontSize(typo.mainTitle?.fontSize, 48),
                         color: typo.mainTitle?.color || primaryColor,
                         textAlign: typo.mainTitle?.alignment || 'center',
                         textTransform: typo.mainTitle?.textTransform || 'uppercase',
@@ -643,7 +644,7 @@ export const useProductDesignerLogic = ({
                     menuSubtitle: {
                         ...style.elementStyles.menuSubtitle,
                         fontFamily: typo.subtitle?.fontFamily,
-                        fontSize: typo.subtitle?.fontSize ?? 18,
+                        fontSize: roundFontSize(typo.subtitle?.fontSize, 18),
                         color: typo.subtitle?.color || textColor,
                         textAlign: typo.mainTitle?.alignment || 'center',
                         textTransform: 'none',
@@ -653,7 +654,7 @@ export const useProductDesignerLogic = ({
                     category: {
                         ...style.elementStyles.category,
                         fontFamily: typo.category?.fontFamily,
-                        fontSize: typo.category?.fontSize ?? 24,
+                        fontSize: roundFontSize(typo.category?.fontSize, 24),
                         fontWeight: '700',
                         textAlign: typo.category?.alignment || 'left',
                         color: typo.category?.color || primaryColor,
@@ -663,7 +664,7 @@ export const useProductDesignerLogic = ({
                     productName: {
                         ...style.elementStyles.productName,
                         fontFamily: typo.productName?.fontFamily,
-                        fontSize: typo.productName?.fontSize ?? 16,
+                        fontSize: roundFontSize(typo.productName?.fontSize, 16),
                         fontWeight: typo.productName?.fontWeight || '600',
                         textAlign: 'left',
                         color: typo.productName?.color || textColor,
@@ -672,7 +673,7 @@ export const useProductDesignerLogic = ({
                     productPrice: {
                         ...style.elementStyles.productPrice,
                         fontFamily: typo.productPrice?.fontFamily,
-                        fontSize: typo.productPrice?.fontSize ?? 16,
+                        fontSize: roundFontSize(typo.productPrice?.fontSize, 16),
                         fontWeight: '700',
                         textAlign: 'right',
                         color: typo.productPrice?.color || colors.secondary || primaryColor
@@ -680,7 +681,7 @@ export const useProductDesignerLogic = ({
                     productDescription: {
                         ...style.elementStyles.productDescription,
                         fontFamily: typo.productDescription?.fontFamily,
-                        fontSize: typo.productDescription?.fontSize ?? 12,
+                        fontSize: roundFontSize(typo.productDescription?.fontSize, 12),
                         fontWeight: '400',
                         textAlign: 'left',
                         color: typo.productDescription?.color || textColor,

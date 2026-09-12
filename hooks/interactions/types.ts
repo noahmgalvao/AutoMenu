@@ -33,6 +33,8 @@ export interface DraftItem {
     floorBottom: number;
     ceilingId: string | null;
     ceilingTop: number;
+    forcePagePlacement?: boolean;
+    blankPageId?: string | null;
     targetCategory?: string;
     targetProductId?: string | null;
 }

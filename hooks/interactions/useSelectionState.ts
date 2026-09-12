@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useMemo, useRef } from 'react';
 import { Product, MenuStyle } from '../../types';
 import { FREE_TEXT_PREFIX, FormattingField, FormattingTarget, InteractionProps, SelectableType, SelectionItem, SelectionType } from './types';
-import { parseAndRoundPrice } from '../../utils/price';
+import { formatMenuPriceValue, parseAndRoundPrice } from '../../utils/price';
 import { measureWordFitElement, triggerLimitFeedback } from '../../utils/textFit';
 
 const getSelectionKey = (type: SelectionType, id: string | null) => `${type || 'none'}:${id || ''}`;
@@ -169,6 +169,7 @@ export const useSelectionState = (
                 setEditingId(null);
                 setSelectedPageIndex(null);
                 setSelectedItems([]);
+                setMultiSelectMode(false);
                 lastRangeAnchorRef.current = null;
             } else if (props.selection.type === 'page') {
                 setSelectedPageIndex(parseInt(props.selection.id));
@@ -192,6 +193,7 @@ export const useSelectionState = (
             setSelectedId(null);
             setSelectedPageIndex(null);
             setSelectedItems([]);
+            setMultiSelectMode(false);
             lastRangeAnchorRef.current = null;
             emitSelection(type, id);
             return;
@@ -220,6 +222,7 @@ export const useSelectionState = (
             const activePageItem = nextPageItems[nextPageItems.length - 1] || null;
             setSelectedId(null);
             setSelectedItems(nextPageItems);
+            if (nextPageItems.length === 0) setMultiSelectMode(false);
             lastRangeAnchorRef.current = pageItem;
             setSelectedPageIndex(activePageItem ? parseInt(activePageItem.id) : null);
             emitSelection(activePageItem?.type || null, activePageItem?.id || null);
@@ -269,6 +272,7 @@ export const useSelectionState = (
                 : nextItem;
 
             setSelectedItems(nextSelectedItems);
+            if (nextSelectedItems.length === 0) setMultiSelectMode(false);
             lastRangeAnchorRef.current = nextItem;
             setSelectedId(activeItem?.id || null);
             setSelectedPageIndex(null);
@@ -353,6 +357,7 @@ export const useSelectionState = (
 
         setFormattingTarget(null);
         setSelectedItems(nextItems);
+        if (nextItems.length === 0) setMultiSelectMode(false);
         lastRangeAnchorRef.current = activeItem;
         setSelectedId(activeItem?.type === 'page' ? null : activeItem?.id || null);
         setSelectedPageIndex(activeItem?.type === 'page' ? Number(activeItem.id) : null);
@@ -375,7 +380,7 @@ export const useSelectionState = (
         if (type === 'product' && field === 'price') {
             const normalizedPrice = parseAndRoundPrice(e.currentTarget.innerText);
             if (normalizedPrice !== null) {
-                e.currentTarget.innerText = normalizedPrice.toFixed(2);
+                e.currentTarget.innerText = formatMenuPriceValue(normalizedPrice, style);
                 const fit = measureWordFitElement(e.currentTarget, { text: e.currentTarget.innerText });
                 e.currentTarget.dataset.wordOverflow = String(!fit.fits);
             }
@@ -385,7 +390,7 @@ export const useSelectionState = (
             if (type === 'product' && field) {
                 const original = products.find((product) => product.id === id);
                 originalValue = field === 'price'
-                    ? (original?.price.toFixed(2) || '0.00')
+                    ? formatMenuPriceValue(original?.price ?? 0, style)
                     : String(original?.[field as keyof Product] || '');
             } else if (type === 'category') {
                 originalValue = id;
@@ -422,7 +427,13 @@ export const useSelectionState = (
 
                     const isEmptyFreeTextCategory = product.category.startsWith(FREE_TEXT_PREFIX)
                         && !products.some(candidate => candidate.id !== id && candidate.category === product.category);
-                    if (isEmptyFreeTextCategory) delete nextProductOrder[product.category];
+                    const nextCategoryPlacements = { ...(prev.categoryPlacements || {}) };
+                    const nextCategoryPositions = { ...(prev.categoryPositions || {}) };
+                    if (isEmptyFreeTextCategory) {
+                        delete nextProductOrder[product.category];
+                        delete nextCategoryPlacements[product.category];
+                        delete nextCategoryPositions[product.category];
+                    }
 
                     return {
                         ...prev,
@@ -431,6 +442,8 @@ export const useSelectionState = (
                             ? (prev.customCategoryOrder || []).filter(category => category !== product.category)
                             : prev.customCategoryOrder,
                         customProductOrder: nextProductOrder,
+                        categoryPlacements: nextCategoryPlacements,
+                        categoryPositions: nextCategoryPositions,
                         pageBreaks: isEmptyFreeTextCategory
                             ? (prev.pageBreaks || []).filter(category => category !== product.category)
                             : prev.pageBreaks,
@@ -441,6 +454,7 @@ export const useSelectionState = (
                 setFormattingTarget(null);
                 setSelectedId(null);
                 setSelectedItems([]);
+                setMultiSelectMode(false);
                 lastRangeAnchorRef.current = null;
                 emitSelection(null, null);
                 return;
@@ -449,10 +463,13 @@ export const useSelectionState = (
             if (field === 'price') {
                 const num = parseAndRoundPrice(newVal);
                 if (num !== null) {
-                    e.currentTarget.innerText = num.toFixed(2);
-                    onUpdateProduct(id, 'price', num);
+                    const formattedPrice = formatMenuPriceValue(num, style);
+                    e.currentTarget.innerText = formattedPrice;
+                    if (formattedPrice !== formatMenuPriceValue(product?.price ?? 0, style)) {
+                        onUpdateProduct(id, 'price', num);
+                    }
                 }
-                else e.currentTarget.innerText = products.find(p=>p.id === id)?.price.toFixed(2) || '0.00';
+                else e.currentTarget.innerText = formatMenuPriceValue(product?.price ?? 0, style);
             } else {
                 onUpdateProduct(id, field as keyof Product, newVal);
             }
@@ -469,7 +486,7 @@ export const useSelectionState = (
             if (e.currentTarget.id.startsWith('product-price-')) {
                 const normalizedPrice = parseAndRoundPrice(e.currentTarget.innerText);
                 if (normalizedPrice !== null) {
-                    e.currentTarget.innerText = normalizedPrice.toFixed(2);
+                    e.currentTarget.innerText = formatMenuPriceValue(normalizedPrice, style);
                     const fit = measureWordFitElement(e.currentTarget, { text: e.currentTarget.innerText });
                     e.currentTarget.dataset.wordOverflow = String(!fit.fits);
                 }

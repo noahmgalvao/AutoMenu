@@ -223,6 +223,9 @@ export const useDraggableInteractions = (
     const dragStartPointerRef = useRef<{ x: number; y: number } | null>(null);
     const dragSourceContextRef = useRef<string | null>(null);
     const productInsertionIndexRef = useRef<number | null>(null);
+    const productDragStartRectRef = useRef<DOMRect | null>(null);
+    const productInitialIndexByIdRef = useRef<Map<string, number>>(new Map());
+    const productInitialRectByIdRef = useRef<Map<string, DOMRect>>(new Map());
     const touchCancelCommitTimeoutRef = useRef<number | null>(null);
     const freeTextPointerOffsetYRef = useRef<number | null>(null);
     const freeTextActiveCategoryRef = useRef<Record<string, string>>({});
@@ -561,6 +564,9 @@ export const useDraggableInteractions = (
         dragStartPointerRef.current = null;
         dragSourceContextRef.current = null;
         productInsertionIndexRef.current = null;
+        productDragStartRectRef.current = null;
+        productInitialIndexByIdRef.current = new Map();
+        productInitialRectByIdRef.current = new Map();
         clearTouchCancelCommit();
         freeTextPointerOffsetYRef.current = null;
         freeTextActiveCategoryRef.current = {};
@@ -808,6 +814,24 @@ export const useDraggableInteractions = (
 
             const currentElement = getRenderedDragElement('product', productId, group)
                 || getRenderedDragElement('product', productId);
+            productDragStartRectRef.current = currentElement?.getBoundingClientRect() || null;
+            productInitialIndexByIdRef.current = new Map(
+                (group ? initialOrder[group] || [] : []).map((id, index) => [id, index])
+            );
+            if (group && typeof document !== 'undefined') {
+                const scope = escapeSelectorValue(dragScope);
+                const groupSelector = escapeSelectorValue(group);
+                productInitialRectByIdRef.current = new Map(
+                    Array.from(document.querySelectorAll<HTMLElement>(
+                        `[data-drag-scope="${scope}"][data-drag-type="product"][data-drag-id][data-drag-group="${groupSelector}"]`
+                    ))
+                        .filter((element) => element.isConnected && element.getClientRects().length > 0)
+                        .map((element) => [element.dataset.dragId || '', element.getBoundingClientRect()])
+                        .filter(([id]) => Boolean(id)) as Array<[string, DOMRect]>
+                );
+            } else {
+                productInitialRectByIdRef.current = new Map();
+            }
             const currentLane = currentElement?.closest<HTMLElement>(
                 '[data-drag-column-container="category"][data-drag-page-index][data-drag-column-index]'
             );
@@ -820,7 +844,7 @@ export const useDraggableInteractions = (
             categoryPageSwitchOriginXRef.current = pointer?.x
                 ?? (currentElement ? currentElement.getBoundingClientRect().left : null);
         },
-        [createProductOrderSnapshot, getRenderedDragElement, initializeLiveProductOrder]
+        [createProductOrderSnapshot, dragScope, getRenderedDragElement, initializeLiveProductOrder]
     );
 
     const moveGroupedProductRef = useCallback((product: Product, targetCategory: string, patch: Partial<Product> = {}) => {
@@ -1730,9 +1754,8 @@ export const useDraggableInteractions = (
     const resolveProductInsertionIndex = useCallback(
         (
             pointer: { x: number; y: number },
-            _movement: { x: number; y: number },
             targets: ProductTarget[],
-            orderWithoutDragged: string[]
+            orderWithoutDragged: string[],
         ) => {
             if (targets.length === 0) return orderWithoutDragged.length;
 
@@ -1776,6 +1799,47 @@ export const useDraggableInteractions = (
                     : best
             ), rowMetrics[0]);
 
+            if (activeRow.row.length === 1) {
+                const target = activeRow.row[0];
+                const targetIndex = orderWithoutDragged.indexOf(target.id);
+                if (targetIndex !== -1) {
+                    const draggedId = draggedItemRef.current?.id || '';
+                    const draggedInitialIndex = productInitialIndexByIdRef.current.get(draggedId);
+                    const targetInitialIndex = productInitialIndexByIdRef.current.get(target.id);
+                    const sourceRect = productDragStartRectRef.current;
+                    const targetInitialRect = productInitialRectByIdRef.current.get(target.id);
+
+                    if (
+                        draggedInitialIndex !== undefined
+                        && targetInitialIndex !== undefined
+                        && sourceRect
+                        && targetInitialRect
+                    ) {
+                        const sourceCenterX = sourceRect.left + (sourceRect.width / 2);
+                        const sourceCenterY = sourceRect.top + (sourceRect.height / 2);
+                        const targetCenterX = targetInitialRect.left + (targetInitialRect.width / 2);
+                        const targetCenterY = targetInitialRect.top + (targetInitialRect.height / 2);
+                        const horizontalFlow = Math.abs(sourceCenterX - targetCenterX) > Math.abs(sourceCenterY - targetCenterY);
+                        const threshold = horizontalFlow
+                            ? (sourceCenterX + targetCenterX) / 2
+                            : (sourceCenterY + targetCenterY) / 2;
+                        const reachedTarget = draggedInitialIndex > targetInitialIndex
+                            ? (horizontalFlow ? pointer.x <= threshold : pointer.y <= threshold)
+                            : (horizontalFlow ? pointer.x >= threshold : pointer.y >= threshold);
+
+                        if (draggedInitialIndex > targetInitialIndex) {
+                            return reachedTarget ? targetIndex : targetIndex + 1;
+                        }
+                        if (draggedInitialIndex < targetInitialIndex) {
+                            return reachedTarget ? targetIndex + 1 : targetIndex;
+                        }
+                    }
+                    return pointer.y <= target.rect.top + (target.rect.height / 2)
+                        ? targetIndex
+                        : targetIndex + 1;
+                }
+            }
+
             let slotIndex = activeRow.row.findIndex((target) => pointer.x < target.rect.left + (target.rect.width / 2));
             if (slotIndex === -1) slotIndex = activeRow.row.length;
             if (pointer.y > activeRow.bottom) slotIndex = Math.min(activeRow.row.length, slotIndex + 1);
@@ -1798,7 +1862,7 @@ export const useDraggableInteractions = (
     );
 
     const reorderProductByPointer = useCallback(
-        (pointer: { x: number; y: number }, movement: { x: number; y: number }) => {
+        (pointer: { x: number; y: number }, _movement: { x: number; y: number }) => {
             const currentDragItem = draggedItemRef.current;
             if (!currentDragItem || currentDragItem.type !== 'product' || !currentDragItem.group) return;
 
@@ -1844,7 +1908,11 @@ export const useDraggableInteractions = (
             let desiredInsertionIndex: number;
 
             if (laneTargets.length > 0) {
-                desiredInsertionIndex = resolveProductInsertionIndex(pointer, movement, laneTargets, orderWithoutDragged);
+                desiredInsertionIndex = resolveProductInsertionIndex(
+                    pointer,
+                    laneTargets,
+                    orderWithoutDragged,
+                );
             } else {
                 const lanes = getCategoryLanes();
                 const activeLaneIndex = lanes.findIndex((lane) => lane.key === activeLaneKey);
@@ -2820,17 +2888,36 @@ export const useDraggableInteractions = (
                 : POINTER_MOVE_THRESHOLD_PX;
             if (traveledDistance < activationThreshold) return;
 
+            if (pending.pointerType === 'touch') {
+                cancelAndCleanup();
+                return;
+            }
+
             activateDrag(pending, { x: pending.startX, y: pending.startY });
             handlePointerReorder({ x: event.clientX, y: event.clientY });
         },
-        [activateDrag, clearTouchCancelCommit, handlePointerReorder, keepScrollLocked]
+        [activateDrag, cancelAndCleanup, clearTouchCancelCommit, handlePointerReorder, keepScrollLocked]
     );
 
-    const updateCategoryAtReleasePointer = useCallback((pointer: { x: number; y: number }) => {
-        if (draggedItemRef.current?.type !== 'category') return;
+    const updateDragAtReleasePointer = useCallback((pointer: { x: number; y: number }) => {
+        const currentDragItem = draggedItemRef.current;
+        if (currentDragItem?.type === 'product') {
+            const draggedProduct = getLatestProductById(currentDragItem.id);
+            if (!draggedProduct?.isFreeText) {
+                const previousPointer = lastPointerRef.current || pointer;
+                reorderProductByPointer(pointer, {
+                    x: pointer.x - previousPointer.x,
+                    y: pointer.y - previousPointer.y,
+                });
+                lastPointerRef.current = pointer;
+            }
+            return;
+        }
+
+        if (currentDragItem?.type !== 'category') return;
 
         const pendingRebase = categorySwapRebaseRef.current;
-        if (pendingRebase?.sourceId === draggedItemRef.current.id) {
+        if (pendingRebase?.sourceId === currentDragItem.id) {
             pendingRebase.pointer = pointer;
             lastPointerRef.current = pointer;
             return;
@@ -2838,7 +2925,7 @@ export const useDraggableInteractions = (
 
         reorderCategoryByPointer(pointer, { commitImmediately: false });
         lastPointerRef.current = pointer;
-    }, [reorderCategoryByPointer]);
+    }, [getLatestProductById, reorderCategoryByPointer, reorderProductByPointer]);
 
     const handleGlobalPointerUp = useCallback(
         (event: PointerEvent) => {
@@ -2848,7 +2935,7 @@ export const useDraggableInteractions = (
                     event.preventDefault();
                 }
                 event.stopPropagation();
-                updateCategoryAtReleasePointer({ x: event.clientX, y: event.clientY });
+                updateDragAtReleasePointer({ x: event.clientX, y: event.clientY });
                 performCommitAndCleanup();
                 return;
             }
@@ -2858,7 +2945,7 @@ export const useDraggableInteractions = (
                 cancelAndCleanup();
             }
         },
-        [cancelAndCleanup, performCommitAndCleanup, updateCategoryAtReleasePointer]
+        [cancelAndCleanup, performCommitAndCleanup, updateDragAtReleasePointer]
     );
 
     const handleGlobalPointerCancel = useCallback(
@@ -2876,7 +2963,7 @@ export const useDraggableInteractions = (
                     return;
                 }
 
-                updateCategoryAtReleasePointer({ x: event.clientX, y: event.clientY });
+                updateDragAtReleasePointer({ x: event.clientX, y: event.clientY });
                 performCommitAndCleanup();
                 return;
             }
@@ -2886,7 +2973,7 @@ export const useDraggableInteractions = (
                 cancelAndCleanup();
             }
         },
-        [cancelAndCleanup, keepScrollLocked, performCommitAndCleanup, scheduleTouchCancelCommit, updateCategoryAtReleasePointer]
+        [cancelAndCleanup, keepScrollLocked, performCommitAndCleanup, scheduleTouchCancelCommit, updateDragAtReleasePointer]
     );
 
     const handleWindowBlur = useCallback(() => {
@@ -2913,8 +3000,7 @@ export const useDraggableInteractions = (
 
     useEffect(() => {
         touchMoveHandlerRef.current = (event: TouchEvent) => {
-            const pending = pendingDragRef.current;
-            if (!isDraggingRef.current && pending?.pointerType !== 'touch') return;
+            if (!isDraggingRef.current) return;
 
             if (event.touches.length >= 2) {
                 cancelAndCleanup();
@@ -2934,20 +3020,11 @@ export const useDraggableInteractions = (
             if (!touch) return;
             const pointer = { x: touch.clientX, y: touch.clientY };
 
-            if (!isDraggingRef.current) {
-                if (!pending || pending.pointerType !== 'touch') return;
-
-                const traveledDistance = Math.hypot(pointer.x - pending.startX, pointer.y - pending.startY);
-                if (traveledDistance < TOUCH_MOVE_CANCEL_THRESHOLD_PX) return;
-
-                activateDrag(pending, { x: pending.startX, y: pending.startY });
-            }
-
             if (isDraggingRef.current && draggedItemRef.current) {
                 handlePointerReorder(pointer);
             }
         };
-    }, [activateDrag, clearTouchCancelCommit, handlePointerReorder, keepScrollLocked]);
+    }, [cancelAndCleanup, clearTouchCancelCommit, handlePointerReorder, keepScrollLocked]);
 
     useEffect(() => {
         touchEndHandlerRef.current = (event: TouchEvent) => {
@@ -2959,7 +3036,7 @@ export const useDraggableInteractions = (
                 event.stopImmediatePropagation();
                 clearTouchCancelCommit();
                 const touch = event.changedTouches[0];
-                if (touch) updateCategoryAtReleasePointer({ x: touch.clientX, y: touch.clientY });
+                if (touch) updateDragAtReleasePointer({ x: touch.clientX, y: touch.clientY });
                 performCommitAndCleanup();
                 return;
             }
@@ -2971,7 +3048,7 @@ export const useDraggableInteractions = (
 
             removeNativeTouchBlockerRef.current();
         };
-    }, [cancelAndCleanup, clearTouchCancelCommit, performCommitAndCleanup, updateCategoryAtReleasePointer]);
+    }, [cancelAndCleanup, clearTouchCancelCommit, performCommitAndCleanup, updateDragAtReleasePointer]);
 
     useEffect(() => {
         touchCancelHandlerRef.current = (event: TouchEvent) => {
@@ -2985,7 +3062,7 @@ export const useDraggableInteractions = (
                 if (event.touches.length === 0) {
                     clearTouchCancelCommit();
                     const touch = event.changedTouches[0];
-                    if (touch) updateCategoryAtReleasePointer({ x: touch.clientX, y: touch.clientY });
+                    if (touch) updateDragAtReleasePointer({ x: touch.clientX, y: touch.clientY });
                     performCommitAndCleanup();
                     return;
                 }
@@ -3000,7 +3077,7 @@ export const useDraggableInteractions = (
 
             removeNativeTouchBlockerRef.current();
         };
-    }, [cancelAndCleanup, clearTouchCancelCommit, keepScrollLocked, performCommitAndCleanup, scheduleTouchCancelCommit, updateCategoryAtReleasePointer]);
+    }, [cancelAndCleanup, clearTouchCancelCommit, keepScrollLocked, performCommitAndCleanup, scheduleTouchCancelCommit, updateDragAtReleasePointer]);
 
     useEffect(() => {
         blurHandlerRef.current = handleWindowBlur;
@@ -3117,18 +3194,11 @@ export const useDraggableInteractions = (
             event.stopPropagation();
 
             const pointerType = event.pointerType || 'mouse';
-            const dragContext = (event.currentTarget as HTMLElement).dataset.dragContext || null;
-            if (pointerType === 'touch' && !dragContext && event.cancelable) {
-                event.preventDefault();
-            }
 
             const draggedProduct = type === 'product' ? products.find((product) => product.id === id) : null;
 
             clearPendingActivation();
             attachGlobalListeners();
-            if (pointerType === 'touch') {
-                attachNativeTouchBlocker();
-            }
 
             const pending: PendingDrag = {
                 type,
@@ -3155,7 +3225,7 @@ export const useDraggableInteractions = (
                 handleSelection(type === 'product' && draggedProduct?.isFreeText ? 'freeText' : type, id);
             }
         },
-        [activateDrag, attachGlobalListeners, attachNativeTouchBlocker, clearPendingActivation, editingId, handleSelection, multiSelectMode, products]
+        [activateDrag, attachGlobalListeners, clearPendingActivation, editingId, handleSelection, multiSelectMode, products]
     );
 
     const handleNativeDragStart = useCallback(
@@ -3254,11 +3324,11 @@ export const useDraggableInteractions = (
             event.preventDefault();
             event.stopPropagation();
             if (event.clientX !== 0 || event.clientY !== 0) {
-                updateCategoryAtReleasePointer({ x: event.clientX, y: event.clientY });
+                updateDragAtReleasePointer({ x: event.clientX, y: event.clientY });
             }
             performCommitAndCleanup();
         },
-        [performCommitAndCleanup, updateCategoryAtReleasePointer]
+        [performCommitAndCleanup, updateDragAtReleasePointer]
     );
 
     return {

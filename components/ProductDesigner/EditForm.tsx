@@ -26,7 +26,7 @@ export const EditForm: React.FC<EditFormProps> = ({
     >
       <input 
         autoFocus
-        className="w-full font-bold text-sm border-b border-slate-200 focus:border-indigo-500 outline-none pb-1"
+        className="w-full bg-white text-slate-900 [color-scheme:light] font-bold text-sm border-b border-slate-200 focus:border-indigo-500 outline-none pb-1"
         placeholder={type === 'category' ? "Nome da categoria" : "Nome do produto"}
         value={formData.name || ''}
         onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
@@ -34,7 +34,7 @@ export const EditForm: React.FC<EditFormProps> = ({
       {type === 'product' && (
         <>
           <input 
-            className="w-full text-xs border-b border-slate-200 focus:border-indigo-500 outline-none pb-1"
+            className="w-full bg-white text-slate-900 [color-scheme:light] text-xs border-b border-slate-200 focus:border-indigo-500 outline-none pb-1"
             placeholder="Descrição"
             value={formData.description || ''}
             onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
@@ -43,7 +43,7 @@ export const EditForm: React.FC<EditFormProps> = ({
             <span className="text-xs text-slate-400">$</span>
             <input 
               type="number"
-              className="w-20 text-xs font-mono border-b border-slate-200 focus:border-indigo-500 outline-none pb-1"
+              className="w-20 bg-white text-slate-900 [color-scheme:light] text-xs font-mono border-b border-slate-200 focus:border-indigo-500 outline-none pb-1"
               placeholder="0.00"
               value={formData.price || ''}
               onChange={e => setFormData(prev => ({ ...prev, price: parseFloat(e.target.value) }))}

@@ -13,6 +13,7 @@ import {
   EyeOff
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { roundFontSize } from '../utils/styleRules';
 
 interface DatabaseManagerProps {
   products: Product[];
@@ -103,7 +104,7 @@ const DatabaseManager: React.FC<DatabaseManagerProps> = ({ products, setProducts
               hiddenProductIds: [],
               elementStyles: {
                   category: { 
-                      fontSize: styles.category?.fontSize || 24, 
+                      fontSize: roundFontSize(styles.category?.fontSize, 24),
                       fontWeight: '700', 
                       textAlign: align, 
                       color: styles.category?.color || primaryColor,
@@ -111,21 +112,21 @@ const DatabaseManager: React.FC<DatabaseManagerProps> = ({ products, setProducts
                       textTransform: styles.category?.textTransform || 'uppercase'
                   },
                   productName: { 
-                      fontSize: styles.productName?.fontSize || 16, 
+                      fontSize: roundFontSize(styles.productName?.fontSize, 16),
                       fontWeight: '600', 
                       textAlign: 'left', 
                       color: styles.productName?.color || textColor,
                       fontFamily: styles.productName?.fontFamily
                   },
                   productPrice: { 
-                      fontSize: styles.productPrice?.fontSize || 16, 
+                      fontSize: roundFontSize(styles.productPrice?.fontSize, 16),
                       fontWeight: '700', 
                       textAlign: 'right', 
                       color: styles.productPrice?.color || accentColor,
                       fontFamily: styles.productPrice?.fontFamily
                   },
                   productDescription: { 
-                      fontSize: styles.productDescription?.fontSize || 12, 
+                      fontSize: roundFontSize(styles.productDescription?.fontSize, 12),
                       fontWeight: '400', 
                       textAlign: 'left', 
                       color: styles.productDescription?.color || textColor,

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { roundFontSize } from '../../utils/styleRules';
 
 interface FontSizeInputProps {
     value?: number;
@@ -10,7 +11,7 @@ interface FontSizeInputProps {
 }
 
 const toInputValue = (value?: number): string => (
-    Number.isFinite(value) && Number(value) > 0 ? String(value) : ''
+    Number.isFinite(value) && Number(value) > 0 ? String(roundFontSize(value)) : ''
 );
 
 export const FontSizeInput: React.FC<FontSizeInputProps> = ({
@@ -22,8 +23,12 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
     min = 1,
 }) => {
     const inputRef = useRef<HTMLInputElement>(null);
+    const normalizeValue = (nextValue: number) => roundFontSize(Math.max(
+        min,
+        Math.min(max ?? Number.POSITIVE_INFINITY, nextValue),
+    ));
     const effectiveValue = Number.isFinite(value)
-        ? Math.max(min, Math.min(max ?? Number.POSITIVE_INFINITY, Number(value)))
+        ? normalizeValue(Number(value))
         : value;
     const [draftValue, setDraftValue] = useState(() => toInputValue(effectiveValue));
 
@@ -38,7 +43,8 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
     };
 
     const applyValue = (nextValue: number) => {
-        const accepted = onChange(nextValue);
+        const normalizedValue = normalizeValue(nextValue);
+        const accepted = onChange(normalizedValue);
         if (accepted === false) {
             const input = inputRef.current;
             input?.classList.remove('automenu-limit-feedback');
@@ -57,8 +63,8 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
             type="number"
             min={min}
             max={max}
-            step={1}
-            inputMode="numeric"
+            step={0.1}
+            inputMode="decimal"
             className={`automenu-font-size-input h-8 w-16 rounded border border-slate-200 px-2 text-xs ${className}`}
             value={draftValue}
             placeholder={placeholder}
@@ -76,7 +82,9 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
                     && parsedValue >= min
                     && (max === undefined || parsedValue <= max)
                 ) {
-                    applyValue(parsedValue);
+                    const normalizedValue = normalizeValue(parsedValue);
+                    if (normalizedValue !== parsedValue) setDraftValue(String(normalizedValue));
+                    applyValue(normalizedValue);
                 }
             }}
             onBlur={() => {
@@ -86,10 +94,7 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
                     return;
                 }
 
-                const normalizedValue = Math.min(
-                    max ?? Number.POSITIVE_INFINITY,
-                    Math.max(min, Math.round(parsedValue)),
-                );
+                const normalizedValue = normalizeValue(parsedValue);
                 setDraftValue(String(normalizedValue));
                 if (normalizedValue !== effectiveValue) applyValue(normalizedValue);
             }}

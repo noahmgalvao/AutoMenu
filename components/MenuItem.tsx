@@ -10,6 +10,7 @@ import type { MoveDirection } from '../hooks/interactions/types';
 import { clampFontSize, resolveFontSizeLimits, resolveMenuContentSpacing, resolveMinimumFontSize } from '../utils/styleRules';
 import { ColumnResizeHandles } from './ColumnResizeHandles';
 import { AutoFitText } from './AutoFitText';
+import { formatMenuPriceValue } from '../utils/price';
 
 interface MenuItemProps {
     item: any;
@@ -329,12 +330,16 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
     const flowDirections = handlers.getFlowControlDirections?.(selectionType, selectionId) || { before: 'top', after: 'bottom' };
     const addBeforeDirection: FlowDirection = showGridMoveControls ? 'top' : flowDirections.before;
     const addAfterDirection: FlowDirection = showGridMoveControls ? 'bottom' : flowDirections.after;
-    const controlPadding = denseControls ? 'p-0.5' : compactControls ? (mobileExpandedControls ? 'p-2.5 md:p-1.5' : 'p-1.5') : 'p-2.5';
-    const movePadding = denseControls ? 'p-0.5' : compactControls ? (mobileExpandedControls ? 'p-2 md:p-1.5' : 'p-1.5') : 'p-2';
+    const controlPadding = denseControls ? 'p-2 md:p-0.5' : compactControls ? 'p-2.5 md:p-1.5' : 'p-3 md:p-2.5';
+    const movePadding = denseControls ? 'p-2 md:p-0.5' : compactControls ? 'p-2.5 md:p-1.5' : 'p-2.5 md:p-2';
     const iconSize = denseControls ? 12 : compactControls ? 15 : 24;
-    const iconClass = compactControls && mobileExpandedControls && !denseControls ? 'h-6 w-6 md:h-[15px] md:w-[15px]' : undefined;
+    const iconClass = denseControls
+        ? 'h-5 w-5 md:h-3 md:w-3'
+        : compactControls
+            ? 'h-6 w-6 md:h-[15px] md:w-[15px]'
+            : 'h-7 w-7 md:h-6 md:w-6';
     const generalControlsPosition = compactControls && containMobileControls
-        ? 'top-1 right-8 md:-top-[38px]'
+        ? 'bottom-full right-8 mb-2 md:bottom-auto md:mb-0 md:-top-[38px]'
         : compactControls
             ? 'top-[-38px] right-8'
             : 'top-[-10px] right-[-10px]';
@@ -398,24 +403,24 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
                     <ResponsiveMoveButton
                         flowDirection={addBeforeDirection}
                         controlGroup="add"
-                        className={`absolute ${getEdgeControlClass(addBeforeDirection)} text-white p-1 rounded-full ${selectionLayerClasses.controls} transition-transform cursor-pointer ${addControlClass}`}
+                        className={`absolute ${getEdgeControlClass(addBeforeDirection)} text-white p-2 md:p-1 rounded-full ${selectionLayerClasses.controls} transition-transform cursor-pointer ${addControlClass}`}
                         onPointerDown={e => e.stopPropagation()}
                         onClick={(e) => handlers.handleAddClick?.(e, catName, type === 'category', 'before', id)}
                         title={`${type === 'category' ? 'Adicionar categoria' : 'Adicionar item'} ${getDirectionLabel(addBeforeDirection)}`}
                     >
-                        <Plus size={12}/>
+                        <Plus size={12} className="h-5 w-5 md:h-3 md:w-3"/>
                     </ResponsiveMoveButton>
                 )}
                 {showBottomAddControl && (
                     <ResponsiveMoveButton
                         flowDirection={addAfterDirection}
                         controlGroup="add"
-                        className={`absolute ${getEdgeControlClass(addAfterDirection)} text-white p-1 rounded-full ${selectionLayerClasses.controls} transition-transform cursor-pointer ${addControlClass}`}
+                        className={`absolute ${getEdgeControlClass(addAfterDirection)} text-white p-2 md:p-1 rounded-full ${selectionLayerClasses.controls} transition-transform cursor-pointer ${addControlClass}`}
                         onPointerDown={e => e.stopPropagation()}
                         onClick={(e) => handlers.handleAddClick?.(e, catName, type === 'category', 'after', id)}
                         title={`${type === 'category' ? 'Adicionar categoria' : 'Adicionar item'} ${getDirectionLabel(addAfterDirection)}`}
                     >
-                        <Plus size={12}/>
+                        <Plus size={12} className="h-5 w-5 md:h-3 md:w-3"/>
                     </ResponsiveMoveButton>
                 )}
             </>
@@ -652,7 +657,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 data-category-id={item.data} 
                 onPointerDown={(e) => handlers.handleDragStart(e, 'category', item.data)}
                 onDragStart={(e) => e.preventDefault()}
-                className={`automenu-drag-item relative group transition-all duration-200 select-none touch-none cursor-grab pointer-events-auto ${isSelected || handlers.editingId === item.data ? 'z-[60]' : 'z-[1]'} ${inGroup ? 'px-2 pt-2' : 'hover:bg-black/5 rounded-lg'}`}
+                className={`automenu-drag-item relative group transition-all duration-200 select-none touch-auto cursor-grab pointer-events-auto ${isSelected || handlers.editingId === item.data ? 'z-[60]' : 'z-[1]'} ${inGroup ? 'px-2 pt-2' : 'hover:bg-black/5 rounded-lg'}`}
                 style={{ 
                     marginBottom: `${contentSpacing.categoryToProduct}px`
                 }}
@@ -760,7 +765,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     onContextMenu={(e) => handlers.openObjectMenu?.(e, { type: productSelectionType, id: product.id })} 
                     onClick={(e) => { e.stopPropagation(); if (!handlers.editingId) { handlers.handleSelection(productSelectionType, product.id, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey }); handlers.setSelectedPageIndex(null); } }}
                     onDoubleClick={(e) => e.stopPropagation()} 
-                    className={`automenu-drag-item relative group rounded-lg transition-all duration-200 pointer-events-auto ${isSelected && compactControls && !isEditing ? 'px-2 pb-2 pt-12 md:p-2' : 'p-2'} ${isEditing ? 'select-text touch-auto cursor-text' : 'select-none touch-none cursor-grab'} ${isSelected || isEditing ? 'z-[60]' : 'z-[1]'} ${inGroup ? 'ml-0 mb-0' : '-ml-2 mb-2 hover:bg-black/5'} ${isSelected && !isEditing ? 'bg-indigo-50/30' : ''} ${product.isFreeText ? 'transition-none' : ''}`}
+                    className={`automenu-drag-item relative group rounded-lg transition-all duration-200 pointer-events-auto p-2 ${isEditing ? 'select-text touch-auto cursor-text' : 'select-none touch-auto cursor-grab'} ${isSelected || isEditing ? 'z-[60]' : 'z-[1]'} ${inGroup ? 'ml-0 mb-0' : '-ml-2 mb-2 hover:bg-black/5'} ${isSelected && !isEditing ? 'bg-indigo-50/30' : ''} ${product.isFreeText ? 'transition-none' : ''}`}
                     style={{
                         marginTop: customMarginTop,
                         marginBottom: isFreeTextGhost
@@ -816,11 +821,11 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             <button
                                 data-product-edit-id={product.id}
                                 onClick={(e) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'freeText')}
-                                className={`relative ml-2 inline-flex align-middle ${selectionLayerClasses.controls} ${compactControls ? 'p-1.5' : 'p-2'} bg-white border border-slate-200 shadow-sm rounded-md text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all ${isSelected || handlers.editingId === product.id ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'}`}
+                                className={`relative ml-2 inline-flex align-middle ${selectionLayerClasses.controls} ${compactControls ? 'p-2.5 md:p-1.5' : 'p-3 md:p-2'} bg-white border border-slate-200 shadow-sm rounded-md text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all ${isSelected || handlers.editingId === product.id ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'}`}
                                 onPointerDown={(e) => e.stopPropagation()}
                                 title="Editar texto"
                             >
-                                <Edit3 size={compactControls ? 15 : 20} />
+                                <Edit3 size={compactControls ? 15 : 20} className="h-6 w-6 md:h-auto md:w-auto" />
                             </button>
                     </div>
                 ) : (
@@ -865,7 +870,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 />
                                 <button data-product-edit-id={product.id} onClick={(e) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name')} className={`relative ${selectionLayerClasses.controls} ${compactControls ? 'hidden' : ''} p-2.5 bg-white border border-slate-200 shadow-sm rounded-md text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all flex-shrink-0 ${isSelected || handlers.editingId === product.id ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'}`} onPointerDown={(e) => e.stopPropagation()}><Edit3 size={24} /></button>
                             </div>
-                            <div 
+                            {style.showPrices !== false && <div
                               className="ml-auto flex min-w-0 shrink-0 items-center gap-1 whitespace-nowrap"
                               style={{ 
                                 justifyContent: priceStyle.textAlign === 'left' ? 'flex-start' : (priceStyle.textAlign === 'center' ? 'center' : 'flex-end'), 
@@ -875,10 +880,10 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 fontWeight: priceStyle.fontWeight,
                               }}
                             >
-                                <span className="opacity-70 mr-[1px] select-none touch-none" style={{ color: priceStyle.color }}>$</span>
+                                {style.showCurrencySymbol !== false && <span className="opacity-70 mr-[1px] select-none touch-auto" style={{ color: priceStyle.color }}>R$</span>}
                                 <AutoFitText
                                     as="span"
-                                    text={product.price.toFixed(2)}
+                                    text={formatMenuPriceValue(product.price, style)}
                                     baseFontSize={clampFontSize(style, 'productPrice', priceStyle.fontSize, 18)}
                                     minimumFontSize={minimumFontSize}
                                     allowSameWordBreak={false}
@@ -898,7 +903,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                     }}
                                     contentEditable={isEditing} tabIndex={isEditing ? 0 : undefined} inputMode="decimal" enterKeyHint="done" suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'price')} onKeyDown={(e) => { if (isEditing && e.key !== 'Unidentified' && e.key.length === 1 && !/^[0-9.,]$/.test(e.key) && !e.ctrlKey && !e.metaKey) e.preventDefault(); handlers.handleKeyDown(e); }} onFocus={(e) => { if (!isEditing) return; handlers.setProductEditingField?.(product.id, 'price', `product-price-${product.id}`); handleMobileFocusScroll(e.currentTarget); setTimeout(() => { if (document.activeElement === e.currentTarget) { const range = document.createRange(); range.selectNodeContents(e.currentTarget); const sel = window.getSelection(); sel?.removeAllRanges(); sel?.addRange(range); } }, 0); }} onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }} onClick={(e) => { if (isEditing) e.stopPropagation(); }}
                                 />
-                            </div>
+                            </div>}
                         </div>
                         <AutoFitText
                             as="p"
@@ -994,7 +999,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 onDragStart={(e) => e.preventDefault()}
                                 onContextMenu={(e) => handlers.openObjectMenu?.(e, { type: 'product', id: product.id })} 
                                 onClick={(e) => { e.stopPropagation(); handlers.handleSelection('product', product.id, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey }); handlers.setSelectedPageIndex(null); }}
-                                className={`automenu-drag-item relative group min-w-0 transition-all pointer-events-auto ${isSelected && compactControls && !isEditing ? (mobileExpandedControls ? 'px-0 pb-0 pt-14 md:p-0' : 'px-0 pb-0 pt-10 md:p-0') : 'p-0'} ${isEditing ? 'select-text touch-auto cursor-text' : 'select-none touch-none cursor-grab'} ${isCardLayout ? 'rounded-xl' : 'rounded-lg'} ${isSelected || isEditing ? 'z-[60] bg-indigo-50/30' : 'z-[1] hover:bg-black/5'}`}
+                                className={`automenu-drag-item relative group min-w-0 transition-all pointer-events-auto p-0 ${isEditing ? 'select-text touch-auto cursor-text' : 'select-none touch-auto cursor-grab'} ${isCardLayout ? 'rounded-xl' : 'rounded-lg'} ${isSelected || isEditing ? 'z-[60] bg-indigo-50/30' : 'z-[1] hover:bg-black/5'}`}
                             >
                                 {renderFormattingToolbar('product', product.id,
                                     formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle)}
@@ -1052,14 +1057,14 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         <Edit3 size={20} className="h-6 w-6 md:h-5 md:w-5" />
                                                     </button>
                                                 </div>
-                                                <div
+                                                {style.showPrices !== false && <div
                                                     className={`ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap ${isCardLayout ? `rounded-full bg-white/90 border border-black/5 shadow-sm ${compactControls ? 'px-1.5 py-0.5' : 'px-2.5 py-1'}` : ''}`}
                                                     style={{ color: priceStyle.color, fontFamily: priceStyle.fontFamily, fontSize: clampFontSize(style, 'productPrice', priceStyle.fontSize, 18), fontWeight: priceStyle.fontWeight, fontStyle: priceStyle.italic ? 'italic' : 'normal', textDecoration: priceStyle.underline ? 'underline' : 'none' }}
                                                 >
-                                                    <span className="opacity-70 select-none touch-none">$</span>
+                                                    {style.showCurrencySymbol !== false && <span className="opacity-70 select-none touch-auto">R$</span>}
                                                     <AutoFitText
                                                         as="span"
-                                                        text={product.price.toFixed(2)}
+                                                        text={formatMenuPriceValue(product.price, style)}
                                                         baseFontSize={clampFontSize(style, 'productPrice', priceStyle.fontSize, 18)}
                                                         minimumFontSize={minimumFontSize}
                                                         allowSameWordBreak={false}
@@ -1081,7 +1086,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }}
                                                         onClick={(e) => { if (isEditing) e.stopPropagation(); }}
                                                     />
-                                                </div>
+                                                </div>}
                                             </div>
                                             <AutoFitText
                                                 as="p"

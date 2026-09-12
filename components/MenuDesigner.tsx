@@ -5,22 +5,21 @@ import { MenuPreview } from './MenuPreview';
 import { Undo, Redo, Check, X } from 'lucide-react';
 import { ZoomControls } from './MenuDesigner/ZoomControls';
 import { MenuSidebar } from './MenuDesigner/MenuSidebar';
-import { PrintCanvasModal, type PrintCanvasOptions, type PrintPreviewPage } from './MenuDesigner/PrintCanvasModal';
+import type { PrintCanvasOptions, PrintPreviewPage } from './MenuDesigner/PrintCanvasModal';
 import { uploadFileAsset } from '../services/storageService';
 import type { MoveDirection, SelectionItem } from '../hooks/interactions/types';
 import { getImageLayerIndexes } from '../utils/imageLayers';
-import {
-    captureMenuPagePreview,
-    exportMenuPagesToPdf,
-    resolvePdfPageIndexes,
-    type PdfDebugEntry,
-} from '../utils/pdfExport';
+import type { PdfDebugEntry } from '../utils/pdfExport';
 import {
     canIncreaseCanvasFontSize,
     getLargestSafeFontSizeForElements,
     type WordFitScope,
 } from '../utils/textFit';
 import { roundPrice } from '../utils/price';
+
+const PrintCanvasModal = React.lazy(() => import('./MenuDesigner/PrintCanvasModal').then((module) => ({
+    default: module.PrintCanvasModal,
+})));
 
 interface MenuDesignerProps {
     products: Product[];
@@ -343,24 +342,29 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         const pageElements = Array.from(
             containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]') || []
         );
-        const selectedIndexes = resolvePdfPageIndexes(printOptions, pageElements.length, currentPrintPageIndex);
-        const pagesToPreview = pageElements
-            .map((element, index) => ({ element, index }))
-            .filter(({ index }) => selectedIndexes.has(index));
+        const pagesToPreviewPromise = import('../utils/pdfExport').then(({ resolvePdfPageIndexes }) => {
+            const selectedIndexes = resolvePdfPageIndexes(printOptions, pageElements.length, currentPrintPageIndex);
+            return pageElements
+                .map((element, index) => ({ element, index }))
+                .filter(({ index }) => selectedIndexes.has(index));
+        });
         let cancelled = false;
-
-        if (pagesToPreview.length === 0) {
-            setPrintPreviewPages([]);
-            setPrintPreviewError('Nenhuma página válida está selecionada para o preview.');
-            setIsPrintPreviewLoading(false);
-            return;
-        }
 
         setIsPrintPreviewLoading(true);
         setPrintPreviewError(null);
         setPrintPreviewPages([]);
 
         const generatePreviews = async () => {
+            const [{ captureMenuPagePreview }, pagesToPreview] = await Promise.all([
+                import('../utils/pdfExport'),
+                pagesToPreviewPromise,
+            ]);
+            if (cancelled) return;
+            if (pagesToPreview.length === 0) {
+                setPrintPreviewError('Nenhuma página válida está selecionada para o preview.');
+                return;
+            }
+
             const nextPreviews: PrintPreviewPage[] = [];
             for (const { element, index } of pagesToPreview) {
                 try {
@@ -397,6 +401,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         const pageElements = Array.from(
             containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]') || []
         );
+        const { exportMenuPagesToPdf } = await import('../utils/pdfExport');
 
         return exportMenuPagesToPdf({
             pageElements,
@@ -1297,7 +1302,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
             {/* 1. PREVIEW AREA */}
             <div
-                className={`flex-1 w-full relative bg-slate-200/50 flex flex-col min-w-0 transition-all duration-300 h-full`}
+                className={`flex-1 w-full relative z-0 bg-slate-200/50 flex flex-col min-w-0 transition-all duration-300 h-full`}
                 ref={containerRef}
             >
                 <ZoomControls
@@ -1415,7 +1420,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 )}
 
                 {/* Undo/Redo Controls - Dynamic Positioning for Bottom Sheet */}
-                <div className={`absolute right-4 z-[70] md:z-10 flex gap-2 transition-all duration-300 ${(isOpen || isProductDesignerOpen) ? 'bottom-[calc(var(--automenu-bottom-sheet-height,45vh)+0.75rem)] md:bottom-24' : 'bottom-[5.25rem] md:bottom-24'}`}>
+                <div className={`fixed right-4 z-[70] flex gap-2 transition-all duration-300 md:absolute md:z-10 ${(isOpen || isProductDesignerOpen) ? 'bottom-[calc(var(--automenu-bottom-sheet-height,45vh)+1rem)] md:bottom-24' : 'bottom-[5.25rem] md:bottom-24'}`}>
                     <button onClick={undo} disabled={!canUndo} className={`p-2 bg-white rounded-full shadow-lg hover:bg-slate-50 text-slate-700 transition-all ${!canUndo ? 'text-slate-300 cursor-not-allowed' : ''}`} title="Desfazer"> <Undo size={16} /> </button>
                     <button onClick={redo} disabled={!canRedo} className={`p-2 bg-white rounded-full shadow-lg hover:bg-slate-50 text-slate-700 transition-all ${!canRedo ? 'text-slate-300 cursor-not-allowed' : ''}`} title="Refazer"> <Redo size={16} /> </button>
                 </div>
@@ -1515,18 +1520,22 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 removeSelectedAddedImages={removeSelectedAddedImages}
                 layerSelectedAddedImages={layerSelectedAddedImages}
             />
-            <PrintCanvasModal
-                isOpen={showPrintModal}
-                options={printOptions}
-                currentPageIndex={currentPrintPageIndex}
-                totalPages={printPageCount}
-                previewPages={printPreviewPages}
-                previewLoading={isPrintPreviewLoading}
-                previewError={printPreviewError}
-                onChange={setPrintOptions}
-                onClose={() => setShowPrintModal(false)}
-                onPrint={executeCanvasPrint}
-            />
+            {showPrintModal && (
+                <React.Suspense fallback={null}>
+                    <PrintCanvasModal
+                        isOpen
+                        options={printOptions}
+                        currentPageIndex={currentPrintPageIndex}
+                        totalPages={printPageCount}
+                        previewPages={printPreviewPages}
+                        previewLoading={isPrintPreviewLoading}
+                        previewError={printPreviewError}
+                        onChange={setPrintOptions}
+                        onClose={() => setShowPrintModal(false)}
+                        onPrint={executeCanvasPrint}
+                    />
+                </React.Suspense>
+            )}
         </div>
     );
 };

@@ -102,7 +102,7 @@ export const ProfileMenu: React.FC<ProfileMenuProps> = ({
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 top-12 z-[80] w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
+        <div className="absolute right-0 top-12 z-[80] w-[min(17rem,calc(100vw-1rem))] md:w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
           <div className="border-b border-slate-100 px-4 py-3">
             <div className="text-sm font-semibold text-slate-900 truncate">
               {profile.fullName || 'Meu perfil'}

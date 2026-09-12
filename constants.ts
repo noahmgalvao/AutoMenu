@@ -1,4 +1,5 @@
 import { FontSizeLimits, MenuContentSpacing, MenuMargins, Product, MenuStyle } from './types';
+import { DEFAULT_PRICE_DECIMAL_PLACES, DEFAULT_PRICE_DECIMAL_SEPARATOR } from './utils/price';
 
 export const DEFAULT_FONT_SIZE_LIMITS: FontSizeLimits = {
   menuTitle: 120,
@@ -93,6 +94,10 @@ const createTemplate = (template: Omit<MenuStyle, 'scope' | 'sourceType' | 'isLo
   fontSizeLimits: { ...DEFAULT_FONT_SIZE_LIMITS },
   minimumFontSize: DEFAULT_MINIMUM_FONT_SIZE,
   allowSameWordBreak: false,
+  priceDecimalPlaces: DEFAULT_PRICE_DECIMAL_PLACES,
+  priceDecimalSeparator: DEFAULT_PRICE_DECIMAL_SEPARATOR,
+  showPrices: true,
+  showCurrencySymbol: true,
   margins: {
     ...DEFAULT_MENU_MARGINS,
     top: template.pagePadding ?? DEFAULT_MENU_MARGINS.top,

@@ -28,6 +28,13 @@ body {
   -webkit-touch-callout: default !important;
 }
 
+[data-menu-print-page="true"] [contenteditable="true"]:focus {
+  -webkit-text-fill-color: currentColor !important;
+  background-color: rgb(99 102 241 / 0.14) !important;
+  caret-color: rgb(245 158 11) !important;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.9), 0 0 1px rgb(0 0 0 / 0.9);
+}
+
 /* Custom scrollbar for better UX */
 ::-webkit-scrollbar {
   width: 8px;

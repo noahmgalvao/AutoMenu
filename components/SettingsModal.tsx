@@ -12,6 +12,8 @@ import type {
   MenuContentSpacing,
   MenuMargins,
   MenuStyle,
+  PriceDecimalPlaces,
+  PriceDecimalSeparator,
   Profile,
   Workspace,
 } from '../types';
@@ -20,7 +22,14 @@ import {
   resolveMenuContentSpacing,
   resolveMenuMargins,
   resolveMinimumFontSize,
+  roundFontSize,
 } from '../utils/styleRules';
+import {
+  DEFAULT_PRICE_DECIMAL_PLACES,
+  DEFAULT_PRICE_DECIMAL_SEPARATOR,
+  resolvePriceDecimalPlaces,
+  resolvePriceDecimalSeparator,
+} from '../utils/price';
 
 interface SettingsModalProps {
   open: boolean;
@@ -37,6 +46,10 @@ interface SettingsModalProps {
     productsCanChangeCategory: boolean;
     minimumFontSize: number;
     allowSameWordBreak: boolean;
+    priceDecimalPlaces: PriceDecimalPlaces;
+    priceDecimalSeparator: PriceDecimalSeparator;
+    showPrices: boolean;
+    showCurrencySymbol: boolean;
     fontSizeLimits: FontSizeLimits;
     margins: MenuMargins;
     contentSpacing: MenuContentSpacing;
@@ -53,6 +66,8 @@ const RuleGroup = <T extends object>({
   values,
   min = 0,
   max,
+  step,
+  normalizeValue,
   onChange,
   headerContent,
 }: {
@@ -61,6 +76,8 @@ const RuleGroup = <T extends object>({
   values: T;
   min?: number;
   max: number;
+  step?: number;
+  normalizeValue?: (value: number) => number;
   onChange: (key: keyof T & string, value: number) => void;
   headerContent?: React.ReactNode;
 }) => (
@@ -75,10 +92,14 @@ const RuleGroup = <T extends object>({
             type="number"
             min={min}
             max={max}
+            step={step}
             value={Number(values[key])}
             onChange={(event) => {
               const parsed = Number(event.target.value);
-              if (Number.isFinite(parsed)) onChange(key, Math.min(max, Math.max(min, parsed)));
+              if (Number.isFinite(parsed)) {
+                const clamped = Math.min(max, Math.max(min, parsed));
+                onChange(key, normalizeValue ? normalizeValue(clamped) : clamped);
+              }
             }}
             className="h-9 w-20 rounded-lg border border-slate-200 bg-white px-2 text-right text-sm font-semibold text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
           />
@@ -111,6 +132,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   );
   const [minimumFontSize, setMinimumFontSize] = useState(() => resolveMinimumFontSize(menuStyle));
   const [allowSameWordBreak, setAllowSameWordBreak] = useState(menuStyle.allowSameWordBreak === true);
+  const [priceDecimalPlaces, setPriceDecimalPlaces] = useState<PriceDecimalPlaces>(() => resolvePriceDecimalPlaces(menuStyle.priceDecimalPlaces));
+  const [priceDecimalSeparator, setPriceDecimalSeparator] = useState<PriceDecimalSeparator>(() => resolvePriceDecimalSeparator(menuStyle.priceDecimalSeparator));
+  const [showPrices, setShowPrices] = useState(menuStyle.showPrices !== false);
+  const [showCurrencySymbol, setShowCurrencySymbol] = useState(menuStyle.showCurrencySymbol !== false);
   const [fontSizeLimits, setFontSizeLimits] = useState(() => resolveFontSizeLimits(menuStyle));
   const [margins, setMargins] = useState(() => resolveMenuMargins(menuStyle));
   const [contentSpacing, setContentSpacing] = useState(() => resolveMenuContentSpacing(menuStyle));
@@ -132,6 +157,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     productsCanChangeCategory,
     minimumFontSize,
     allowSameWordBreak,
+    priceDecimalPlaces,
+    priceDecimalSeparator,
+    showPrices,
+    showCurrencySymbol,
     fontSizeLimits,
     margins,
     contentSpacing,
@@ -142,7 +171,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     fullName,
     margins,
     minimumFontSize,
+    priceDecimalPlaces,
+    priceDecimalSeparator,
     productsCanChangeCategory,
+    showCurrencySymbol,
+    showPrices,
     splitCategoryAcrossPages,
     workspaceName,
   ]);
@@ -167,6 +200,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       productsCanChangeCategory,
       minimumFontSize,
       allowSameWordBreak,
+      priceDecimalPlaces,
+      priceDecimalSeparator,
+      showPrices,
+      showCurrencySymbol,
       fontSizeLimits,
       margins,
       contentSpacing,
@@ -189,7 +226,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     margins,
     minimumFontSize,
     onSave,
+    priceDecimalPlaces,
+    priceDecimalSeparator,
     productsCanChangeCategory,
+    showCurrencySymbol,
+    showPrices,
     splitCategoryAcrossPages,
   ]);
 
@@ -197,6 +238,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     if (!open) return;
     const nextMinimumFontSize = resolveMinimumFontSize(menuStyle);
     const nextAllowSameWordBreak = menuStyle.allowSameWordBreak === true;
+    const nextPriceDecimalPlaces = resolvePriceDecimalPlaces(menuStyle.priceDecimalPlaces);
+    const nextPriceDecimalSeparator = resolvePriceDecimalSeparator(menuStyle.priceDecimalSeparator);
+    const nextShowPrices = menuStyle.showPrices !== false;
+    const nextShowCurrencySymbol = menuStyle.showCurrencySymbol !== false;
     const nextFontSizeLimits = resolveFontSizeLimits(menuStyle);
     const nextMargins = resolveMenuMargins(menuStyle);
     const nextContentSpacing = resolveMenuContentSpacing(menuStyle);
@@ -206,6 +251,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setProductsCanChangeCategory(workspace.settings.productsCanChangeCategory ?? false);
     setMinimumFontSize(nextMinimumFontSize);
     setAllowSameWordBreak(nextAllowSameWordBreak);
+    setPriceDecimalPlaces(nextPriceDecimalPlaces);
+    setPriceDecimalSeparator(nextPriceDecimalSeparator);
+    setShowPrices(nextShowPrices);
+    setShowCurrencySymbol(nextShowCurrencySymbol);
     setFontSizeLimits(nextFontSizeLimits);
     setMargins(nextMargins);
     setContentSpacing(nextContentSpacing);
@@ -218,6 +267,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       productsCanChangeCategory: workspace.settings.productsCanChangeCategory ?? false,
       minimumFontSize: nextMinimumFontSize,
       allowSameWordBreak: nextAllowSameWordBreak,
+      priceDecimalPlaces: nextPriceDecimalPlaces,
+      priceDecimalSeparator: nextPriceDecimalSeparator,
+      showPrices: nextShowPrices,
+      showCurrencySymbol: nextShowCurrencySymbol,
       fontSizeLimits: nextFontSizeLimits,
       margins: nextMargins,
       contentSpacing: nextContentSpacing,
@@ -255,6 +308,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setProductsCanChangeCategory(false);
     setMinimumFontSize(DEFAULT_MINIMUM_FONT_SIZE);
     setAllowSameWordBreak(false);
+    setPriceDecimalPlaces(DEFAULT_PRICE_DECIMAL_PLACES);
+    setPriceDecimalSeparator(DEFAULT_PRICE_DECIMAL_SEPARATOR);
+    setShowPrices(true);
+    setShowCurrencySymbol(true);
     setFontSizeLimits({ ...DEFAULT_FONT_SIZE_LIMITS });
     setMargins({ ...DEFAULT_MENU_MARGINS });
     setContentSpacing({ ...DEFAULT_MENU_CONTENT_SPACING });
@@ -356,6 +413,49 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           ) : (
             <div className="space-y-4">
+              <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <h3 className="mb-3 text-sm font-bold text-slate-800">Formato dos preços</h3>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="flex items-center justify-between gap-3 text-sm text-slate-600">
+                    <span>Casas decimais</span>
+                    <select
+                      value={priceDecimalPlaces}
+                      onChange={(event) => setPriceDecimalPlaces(resolvePriceDecimalPlaces(Number(event.target.value)))}
+                      className="h-9 w-20 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                    >
+                      <option value={0}>0</option>
+                      <option value={1}>1</option>
+                      <option value={2}>2</option>
+                    </select>
+                  </label>
+                  <label className="flex items-center justify-between gap-3 text-sm text-slate-600">
+                    <span>Separador decimal</span>
+                    <select
+                      value={priceDecimalSeparator}
+                      onChange={(event) => setPriceDecimalSeparator(resolvePriceDecimalSeparator(event.target.value))}
+                      className="h-9 w-20 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                    >
+                      <option value=",">Vírgula (,)</option>
+                      <option value=".">Ponto (.)</option>
+                    </select>
+                  </label>
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-slate-200 p-4">
+                <h3 className="mb-3 text-sm font-bold text-slate-800">Exibição dos preços</h3>
+                <div className="space-y-3">
+                  <label className="flex cursor-pointer items-center gap-3 text-sm text-slate-700">
+                    <input type="checkbox" checked={showPrices} onChange={(event) => setShowPrices(event.target.checked)} className="h-4 w-4 rounded border-slate-300 text-indigo-600" />
+                    <span>Mostrar preços no cardápio</span>
+                  </label>
+                  <label className={`flex items-center gap-3 text-sm ${showPrices ? 'cursor-pointer text-slate-700' : 'cursor-not-allowed text-slate-400'}`}>
+                    <input type="checkbox" checked={showCurrencySymbol} disabled={!showPrices} onChange={(event) => setShowCurrencySymbol(event.target.checked)} className="h-4 w-4 rounded border-slate-300 text-indigo-600 disabled:opacity-50" />
+                    <span>Mostrar cifrão (R$)</span>
+                  </label>
+                </div>
+              </section>
+
               <RuleGroup
                 title="Limite de tamanho das fontes"
                 rows={[
@@ -370,6 +470,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 values={fontSizeLimits}
                 min={minimumFontSize}
                 max={300}
+                step={0.1}
+                normalizeValue={roundFontSize}
                 headerContent={(
                   <label className="mb-3 flex items-center justify-between gap-3 border-b border-slate-200 pb-3 text-sm font-semibold text-slate-700">
                     <span>Mínimo geral</span>
@@ -377,11 +479,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       type="number"
                       min={1}
                       max={300}
+                      step={0.1}
                       value={minimumFontSize}
                       onChange={(event) => {
                         const parsed = Number(event.target.value);
                         if (!Number.isFinite(parsed)) return;
-                        const value = Math.min(300, Math.max(1, parsed));
+                        const value = roundFontSize(Math.min(300, Math.max(1, parsed)));
                         setMinimumFontSize(value);
                         setFontSizeLimits((previous) => ({
                           menuTitle: Math.max(value, previous.menuTitle),
@@ -399,7 +502,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 )}
                 onChange={(key, value) => setFontSizeLimits((previous) => ({
                   ...previous,
-                  [key as FontSizeLimitKey]: value,
+                  [key as FontSizeLimitKey]: roundFontSize(value),
                 }))}
               />
 

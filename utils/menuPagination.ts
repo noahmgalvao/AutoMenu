@@ -1,6 +1,7 @@
 import { Product, MenuStyle } from '../types';
 import { clampFontSize, resolveMenuContentSpacing, resolveMenuMargins } from './styleRules';
 import { normalizeColumnWidths } from './categoryColumns';
+import { formatMenuPriceValue } from './price';
 
 export const A4_HEIGHT_PX = 1123;
 export const A4_WIDTH_PX = 794;
@@ -203,7 +204,7 @@ export const calculateItemHeight = (
         const nameLines = getSafeLineCount(product.name, Math.max(24, textContentWidth - editButtonReserve), nameCharWidth);
         contentHeight += (fontSize * 1.6 * nameLines) + spacing.productNameToDescription;
 
-        contentHeight += (priceSize * 1.6) + 6;
+        if (style.showPrices !== false) contentHeight += (priceSize * 1.6) + 6;
 
         if (product.description) {
             const descCharWidth = descSize * 0.55;
@@ -228,21 +229,25 @@ export const calculateItemHeight = (
         let textHeight = 0;
 
         const nameCharWidth = fontSize * 0.6;
-        const formattedPriceLength = product.price.toFixed(2).length + 2;
-        const priceColumnReserve = Math.max(36, formattedPriceLength * priceSize * 0.58) + spacing.productNameToPrice;
+        const showPrice = style.showPrices !== false;
+        const formattedPriceLength = formatMenuPriceValue(product.price, style).length
+            + (style.showCurrencySymbol !== false ? 3 : 0);
+        const priceColumnReserve = showPrice
+            ? Math.max(36, formattedPriceLength * priceSize * 0.58) + spacing.productNameToPrice
+            : 0;
         const editButtonReserve = compactLayout ? 0 : 48;
         const longestNameWordWidth = Math.max(
             0,
             ...product.name.split(/\s+/).filter(Boolean).map((word) => word.length * nameCharWidth),
         );
-        const wrapsPrice = longestNameWordWidth + priceColumnReserve + editButtonReserve > textWidth;
+        const wrapsPrice = showPrice && longestNameWordWidth + priceColumnReserve + editButtonReserve > textWidth;
         const nameLines = getSafeLineCount(
             product.name,
             Math.max(48, textWidth - editButtonReserve - (wrapsPrice ? 0 : priceColumnReserve)),
             nameCharWidth,
         );
         const nameHeight = fontSize * 1.375 * nameLines;
-        const priceHeight = priceSize * 1.375;
+        const priceHeight = showPrice ? priceSize * 1.375 : 0;
         const nameAndPriceHeight = wrapsPrice
             ? nameHeight + priceHeight + 2
             : Math.max(nameHeight, priceHeight);

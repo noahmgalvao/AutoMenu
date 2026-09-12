@@ -146,6 +146,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const handledExternalActionIdRef = useRef<number | null>(null);
     const marqueeDragRef = useRef<MarqueeDragState | null>(null);
     const suppressMarqueeClickRef = useRef(false);
+    const lastPreviewPointerTypeRef = useRef<string | null>(null);
     const [clipboardVersion, setClipboardVersion] = useState(0);
     const [nativeClipboardAvailable, setNativeClipboardAvailable] = useState(false);
     const [objectMenu, setObjectMenu] = useState<ObjectMenuState | null>(null);
@@ -718,8 +719,12 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         handlers.setEditingId(null);
     }, [getMarqueeItems, handlers]);
 
-    const handlePreviewPointerDownCapture = (event: React.PointerEvent<HTMLDivElement>) => {
-        document.body.dataset.automenuDeleteContext = 'canvas';
+  const handlePreviewPointerDownCapture = (event: React.PointerEvent<HTMLDivElement>) => {
+    document.body.dataset.automenuDeleteContext = 'canvas';
+    lastPreviewPointerTypeRef.current = event.pointerType;
+    if (event.pointerType === 'touch') {
+      setObjectMenu(null);
+    }
         const target = event.target as HTMLElement | null;
         const pageElement = target?.closest<HTMLElement>('[data-menu-print-page="true"][data-page-index]');
         if (pageElement) {
@@ -1653,6 +1658,10 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const openObjectMenu = useCallback((event: React.MouseEvent, item: CanvasContextMenuItem) => {
         event.preventDefault();
         event.stopPropagation();
+        if (event.type === 'contextmenu' && lastPreviewPointerTypeRef.current === 'touch') {
+            setObjectMenu(null);
+            return;
+        }
         if (handlers.draggedItem || handlers.draggedImageId) {
             setObjectMenu(null);
             return;
@@ -1675,6 +1684,12 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     }, [handlers.draggedImageId, handlers.draggedItem]);
 
     const openBackgroundMenu = useCallback((event: React.MouseEvent) => {
+        if (event.type === 'contextmenu' && lastPreviewPointerTypeRef.current === 'touch') {
+            event.preventDefault();
+            event.stopPropagation();
+            setObjectMenu(null);
+            return;
+        }
         const target = event.target as HTMLElement | null;
         if (target?.closest([
             '[data-drag-type]',

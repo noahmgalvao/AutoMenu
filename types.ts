@@ -39,6 +39,8 @@ export interface MenuContentSpacing {
 }
 
 export type FontSizeLimitKey = keyof FontSizeLimits;
+export type PriceDecimalPlaces = 0 | 1 | 2;
+export type PriceDecimalSeparator = ',' | '.';
 
 export type WorkspaceStatus = 'active' | 'archived';
 export type WorkspaceRole = 'owner' | 'member';
@@ -198,6 +200,10 @@ export interface MenuStyle {
   fontSizeLimits?: FontSizeLimits;
   minimumFontSize?: number;
   allowSameWordBreak?: boolean;
+  priceDecimalPlaces?: PriceDecimalPlaces;
+  priceDecimalSeparator?: PriceDecimalSeparator;
+  showPrices?: boolean;
+  showCurrencySymbol?: boolean;
   margins?: MenuMargins;
   contentSpacing?: MenuContentSpacing;
   elementColorOverrides?: Partial<Record<'menuTitle' | 'menuSubtitle' | 'pageNumber' | 'category' | 'productName' | 'productPrice' | 'productDescription', boolean>>;
