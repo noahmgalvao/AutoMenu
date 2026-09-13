@@ -530,8 +530,10 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             backgroundImage: originalTemplate!.backgroundImage,
             layoutMode: originalTemplate!.layoutMode,
             showImages: originalTemplate!.showImages,
+            showCategoryImages: originalTemplate!.showCategoryImages !== false,
             columnCount: originalTemplate!.columnCount,
             imageScale: originalTemplate!.imageScale ?? 1,
+            categoryImageScale: originalTemplate!.categoryImageScale ?? 1,
             elementStyles: JSON.parse(JSON.stringify(originalTemplate!.elementStyles || prev.elementStyles)), // Deep copy
             elementColorOverrides: {},
 
@@ -1121,14 +1123,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         return true;
     };
 
-    const handleImageResize = (delta: number) => {
-        setStyle(prev => {
-            const currentScale = prev.imageScale || 1;
-            const newScale = Math.max(0.5, Math.min(2, currentScale + delta));
-            return { ...prev, imageScale: newScale, name: 'Custom' };
-        });
-    };
-
     const handleAddedImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -1515,7 +1509,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 updateGlobalElementStyle={updateGlobalElementStyle}
                 setPreviewAction={setPreviewAction}
                 handleAddedImageUpload={handleAddedImageUpload}
-                handleImageResize={handleImageResize}
                 resizeSelectedAddedImages={resizeSelectedAddedImages}
                 removeSelectedAddedImages={removeSelectedAddedImages}
                 layerSelectedAddedImages={layerSelectedAddedImages}

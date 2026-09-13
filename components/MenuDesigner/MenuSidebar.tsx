@@ -37,7 +37,6 @@ interface MenuSidebarProps {
     updateGlobalElementStyle: (elementType: keyof MenuStyle['elementStyles'], newStyle: ElementStyle) => void | boolean;
     setPreviewAction: React.Dispatch<React.SetStateAction<{ type: string, id: number } | undefined>>;
     handleAddedImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
-    handleImageResize: (delta: number) => void;
     resizeSelectedAddedImages: (delta: number) => void;
     removeSelectedAddedImages: () => void;
     layerSelectedAddedImages: (direction: 'front' | 'back') => void;
@@ -47,7 +46,7 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
     isOpen, onClose, handlePrint, handleResetDesign,
     style, setStyle, templates, applyTemplate, sortOption, setSortOption,
     selection, setSelection, selectedFreeText, selectedAddedImage, selectedAddedImageIds,
-    updateFreeTextStyle, updateGlobalElementStyle, setPreviewAction, handleAddedImageUpload, handleImageResize,
+    updateFreeTextStyle, updateGlobalElementStyle, setPreviewAction, handleAddedImageUpload,
     resizeSelectedAddedImages, removeSelectedAddedImages, layerSelectedAddedImages
 }) => {
     
@@ -131,7 +130,6 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
           <LayoutSection 
             style={style}
             setStyle={setStyle}
-            handleImageResize={handleImageResize}
           />
 
           <hr className="border-slate-100" />

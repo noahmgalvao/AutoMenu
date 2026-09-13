@@ -393,6 +393,10 @@ const withStyleDefaults = (style: MenuStyle | null | undefined): MenuStyle => {
     priceDecimalSeparator: resolvePriceDecimalSeparator(source.priceDecimalSeparator),
     showPrices: source.showPrices !== false,
     showCurrencySymbol: source.showCurrencySymbol !== false,
+    showCategoryImages: source.showCategoryImages !== false,
+    categoryImageScale: Number.isFinite(Number(source.categoryImageScale))
+      ? Math.max(0.5, Math.min(2, Number(source.categoryImageScale)))
+      : 1,
     margins: {
       ...(base.margins || {}),
       ...(isRecord(source.margins) ? source.margins : {}),

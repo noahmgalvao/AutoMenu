@@ -1,7 +1,6 @@
 
 import React from 'react';
-import { MenuStyle } from '../../types';
-import { Loader2, Sparkles, Minus, Plus, ImageIcon, BarChart, ListChecks, ChevronDown } from 'lucide-react';
+import { Loader2, Sparkles, Minus, Plus, BarChart, ListChecks, ChevronDown } from 'lucide-react';
 
 interface ImportToolsProps {
   onStartAIImport: () => void;
@@ -11,8 +10,6 @@ interface ImportToolsProps {
   bulkAdjustmentMode: 'percentage' | 'integer';
   setBulkAdjustmentMode: (value: 'percentage' | 'integer') => void;
   handleBulkAdjust: (direction: 1 | -1) => void;
-  style: MenuStyle;
-  setStyle: React.Dispatch<React.SetStateAction<MenuStyle>>;
   setShowInsights: (show: boolean) => void;
   multiSelectMode: boolean;
   setMultiSelectMode?: (enabled: boolean) => void;
@@ -26,8 +23,6 @@ export const ImportTools: React.FC<ImportToolsProps> = ({
   bulkAdjustmentMode,
   setBulkAdjustmentMode,
   handleBulkAdjust,
-  style,
-  setStyle,
   setShowInsights,
   multiSelectMode,
   setMultiSelectMode
@@ -43,7 +38,7 @@ export const ImportTools: React.FC<ImportToolsProps> = ({
         Importar foto com IA
       </button>
 
-      <div className="grid grid-cols-[minmax(0,1fr)_2.5rem_2.5rem] grid-rows-[2.5rem_2.5rem] gap-2">
+      <div className="grid grid-cols-[minmax(0,1fr)_5.5rem] grid-rows-[2.5rem_2.5rem] gap-2">
         <div className="row-span-2 bg-white border border-slate-200 rounded-lg p-2 grid grid-rows-[minmax(0,1fr)_2rem] gap-1">
           <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-1 min-w-0">
             <input 
@@ -76,23 +71,17 @@ export const ImportTools: React.FC<ImportToolsProps> = ({
           </div>
         </div>
         <button 
-          onClick={() => setStyle(prev => ({ ...prev, showImages: !prev.showImages, name: 'Custom' }))}
-          className={`h-10 w-10 rounded-lg border flex items-center justify-center ${style.showImages ? 'bg-indigo-50 border-indigo-200 text-indigo-600' : 'bg-white border-slate-200 text-slate-400'}`}
-          title="Mostrar/ocultar imagens dos produtos"
-        >
-          <ImageIcon size={18} />
-        </button>
-        <button 
           onClick={() => setShowInsights(true)}
-          className="h-10 w-10 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-indigo-600 flex items-center justify-center"
+          className="h-10 w-full rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-indigo-600 flex items-center justify-center gap-1.5 px-2 text-[10px] font-semibold"
           title="Análises"
         >
           <BarChart size={18} />
+          <span>Análises</span>
         </button>
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); setMultiSelectMode?.(!multiSelectMode); }}
-          className={`col-span-2 h-10 rounded-lg border flex items-center justify-center gap-2 px-3 text-[11px] font-semibold transition-colors ${multiSelectMode ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-100'}`}
+          className={`h-10 rounded-lg border flex items-center justify-center gap-2 px-2 text-[10px] font-semibold transition-colors ${multiSelectMode ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-100'}`}
           title="Seleção múltipla"
         >
           <ListChecks size={15} />

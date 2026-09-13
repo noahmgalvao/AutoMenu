@@ -7,7 +7,8 @@ import { StyleControls } from './StyleControls';
 import { FontSelect, MiniFoodTextureSelect, TemplateSelect, TextureSelect } from './SearchableSelects';
 import { 
   Type, ImagePlus, Minus, Plus, LayoutTemplate, 
-  Layout, List, Maximize, Palette, ArrowUpAZ, SortAsc, SortDesc, BringToFront, SendToBack, SlidersHorizontal
+  Layout, List, Maximize, Palette, ArrowUpAZ, SortAsc, SortDesc, BringToFront, SendToBack, SlidersHorizontal,
+  ImageIcon, Eye, EyeOff
 } from 'lucide-react';
 
 // --- ELEMENTS SECTION ---
@@ -238,10 +239,17 @@ export const TemplatesSection: React.FC<TemplatesSectionProps> = ({ templates, c
 interface LayoutSectionProps {
   style: MenuStyle;
   setStyle: React.Dispatch<React.SetStateAction<MenuStyle>>;
-  handleImageResize: (delta: number) => void;
 }
 
-export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle, handleImageResize }) => {
+export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle }) => {
+  const updateImageScale = (field: 'imageScale' | 'categoryImageScale', delta: number) => {
+    setStyle((previous) => ({
+      ...previous,
+      [field]: Math.max(0.5, Math.min(2, (previous[field] || 1) + delta)),
+      name: 'Custom',
+    }));
+  };
+
   const updateColumnCounts = (
     event: React.MouseEvent<HTMLButtonElement>,
     nextCategoryColumnCount: number,
@@ -302,15 +310,38 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle, h
             </div>
         </div>
     </div>
-    <div className="space-y-2">
-        <div className="flex items-center justify-between px-3 py-2 bg-slate-50 rounded-lg border border-slate-100">
-            <span className="text-xs font-bold text-slate-500 uppercase">Tamanho das imagens</span>
-            <div className="flex items-center gap-2">
-                    <button onClick={() => handleImageResize(-0.1)} className="p-1 bg-white rounded border border-slate-200 hover:bg-slate-100"><Minus size={14} /></button>
-                    <span className="text-xs font-mono w-10 text-center">{Math.round((style.imageScale || 1) * 100)}%</span>
-                    <button onClick={() => handleImageResize(0.1)} className="p-1 bg-white rounded border border-slate-200 hover:bg-slate-100"><Plus size={14} /></button>
-            </div>
+    <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+        <div className="flex items-center gap-2 px-1 text-xs font-bold uppercase text-slate-500">
+            <ImageIcon size={14} className="text-indigo-500" /> Imagens
         </div>
+        {([
+          { label: 'Produtos', visible: style.showImages, toggleField: 'showImages' as const, scaleField: 'imageScale' as const, scale: style.imageScale || 1 },
+          { label: 'Categorias', visible: style.showCategoryImages !== false, toggleField: 'showCategoryImages' as const, scaleField: 'categoryImageScale' as const, scale: style.categoryImageScale || 1 },
+        ]).map((control) => (
+          <div key={control.label} className={`rounded-lg border bg-white p-2 transition-opacity ${control.visible ? 'border-slate-200' : 'border-slate-100 opacity-65'}`}>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-slate-700">{control.label}</span>
+              <button
+                type="button"
+                onClick={() => setStyle((previous) => ({ ...previous, [control.toggleField]: !control.visible, name: 'Custom' }))}
+                className={`flex h-7 items-center gap-1 rounded-md border px-2 text-[10px] font-semibold transition-colors ${control.visible ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}
+                aria-pressed={control.visible}
+                title={`${control.visible ? 'Ocultar' : 'Mostrar'} imagens de ${control.label.toLowerCase()}`}
+              >
+                {control.visible ? <Eye size={13} /> : <EyeOff size={13} />}
+                {control.visible ? 'Visíveis' : 'Ocultas'}
+              </button>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-medium uppercase text-slate-400">Tamanho</span>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => updateImageScale(control.scaleField, -0.1)} className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white hover:bg-slate-100" aria-label={`Diminuir imagens de ${control.label.toLowerCase()}`}><Minus size={14} /></button>
+                <span className="w-10 text-center font-mono text-xs text-slate-600">{Math.round(control.scale * 100)}%</span>
+                <button type="button" onClick={() => updateImageScale(control.scaleField, 0.1)} className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white hover:bg-slate-100" aria-label={`Aumentar imagens de ${control.label.toLowerCase()}`}><Plus size={14} /></button>
+              </div>
+            </div>
+          </div>
+        ))}
     </div>
   </section>
   );
@@ -514,29 +545,26 @@ interface StyleSectionProps {
 export const StyleSection: React.FC<StyleSectionProps> = ({ style, setStyle }) => {
   const selectedTextureUrl = normalizeTextureUrl(style.backgroundImage);
   const isMiniFoodSelected = isMiniFoodTexture(selectedTextureUrl);
-  const followsPaletteColor = (elementColor: string | undefined, paletteColor: string, overridden?: boolean) => (
-    !overridden || !elementColor || elementColor.toLowerCase() === paletteColor.toLowerCase()
-  );
-
   const updatePrimaryColor = (color: string) => {
     setStyle(prev => {
       const titleStyle = prev.elementStyles.menuTitle || {};
+      const subtitleStyle = prev.elementStyles.menuSubtitle || {};
       const categoryStyle = prev.elementStyles.category || {};
-      const titleUsesPrimary = followsPaletteColor(titleStyle.color, prev.primaryColor, prev.elementColorOverrides?.menuTitle);
-      const categoryUsesPrimary = followsPaletteColor(categoryStyle.color, prev.primaryColor, prev.elementColorOverrides?.category);
 
       return {
         ...prev,
         primaryColor: color,
         elementStyles: {
           ...prev.elementStyles,
-          menuTitle: titleUsesPrimary ? { ...titleStyle, color } : titleStyle,
-          category: categoryUsesPrimary ? { ...categoryStyle, color } : categoryStyle,
+          menuTitle: { ...titleStyle, color },
+          menuSubtitle: { ...subtitleStyle, color },
+          category: { ...categoryStyle, color },
         },
         elementColorOverrides: {
           ...(prev.elementColorOverrides || {}),
-          ...(titleUsesPrimary ? { menuTitle: false } : {}),
-          ...(categoryUsesPrimary ? { category: false } : {}),
+          menuTitle: false,
+          menuSubtitle: false,
+          category: false,
         },
         name: 'Custom',
       };
@@ -545,27 +573,24 @@ export const StyleSection: React.FC<StyleSectionProps> = ({ style, setStyle }) =
 
   const updateTextColor = (color: string) => {
     setStyle(prev => {
-      const titleStyle = prev.elementStyles.menuTitle || {};
-      const subtitleStyle = prev.elementStyles.menuSubtitle || {};
       const productNameStyle = prev.elementStyles.productName || {};
-      const titleUsesText = followsPaletteColor(titleStyle.color, prev.textColor, prev.elementColorOverrides?.menuTitle);
-      const subtitleUsesText = followsPaletteColor(subtitleStyle.color, prev.textColor, prev.elementColorOverrides?.menuSubtitle);
-      const productNameUsesText = followsPaletteColor(productNameStyle.color, prev.textColor, prev.elementColorOverrides?.productName);
+      const productDescriptionStyle = prev.elementStyles.productDescription || {};
+      const productPriceStyle = prev.elementStyles.productPrice || {};
 
       return {
         ...prev,
         textColor: color,
         elementStyles: {
           ...prev.elementStyles,
-          menuTitle: titleUsesText ? { ...titleStyle, color } : titleStyle,
-          menuSubtitle: subtitleUsesText ? { ...subtitleStyle, color } : subtitleStyle,
-          productName: productNameUsesText ? { ...productNameStyle, color } : productNameStyle,
+          productName: { ...productNameStyle, color },
+          productDescription: { ...productDescriptionStyle, color },
+          productPrice: { ...productPriceStyle, color },
         },
         elementColorOverrides: {
           ...(prev.elementColorOverrides || {}),
-          ...(titleUsesText ? { menuTitle: false } : {}),
-          ...(subtitleUsesText ? { menuSubtitle: false } : {}),
-          ...(productNameUsesText ? { productName: false } : {}),
+          productName: false,
+          productDescription: false,
+          productPrice: false,
         },
         name: 'Custom',
       };

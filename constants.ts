@@ -98,6 +98,8 @@ const createTemplate = (template: Omit<MenuStyle, 'scope' | 'sourceType' | 'isLo
   priceDecimalSeparator: DEFAULT_PRICE_DECIMAL_SEPARATOR,
   showPrices: true,
   showCurrencySymbol: true,
+  showCategoryImages: true,
+  categoryImageScale: 1,
   margins: {
     ...DEFAULT_MENU_MARGINS,
     top: template.pagePadding ?? DEFAULT_MENU_MARGINS.top,

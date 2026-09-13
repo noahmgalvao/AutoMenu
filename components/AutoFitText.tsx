@@ -61,6 +61,9 @@ export const AutoFitText: React.FC<AutoFitTextProps> = ({
   }, [allowSameWordBreak, availableWidthInset, containerSelector, evaluate, minimumFontSize, text, widthMode, style?.fontFamily, style?.fontWeight, style?.fontStyle, style?.letterSpacing, style?.textTransform]);
 
   const showLimitState = showOverflowFeedback && !fit.fits;
+  const editableTextColor = rest.contentEditable && typeof style?.color === 'string'
+    ? style.color
+    : undefined;
   const componentProps = {
     ...rest,
     ref: (node: HTMLElement | null) => { elementRef.current = node; },
@@ -80,7 +83,11 @@ export const AutoFitText: React.FC<AutoFitTextProps> = ({
     'data-word-fit-letter-spacing': style?.letterSpacing,
     'data-word-fit-text-transform': style?.textTransform as ElementStyle['textTransform'],
     className: `${allowSameWordBreak ? '' : 'automenu-word-safe'} ${showLimitState ? 'automenu-text-limit-exceeded' : ''} ${className}`,
-    style: { ...style, fontSize: `${fit.fontSize}px` },
+    style: {
+      ...style,
+      fontSize: `${fit.fontSize}px`,
+      ...(editableTextColor ? { WebkitTextFillColor: editableTextColor } : {}),
+    },
     onInput: (event: React.InputEvent<HTMLElement>) => {
       evaluate(event.currentTarget.innerText);
       onInput?.(event);

@@ -646,6 +646,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const compactControls = (style.categoryColumnCount || 1) > 1;
         const categoryAlign = catStyle.textAlign || 'left';
         const categoryImage = style.categoryImages?.[item.data];
+        const categoryImageScale = style.categoryImageScale || 1;
         const renderCategoryDivider = (key: string) => (
             <div key={key} className="h-px min-w-0 flex-grow opacity-40" style={{ backgroundColor: style.primaryColor }} />
         );
@@ -675,15 +676,15 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 <ProductControls type="category" catName={item.data} isMobileSelected={isSelected} index={idx} total={0} isLastInBlock={false} canMoveUp={false} canMoveDown={false} canMoveLeft={false} canMoveRight={false} hideGeneralControls={false} isPristineNewDefault={isPristineNewDefault} handlers={handlers} onEdit={(e: React.MouseEvent) => handlers.startEditing(e, item.data, elementId, 'category')} isDragging={isBeingDragged} showSelectionOutline={false} showAddControls={false} compactControls={compactControls} showGridMoveControls={false}/>
                 <div className={`flex w-full max-w-full min-w-0 items-center gap-0 ${compactControls ? 'px-1' : 'px-2'} ${categoryAlign === 'center' ? 'justify-center' : categoryAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
                     {(categoryAlign === 'center' || categoryAlign === 'right') && renderCategoryDivider('before')}
-                    {categoryImage?.url && (
+                    {style.showCategoryImages !== false && categoryImage?.url && (
                         <img
                             src={categoryImage.url}
                             alt=""
                             draggable={false}
                             className="mr-2 shrink-0 object-contain"
                             style={{
-                                width: `${categoryImage.width || 36}px`,
-                                height: `${categoryImage.height || 36}px`,
+                                width: `${(categoryImage.width || 36) * categoryImageScale}px`,
+                                height: `${(categoryImage.height || 36) * categoryImageScale}px`,
                                 maxWidth: '35%',
                             }}
                         />

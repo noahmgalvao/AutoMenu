@@ -31,18 +31,18 @@ export const useSelectionState = (
     const [selectedItems, setSelectedItems] = useState<SelectionItem[]>([]);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [formattingTarget, setFormattingTarget] = useState<FormattingTarget | null>(null);
-    const [multiSelectMode, setMultiSelectMode] = useState(false);
+    const [multiSelectMode, setMultiSelectModeState] = useState(false);
     const [showAddModal, setShowAddModal] = useState<{category: string, rect: DOMRect} | null>(null);
     const [selectedPageIndex, setSelectedPageIndex] = useState<number | null>(null);
     const lastRangeAnchorRef = useRef<SelectionItem | null>(null);
     const lastEmittedSelectionRef = useRef<string | null>(null);
-    const previousSelectionCountRef = useRef(0);
+    const setMultiSelectMode = useCallback((enabled: boolean) => {
+        setMultiSelectModeState(Boolean(enabled && selectedItems.length > 0));
+    }, [selectedItems.length]);
 
     useEffect(() => {
-        const previousCount = previousSelectionCountRef.current;
-        previousSelectionCountRef.current = selectedItems.length;
-        if (multiSelectMode && previousCount > 0 && selectedItems.length === 0) {
-            setMultiSelectMode(false);
+        if (multiSelectMode && selectedItems.length === 0) {
+            setMultiSelectModeState(false);
         }
     }, [multiSelectMode, selectedItems.length]);
     

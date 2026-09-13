@@ -178,8 +178,10 @@ export interface MenuStyle {
   sourceAssetId?: string | null;
   layoutMode: 'list' | 'grid' | 'cards';
   showImages: boolean;
+  showCategoryImages?: boolean;
   cardBackgroundColor?: string;
   imageScale?: number;
+  categoryImageScale?: number;
   columnCount: 1 | 2 | 3;
   categoryColumnCount?: 1 | 2 | 3;
   categoryColumnWidths?: number[];

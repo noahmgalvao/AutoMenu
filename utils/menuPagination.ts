@@ -337,8 +337,9 @@ const createPageItemHeightCalculator = (
         if (item.type === 'category-header') {
             const editButtonReserve = categoryColumnCount > 1 ? 32 : 52;
             const dividerReserve = categoryStyle.textAlign === 'center' ? 64 : 32;
-            const categoryImage = style.categoryImages?.[item.data];
-            const imageReserve = categoryImage?.url ? (categoryImage.width || 36) + 8 : 0;
+            const categoryImage = style.showCategoryImages !== false ? style.categoryImages?.[item.data] : undefined;
+            const categoryImageScale = style.categoryImageScale || 1;
+            const imageReserve = categoryImage?.url ? ((categoryImage.width || 36) * categoryImageScale) + 8 : 0;
             const letterSpacing = categoryStyle.letterSpacing || 0;
             const categoryCharWidth = (categoryFontSize * 0.6) + letterSpacing;
             const lines = getSafeLineCount(
@@ -346,7 +347,7 @@ const createPageItemHeightCalculator = (
                 Math.max(24, categoryColumnWidth - editButtonReserve - dividerReserve - imageReserve),
                 categoryCharWidth
             );
-            const imageHeight = categoryImage?.url ? categoryImage.height || 36 : 0;
+            const imageHeight = categoryImage?.url ? (categoryImage.height || 36) * categoryImageScale : 0;
             return Math.max(categoryFontSize * 1.25 * lines, imageHeight, 28) + spacing.categoryToProduct + 8;
         }
         if (item.type === 'product-item') return calculateItemHeight(item.data, style, false, 1, categoryColumnWidth, categoryColumnCount);

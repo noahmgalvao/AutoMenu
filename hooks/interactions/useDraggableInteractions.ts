@@ -426,9 +426,7 @@ export const useDraggableInteractions = (
         document.body.style.webkitUserSelect = 'none';
         document.body.style.cursor = 'grabbing';
         document.body.style.touchAction = 'none';
-        document.body.style.overflow = 'hidden';
         document.body.style.overscrollBehavior = 'none';
-        root.style.overflow = 'hidden';
         root.style.overscrollBehavior = 'none';
         root.style.touchAction = 'none';
     }, []);
@@ -463,9 +461,6 @@ export const useDraggableInteractions = (
         }));
 
         scrollContainerStyleRef.current.forEach(({ element }) => {
-            element.style.overflow = 'hidden';
-            element.style.overflowX = 'hidden';
-            element.style.overflowY = 'hidden';
             element.style.touchAction = 'none';
             element.style.overscrollBehavior = 'none';
         });
@@ -3207,7 +3202,11 @@ export const useDraggableInteractions = (
 
             const draggedProduct = type === 'product' ? products.find((product) => product.id === id) : null;
 
-            clearPendingActivation();
+            if (isDraggingRef.current || activePointerRef.current) {
+                cancelAndCleanup();
+            } else {
+                clearPendingActivation();
+            }
             attachGlobalListeners();
 
             const pending: PendingDrag = {
@@ -3235,7 +3234,7 @@ export const useDraggableInteractions = (
                 handleSelection(type === 'product' && draggedProduct?.isFreeText ? 'freeText' : type, id);
             }
         },
-        [activateDrag, attachGlobalListeners, clearPendingActivation, editingId, handleSelection, multiSelectMode, products]
+        [activateDrag, attachGlobalListeners, cancelAndCleanup, clearPendingActivation, editingId, handleSelection, multiSelectMode, products]
     );
 
     const handleNativeDragStart = useCallback(

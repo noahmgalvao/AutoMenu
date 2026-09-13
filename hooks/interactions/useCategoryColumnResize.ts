@@ -24,6 +24,10 @@ interface ResizeSession {
     paginationSignature: string;
     source: HTMLElement;
     feedbackUntil: number;
+    scrollContainer: HTMLElement | null;
+    scrollLeft: number;
+    scrollTouchAction: string;
+    scrollOverscrollBehavior: string;
 }
 
 const MIN_COLUMN_WIDTH_PX = 96;
@@ -100,6 +104,19 @@ export const useCategoryColumnResize = (
             }));
         }
 
+        try {
+            if (session.source.hasPointerCapture?.(session.pointerId)) {
+                session.source.releasePointerCapture(session.pointerId);
+            }
+        } catch {
+            // The selected item may have re-rendered before the gesture ends.
+        }
+        if (session.scrollContainer) {
+            session.scrollContainer.style.touchAction = session.scrollTouchAction;
+            session.scrollContainer.style.overscrollBehavior = session.scrollOverscrollBehavior;
+            session.scrollContainer.scrollLeft = session.scrollLeft;
+        }
+
         document.body.style.removeProperty('cursor');
         document.body.style.removeProperty('user-select');
         sessionRef.current = null;
@@ -115,6 +132,10 @@ export const useCategoryColumnResize = (
             const session = sessionRef.current;
             if (!session || event.pointerId !== session.pointerId) return;
             event.preventDefault();
+            event.stopPropagation();
+            if (session.scrollContainer && session.scrollContainer.scrollLeft !== session.scrollLeft) {
+                session.scrollContainer.scrollLeft = session.scrollLeft;
+            }
 
             const gridRect = session.grid.getBoundingClientRect();
             const pageRect = session.page.getBoundingClientRect();
@@ -176,14 +197,25 @@ export const useCategoryColumnResize = (
             if (sessionRef.current?.pointerId !== event.pointerId) return;
             finishResize(false);
         };
+        const handleTouchMove = (event: TouchEvent) => {
+            const session = sessionRef.current;
+            if (!session) return;
+            if (event.cancelable) event.preventDefault();
+            event.stopPropagation();
+            if (session.scrollContainer && session.scrollContainer.scrollLeft !== session.scrollLeft) {
+                session.scrollContainer.scrollLeft = session.scrollLeft;
+            }
+        };
 
         window.addEventListener('pointermove', handlePointerMove, { passive: false });
         window.addEventListener('pointerup', handlePointerUp);
         window.addEventListener('pointercancel', handlePointerCancel);
+        window.addEventListener('touchmove', handleTouchMove, { passive: false, capture: true });
         return () => {
             window.removeEventListener('pointermove', handlePointerMove);
             window.removeEventListener('pointerup', handlePointerUp);
             window.removeEventListener('pointercancel', handlePointerCancel);
+            window.removeEventListener('touchmove', handleTouchMove, true);
         };
     }, [context, finishResize, style]);
 
@@ -218,6 +250,7 @@ export const useCategoryColumnResize = (
                 : style.categoryColumnWidths,
             columnCount,
         );
+        const scrollContainer = source.closest<HTMLElement>('[data-automenu-editor-canvas="true"]');
 
         sessionRef.current = {
             pageIndex,
@@ -230,11 +263,19 @@ export const useCategoryColumnResize = (
             paginationSignature: context ? getPaginationSignature(style, context) : '',
             source,
             feedbackUntil: 0,
+            scrollContainer,
+            scrollLeft: scrollContainer?.scrollLeft || 0,
+            scrollTouchAction: scrollContainer?.style.touchAction || '',
+            scrollOverscrollBehavior: scrollContainer?.style.overscrollBehavior || '',
         };
         liveWidthsRef.current = initialWidths;
         setLiveCategoryColumnWidths(liveWidthsRef.current);
         document.body.style.cursor = 'col-resize';
         document.body.style.userSelect = 'none';
+        if (scrollContainer) {
+            scrollContainer.style.touchAction = 'none';
+            scrollContainer.style.overscrollBehavior = 'none';
+        }
     }, [context, style]);
 
     return {

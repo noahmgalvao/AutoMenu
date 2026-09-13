@@ -910,15 +910,15 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             return distance < bestDistance ? columnEl : best;
         }, null);
         const columnIndex = Number(clickedColumnEl?.dataset.dragColumnIndex ?? 0);
+        const columnRect = clickedColumnEl?.getBoundingClientRect();
 
         let floorId: string | null = null;
-        let floorBottom = 0;
+        let floorBottom = ((columnRect?.top ?? (pageRect.top + (menuMargins.top * currentScale))) - pageRect.top) / currentScale;
         let ceilingId: string | null = null;
         let ceilingTop = A4_HEIGHT_PX;
         let minDistAbove = Infinity;
         let minDistBelow = Infinity;
         const searchRoot = clickedColumnEl || pageEl;
-        const columnRect = clickedColumnEl?.getBoundingClientRect();
         const safeClientTop = getCollisionSafeFreeTextTop({
             root: pageEl,
             desiredTop: pageRect.top + (clickY * currentScale),
@@ -1370,6 +1370,13 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 ...prev,
                 customCategoryOrder: currentOrder,
                 customProductOrder: { ...(prev.customProductOrder || {}), [ghostCategory]: [newId] },
+                categoryPlacements: {
+                    ...(prev.categoryPlacements || {}),
+                    [ghostCategory]: {
+                        pageIndex: placement.pageIndex,
+                        columnIndex: placement.columnIndex,
+                    },
+                },
                 name: 'Custom',
             };
         });
@@ -1714,9 +1721,11 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 price: 0,
                 category: '',
                 isFreeText: true,
-            }, getFreeTextPlacementBelowSelection() || getLastFreeTextPlacement());
+            }, getFreeTextPlacementFromPoint(lastCanvasPointRef.current)
+                || getFreeTextPlacementBelowSelection()
+                || getLastFreeTextPlacement());
         }, 0);
-    }, [getLastFreeTextPlacement, getFreeTextPlacementBelowSelection, insertFreeTextProduct, props.externalAction, readOnly]);
+    }, [getLastFreeTextPlacement, getFreeTextPlacementBelowSelection, getFreeTextPlacementFromPoint, insertFreeTextProduct, props.externalAction, readOnly]);
 
     const openObjectMenu = useCallback((event: React.MouseEvent, item: CanvasContextMenuItem) => {
         event.preventDefault();
@@ -1957,8 +1966,8 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 <div
                     ref={objectMenuRef}
                     data-canvas-object-menu="true"
-                    className="fixed z-[10000] min-w-52 max-h-[calc(100vh-16px)] overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-2xl text-sm text-slate-700"
-                    style={{ left: menuLeft, top: menuTop }}
+                    className="fixed z-[10000] min-w-52 max-h-[calc(100vh-16px)] select-none overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-2xl text-sm text-slate-700"
+                    style={{ left: menuLeft, top: menuTop, WebkitUserSelect: 'none', userSelect: 'none' }}
                     onClick={(event) => event.stopPropagation()}
                     onPointerDown={(event) => event.stopPropagation()}
                     onContextMenu={(event) => event.preventDefault()}
