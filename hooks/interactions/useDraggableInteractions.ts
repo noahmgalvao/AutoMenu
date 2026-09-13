@@ -265,8 +265,10 @@ export const useDraggableInteractions = (
         cursor: string;
         touchAction: string;
         overflow: string;
+        overflowY: string;
         overscrollBehavior: string;
         htmlOverflow: string;
+        htmlOverflowY: string;
         htmlOverscrollBehavior: string;
         htmlTouchAction: string;
         scrollX: number;
@@ -397,8 +399,10 @@ export const useDraggableInteractions = (
         document.body.style.cursor = bodyStyleRef.current.cursor;
         document.body.style.touchAction = bodyStyleRef.current.touchAction;
         document.body.style.overflow = bodyStyleRef.current.overflow;
+        document.body.style.overflowY = bodyStyleRef.current.overflowY;
         document.body.style.overscrollBehavior = bodyStyleRef.current.overscrollBehavior;
         root.style.overflow = bodyStyleRef.current.htmlOverflow;
+        root.style.overflowY = bodyStyleRef.current.htmlOverflowY;
         root.style.overscrollBehavior = bodyStyleRef.current.htmlOverscrollBehavior;
         root.style.touchAction = bodyStyleRef.current.htmlTouchAction;
         window.scrollTo(bodyStyleRef.current.scrollX, bodyStyleRef.current.scrollY);
@@ -415,8 +419,10 @@ export const useDraggableInteractions = (
             cursor: document.body.style.cursor,
             touchAction: document.body.style.touchAction,
             overflow: document.body.style.overflow,
+            overflowY: document.body.style.overflowY,
             overscrollBehavior: document.body.style.overscrollBehavior,
             htmlOverflow: root.style.overflow,
+            htmlOverflowY: root.style.overflowY,
             htmlOverscrollBehavior: root.style.overscrollBehavior,
             htmlTouchAction: root.style.touchAction,
             scrollX: window.scrollX,
@@ -426,7 +432,9 @@ export const useDraggableInteractions = (
         document.body.style.webkitUserSelect = 'none';
         document.body.style.cursor = 'grabbing';
         document.body.style.touchAction = 'none';
+        document.body.style.overflowY = 'hidden';
         document.body.style.overscrollBehavior = 'none';
+        root.style.overflowY = 'hidden';
         root.style.overscrollBehavior = 'none';
         root.style.touchAction = 'none';
     }, []);
@@ -461,6 +469,7 @@ export const useDraggableInteractions = (
         }));
 
         scrollContainerStyleRef.current.forEach(({ element }) => {
+            element.style.overflowY = 'hidden';
             element.style.touchAction = 'none';
             element.style.overscrollBehavior = 'none';
         });
@@ -502,6 +511,18 @@ export const useDraggableInteractions = (
         touchCancelHandlerRef.current(event);
     }, []);
 
+    const stableScrollBlocker = useCallback(() => {
+        if (!isDraggingRef.current) return;
+        keepScrollLocked();
+    }, [keepScrollLocked]);
+
+    const stableWheelBlocker = useCallback((event: WheelEvent) => {
+        if (!isDraggingRef.current) return;
+        if (event.cancelable) event.preventDefault();
+        event.stopPropagation();
+        keepScrollLocked();
+    }, [keepScrollLocked]);
+
     const removeNativeTouchBlocker = useCallback(() => {
         if (!nativeTouchBlockerAttachedRef.current || typeof window === 'undefined') return;
         window.removeEventListener('touchmove', stableTouchMoveBlocker, true);
@@ -510,8 +531,11 @@ export const useDraggableInteractions = (
         document.removeEventListener('touchmove', stableTouchMoveBlocker, true);
         document.removeEventListener('touchend', stableTouchEndBlocker, true);
         document.removeEventListener('touchcancel', stableTouchCancelBlocker, true);
+        window.removeEventListener('wheel', stableWheelBlocker, true);
+        window.removeEventListener('scroll', stableScrollBlocker, true);
+        document.removeEventListener('scroll', stableScrollBlocker, true);
         nativeTouchBlockerAttachedRef.current = false;
-    }, [stableTouchCancelBlocker, stableTouchEndBlocker, stableTouchMoveBlocker]);
+    }, [stableScrollBlocker, stableTouchCancelBlocker, stableTouchEndBlocker, stableTouchMoveBlocker, stableWheelBlocker]);
 
     useEffect(() => {
         removeNativeTouchBlockerRef.current = removeNativeTouchBlocker;
@@ -525,8 +549,11 @@ export const useDraggableInteractions = (
         document.addEventListener('touchmove', stableTouchMoveBlocker, DRAG_EVENT_OPTIONS);
         document.addEventListener('touchend', stableTouchEndBlocker, DRAG_EVENT_OPTIONS);
         document.addEventListener('touchcancel', stableTouchCancelBlocker, DRAG_EVENT_OPTIONS);
+        window.addEventListener('wheel', stableWheelBlocker, DRAG_EVENT_OPTIONS);
+        window.addEventListener('scroll', stableScrollBlocker, true);
+        document.addEventListener('scroll', stableScrollBlocker, true);
         nativeTouchBlockerAttachedRef.current = true;
-    }, [stableTouchCancelBlocker, stableTouchEndBlocker, stableTouchMoveBlocker]);
+    }, [stableScrollBlocker, stableTouchCancelBlocker, stableTouchEndBlocker, stableTouchMoveBlocker, stableWheelBlocker]);
 
     const releasePointerCapture = useCallback(() => {
         const capture = pointerCaptureRef.current;
@@ -2398,9 +2425,7 @@ export const useDraggableInteractions = (
                 applyBodyDragStyles();
                 lockScrollableAncestors(pending.element);
                 keepScrollLocked();
-                if (pending.pointerType === 'touch') {
-                    attachNativeTouchBlocker();
-                }
+                attachNativeTouchBlocker();
 
                 try {
                     pending.element.setPointerCapture(pending.pointerId);

@@ -64,6 +64,12 @@ export const AutoFitText: React.FC<AutoFitTextProps> = ({
   const editableTextColor = rest.contentEditable && typeof style?.color === 'string'
     ? style.color
     : undefined;
+  const editableColorStyle = editableTextColor
+    ? ({
+        WebkitTextFillColor: editableTextColor,
+        '--automenu-edit-color': editableTextColor,
+      } as React.CSSProperties)
+    : {};
   const componentProps = {
     ...rest,
     ref: (node: HTMLElement | null) => { elementRef.current = node; },
@@ -86,7 +92,7 @@ export const AutoFitText: React.FC<AutoFitTextProps> = ({
     style: {
       ...style,
       fontSize: `${fit.fontSize}px`,
-      ...(editableTextColor ? { WebkitTextFillColor: editableTextColor } : {}),
+      ...editableColorStyle,
     },
     onInput: (event: React.InputEvent<HTMLElement>) => {
       evaluate(event.currentTarget.innerText);

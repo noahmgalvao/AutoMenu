@@ -34,6 +34,17 @@ body {
   text-shadow: 0 1px 2px rgb(0 0 0 / 0.9), 0 0 1px rgb(0 0 0 / 0.9);
 }
 
+[data-menu-print-page="true"] [contenteditable="true"]::selection {
+  color: var(--automenu-edit-color, currentColor) !important;
+  -webkit-text-fill-color: var(--automenu-edit-color, currentColor) !important;
+  background-color: rgb(99 102 241 / 0.42);
+}
+
+[data-menu-print-page="true"] [contenteditable="true"]::-moz-selection {
+  color: var(--automenu-edit-color, currentColor) !important;
+  background-color: rgb(99 102 241 / 0.42);
+}
+
 /* Custom scrollbar for better UX */
 ::-webkit-scrollbar {
   width: 8px;
