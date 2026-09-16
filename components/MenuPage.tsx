@@ -154,6 +154,7 @@ interface MenuPageProps {
     pageCount: number;
     onAddPage: (index: number, position: 'before' | 'after') => void;
     onDeletePage: (index: number) => void;
+    onSetPageNumbersVisible: (visible: boolean) => void;
 }
 
 export const MenuPage: React.FC<MenuPageProps> = ({
@@ -166,6 +167,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
     pageCount,
     onAddPage,
     onDeletePage,
+    onSetPageNumbersVisible,
 }) => {
     const isPageSelected = handlers.isSelected?.('page', String(pageIndex)) ?? handlers.selectedPageIndex === pageIndex;
     const pageAddControls = handlers.getPageAddControls?.(pageIndex) || { before: true, after: true };
@@ -182,6 +184,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
     const minimumFontSize = resolveMinimumFontSize(style);
     const pageNumberFontSize = roundFontSize(Math.max(minimumFontSize, Math.min(50, Number(pageNumberStyle.fontSize) || 14)), 14);
     const pageNumberElementId = `page-number-${pageIndex}`;
+    const showPageNumbers = style.showPageNumbers !== false;
     const isFormattingPageNumber = handlers.formattingTarget?.type === 'pageNumber'
         && handlers.formattingTarget?.elementId === pageNumberElementId;
     const margins = resolveMenuMargins(style);
@@ -631,6 +634,21 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         minFontSize={minimumFontSize}
                         onChange={(newStyle) => handlers.handleInlineStyleChange?.(handlers.formattingTarget, newStyle)}
                         onDismiss={() => handlers.setFormattingTarget?.(null)}
+                        header={(
+                            <>
+                                <span className="text-[10px] font-semibold text-slate-500">Numeração do cardápio</span>
+                                <button
+                                    type="button"
+                                    data-drag-ignore="true"
+                                    className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded transition-colors ${showPageNumbers ? 'text-red-500 hover:bg-red-50' : 'text-indigo-600 hover:bg-indigo-50'}`}
+                                    onClick={() => onSetPageNumbersVisible(!showPageNumbers)}
+                                    title={showPageNumbers ? 'Excluir numeração' : 'Adicionar numeração'}
+                                    aria-label={showPageNumbers ? 'Excluir numeração do cardápio' : 'Adicionar numeração ao cardápio'}
+                                >
+                                    {showPageNumbers ? <Trash2 size={14} /> : <Plus size={14} />}
+                                </button>
+                            </>
+                        )}
                     />
                 )}
                 <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-40 pointer-events-none">
@@ -638,7 +656,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         id={pageNumberElementId}
                         data-page-number="true"
                         data-print-control="true"
-                        className="inline-flex min-w-8 h-8 px-2 items-center justify-center opacity-40 pointer-events-auto cursor-pointer select-none touch-none"
+                        className={`inline-flex min-w-8 h-8 px-2 items-center justify-center pointer-events-auto cursor-pointer select-none touch-none ${showPageNumbers ? 'opacity-40' : 'opacity-0'}`}
                         style={{
                             color: pageNumberStyle.color || style.textColor,
                             fontSize: `${pageNumberFontSize}px`,

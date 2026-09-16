@@ -1958,6 +1958,11 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                         pageCount={pages.length}
                         onAddPage={handleAddPage}
                         onDeletePage={(idx) => { handlers.setShowDeletePageConfirm(true); handlers.setPageToDelete(idx); }}
+                        onSetPageNumbersVisible={(visible) => onStyleUpdate?.((previous) => ({
+                            ...previous,
+                            showPageNumbers: visible,
+                            name: 'Custom',
+                        }))}
                     />
                 ))}
             </div>

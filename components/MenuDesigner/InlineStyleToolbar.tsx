@@ -13,12 +13,14 @@ interface InlineStyleToolbarProps {
     controls?: 'all' | 'sizeColor';
     maxFontSize?: number;
     minFontSize?: number;
+    header?: React.ReactNode;
 }
 
-export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, value, onChange, onDismiss, controls = 'all', maxFontSize, minFontSize }) => {
+export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, value, onChange, onDismiss, controls = 'all', maxFontSize, minFontSize, header }) => {
     const toolbarRef = useRef<HTMLDivElement>(null);
     const [position, setPosition] = useState({ left: 8, top: 8, width: 270 });
     const isSizeColorOnly = controls === 'sizeColor';
+    const hasHeader = Boolean(header);
 
     useEffect(() => {
         const dismissOnOutsidePointer = (event: PointerEvent) => {
@@ -41,8 +43,8 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
         const updatePosition = () => {
             const targetRect = target.getBoundingClientRect();
             const toolbarHeight = toolbarRef.current?.getBoundingClientRect().height || 76;
-            const preferredWidth = isSizeColorOnly ? 120 : 270;
-            const minimumWidth = isSizeColorOnly ? 120 : 210;
+            const preferredWidth = hasHeader ? 210 : isSizeColorOnly ? 120 : 270;
+            const minimumWidth = hasHeader ? 190 : isSizeColorOnly ? 120 : 210;
             const width = Math.min(preferredWidth, Math.max(minimumWidth, window.innerWidth - 16));
             const left = Math.max(8, Math.min(window.innerWidth - width - 8, targetRect.left + (targetRect.width / 2) - (width / 2)));
             const top = targetRect.top - toolbarHeight - 8 >= 8
@@ -63,7 +65,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
             window.removeEventListener('resize', updatePosition);
             window.removeEventListener('scroll', updatePosition, true);
         };
-    }, [isSizeColorOnly, targetElementId]);
+    }, [hasHeader, isSizeColorOnly, targetElementId]);
 
     return createPortal(
         <div
@@ -75,6 +77,11 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
         >
+            {header && (
+                <div className="mb-1.5 flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5">
+                    {header}
+                </div>
+            )}
             <div className="flex gap-1.5">
                 {!isSizeColorOnly && (
                     <div className="min-w-0 flex-1">

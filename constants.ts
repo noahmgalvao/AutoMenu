@@ -98,6 +98,7 @@ const createTemplate = (template: Omit<MenuStyle, 'scope' | 'sourceType' | 'isLo
   priceDecimalSeparator: DEFAULT_PRICE_DECIMAL_SEPARATOR,
   showPrices: true,
   showCurrencySymbol: true,
+  showPageNumbers: true,
   showCategoryImages: true,
   categoryImageScale: 1,
   margins: {

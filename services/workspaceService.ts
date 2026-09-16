@@ -391,6 +391,7 @@ const withStyleDefaults = (style: MenuStyle | null | undefined): MenuStyle => {
     priceDecimalSeparator: resolvePriceDecimalSeparator(source.priceDecimalSeparator),
     showPrices: source.showPrices !== false,
     showCurrencySymbol: source.showCurrencySymbol !== false,
+    showPageNumbers: source.showPageNumbers !== false,
     showCategoryImages: source.showCategoryImages !== false,
     categoryImageScale: Number.isFinite(Number(source.categoryImageScale))
       ? Math.max(0.5, Math.min(2, Number(source.categoryImageScale)))

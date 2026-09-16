@@ -206,6 +206,7 @@ export interface MenuStyle {
   priceDecimalSeparator?: PriceDecimalSeparator;
   showPrices?: boolean;
   showCurrencySymbol?: boolean;
+  showPageNumbers?: boolean;
   margins?: MenuMargins;
   contentSpacing?: MenuContentSpacing;
   elementColorOverrides?: Partial<Record<'menuTitle' | 'menuSubtitle' | 'pageNumber' | 'category' | 'productName' | 'productPrice' | 'productDescription', boolean>>;
