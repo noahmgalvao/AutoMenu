@@ -339,10 +339,10 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
             ? 'h-6 w-6 md:h-[15px] md:w-[15px]'
             : 'h-7 w-7 md:h-6 md:w-6';
     const generalControlsPosition = compactControls && containMobileControls
-        ? 'bottom-full right-8 mb-2 md:bottom-auto md:mb-0 md:-top-[38px]'
+        ? `bottom-full right-8 mb-2 md:bottom-auto md:mb-0 ${type === 'product' ? 'md:-top-[21px]' : 'md:-top-[38px]'}`
         : compactControls
-            ? 'top-[-38px] right-8'
-            : 'top-[-10px] right-[-10px]';
+            ? `${type === 'product' ? 'top-[-21px]' : 'top-[-38px]'} right-8`
+            : `${type === 'product' ? 'top-[-10px] md:-top-[36px]' : 'top-[-10px]'} right-[-10px]`;
     const generalControlsMaxWidth = compactControls
         ? 'max-w-[calc(100%_-_2.5rem)]'
         : 'max-w-[calc(100%_-_0.5rem)]';
@@ -725,6 +725,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const productSelectionType = product.isFreeText ? 'freeText' : 'product';
         const isSelected = handlers.isSelected?.(productSelectionType, product.id) ?? handlers.selectedId === product.id;
         const isEditing = handlers.editingId === product.id;
+        const isNameEditing = isEditing && formattingTarget?.type === 'product' && formattingTarget.id === product.id && formattingTarget.field === 'name';
+        const isPriceEditing = isEditing && formattingTarget?.type === 'product' && formattingTarget.id === product.id && formattingTarget.field === 'price';
+        const isDescriptionEditing = isEditing && formattingTarget?.type === 'product' && formattingTarget.id === product.id && formattingTarget.field === 'description';
         const hiddenProductIds = new Set(style.hiddenProductIds || []);
         const visibleCatProducts = (handlers.groupedProducts[item.category] || [])
             .filter((candidate: Product) => !hiddenProductIds.has(candidate.id));
@@ -855,7 +858,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                     fitScope="productName"
                                     widthMode="flex"
                                     showOverflowFeedback={isEditing}
-                                    id={`product-name-${product.id}`} data-product-edit-id={product.id} className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditing ? 'bg-white ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : ''}`}
+                                    id={`product-name-${product.id}`} data-product-edit-id={product.id} className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditing ? 'cursor-text select-text touch-auto pointer-events-auto' : ''} ${isNameEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 px-1' : ''}`}
                                     style={{ 
                                         color: nameStyle.color || style.textColor,
                                         fontFamily: nameStyle.fontFamily,
@@ -896,7 +899,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                     fitScope="productPrice"
                                     containerSelector={`#product-container-${product.id}`}
                                     showOverflowFeedback={isEditing}
-                                    id={`product-price-${product.id}`} data-product-edit-id={product.id} className={`whitespace-nowrap outline-none rounded ${isEditing ? 'bg-white ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : ''}`}
+                                    id={`product-price-${product.id}`} data-product-edit-id={product.id} className={`whitespace-nowrap outline-none rounded ${isEditing ? 'cursor-text select-text touch-auto pointer-events-auto' : ''} ${isPriceEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 px-1' : ''}`}
                                     style={{ 
                                         color: priceStyle.color || style.textColor,
                                         fontFamily: priceStyle.fontFamily,
@@ -920,7 +923,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             fitScope="productDescription"
                             widthMode="parent"
                             showOverflowFeedback={isEditing}
-                            id={`product-description-${product.id}`} data-product-edit-id={product.id} className={`max-w-full opacity-80 break-words [overflow-wrap:anywhere] [word-break:normal] leading-relaxed outline-none rounded ${isEditing ? 'min-h-[1.5em] bg-white ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : ''}`}
+                            id={`product-description-${product.id}`} data-product-edit-id={product.id} className={`max-w-full opacity-80 break-words [overflow-wrap:anywhere] [word-break:normal] leading-relaxed outline-none rounded ${isEditing ? 'min-h-[1.5em] cursor-text select-text touch-auto pointer-events-auto' : ''} ${isDescriptionEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 px-1' : ''}`}
                             style={{ 
                                 color: descStyle.color || style.textColor,
                                 fontFamily: descStyle.fontFamily,
@@ -991,6 +994,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                      const canMoveRight = productColumnCount > 1 && productColumnIndex < productColumnCount - 1;
                      const isBeingDragged = handlers.draggedItem?.id === product.id;
                      const isEditing = handlers.editingId === product.id;
+                     const isNameEditing = isEditing && formattingTarget?.type === 'product' && formattingTarget.id === product.id && formattingTarget.field === 'name';
+                     const isPriceEditing = isEditing && formattingTarget?.type === 'product' && formattingTarget.id === product.id && formattingTarget.field === 'price';
+                     const isDescriptionEditing = isEditing && formattingTarget?.type === 'product' && formattingTarget.id === product.id && formattingTarget.field === 'description';
                      const productAddControls = handlers.getSelectionAddControls?.('product', product.id) || { top: true, bottom: true };
                      const isPristineNewDefault = isPristineNewProduct(product);
                      return (
@@ -1042,7 +1048,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         showOverflowFeedback={isEditing}
                                                         id={`product-name-${product.id}`}
                                                         data-product-edit-id={product.id}
-                                                        className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditing ? 'bg-white ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : ''}`}
+                                                        className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditing ? 'cursor-text select-text touch-auto pointer-events-auto' : ''} ${isNameEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 px-1' : ''}`}
                                                         style={{ color: nameStyle.color || style.textColor, fontFamily: nameStyle.fontFamily, fontSize: clampFontSize(style, 'productName', nameStyle.fontSize, 18), fontWeight: nameStyle.fontWeight, fontStyle: nameStyle.italic ? 'italic' : 'normal', textDecoration: nameStyle.underline ? 'underline' : 'none', textAlign: nameStyle.textAlign, textTransform: nameStyle.textTransform }}
                                                         contentEditable={isEditing}
                                                         suppressContentEditableWarning
@@ -1079,7 +1085,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         showOverflowFeedback={isEditing}
                                                         id={`product-price-${product.id}`}
                                                         data-product-edit-id={product.id}
-                                                        className={`whitespace-nowrap outline-none ${isEditing ? 'ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
+                                                        className={`whitespace-nowrap outline-none rounded ${isEditing ? 'cursor-text select-text touch-auto pointer-events-auto' : ''} ${isPriceEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 px-1' : ''}`}
                                                         style={{ textAlign: priceStyle.textAlign }}
                                                         contentEditable={isEditing}
                                                         tabIndex={isEditing ? 0 : undefined}
@@ -1105,7 +1111,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                 showOverflowFeedback={isEditing}
                                                 id={`product-description-${product.id}`}
                                                 data-product-edit-id={product.id}
-                                                className={`max-w-full opacity-75 break-words [overflow-wrap:anywhere] [word-break:normal] flex-grow outline-none rounded ${isEditing ? 'min-h-[1.5em] bg-white ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : 'line-clamp-4'}`}
+                                                className={`max-w-full opacity-75 break-words [overflow-wrap:anywhere] [word-break:normal] flex-grow outline-none rounded ${isEditing ? 'min-h-[1.5em] cursor-text select-text touch-auto pointer-events-auto' : 'line-clamp-4'} ${isDescriptionEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 px-1' : ''}`}
                                                 style={{ color: descStyle.color || style.textColor, fontFamily: descStyle.fontFamily, fontSize: clampFontSize(style, 'productDescription', descStyle.fontSize, 14), fontWeight: descStyle.fontWeight, fontStyle: descStyle.italic ? 'italic' : 'normal', textDecoration: descStyle.underline ? 'underline' : 'none', textAlign: descStyle.textAlign }}
                                                 contentEditable={isEditing}
                                                 tabIndex={isEditing ? 0 : undefined}
