@@ -1270,41 +1270,6 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         if (!onAddProduct || !onStyleUpdate) return false;
 
         const newId = crypto.randomUUID();
-        if (placement?.targetCategory) {
-            const targetCategory = placement.targetCategory;
-            const targetProducts = handlers.groupedProducts[targetCategory] || products.filter((candidate) => candidate.category === targetCategory);
-
-            onStyleUpdate((prev) => {
-                const productOrder = { ...(prev.customProductOrder || {}) };
-                const currentOrder = Array.from(new Set([
-                    ...(productOrder[targetCategory] || []),
-                    ...targetProducts.map((candidate: Product) => candidate.id),
-                ])).filter((id) => id !== newId);
-                const anchorIndex = placement.targetProductId
-                    ? currentOrder.indexOf(placement.targetProductId)
-                    : -1;
-                const insertIndex = anchorIndex === -1
-                    ? currentOrder.length + indexOffset
-                    : anchorIndex + 1 + indexOffset;
-                currentOrder.splice(Math.max(0, Math.min(insertIndex, currentOrder.length)), 0, newId);
-
-                return {
-                    ...prev,
-                    customProductOrder: { ...productOrder, [targetCategory]: currentOrder },
-                    name: 'Custom',
-                };
-            });
-
-            onAddProduct(targetCategory, undefined, true, newId, {
-                name: product.name || 'Novo texto',
-                description: product.description || '',
-                price: product.price || 0,
-                customMarginTop: 0,
-                styles: { ...(product.styles || {}) },
-            });
-            return true;
-        }
-
         const ghostCategory = `${FREE_TEXT_PREFIX}${newId}`;
 
         if (!placement) {
@@ -1359,7 +1324,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             return currentOrder.length;
         };
 
-        const newItemMargin = Math.max(0, placement.top - placement.floorBottom) + (indexOffset * 46);
+        const newItemTop = Math.max(0, placement.top + (indexOffset * 46));
 
         onStyleUpdate(prev => {
             const currentOrder = getCurrentOrder(prev.customCategoryOrder);
@@ -1377,6 +1342,14 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                         columnIndex: placement.columnIndex,
                     },
                 },
+                categoryPositions: {
+                    ...(prev.categoryPositions || {}),
+                    [ghostCategory]: {
+                        pageIndex: placement.pageIndex,
+                        columnIndex: placement.columnIndex,
+                        y: newItemTop,
+                    },
+                },
                 name: 'Custom',
             };
         });
@@ -1385,12 +1358,12 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             name: product.name || 'Novo texto',
             description: product.description || '',
             price: product.price || 0,
-            customMarginTop: newItemMargin,
+            customMarginTop: 0,
             styles: { ...(product.styles || {}) },
         });
 
         return true;
-    }, [getCategoryOrder, handlers.groupedProducts, handlers.sortedCategories, insertCategoryAfter, onAddProduct, onStyleUpdate, products]);
+    }, [getCategoryOrder, handlers.sortedCategories, insertCategoryAfter, onAddProduct, onStyleUpdate, products]);
 
     const addNativeClipboardText = useCallback((
         text: string,

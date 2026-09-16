@@ -493,13 +493,14 @@ const buildLockedPagination = (
         if (visibleProducts.length === 0) return;
 
         const freePosition = style.categoryPositions?.[category];
+        const isDetachedFreeText = category.startsWith(FREE_TEXT_PREFIX) && Boolean(freePosition);
         const assignedPlacement = categoryPlacementAssignments[category];
         const placement = normalizePlacement(
             freePosition
                 ? { pageIndex: freePosition.pageIndex, columnIndex: freePosition.columnIndex }
                 : assignedPlacement || fallbackPlacement
         );
-        fallbackPlacement = placement;
+        if (!isDetachedFreeText) fallbackPlacement = placement;
 
         if (category.startsWith(FREE_TEXT_PREFIX)) {
             let remainingItems: PageItem[] = visibleProducts.map((product) => ({
@@ -508,6 +509,21 @@ const buildLockedPagination = (
                 category,
             }));
             let currentPlacement = placement;
+
+            if (isDetachedFreeText) {
+                const page = ensurePage(currentPlacement.pageIndex);
+                const column = page.columns[Math.max(0, Math.min(currentPlacement.columnIndex, page.columns.length - 1))];
+                column.chunks.push({
+                    chunkId: getNextChunkId(category),
+                    category,
+                    startsCategory: false,
+                    columnIndex: column.columnIndex,
+                    items: remainingItems,
+                    estimatedHeight: remainingItems.reduce((total, item) => total + getItemHeight(item), 0),
+                    flowOffsetBefore: 0,
+                });
+                return;
+            }
 
             while (remainingItems.length > 0) {
                 let availableHeight = getRemainingHeight(currentPlacement);

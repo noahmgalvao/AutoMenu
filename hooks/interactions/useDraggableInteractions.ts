@@ -713,6 +713,18 @@ export const useDraggableInteractions = (
                 });
             }
 
+            if (
+                draggedProduct?.isFreeText &&
+                categoryPositionsSnapshot &&
+                onStyleUpdate
+            ) {
+                onStyleUpdate((previous) => ({
+                    ...previous,
+                    categoryPositions: { ...categoryPositionsSnapshot },
+                    name: 'Custom',
+                }));
+            }
+
             if (liveProductOrderRef.current && onCommitProductOrder) {
                 Object.entries(liveProductOrderRef.current).forEach(([category, order]) => {
                     onCommitProductOrder(category, order);
@@ -2394,6 +2406,12 @@ export const useDraggableInteractions = (
             };
             initializeProductDragState(product.id, group, pointer);
 
+            if (group.startsWith(FREE_TEXT_PREFIX)) {
+                const currentPositions = { ...(style.categoryPositions || {}) };
+                setLiveCategoryPositions(currentPositions);
+                liveCategoryPositionsRef.current = currentPositions;
+            }
+
             const categoryElement = group.startsWith(FREE_TEXT_PREFIX)
                 ? null
                 : getRenderedDragElement('category', group);
@@ -2410,7 +2428,7 @@ export const useDraggableInteractions = (
                 ensureFreeTextCategoryDragState(product, pointer, group, 'before', initialMargin);
             }
         },
-        [ensureFreeTextCategoryDragState, getRenderedDragElement, initializeProductDragState]
+        [ensureFreeTextCategoryDragState, getRenderedDragElement, initializeProductDragState, style.categoryPositions]
     );
 
     const activateDrag = useCallback(
@@ -2777,6 +2795,31 @@ export const useDraggableInteractions = (
                                 : Math.max(resolvedDesiredTop, freeTextSwapTarget.contactTop)
                         )
                         : resolvedDesiredTop;
+                    const activeCategoryPosition = (liveCategoryPositionsRef.current || style.categoryPositions || {})[activeFreeTextCategory];
+                    if (activeCategoryPosition && pageRect) {
+                        const nextPosition: CategoryPosition = {
+                            pageIndex: activeLane?.pageIndex ?? activeCategoryPosition.pageIndex,
+                            columnIndex: activeLane?.columnIndex ?? activeCategoryPosition.columnIndex,
+                            y: Math.max(0, Math.round((desiredTop - pageRect.top) / Math.max(scale, 0.001))),
+                        };
+                        const currentPositions = liveCategoryPositionsRef.current || { ...(style.categoryPositions || {}) };
+                        const previousPosition = currentPositions[activeFreeTextCategory];
+                        if (
+                            previousPosition?.pageIndex !== nextPosition.pageIndex
+                            || previousPosition?.columnIndex !== nextPosition.columnIndex
+                            || previousPosition?.y !== nextPosition.y
+                        ) {
+                            const nextPositions = {
+                                ...currentPositions,
+                                [activeFreeTextCategory]: nextPosition,
+                            };
+                            liveCategoryPositionsRef.current = nextPositions;
+                            setLiveCategoryPositions(nextPositions);
+                            hasDragMutationRef.current = true;
+                        }
+                        lastPointerRef.current = pointer;
+                        return;
+                    }
                     const naturalTop = refreshedRect
                         ? refreshedRect.top - (currentMargin * scale)
                         : desiredTop - (currentMargin * scale);

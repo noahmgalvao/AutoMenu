@@ -29,10 +29,11 @@ const PositionedCategoryChunk: React.FC<
         desiredPageY?: number;
         flowOffsetBefore?: number;
         detachedForDrag?: boolean;
+        detachedFromFlow?: boolean;
         pageIndex: number;
         layoutKey: string;
     }
-> = ({ desiredPageY, flowOffsetBefore = 0, detachedForDrag = false, pageIndex, layoutKey, style, children, ...props }) => {
+> = ({ desiredPageY, flowOffsetBefore = 0, detachedForDrag = false, detachedFromFlow = false, pageIndex, layoutKey, style, children, ...props }) => {
     const elementRef = React.useRef<HTMLDivElement>(null);
     const placeholderRef = React.useRef<HTMLDivElement>(null);
     const marginTopRef = React.useRef(Math.max(0, flowOffsetBefore));
@@ -55,22 +56,32 @@ const PositionedCategoryChunk: React.FC<
         const placeholder = placeholderRef.current;
         const page = element.closest<HTMLElement>(`[data-menu-print-page="true"][data-page-index="${pageIndex}"]`);
         const column = element.closest<HTMLElement>('[data-drag-column-container="category"]');
-        if (!placeholder || !page || !column) return;
+        if (!page || !column || (!detachedFromFlow && !placeholder)) return;
         let animationFrame: number | null = null;
         const updateTop = () => {
             animationFrame = null;
             const pageRect = page.getBoundingClientRect();
             const columnRect = column.getBoundingClientRect();
             const elementRect = element.getBoundingClientRect();
-            const placeholderRect = placeholder.getBoundingClientRect();
             const scale = Math.max(0.001, pageRect.width / A4_WIDTH_PX);
+            const requestedTop = pageRect.top + (Number(desiredPageY) * scale);
+
+            if (detachedFromFlow) {
+                delete element.dataset.categoryNaturalPageY;
+                marginTopRef.current = 0;
+                setFlowMarginTop(0);
+                setPlaceholderHeight(0);
+                setResolvedTop(Math.max(0, (requestedTop - columnRect.top) / scale));
+                return;
+            }
+
+            const placeholderRect = placeholder!.getBoundingClientRect();
             const nextPlaceholderHeight = elementRect.height / scale;
             setPlaceholderHeight((current) => (
                 Math.abs(nextPlaceholderHeight - current) < 0.25 ? current : nextPlaceholderHeight
             ));
             const naturalTop = placeholderRect.top - (marginTopRef.current * scale);
             element.dataset.categoryNaturalPageY = String((naturalTop - pageRect.top) / scale);
-            const requestedTop = pageRect.top + (Number(desiredPageY) * scale);
             const nextResolvedClientTop = Math.max(requestedTop, naturalTop);
             const nextMargin = Math.max(0, (nextResolvedClientTop - naturalTop) / scale);
             const nextResolvedTop = (nextResolvedClientTop - columnRect.top) / scale;
@@ -92,7 +103,7 @@ const PositionedCategoryChunk: React.FC<
         observer.observe(page);
         observer.observe(column);
         observer.observe(element);
-        observer.observe(placeholder);
+        if (placeholder) observer.observe(placeholder);
         Array.from(column.children).forEach((child) => {
             if (child instanceof HTMLElement) observer.observe(child);
         });
@@ -102,13 +113,13 @@ const PositionedCategoryChunk: React.FC<
             window.removeEventListener('resize', scheduleUpdate);
             if (animationFrame !== null) cancelAnimationFrame(animationFrame);
         };
-    }, [desiredPageY, flowOffsetBefore, layoutKey, pageIndex]);
+    }, [desiredPageY, detachedFromFlow, flowOffsetBefore, layoutKey, pageIndex]);
 
     const isFreePositioned = Number.isFinite(desiredPageY);
 
     return (
         <>
-            {isFreePositioned && (
+            {isFreePositioned && !detachedFromFlow && (
                 <div
                     ref={placeholderRef}
                     aria-hidden="true"
@@ -226,7 +237,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
             && handlers.liveCategoryPositions !== undefined
             ? handlers.liveCategoryPositions[chunk.category]
             : style.categoryPositions?.[chunk.category];
-        const desiredPageY = isCategoryTarget
+        const desiredPageY = (isCategoryTarget || isFreeTextTarget)
             && categoryPosition?.pageIndex === pageIndex
             && categoryPosition?.columnIndex === chunk.columnIndex
             ? categoryPosition.y
@@ -261,6 +272,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 desiredPageY={desiredPageY}
                 flowOffsetBefore={chunk.flowOffsetBefore}
                 detachedForDrag={isCategoryDragged}
+                detachedFromFlow={isFreeTextTarget}
                 pageIndex={pageIndex}
                 layoutKey={`${flowIndex}:${categoryColumnWidths.join(',')}`}
                 data-chunk-id={chunk.chunkId}
@@ -630,18 +642,22 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                             fontSize: pageNumberFontSize,
                         }}
                         controls="sizeColor"
+                        compact
                         maxFontSize={Math.max(50, minimumFontSize)}
                         minFontSize={minimumFontSize}
                         onChange={(newStyle) => handlers.handleInlineStyleChange?.(handlers.formattingTarget, newStyle)}
                         onDismiss={() => handlers.setFormattingTarget?.(null)}
                         header={(
                             <>
-                                <span className="text-[10px] font-semibold text-slate-500">Numeração do cardápio</span>
+                                <span className="whitespace-nowrap text-[9px] font-semibold text-slate-500">Numeração do cardápio</span>
                                 <button
                                     type="button"
                                     data-drag-ignore="true"
                                     className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded transition-colors ${showPageNumbers ? 'text-red-500 hover:bg-red-50' : 'text-indigo-600 hover:bg-indigo-50'}`}
-                                    onClick={() => onSetPageNumbersVisible(!showPageNumbers)}
+                                    onClick={() => {
+                                        onSetPageNumbersVisible(!showPageNumbers);
+                                        if (showPageNumbers) handlers.setFormattingTarget?.(null);
+                                    }}
                                     title={showPageNumbers ? 'Excluir numeração' : 'Adicionar numeração'}
                                     aria-label={showPageNumbers ? 'Excluir numeração do cardápio' : 'Adicionar numeração ao cardápio'}
                                 >

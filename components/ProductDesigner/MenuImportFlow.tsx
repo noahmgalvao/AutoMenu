@@ -62,6 +62,17 @@ interface PendingPage {
   detecting: boolean;
 }
 
+type CameraFocusPoint = { x: number; y: number; key: number };
+type CameraTrackCapabilities = MediaTrackCapabilities & { focusMode?: string[] };
+type CameraSupportedConstraints = MediaTrackSupportedConstraints & {
+  focusMode?: boolean;
+  pointsOfInterest?: boolean;
+};
+type CameraConstraintSet = MediaTrackConstraintSet & {
+  focusMode?: string;
+  pointsOfInterest?: Array<{ x: number; y: number }>;
+};
+
 interface MenuImportFlowProps {
   disabled?: boolean;
   sortOption: SortOption;
@@ -391,6 +402,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
     const [draftStyle, setDraftStyle] = useState<MenuStyle | null>(null);
     const [draftDirty, setDraftDirty] = useState(false);
     const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+    const [cameraFocusPoint, setCameraFocusPoint] = useState<CameraFocusPoint | null>(null);
 
     const galleryInputRef = useRef<HTMLInputElement>(null);
     const fileIntentRef = useRef<FileIntent>('initial');
@@ -400,6 +412,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
     const pagesRef = useRef<PendingPage[]>([]);
     const editorViewportRef = useRef<HTMLDivElement>(null);
     const draggingCornerRef = useRef<{ name: CornerName; pointerId: number } | null>(null);
+    const cameraFocusTimerRef = useRef<number | null>(null);
 
     const busy = preparing || processing;
     const effectivePreviewResult = useMemo(() => (
@@ -410,6 +423,11 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
     const completionPreviewResult = effectivePreviewResult || previewResult;
 
     const stopCamera = useCallback(() => {
+      if (cameraFocusTimerRef.current !== null) {
+        window.clearTimeout(cameraFocusTimerRef.current);
+        cameraFocusTimerRef.current = null;
+      }
+      setCameraFocusPoint(null);
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
       if (videoRef.current) videoRef.current.srcObject = null;
@@ -604,6 +622,17 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
             videoRef.current.srcObject = stream;
             await videoRef.current.play();
           }
+          const videoTrack = stream.getVideoTracks()[0];
+          const capabilities = typeof videoTrack?.getCapabilities === 'function'
+            ? videoTrack.getCapabilities() as CameraTrackCapabilities
+            : undefined;
+          if (videoTrack && capabilities?.focusMode?.includes('continuous')) {
+            const focusConstraint: CameraConstraintSet = { focusMode: 'continuous' };
+            await videoTrack.applyConstraints({
+              ...videoTrack.getConstraints(),
+              advanced: [focusConstraint],
+            } as MediaTrackConstraints).catch(() => undefined);
+          }
         } catch (error) {
           console.warn('Falha ao abrir a câmera.', error);
           setCameraError('Permita o acesso à câmera ou escolha uma imagem da galeria.');
@@ -651,6 +680,43 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
         else delete document.body.dataset.automenuDeleteContext;
       };
     }, [visible]);
+    useEffect(() => {
+      if (!visible) return;
+
+      const body = document.body;
+      const root = document.documentElement;
+      const scrollX = window.scrollX;
+      const scrollY = window.scrollY;
+      const bodyStyles = {
+        position: body.style.position,
+        top: body.style.top,
+        left: body.style.left,
+        right: body.style.right,
+        width: body.style.width,
+        overflow: body.style.overflow,
+        overscrollBehavior: body.style.overscrollBehavior,
+      };
+      const rootStyles = {
+        overflow: root.style.overflow,
+        overscrollBehavior: root.style.overscrollBehavior,
+      };
+
+      body.style.position = 'fixed';
+      body.style.top = `-${scrollY}px`;
+      body.style.left = `-${scrollX}px`;
+      body.style.right = '0';
+      body.style.width = '100%';
+      body.style.overflow = 'hidden';
+      body.style.overscrollBehavior = 'none';
+      root.style.overflow = 'hidden';
+      root.style.overscrollBehavior = 'none';
+
+      return () => {
+        Object.assign(body.style, bodyStyles);
+        Object.assign(root.style, rootStyles);
+        window.scrollTo(scrollX, scrollY);
+      };
+    }, [visible]);
     useEffect(() => () => {
       stopCamera();
       disposePages(pagesRef.current);
@@ -674,6 +740,57 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
         void handleIncomingFiles([file], cameraIntentRef.current);
       }, 'image/jpeg', 0.96);
     }, [handleIncomingFiles]);
+
+    const focusCameraAtPoint = useCallback(async (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      const video = videoRef.current;
+      const videoTrack = streamRef.current?.getVideoTracks()[0];
+      if (!video || !videoTrack || !video.videoWidth || !video.videoHeight) return;
+
+      const rect = event.currentTarget.getBoundingClientRect();
+      const localX = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+      const localY = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
+      setCameraFocusPoint({ x: localX, y: localY, key: Date.now() });
+      if (cameraFocusTimerRef.current !== null) window.clearTimeout(cameraFocusTimerRef.current);
+      cameraFocusTimerRef.current = window.setTimeout(() => {
+        setCameraFocusPoint(null);
+        cameraFocusTimerRef.current = null;
+      }, 1100);
+
+      const coverScale = Math.max(rect.width / video.videoWidth, rect.height / video.videoHeight);
+      const renderedWidth = video.videoWidth * coverScale;
+      const renderedHeight = video.videoHeight * coverScale;
+      const cropX = (renderedWidth - rect.width) / 2;
+      const cropY = (renderedHeight - rect.height) / 2;
+      const sourceX = Math.round(Math.max(0, Math.min(video.videoWidth, (localX + cropX) / coverScale)));
+      const sourceY = Math.round(Math.max(0, Math.min(video.videoHeight, (localY + cropY) / coverScale)));
+      const supported = navigator.mediaDevices.getSupportedConstraints() as CameraSupportedConstraints;
+      const capabilities = typeof videoTrack.getCapabilities === 'function'
+        ? videoTrack.getCapabilities() as CameraTrackCapabilities
+        : undefined;
+      const focusMode = capabilities?.focusMode?.includes('single-shot')
+        ? 'single-shot'
+        : capabilities?.focusMode?.includes('continuous')
+          ? 'continuous'
+          : undefined;
+      const focusConstraint: CameraConstraintSet = {};
+      if (supported.pointsOfInterest) focusConstraint.pointsOfInterest = [{ x: sourceX, y: sourceY }];
+      if (supported.focusMode && focusMode) focusConstraint.focusMode = focusMode;
+      if (Object.keys(focusConstraint).length === 0) return;
+
+      try {
+        await videoTrack.applyConstraints({
+          ...videoTrack.getConstraints(),
+          advanced: [focusConstraint],
+        } as MediaTrackConstraints);
+      } catch {
+        if (!focusMode) return;
+        await videoTrack.applyConstraints({
+          ...videoTrack.getConstraints(),
+          advanced: [{ focusMode } as CameraConstraintSet],
+        } as MediaTrackConstraints).catch(() => undefined);
+      }
+    }, []);
 
     const activePage = pages.find((page) => page.id === activePageId) || pages[0] || null;
     const displayGeometry = useMemo(() => {
@@ -804,9 +921,18 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
     }, [busy, clearPages, completionPreviewResult, finalizedPreview, onComplete, resetPreview, stopCamera]);
 
     const renderCamera = () => (
-      <div className="fixed inset-x-0 bottom-0 top-16 z-[1000] flex flex-col overflow-hidden bg-black text-white">
-        <video ref={videoRef} autoPlay muted playsInline className="absolute inset-0 h-full w-full object-cover" />
+      <div className="fixed inset-0 z-[1200] flex h-[100dvh] flex-col overflow-hidden bg-black text-white">
+        <video ref={videoRef} autoPlay muted playsInline disablePictureInPicture className="absolute inset-0 h-full w-full object-cover" />
+        <div className="absolute inset-0 z-[2] touch-none cursor-crosshair" onPointerUp={(event) => { void focusCameraAtPoint(event); }} aria-label="Toque na imagem para focar" />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/70 via-transparent to-black/80" />
+        {cameraFocusPoint && (
+          <span
+            key={cameraFocusPoint.key}
+            className="pointer-events-none absolute z-[5] h-16 w-16 -translate-x-1/2 -translate-y-1/2 animate-pulse rounded-full border-2 border-amber-300 shadow-[0_0_0_1px_rgba(0,0,0,0.45)]"
+            style={{ left: cameraFocusPoint.x, top: cameraFocusPoint.y }}
+            aria-hidden="true"
+          />
+        )}
         <header className="relative z-10 flex items-center justify-between px-4 pb-3 pt-4" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
           <button type="button" onClick={close} className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 backdrop-blur" aria-label="Fechar câmera"><X size={24} /></button>
           <div className="rounded-full bg-black/50 px-4 py-2 text-sm font-bold backdrop-blur">Página {cameraIntentRef.current === 'add' ? pages.length + 1 : 1}</div>
@@ -814,6 +940,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
         </header>
         <div className="relative z-10 mt-auto space-y-4 px-4 pb-5">
           {cameraError && <div className="rounded-xl bg-red-600/90 px-4 py-3 text-center text-sm font-medium">{cameraError}</div>}
+          {!cameraError && <div className="pointer-events-none text-center text-xs font-semibold text-white/80">Toque na imagem para focar</div>}
           <div className="grid grid-cols-3 items-center" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
             <button type="button" onClick={() => openFilePicker(cameraIntentRef.current)} className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-white/20 backdrop-blur" aria-label="Abrir galeria"><Images size={24} /></button>
             <button type="button" onClick={capturePhoto} className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-white/20 shadow-xl" aria-label="Tirar foto"><span className="h-16 w-16 rounded-full bg-white" /></button>
@@ -1066,7 +1193,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
 
     const renderMobileEditor = () => (
       <div className="fixed inset-x-0 bottom-0 top-16 z-[1000] flex flex-col overflow-hidden bg-slate-100 text-slate-900" onPointerDownCapture={() => { document.body.dataset.automenuDeleteContext = 'import-preview'; }}>
-        <main className="min-h-0 flex-1 overflow-y-auto px-3 pb-28 pt-4 custom-scrollbar" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
+        <main className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-3 pb-28 pt-4 custom-scrollbar" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))', overscrollBehavior: 'contain' }}>
           <div className="mx-auto max-w-xl space-y-4">
             <header className="flex min-h-11 items-center justify-between gap-3">
               <h1 className="text-lg font-bold text-slate-900">Importar Cardápio</h1>
@@ -1095,7 +1222,10 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
           </div>
         </main>
         <footer className="absolute inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-3 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
-          <button type="button" onClick={complete} disabled={!previewResult || !finalizedPreview || busy} className="mx-auto flex h-12 w-full max-w-xl items-center justify-center gap-2 rounded-xl bg-violet-600 px-6 text-sm font-bold text-white shadow-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40"><Check size={19} />Concluir Importação</button>
+          <div className="mx-auto flex w-full max-w-xl gap-2">
+            <button type="button" onClick={close} disabled={busy} className="flex h-12 flex-1 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm disabled:opacity-40">Cancelar</button>
+            <button type="button" onClick={complete} disabled={!previewResult || !finalizedPreview || busy} className="flex h-12 flex-[2] items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 text-sm font-bold text-white shadow-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40"><Check size={19} />Concluir Importação</button>
+          </div>
         </footer>
       </div>
     );
@@ -1103,7 +1233,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
     const renderDesktopEditor = () => (
       <div className="fixed inset-x-0 bottom-0 top-16 z-[1000] flex flex-col overflow-hidden bg-slate-100 text-slate-900" onPointerDownCapture={() => { document.body.dataset.automenuDeleteContext = 'import-preview'; }}>
         <button type="button" onClick={close} disabled={busy} className="absolute right-4 top-4 z-50 flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-lg hover:text-slate-900 disabled:opacity-40" style={{ marginTop: 'env(safe-area-inset-top)' }} aria-label="Fechar importação"><X size={23} /></button>
-        <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-28 pt-16 custom-scrollbar md:px-6 lg:overflow-hidden lg:pb-24">
+        <main className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 pb-28 pt-16 custom-scrollbar md:px-6 lg:overflow-hidden lg:pb-24" style={{ overscrollBehavior: 'contain' }}>
           <div className="mx-auto grid max-w-[1700px] gap-7 lg:h-full lg:grid-cols-[minmax(300px,1fr)_300px_minmax(360px,1fr)]">
             {renderOriginalImage()}
             {renderProcessingOptions()}
@@ -1112,7 +1242,10 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
         </main>
         <footer className="absolute inset-x-0 bottom-0 z-40 flex items-center justify-between gap-3 border-t border-slate-200 bg-white/95 px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur md:px-6" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
           <div className="hidden text-xs text-slate-500 sm:block">{previewResult && !previewStale ? `${previewResult.productCount} produtos · ${previewResult.pageCount} página${previewResult.pageCount === 1 ? '' : 's'}` : 'Revise o resultado antes de concluir.'}</div>
-          <button type="button" onClick={complete} disabled={!previewResult || !finalizedPreview || busy} className="ml-auto flex h-12 items-center justify-center gap-2 rounded-xl bg-violet-600 px-6 text-sm font-bold text-white shadow-lg transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40"><Check size={19} />Concluir Importação</button>
+          <div className="ml-auto flex items-center gap-2">
+            <button type="button" onClick={close} disabled={busy} className="flex h-12 items-center justify-center rounded-xl border border-slate-300 bg-white px-5 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-40">Cancelar</button>
+            <button type="button" onClick={complete} disabled={!previewResult || !finalizedPreview || busy} className="flex h-12 items-center justify-center gap-2 rounded-xl bg-violet-600 px-6 text-sm font-bold text-white shadow-lg transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40"><Check size={19} />Concluir Importação</button>
+          </div>
         </footer>
       </div>
     );

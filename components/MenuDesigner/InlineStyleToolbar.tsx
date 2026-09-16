@@ -14,9 +14,10 @@ interface InlineStyleToolbarProps {
     maxFontSize?: number;
     minFontSize?: number;
     header?: React.ReactNode;
+    compact?: boolean;
 }
 
-export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, value, onChange, onDismiss, controls = 'all', maxFontSize, minFontSize, header }) => {
+export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, value, onChange, onDismiss, controls = 'all', maxFontSize, minFontSize, header, compact = false }) => {
     const toolbarRef = useRef<HTMLDivElement>(null);
     const [position, setPosition] = useState({ left: 8, top: 8, width: 270 });
     const isSizeColorOnly = controls === 'sizeColor';
@@ -43,8 +44,8 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
         const updatePosition = () => {
             const targetRect = target.getBoundingClientRect();
             const toolbarHeight = toolbarRef.current?.getBoundingClientRect().height || 76;
-            const preferredWidth = hasHeader ? 210 : isSizeColorOnly ? 120 : 270;
-            const minimumWidth = hasHeader ? 190 : isSizeColorOnly ? 120 : 210;
+            const preferredWidth = hasHeader ? (compact ? 168 : 210) : isSizeColorOnly ? 120 : 270;
+            const minimumWidth = hasHeader ? (compact ? 160 : 190) : isSizeColorOnly ? 120 : 210;
             const width = Math.min(preferredWidth, Math.max(minimumWidth, window.innerWidth - 16));
             const left = Math.max(8, Math.min(window.innerWidth - width - 8, targetRect.left + (targetRect.width / 2) - (width / 2)));
             const top = targetRect.top - toolbarHeight - 8 >= 8
@@ -65,24 +66,24 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
             window.removeEventListener('resize', updatePosition);
             window.removeEventListener('scroll', updatePosition, true);
         };
-    }, [hasHeader, isSizeColorOnly, targetElementId]);
+    }, [compact, hasHeader, isSizeColorOnly, targetElementId]);
 
     return createPortal(
         <div
             ref={toolbarRef}
             data-drag-ignore="true"
             data-inline-format-toolbar="true"
-            className="fixed z-[10020] rounded-lg border border-slate-200 bg-white p-1.5 shadow-xl"
+            className={`fixed z-[10020] rounded-lg border border-slate-200 bg-white shadow-xl ${compact ? 'p-1' : 'p-1.5'}`}
             style={position}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
         >
             {header && (
-                <div className="mb-1.5 flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5">
+                <div className={`flex items-center justify-between border-b border-slate-100 ${compact ? 'mb-1 gap-1 pb-1' : 'mb-1.5 gap-2 pb-1.5'}`}>
                     {header}
                 </div>
             )}
-            <div className="flex gap-1.5">
+            <div className={`flex ${compact ? 'gap-1' : 'gap-1.5'}`}>
                 {!isSizeColorOnly && (
                     <div className="min-w-0 flex-1">
                         <FontSelect
@@ -97,6 +98,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                     value={value.fontSize}
                     max={maxFontSize}
                     min={minFontSize}
+                    className={compact ? '!w-14' : undefined}
                     onChange={(fontSize) => onChange({ ...value, fontSize })}
                 />
                 <div className="relative h-8 w-8 flex-shrink-0 overflow-hidden rounded border border-slate-200">
