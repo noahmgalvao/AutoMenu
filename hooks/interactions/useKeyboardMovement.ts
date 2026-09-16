@@ -259,6 +259,12 @@ export const useKeyboardMovement = (
 
             const newProdOrder = { ...(prev.customProductOrder || {}) };
             newProdOrder[ghostCategoryName] = [newId];
+            const shiftedPlacements = Object.fromEntries(
+                Object.entries(draftItem.freeTextPositionUpdates || {}).map(([category, position]) => [
+                    category,
+                    { pageIndex: position.pageIndex, columnIndex: position.columnIndex },
+                ]),
+            );
 
             return {
                 ...prev,
@@ -269,6 +275,7 @@ export const useKeyboardMovement = (
                     : prev.blankPages,
                 categoryPlacements: {
                     ...(prev.categoryPlacements || {}),
+                    ...shiftedPlacements,
                     [ghostCategoryName]: {
                         pageIndex: draftItem.pageIndex,
                         columnIndex: draftItem.columnIndex,
@@ -276,6 +283,7 @@ export const useKeyboardMovement = (
                 },
                 categoryPositions: {
                     ...(prev.categoryPositions || {}),
+                    ...(draftItem.freeTextPositionUpdates || {}),
                     [ghostCategoryName]: {
                         pageIndex: draftItem.pageIndex,
                         columnIndex: draftItem.columnIndex,
@@ -313,8 +321,12 @@ export const useKeyboardMovement = (
             }
 
             const product = products.find(p => p.id === item.id);
-            if (product?.isFreeText || isPristineNewProduct(product)) productIdsToDelete.add(item.id);
-            else productIdsToHide.add(item.id);
+            if (product?.isFreeText || isPristineNewProduct(product)) {
+                productIdsToDelete.add(item.id);
+                if (product?.isFreeText && product.category.startsWith(FREE_TEXT_PREFIX)) {
+                    categoriesToDelete.add(product.category);
+                }
+            } else productIdsToHide.add(item.id);
         });
 
         const deletedProductIds = new Set(productIdsToDelete);
@@ -361,6 +373,7 @@ export const useKeyboardMovement = (
         }
 
         deletedProductIds.forEach(productId => onDeleteProduct?.(productId));
+        clearMultiSelectionTo?.(null, null);
     };
     
     // Wrapper for add functionality if handlers needs to expose it for MenuItem convenience

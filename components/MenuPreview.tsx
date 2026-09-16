@@ -587,6 +587,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         const productIdsToDelete = new Set<string>();
         const categoriesToDelete = new Set<string>();
         const freeTextIdsToDelete = new Set<string>();
+        const freeTextCategoriesToDelete = new Set<string>();
         const addedImageIdsToDelete = new Set<string>();
 
         selectedItems.forEach((item: any) => {
@@ -598,7 +599,12 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
             if (item.type === 'product' || item.type === 'freeText') {
                 const product = products.find(candidate => candidate.id === item.id);
-                if (product?.isFreeText || item.type === 'freeText') freeTextIdsToDelete.add(item.id);
+                if (product?.isFreeText || item.type === 'freeText') {
+                    freeTextIdsToDelete.add(item.id);
+                    if (product?.category.startsWith(FREE_TEXT_PREFIX)) {
+                        freeTextCategoriesToDelete.add(product.category);
+                    }
+                }
                 else if (isPristineNewProduct(product)) productIdsToDelete.add(item.id);
                 else productIdsToHide.add(item.id);
                 return;
@@ -629,18 +635,28 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
             const nextProductOrder = { ...(prev.customProductOrder || {}) };
             Object.keys(nextProductOrder).forEach(category => {
-                if (categoriesToDelete.has(category)) {
+                if (categoriesToDelete.has(category) || freeTextCategoriesToDelete.has(category)) {
                     delete nextProductOrder[category];
                     return;
                 }
                 nextProductOrder[category] = nextProductOrder[category].filter(productId => !productIdsToDelete.has(productId));
             });
+            const nextCategoryPlacements = { ...(prev.categoryPlacements || {}) };
+            const nextCategoryPositions = { ...(prev.categoryPositions || {}) };
+            [...categoriesToDelete, ...freeTextCategoriesToDelete].forEach((category) => {
+                delete nextCategoryPlacements[category];
+                delete nextCategoryPositions[category];
+            });
 
             return {
                 ...prev,
                 hiddenProductIds: Array.from(currentHidden),
-                customCategoryOrder: (prev.customCategoryOrder || []).filter(category => !categoriesToDelete.has(category)),
+                customCategoryOrder: (prev.customCategoryOrder || []).filter(category => (
+                    !categoriesToDelete.has(category) && !freeTextCategoriesToDelete.has(category)
+                )),
                 customProductOrder: nextProductOrder,
+                categoryPlacements: nextCategoryPlacements,
+                categoryPositions: nextCategoryPositions,
                 addedImages: addedImageIdsToDelete.size > 0
                     ? (prev.addedImages || []).filter((img) => !addedImageIdsToDelete.has(img.id))
                     : prev.addedImages,
@@ -919,13 +935,86 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         let minDistAbove = Infinity;
         let minDistBelow = Infinity;
         const searchRoot = clickedColumnEl || pageEl;
-        const safeClientTop = getCollisionSafeFreeTextTop({
+        const minimumClientTop = columnRect?.top ?? pageRect.top + (menuMargins.top * currentScale);
+        const maximumClientBottom = pageRect.bottom - ((menuMargins.bottom + SAFETY_BUFFER) * currentScale);
+        const freeTextHeight = 40 * currentScale;
+        const desiredClientTop = clamp(
+            pageRect.top + (clickY * currentScale),
+            minimumClientTop,
+            maximumClientBottom - freeTextHeight,
+        );
+        const freeTextProducts = new Map(products.filter((product) => product.isFreeText).map((product) => [product.id, product]));
+        const renderedFreeTexts = Array.from(searchRoot.querySelectorAll<HTMLElement>('[id^="product-container-"]'))
+            .map((element) => {
+                const productId = element.id.replace('product-container-', '');
+                const product = freeTextProducts.get(productId);
+                if (!product || !product.category.startsWith(FREE_TEXT_PREFIX)) return null;
+                return {
+                    category: product.category,
+                    productId,
+                    element,
+                    rect: element.getBoundingClientRect(),
+                };
+            })
+            .filter((item): item is { category: string; productId: string; element: HTMLElement; rect: DOMRect } => Boolean(item))
+            .sort((left, right) => left.rect.top - right.rect.top);
+        const overlapsInsertion = (rect: DOMRect) => (
+            desiredClientTop < rect.bottom + (6 * currentScale)
+            && desiredClientTop + freeTextHeight > rect.top - (6 * currentScale)
+        );
+        const overlappingFreeTexts = renderedFreeTexts.filter(({ rect }) => overlapsInsertion(rect));
+        const freeTextElements = new Set(
+            overlappingFreeTexts.map(({ element }) => element),
+        );
+        const hasNonFreeTextCollision = Array.from(pageEl.querySelectorAll<HTMLElement>(
+            '[id^="product-container-"], [id^="category-header-"], #menu-title-text, #menu-subtitle-text, [data-added-image-drag="true"]',
+        )).some((element) => {
+            if (freeTextElements.has(element)) return false;
+            const rect = element.getBoundingClientRect();
+            const sharesColumn = rect.right > (columnRect?.left ?? pageRect.left)
+                && rect.left < (columnRect?.right ?? pageRect.right);
+            return sharesColumn && overlapsInsertion(rect);
+        });
+
+        let rippleClientTop: number | null = null;
+        let firstShiftedProductId: string | null = null;
+        let freeTextPositionUpdates: DraftItem['freeTextPositionUpdates'];
+        if (overlappingFreeTexts.length > 0 && !hasNonFreeTextCollision) {
+            const updates: NonNullable<DraftItem['freeTextPositionUpdates']> = {};
+            let cursorY = ((desiredClientTop - pageRect.top) / currentScale) + 40 + NUDGE_STEP;
+            let targetPageIndex = pageIndex;
+            const maximumBottom = A4_HEIGHT_PX - menuMargins.bottom - SAFETY_BUFFER;
+
+            renderedFreeTexts.forEach(({ category, productId, rect }) => {
+                const currentTop = (rect.top - pageRect.top) / currentScale;
+                const currentHeight = rect.height / currentScale;
+                if (rect.bottom + (6 * currentScale) <= desiredClientTop) return;
+
+                let nextTop = targetPageIndex === pageIndex ? Math.max(currentTop, cursorY) : cursorY;
+                if (nextTop + currentHeight > maximumBottom) {
+                    targetPageIndex += 1;
+                    nextTop = menuMargins.top;
+                }
+                if (targetPageIndex !== pageIndex || nextTop > currentTop + 0.25) {
+                    if (!firstShiftedProductId) firstShiftedProductId = productId;
+                    updates[category] = { pageIndex: targetPageIndex, columnIndex, y: nextTop };
+                }
+                cursorY = nextTop + currentHeight + NUDGE_STEP;
+            });
+
+            if (Object.keys(updates).length > 0) {
+                rippleClientTop = desiredClientTop;
+                freeTextPositionUpdates = updates;
+            }
+        }
+
+        const safeClientTop = rippleClientTop ?? getCollisionSafeFreeTextTop({
             root: pageEl,
-            desiredTop: pageRect.top + (clickY * currentScale),
-            height: 40 * currentScale,
+            desiredTop: desiredClientTop,
+            height: freeTextHeight,
             pointerY: point?.y ?? pageRect.top + (clickY * currentScale),
-            minTop: columnRect?.top ?? pageRect.top + (menuMargins.top * currentScale),
-            maxBottom: pageRect.bottom - ((menuMargins.bottom + SAFETY_BUFFER) * currentScale),
+            minTop: minimumClientTop,
+            maxBottom: maximumClientBottom,
             minLeft: columnRect?.left,
             maxRight: columnRect?.right,
         });
@@ -960,8 +1049,23 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             }
         });
 
-        return { pageIndex, columnIndex, top: clickY, floorId, floorBottom, ceilingId, ceilingTop };
-    }, [props.scale, style.margins, style.pagePadding]);
+        if (firstShiftedProductId && !ceilingId) {
+            ceilingId = firstShiftedProductId;
+            const firstShifted = renderedFreeTexts.find(({ productId }) => productId === firstShiftedProductId);
+            if (firstShifted) ceilingTop = (firstShifted.rect.top - pageRect.top) / currentScale;
+        }
+
+        return {
+            pageIndex,
+            columnIndex,
+            top: clickY,
+            floorId,
+            floorBottom,
+            ceilingId,
+            ceilingTop,
+            freeTextPositionUpdates,
+        };
+    }, [products, props.scale, style.categoryPositions, style.margins, style.pagePadding]);
 
     const getFreeTextPlacementBelowSelection = useCallback((): DraftItem | null => {
         const selectedObjects = (handlers.selectedItems || []).filter(isObjectItem);
@@ -1310,6 +1414,12 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             const currentOrder = getCurrentOrder(prev.customCategoryOrder);
             const insertIndex = getPlacementInsertIndex(currentOrder);
             currentOrder.splice(insertIndex + indexOffset, 0, ghostCategory);
+            const shiftedPlacements = Object.fromEntries(
+                Object.entries(placement.freeTextPositionUpdates || {}).map(([category, position]) => [
+                    category,
+                    { pageIndex: position.pageIndex, columnIndex: position.columnIndex },
+                ]),
+            );
 
             return {
                 ...prev,
@@ -1317,6 +1427,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 customProductOrder: { ...(prev.customProductOrder || {}), [ghostCategory]: [newId] },
                 categoryPlacements: {
                     ...(prev.categoryPlacements || {}),
+                    ...shiftedPlacements,
                     [ghostCategory]: {
                         pageIndex: placement.pageIndex,
                         columnIndex: placement.columnIndex,
@@ -1324,6 +1435,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 },
                 categoryPositions: {
                     ...(prev.categoryPositions || {}),
+                    ...(placement.freeTextPositionUpdates || {}),
                     [ghostCategory]: {
                         pageIndex: placement.pageIndex,
                         columnIndex: placement.columnIndex,
@@ -1447,6 +1559,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         const productIdsToDelete = new Set<string>();
         const categoriesToDelete = new Set<string>();
         const freeTextIdsToDelete = new Set<string>();
+        const freeTextCategoriesToDelete = new Set<string>();
         const addedImageIdsToDelete = new Set<string>();
 
         items.forEach((item) => {
@@ -1458,7 +1571,12 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
             if (item.type === 'product' || item.type === 'freeText') {
                 const product = products.find((candidate) => candidate.id === item.id);
-                if (product?.isFreeText || item.type === 'freeText') freeTextIdsToDelete.add(item.id);
+                if (product?.isFreeText || item.type === 'freeText') {
+                    freeTextIdsToDelete.add(item.id);
+                    if (product?.category.startsWith(FREE_TEXT_PREFIX)) {
+                        freeTextCategoriesToDelete.add(product.category);
+                    }
+                }
                 else if (isPristineNewProduct(product)) productIdsToDelete.add(item.id);
                 else productIdsToHide.add(item.id);
                 return;
@@ -1483,18 +1601,28 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
             const nextProductOrder = { ...(prev.customProductOrder || {}) };
             Object.keys(nextProductOrder).forEach(category => {
-                if (categoriesToDelete.has(category)) {
+                if (categoriesToDelete.has(category) || freeTextCategoriesToDelete.has(category)) {
                     delete nextProductOrder[category];
                     return;
                 }
                 nextProductOrder[category] = nextProductOrder[category].filter(productId => !productIdsToDelete.has(productId));
             });
+            const nextCategoryPlacements = { ...(prev.categoryPlacements || {}) };
+            const nextCategoryPositions = { ...(prev.categoryPositions || {}) };
+            [...categoriesToDelete, ...freeTextCategoriesToDelete].forEach((category) => {
+                delete nextCategoryPlacements[category];
+                delete nextCategoryPositions[category];
+            });
 
             return {
                 ...prev,
                 hiddenProductIds: Array.from(currentHidden),
-                customCategoryOrder: (prev.customCategoryOrder || []).filter(category => !categoriesToDelete.has(category)),
+                customCategoryOrder: (prev.customCategoryOrder || []).filter(category => (
+                    !categoriesToDelete.has(category) && !freeTextCategoriesToDelete.has(category)
+                )),
                 customProductOrder: nextProductOrder,
+                categoryPlacements: nextCategoryPlacements,
+                categoryPositions: nextCategoryPositions,
                 addedImages: addedImageIdsToDelete.size > 0
                     ? (prev.addedImages || []).filter((image) => !addedImageIdsToDelete.has(image.id))
                     : prev.addedImages,

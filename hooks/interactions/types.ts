@@ -37,6 +37,7 @@ export interface DraftItem {
     blankPageId?: string | null;
     targetCategory?: string;
     targetProductId?: string | null;
+    freeTextPositionUpdates?: Record<string, { pageIndex: number; columnIndex: number; y: number }>;
 }
 
 export interface InteractionProps {

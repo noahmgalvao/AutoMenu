@@ -40,8 +40,15 @@ const moveDirectionToFlowDirection: Record<MoveDirection, FlowDirection> = {
 const handleMobileFocusScroll = (element: HTMLElement) => {
     if (window.matchMedia('(min-width: 768px)').matches) return;
     window.setTimeout(() => {
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 300);
+        if (!element.isConnected) return;
+        const rect = element.getBoundingClientRect();
+        const viewportHeight = window.visualViewport?.height || window.innerHeight;
+        const safeTop = 12;
+        const safeBottom = viewportHeight - 12;
+        if (rect.top < safeTop || rect.bottom > safeBottom) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }, 250);
 };
 
 const clearDefaultTextOnFocus = (element: HTMLElement, defaultTexts: string[]) => {
@@ -293,18 +300,16 @@ export const ResponsiveMoveButton: React.FC<
     React.useLayoutEffect(() => {
         const button = buttonRef.current;
         const root = button?.closest<HTMLElement>('[data-category-chunk], .automenu-drag-item');
-        if (!button || !root) return;
+        if (!button || !root || !responsiveActive) {
+            if (button) clearResponsiveControlShift(button);
+            return;
+        }
         const unregister = registerResponsiveControl(root);
         return () => {
             unregister();
             clearResponsiveControlShift(button);
         };
-    }, [controlGroup, flowDirection]);
-
-    React.useLayoutEffect(() => {
-        const root = buttonRef.current?.closest<HTMLElement>('[data-category-chunk], .automenu-drag-item');
-        if (root) responsiveControlCoordinators.get(root)?.schedule();
-    });
+    }, [controlGroup, flowDirection, responsiveActive]);
 
     return (
         <button
@@ -443,7 +448,7 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
                         </button>
                     )}
                     <button
-                        className={`${controlPadding} bg-white border shadow-md rounded-full hover:scale-110 transition-transform cursor-pointer pointer-events-auto ${handlers.multiSelectMode ? 'border-indigo-500 text-indigo-600 bg-indigo-50' : 'border-slate-200 text-slate-500'}`}
+                        className={`${controlPadding} bg-white border shadow-md rounded-full hover:scale-110 transition-transform cursor-pointer ${handlers.multiSelectMode ? 'border-indigo-500 text-indigo-600 bg-indigo-50' : 'border-slate-200 text-slate-500'}`}
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={(e) => { e.stopPropagation(); handlers.setMultiSelectMode?.(!handlers.multiSelectMode); }}
                         title="Seleção múltipla"
@@ -663,7 +668,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     marginBottom: `${contentSpacing.categoryToProduct}px`
                 }}
                 onContextMenu={(e) => handlers.openObjectMenu?.(e, { type: 'category', id: item.data })} 
-                onClick={(e) => { e.stopPropagation(); if (!handlers.editingId) { handlers.handleSelection('category', item.data, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey }); handlers.setSelectedPageIndex(null); } }}
+                onClick={(e) => { e.stopPropagation(); if (handlers.editingId !== item.data) { handlers.handleSelection('category', item.data, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey }); handlers.setSelectedPageIndex(null); } }}
                 onDoubleClick={(e) => e.stopPropagation()}
             >
                 <div
@@ -700,7 +705,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                         availableWidthInset={compactControls ? 8 : 16}
                         showOverflowFeedback={handlers.editingId === item.data}
                         id={elementId}
-                        className={`min-w-0 max-w-full shrink whitespace-normal break-words [overflow-wrap:anywhere] [word-break:normal] outline-none rounded ${handlers.editingId === item.data ? 'bg-white ring-2 ring-blue-500 z-10 cursor-text px-1' : ''}`}
+                        className={`min-w-0 max-w-full shrink whitespace-normal break-words [overflow-wrap:anywhere] [word-break:normal] outline-none rounded ${handlers.editingId === item.data ? 'bg-white ring-2 ring-blue-500 z-10 cursor-text' : ''}`}
                         style={{ 
                             color: catStyle.color || style.primaryColor,
                             fontFamily: catStyle.fontFamily,
@@ -764,7 +769,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     onPointerDown={(e) => handlers.handleDragStart(e, 'product', product.id, item.category)}
                     onDragStart={(e) => e.preventDefault()}
                     onContextMenu={(e) => handlers.openObjectMenu?.(e, { type: productSelectionType, id: product.id })} 
-                    onClick={(e) => { e.stopPropagation(); if (!handlers.editingId) { handlers.handleSelection(productSelectionType, product.id, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey }); handlers.setSelectedPageIndex(null); } }}
+                    onClick={(e) => { e.stopPropagation(); if (handlers.editingId !== product.id) { handlers.handleSelection(productSelectionType, product.id, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey }); handlers.setSelectedPageIndex(null); } }}
                     onDoubleClick={(e) => e.stopPropagation()} 
                     className={`automenu-drag-item relative group rounded-lg transition-all duration-200 pointer-events-auto p-2 ${isEditing ? 'select-text touch-auto cursor-text' : 'select-none touch-auto cursor-grab'} ${isSelected || isEditing ? 'z-[60]' : 'z-[1]'} ${inGroup ? 'ml-0 mb-0' : '-ml-2 mb-2 hover:bg-black/5'} ${isSelected && !isEditing ? 'bg-indigo-50/30' : ''} ${product.isFreeText ? 'transition-none' : ''}`}
                     style={{
@@ -806,7 +811,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             fitScope="freeText"
                             containerSelector={`#product-container-${product.id}`}
                             showOverflowFeedback={isEditing}
-                            id={`product-name-${product.id}`} data-product-edit-id={product.id} className={`whitespace-pre-wrap break-words [overflow-wrap:anywhere] outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : ''}`}
+                            id={`product-name-${product.id}`} data-product-edit-id={product.id} className={`whitespace-pre-wrap break-words [overflow-wrap:anywhere] outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
                             style={{ 
                                 color: nameStyle.color || style.textColor,
                                 fontFamily: nameStyle.fontFamily,
@@ -855,7 +860,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                     fitScope="productName"
                                     widthMode="flex"
                                     showOverflowFeedback={isEditing}
-                                    id={`product-name-${product.id}`} data-product-edit-id={product.id} className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : ''}`}
+                                    id={`product-name-${product.id}`} data-product-edit-id={product.id} className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
                                     style={{ 
                                         color: nameStyle.color || style.textColor,
                                         fontFamily: nameStyle.fontFamily,
@@ -896,7 +901,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                     fitScope="productPrice"
                                     containerSelector={`#product-container-${product.id}`}
                                     showOverflowFeedback={isEditing}
-                                    id={`product-price-${product.id}`} data-product-edit-id={product.id} className={`whitespace-nowrap outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : ''}`}
+                                    id={`product-price-${product.id}`} data-product-edit-id={product.id} className={`whitespace-nowrap outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
                                     style={{ 
                                         color: priceStyle.color || style.textColor,
                                         fontFamily: priceStyle.fontFamily,
@@ -920,7 +925,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             fitScope="productDescription"
                             widthMode="parent"
                             showOverflowFeedback={isEditing}
-                            id={`product-description-${product.id}`} data-product-edit-id={product.id} className={`max-w-full opacity-80 break-words [overflow-wrap:anywhere] [word-break:normal] leading-relaxed outline-none rounded ${isEditing ? 'min-h-[1.5em] bg-indigo-500/15 ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : ''}`}
+                            id={`product-description-${product.id}`} data-product-edit-id={product.id} className={`max-w-full opacity-80 break-words [overflow-wrap:anywhere] [word-break:normal] leading-relaxed outline-none rounded ${isEditing ? 'min-h-[1.5em] bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
                             style={{ 
                                 color: descStyle.color || style.textColor,
                                 fontFamily: descStyle.fontFamily,
@@ -1052,7 +1057,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         showOverflowFeedback={isEditing}
                                                         id={`product-name-${product.id}`}
                                                         data-product-edit-id={product.id}
-                                                        className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : ''}`}
+                                                        className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
                                                         style={{ color: nameStyle.color || style.textColor, fontFamily: nameStyle.fontFamily, fontSize: clampFontSize(style, 'productName', nameStyle.fontSize, 18), fontWeight: nameStyle.fontWeight, fontStyle: nameStyle.italic ? 'italic' : 'normal', textDecoration: nameStyle.underline ? 'underline' : 'none', textAlign: nameStyle.textAlign, textTransform: nameStyle.textTransform }}
                                                         contentEditable={isEditing}
                                                         suppressContentEditableWarning
@@ -1089,7 +1094,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         showOverflowFeedback={isEditing}
                                                         id={`product-price-${product.id}`}
                                                         data-product-edit-id={product.id}
-                                                        className={`whitespace-nowrap outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : ''}`}
+                                                        className={`whitespace-nowrap outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
                                                         style={{ textAlign: priceStyle.textAlign }}
                                                         contentEditable={isEditing}
                                                         tabIndex={isEditing ? 0 : undefined}
@@ -1115,7 +1120,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                 showOverflowFeedback={isEditing}
                                                 id={`product-description-${product.id}`}
                                                 data-product-edit-id={product.id}
-                                                className={`max-w-full opacity-75 break-words [overflow-wrap:anywhere] [word-break:normal] flex-grow outline-none rounded ${isEditing ? 'min-h-[1.5em] bg-indigo-500/15 ring-2 ring-blue-500 cursor-text px-1 select-text touch-auto pointer-events-auto' : 'line-clamp-4'}`}
+                                                className={`max-w-full opacity-75 break-words [overflow-wrap:anywhere] [word-break:normal] flex-grow outline-none rounded ${isEditing ? 'min-h-[1.5em] bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : 'line-clamp-4'}`}
                                                 style={{ color: descStyle.color || style.textColor, fontFamily: descStyle.fontFamily, fontSize: clampFontSize(style, 'productDescription', descStyle.fontSize, 14), fontWeight: descStyle.fontWeight, fontStyle: descStyle.italic ? 'italic' : 'normal', textDecoration: descStyle.underline ? 'underline' : 'none', textAlign: descStyle.textAlign }}
                                                 contentEditable={isEditing}
                                                 tabIndex={isEditing ? 0 : undefined}

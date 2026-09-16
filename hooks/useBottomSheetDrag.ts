@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 
+const EXPAND_GESTURE_PX = 64;
+
 export const useBottomSheetDrag = (isOpen: boolean, onClose?: () => void) => {
     const [height, setHeight] = useState('45dvh');
     const [isDragging, setIsDragging] = useState(false);
@@ -47,15 +49,12 @@ export const useBottomSheetDrag = (isOpen: boolean, onClose?: () => void) => {
         
         window.addEventListener('pointermove', handlePointerMove);
         window.addEventListener('pointerup', handlePointerUp);
+        window.addEventListener('pointercancel', handlePointerUp);
     };
 
     const handlePointerMove = useCallback((e: PointerEvent) => {
         const delta = startY.current - e.clientY; // Up is positive
-        if (delta >= 4) {
-            expandedByUpwardGesture.current = true;
-            setHeight('100dvh');
-            return;
-        }
+        expandedByUpwardGesture.current = delta >= EXPAND_GESTURE_PX;
         const newH = startHeight.current + delta;
         const newVh = (newH / window.innerHeight) * 100;
         
@@ -66,6 +65,7 @@ export const useBottomSheetDrag = (isOpen: boolean, onClose?: () => void) => {
     const handlePointerUp = useCallback((e: PointerEvent) => {
         window.removeEventListener('pointermove', handlePointerMove);
         window.removeEventListener('pointerup', handlePointerUp);
+        window.removeEventListener('pointercancel', handlePointerUp);
         setIsDragging(false);
 
         if (expandedByUpwardGesture.current) {
@@ -74,7 +74,8 @@ export const useBottomSheetDrag = (isOpen: boolean, onClose?: () => void) => {
             return;
         }
         
-        const finalVh = ((window.innerHeight - e.clientY) / window.innerHeight) * 100;
+        const finalHeight = startHeight.current + (startY.current - e.clientY);
+        const finalVh = (finalHeight / window.innerHeight) * 100;
         
         if (finalVh < 25) {
             if (onClose) onClose();

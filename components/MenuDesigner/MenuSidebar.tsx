@@ -80,7 +80,7 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
             style={{ 
                 // CRITICAL FIX: Always maintain valid height. Visibility is handled by translateY.
                 height: isMobile ? height : undefined,
-                transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s ease-out, opacity 0.3s ease-out'
+                transition: isDragging ? 'none' : 'height 0.28s cubic-bezier(0.22, 1, 0.36, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s ease-out, opacity 0.3s ease-out'
             }}
         >
         <div 

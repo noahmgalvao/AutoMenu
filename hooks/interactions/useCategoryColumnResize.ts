@@ -30,6 +30,7 @@ interface ResizeSession {
     scrollOverscrollBehavior: string;
     pointerOffsetX: number;
     blockedDirection: -1 | 1 | null;
+    lastClientX: number;
 }
 
 const MIN_COLUMN_WIDTH_PX = 72;
@@ -153,6 +154,25 @@ export const useCategoryColumnResize = (
             const pairWidth = initialPixelWidths[session.boundaryIndex]
                 + initialPixelWidths[session.boundaryIndex + 1];
             const pageCenterClientX = pageRect.left + (pageRect.width / 2);
+            const currentWidths = liveWidthsRef.current || session.initialWidths;
+            const getBoundaryForWidths = (widths: number[]) => (
+                gridRect.left
+                + (widths.slice(0, session.boundaryIndex + 1).reduce((sum, width) => sum + width, 0) * usableColumnsWidth)
+                + (gap * session.boundaryIndex)
+            );
+            const currentBoundary = getBoundaryForWidths(currentWidths);
+            const pointerDeltaX = event.clientX - session.lastClientX;
+            const pointerDirection = pointerDeltaX < -0.25 ? -1 : pointerDeltaX > 0.25 ? 1 : null;
+            session.lastClientX = event.clientX;
+
+            if (session.blockedDirection) {
+                if (pointerDirection === null || pointerDirection === session.blockedDirection) {
+                    session.pointerOffsetX = event.clientX - currentBoundary;
+                    return;
+                }
+                session.blockedDirection = null;
+            }
+
             const requestedBoundaryClientX = event.clientX - session.pointerOffsetX;
             let boundaryClientX = requestedBoundaryClientX;
             const snapDistance = CENTER_SNAP_DISTANCE_PX * scale;
@@ -172,7 +192,6 @@ export const useCategoryColumnResize = (
             nextWidths[session.boundaryIndex] = nextLeftWidth;
             nextWidths[session.boundaryIndex + 1] = nextRightWidth;
             const normalized = normalizeColumnWidths(nextWidths, session.columnCount);
-            const currentWidths = liveWidthsRef.current || session.initialWidths;
             const isValidCandidate = (candidateWidths: number[]) => {
                 const nextStyle = { ...style, categoryColumnWidths: candidateWidths };
                 const keepsTextReadable = style.allowSameWordBreak
@@ -181,11 +200,6 @@ export const useCategoryColumnResize = (
                     || getPaginationSignature(nextStyle, context) === session.paginationSignature;
                 return keepsTextReadable && keepsPagination;
             };
-            const getBoundaryForWidths = (widths: number[]) => (
-                gridRect.left
-                + (widths.slice(0, session.boundaryIndex + 1).reduce((sum, width) => sum + width, 0) * usableColumnsWidth)
-                + (gap * session.boundaryIndex)
-            );
             const applyWidths = (widths: number[], guideX: number, isSnapped: boolean) => {
                 liveWidthsRef.current = widths;
                 setLiveCategoryColumnWidths(widths);
@@ -195,18 +209,6 @@ export const useCategoryColumnResize = (
                     snappedToCenter: isSnapped,
                 });
             };
-            const currentBoundary = getBoundaryForWidths(currentWidths);
-            const requestedDirection = requestedBoundaryClientX < currentBoundary - 0.5
-                ? -1
-                : requestedBoundaryClientX > currentBoundary + 0.5
-                    ? 1
-                    : null;
-            if (session.blockedDirection && requestedDirection === session.blockedDirection) {
-                session.pointerOffsetX = event.clientX - currentBoundary;
-                return;
-            }
-            if (requestedDirection !== session.blockedDirection) session.blockedDirection = null;
-
             if (!isValidCandidate(normalized)) {
                 let lowerBound = 0;
                 let upperBound = 1;
@@ -229,7 +231,8 @@ export const useCategoryColumnResize = (
                 const changed = closestValidWidths.some((width, index) => Math.abs(width - currentWidths[index]) > 0.00005);
                 if (changed) applyWidths(closestValidWidths, closestBoundary, false);
                 session.pointerOffsetX = event.clientX - closestBoundary;
-                session.blockedDirection = requestedBoundaryClientX < closestBoundary ? -1 : 1;
+                session.blockedDirection = pointerDirection
+                    || (requestedBoundaryClientX < closestBoundary ? -1 : 1);
                 const now = performance.now();
                 if (now >= session.feedbackUntil) {
                     triggerLimitFeedback(session.source);
@@ -313,6 +316,15 @@ export const useCategoryColumnResize = (
             columnCount,
         );
         const scrollContainer = source.closest<HTMLElement>('[data-automenu-editor-canvas="true"]');
+        const gridRect = grid.getBoundingClientRect();
+        const pageRect = page.getBoundingClientRect();
+        const scale = Math.max(0.001, pageRect.width / A4_WIDTH_PX);
+        const margins = resolveMenuMargins(style);
+        const gap = Math.max(0, margins.columnGap * scale);
+        const usableColumnsWidth = Math.max(1, gridRect.width - (gap * (columnCount - 1)));
+        const initialBoundaryClientX = gridRect.left
+            + (initialWidths.slice(0, boundaryIndex + 1).reduce((sum, width) => sum + width, 0) * usableColumnsWidth)
+            + (gap * boundaryIndex);
 
         sessionRef.current = {
             pageIndex,
@@ -329,8 +341,9 @@ export const useCategoryColumnResize = (
             scrollLeft: scrollContainer?.scrollLeft || 0,
             scrollTouchAction: scrollContainer?.style.touchAction || '',
             scrollOverscrollBehavior: scrollContainer?.style.overscrollBehavior || '',
-            pointerOffsetX: 0,
+            pointerOffsetX: event.clientX - initialBoundaryClientX,
             blockedDirection: null,
+            lastClientX: event.clientX,
         };
         liveWidthsRef.current = initialWidths;
         setLiveCategoryColumnWidths(liveWidthsRef.current);

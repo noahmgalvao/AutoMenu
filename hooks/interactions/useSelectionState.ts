@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import { Product, MenuStyle } from '../../types';
 import { FREE_TEXT_PREFIX, FormattingField, FormattingTarget, InteractionProps, SelectableType, SelectionItem, SelectionType } from './types';
 import { formatMenuPriceValue, parseAndRoundPrice } from '../../utils/price';
@@ -511,36 +512,30 @@ export const useSelectionState = (
 
     const startEditing = (e: React.MouseEvent, id: string, elementIdToFocus?: string, field: FormattingField = 'name') => {
         e.stopPropagation();
-        setEditingId(id);
         const product = products.find(p => p.id === id);
         const type: SelectionType = product ? (product.isFreeText ? 'freeText' : 'product') : 'category';
         const targetField: FormattingField = product?.isFreeText ? 'freeText' : type === 'category' ? 'category' : field;
-        setFormattingTarget({
-            type: type as FormattingTarget['type'],
-            id,
-            field: targetField,
-            elementId: elementIdToFocus || `product-name-${id}`,
-        });
-        clearMultiSelectionTo(type, id);
-        
-        // Multi-stage focus attempt to ensure mobile keyboard triggers
-        const triggerFocus = () => {
-            const el = document.getElementById(elementIdToFocus || `product-name-${id}`);
-            if (el) {
-                el.focus();
-                // Specific fix for iOS selection
-                const range = document.createRange();
-                range.selectNodeContents(el);
-                const sel = window.getSelection();
-                sel?.removeAllRanges();
-                sel?.addRange(range);
-            }
-        };
+        const focusElementId = elementIdToFocus || `product-name-${id}`;
 
-        // Immediate and delayed attempts
-        triggerFocus();
-        setTimeout(triggerFocus, 50);
-        setTimeout(triggerFocus, 100);
+        flushSync(() => {
+            setEditingId(id);
+            setFormattingTarget({
+                type: type as FormattingTarget['type'],
+                id,
+                field: targetField,
+                elementId: focusElementId,
+            });
+            clearMultiSelectionTo(type, id);
+        });
+
+        const el = document.getElementById(focusElementId);
+        if (!el) return;
+        el.focus({ preventScroll: true });
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
     };
 
     const setProductEditingField = (id: string, field: 'name' | 'price' | 'description', elementId: string) => {
