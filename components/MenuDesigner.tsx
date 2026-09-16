@@ -483,7 +483,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             }
 
             const selectedPageNumbers = new Set(pageIndexes.map((index) => index + 1));
-            await ensurePrintPreviewPages({
+            const generatedPages = await ensurePrintPreviewPages({
                 printBackgrounds: printOptions.printBackgrounds,
                 pageIndexes,
                 onProgress: (pages) => {
@@ -492,6 +492,9 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                     }
                 },
             });
+            if (!cancelled) {
+                setPrintPreviewPages(generatedPages.filter((page) => selectedPageNumbers.has(page.pageNumber)));
+            }
         };
 
         void generatePreviews()

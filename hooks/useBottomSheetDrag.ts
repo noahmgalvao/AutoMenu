@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 
 export const useBottomSheetDrag = (isOpen: boolean, onClose?: () => void) => {
-    const [height, setHeight] = useState('45vh');
+    const [height, setHeight] = useState('45dvh');
     const [isDragging, setIsDragging] = useState(false);
     const [isMobile, setIsMobile] = useState(false);
     const startY = useRef<number>(0);
     const startHeight = useRef<number>(0);
+    const expandedByUpwardGesture = useRef(false);
 
     // Detect Mobile
     useEffect(() => {
@@ -18,7 +19,7 @@ export const useBottomSheetDrag = (isOpen: boolean, onClose?: () => void) => {
     // Reset to default when opened
     useEffect(() => {
         if (isOpen) {
-            setHeight('45vh');
+            setHeight('45dvh');
         }
     }, [isOpen]);
 
@@ -39,6 +40,7 @@ export const useBottomSheetDrag = (isOpen: boolean, onClose?: () => void) => {
         e.stopPropagation();
         
         setIsDragging(true);
+        expandedByUpwardGesture.current = false;
         startY.current = e.clientY;
         const currentVh = parseFloat(height);
         startHeight.current = (window.innerHeight * currentVh) / 100;
@@ -49,27 +51,38 @@ export const useBottomSheetDrag = (isOpen: boolean, onClose?: () => void) => {
 
     const handlePointerMove = useCallback((e: PointerEvent) => {
         const delta = startY.current - e.clientY; // Up is positive
+        if (delta >= 4) {
+            expandedByUpwardGesture.current = true;
+            setHeight('100dvh');
+            return;
+        }
         const newH = startHeight.current + delta;
         const newVh = (newH / window.innerHeight) * 100;
         
         const clamped = Math.max(0, Math.min(100, newVh));
-        setHeight(`${clamped}vh`);
+        setHeight(`${clamped}dvh`);
     }, []);
 
     const handlePointerUp = useCallback((e: PointerEvent) => {
         window.removeEventListener('pointermove', handlePointerMove);
         window.removeEventListener('pointerup', handlePointerUp);
         setIsDragging(false);
+
+        if (expandedByUpwardGesture.current) {
+            expandedByUpwardGesture.current = false;
+            setHeight('100dvh');
+            return;
+        }
         
         const finalVh = ((window.innerHeight - e.clientY) / window.innerHeight) * 100;
         
         if (finalVh < 25) {
             if (onClose) onClose();
-            setHeight('0vh');
+            setHeight('0dvh');
         } else if (finalVh > 75) {
-            setHeight('100vh');
+            setHeight('100dvh');
         } else {
-            setHeight('45vh');
+            setHeight('45dvh');
         }
     }, [onClose]);
 
@@ -79,7 +92,13 @@ export const useBottomSheetDrag = (isOpen: boolean, onClose?: () => void) => {
         isMobile,
         dragHandlers: {
             onPointerDown: handlePointerDown,
-            style: { touchAction: 'none', cursor: 'grab' } as React.CSSProperties
+            style: {
+                touchAction: 'none',
+                cursor: 'grab',
+                ...(isMobile && height === '100dvh'
+                    ? { paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }
+                    : {}),
+            } as React.CSSProperties
         }
     };
 };
