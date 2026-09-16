@@ -3,7 +3,7 @@ import { Product, MenuStyle } from '../types';
 import { BringToFront, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Minus, MoreHorizontal, Plus, SendToBack, Trash2 } from 'lucide-react';
 import { Resizable } from 're-resizable';
 import { MenuItem, ResponsiveMoveButton } from './MenuItem';
-import { PageLayout, CategoryChunkLayout, FREE_TEXT_PREFIX, A4_WIDTH_PX } from '../utils/menuPagination';
+import { PageLayout, CategoryChunkLayout, PageItem, FREE_TEXT_PREFIX, A4_WIDTH_PX } from '../utils/menuPagination';
 import { selectionLayerClasses } from './selectionLayers';
 import { getDirectionLabel, getEdgeControlClass, type FlowDirection } from '../utils/flowControls';
 import { normalizeTextureUrl } from '../constants';
@@ -102,11 +102,13 @@ const PositionedCategoryChunk: React.FC<
         const observer = new ResizeObserver(scheduleUpdate);
         observer.observe(page);
         observer.observe(column);
-        observer.observe(element);
-        if (placeholder) observer.observe(placeholder);
-        Array.from(column.children).forEach((child) => {
-            if (child instanceof HTMLElement) observer.observe(child);
-        });
+        if (!detachedFromFlow) {
+            observer.observe(element);
+            if (placeholder) observer.observe(placeholder);
+            Array.from(column.children).forEach((child) => {
+                if (child instanceof HTMLElement) observer.observe(child);
+            });
+        }
         window.addEventListener('resize', scheduleUpdate);
         return () => {
             observer.disconnect();
@@ -223,6 +225,18 @@ export const MenuPage: React.FC<MenuPageProps> = ({
     };
 
     const renderChunk = (chunk: CategoryChunkLayout) => {
+        const renderItems = chunk.items.reduce<PageItem[]>((items, item) => {
+            const previousItem = items[items.length - 1];
+            if (item.type === 'product-row' && previousItem?.type === 'product-row') {
+                items[items.length - 1] = {
+                    ...previousItem,
+                    data: [...previousItem.data, ...item.data],
+                };
+                return items;
+            }
+            items.push(item);
+            return items;
+        }, []);
         const isCategoryTarget = chunk.startsCategory;
         const isFreeTextTarget = chunk.category.startsWith(FREE_TEXT_PREFIX);
         const isDragTarget = isCategoryTarget || isFreeTextTarget;
@@ -343,9 +357,15 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                     </>
                 )}
                 <div className={`transition-opacity duration-150 ${isCategoryDragged ? 'opacity-40' : ''}`}>
-                    {chunk.items.map((item, idx) => (
+                    {renderItems.map((item, idx) => (
                         <MenuItem
-                            key={`${chunk.chunkId}-${item.type}-${idx}`}
+                            key={item.type === 'product-item'
+                                ? `product-${item.data.id}`
+                                : item.type === 'category-header'
+                                    ? `category-${item.data}`
+                                    : item.type === 'product-row'
+                                        ? `product-grid-${chunk.category}-${idx}`
+                                        : `${chunk.chunkId}-${item.type}-${idx}`}
                             item={item}
                             idx={idx}
                             style={renderedStyle}

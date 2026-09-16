@@ -44,8 +44,8 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
         const updatePosition = () => {
             const targetRect = target.getBoundingClientRect();
             const toolbarHeight = toolbarRef.current?.getBoundingClientRect().height || 76;
-            const preferredWidth = hasHeader ? (compact ? 168 : 210) : isSizeColorOnly ? 120 : 270;
-            const minimumWidth = hasHeader ? (compact ? 160 : 190) : isSizeColorOnly ? 120 : 210;
+            const preferredWidth = hasHeader ? (compact ? 148 : 210) : isSizeColorOnly ? 120 : 270;
+            const minimumWidth = hasHeader ? (compact ? 144 : 190) : isSizeColorOnly ? 120 : 210;
             const width = Math.min(preferredWidth, Math.max(minimumWidth, window.innerWidth - 16));
             const left = Math.max(8, Math.min(window.innerWidth - width - 8, targetRect.left + (targetRect.width / 2) - (width / 2)));
             const top = targetRect.top - toolbarHeight - 8 >= 8
@@ -83,7 +83,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                     {header}
                 </div>
             )}
-            <div className={`flex ${compact ? 'gap-1' : 'gap-1.5'}`}>
+            <div className={`flex ${compact ? 'justify-center gap-1' : 'gap-1.5'}`}>
                 {!isSizeColorOnly && (
                     <div className="min-w-0 flex-1">
                         <FontSelect

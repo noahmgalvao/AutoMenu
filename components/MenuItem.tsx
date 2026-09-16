@@ -969,7 +969,16 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     : 24;
         
         return (
-            <div key={`row-${idx}`} className="grid" style={{ gridTemplateColumns: `repeat(${productColumnCount}, minmax(0, 1fr))`, gap: `${productGridGap}px`, marginBottom: contentSpacing.betweenProducts }}>
+            <div
+                key={`row-${idx}`}
+                className="grid"
+                style={{
+                    gridTemplateColumns: `repeat(${productColumnCount}, minmax(0, 1fr))`,
+                    columnGap: `${productGridGap}px`,
+                    rowGap: `${contentSpacing.betweenProducts}px`,
+                    marginBottom: contentSpacing.betweenProducts,
+                }}
+            >
                 {(item.data as Product[]).map((product, productColumnIndex) => {
                      const isSelected = handlers.isSelected?.('product', product.id) ?? handlers.selectedId === product.id;
                      const nameStyle = style.elementStyles?.productName || {};
@@ -987,8 +996,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                      const hasMovableSiblings = visibleCatProducts.length > 1 && pIndex >= 0;
                      const canMoveUp = hasMovableSiblings && (productColumnCount > 1 ? pIndex - productColumnCount >= 0 : pIndex > 0);
                      const canMoveDown = hasMovableSiblings && (productColumnCount > 1 ? pIndex + productColumnCount < visibleCatProducts.length : pIndex < visibleCatProducts.length - 1);
-                     const canMoveLeft = productColumnCount > 1 && productColumnIndex > 0;
-                     const canMoveRight = productColumnCount > 1 && productColumnIndex < productColumnCount - 1;
+                     const renderedProductColumnIndex = productColumnIndex % productColumnCount;
+                     const canMoveLeft = productColumnCount > 1 && renderedProductColumnIndex > 0;
+                     const canMoveRight = productColumnCount > 1 && renderedProductColumnIndex < productColumnCount - 1;
                      const isBeingDragged = handlers.draggedItem?.id === product.id;
                      const isEditing = handlers.editingId === product.id;
                      const productAddControls = handlers.getSelectionAddControls?.('product', product.id) || { top: true, bottom: true };

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { Product } from '../../types';
 import { InteractionProps, DraftItem, FREE_TEXT_PREFIX, A4_HEIGHT_PX, NUDGE_STEP, SelectionItem, SelectionType, MoveDirection } from './types';
 import { getCollisionSafeFreeTextTop, moveFreeTextOneStep } from './freeTextMovement';
@@ -43,126 +43,6 @@ export const useKeyboardMovement = (
     } = props;
 
     const draftInputRef = useRef<HTMLDivElement>(null);
-    const pendingDraftPlacementRef = useRef<{
-        id: string;
-        pageIndex: number;
-        columnIndex: number;
-        top: number;
-        ghostCategory: string;
-        anchorCategory: string | null;
-        forcePagePlacement: boolean;
-        relocated: boolean;
-    } | null>(null);
-
-    useEffect(() => {
-        const pendingPlacement = pendingDraftPlacementRef.current;
-        if (!pendingPlacement || !products.some(product => product.id === pendingPlacement.id) || !onUpdateProduct) return;
-
-        let cancelled = false;
-        let retryTimer: number | null = null;
-        let attempts = 0;
-
-        const alignWithDraftPosition = () => {
-            if (cancelled) return;
-
-            const product = products.find(candidate => candidate.id === pendingPlacement.id);
-            const element = document.getElementById(`product-container-${pendingPlacement.id}`);
-            const pageElement = element?.closest<HTMLElement>('[data-menu-print-page="true"][data-page-index]');
-            const columnElement = element?.closest<HTMLElement>('[data-drag-column-container="category"][data-drag-column-index]');
-
-            if (!product || !element || !pageElement) {
-                attempts += 1;
-                if (attempts < 8) retryTimer = window.setTimeout(alignWithDraftPosition, 40);
-                else pendingDraftPlacementRef.current = null;
-                return;
-            }
-
-            const renderedPageIndex = Number(pageElement.dataset.pageIndex ?? 0);
-            const renderedColumnIndex = Number(columnElement?.dataset.dragColumnIndex ?? 0);
-            if (renderedPageIndex !== pendingPlacement.pageIndex || renderedColumnIndex !== pendingPlacement.columnIndex) {
-                if (!pendingPlacement.relocated && pendingPlacement.forcePagePlacement && onStyleUpdate) {
-                    pendingPlacement.relocated = true;
-                    onStyleUpdate(prev => ({
-                        ...prev,
-                        categoryPlacements: {
-                            ...(prev.categoryPlacements || {}),
-                            [pendingPlacement.ghostCategory]: {
-                                pageIndex: pendingPlacement.pageIndex,
-                                columnIndex: pendingPlacement.columnIndex,
-                            },
-                        },
-                        pageBreaks: Array.from(new Set([...(prev.pageBreaks || []), pendingPlacement.ghostCategory])),
-                        name: 'Custom',
-                    }));
-                    return;
-                }
-
-                if (!pendingPlacement.relocated && pendingPlacement.anchorCategory && onStyleUpdate) {
-                    pendingPlacement.relocated = true;
-                    onStyleUpdate(prev => {
-                        const currentOrder = prev.customCategoryOrder && prev.customCategoryOrder.length > 0
-                            ? [...prev.customCategoryOrder]
-                            : [...sortedCategories];
-                        sortedCategories.forEach(category => {
-                            if (!currentOrder.includes(category)) currentOrder.push(category);
-                        });
-
-                        const nextOrder = currentOrder.filter(category => category !== pendingPlacement.ghostCategory);
-                        const anchorIndex = nextOrder.indexOf(pendingPlacement.anchorCategory!);
-                        if (anchorIndex === -1) return prev;
-
-                        const insertIndex = renderedPageIndex < pendingPlacement.pageIndex
-                            ? anchorIndex + 1
-                            : anchorIndex;
-                        nextOrder.splice(insertIndex, 0, pendingPlacement.ghostCategory);
-                        return { ...prev, customCategoryOrder: nextOrder, name: 'Custom' };
-                    });
-                    return;
-                }
-
-                attempts += 1;
-                if (attempts < 8) retryTimer = window.setTimeout(alignWithDraftPosition, 40);
-                else pendingDraftPlacementRef.current = null;
-                return;
-            }
-
-            const currentScale = (typeof scale === 'number' && scale > 0) ? scale : 1;
-            const elementRect = element.getBoundingClientRect();
-            const pageRect = pageElement.getBoundingClientRect();
-            const columnRect = columnElement?.getBoundingClientRect();
-            const pagePadding = style.pagePadding || 48;
-            const safeClientTop = getCollisionSafeFreeTextTop({
-                root: pageElement,
-                desiredTop: pageRect.top + (pendingPlacement.top * currentScale),
-                height: elementRect.height,
-                pointerY: pageRect.top + (pendingPlacement.top * currentScale),
-                excludeProductId: pendingPlacement.id,
-                minTop: columnRect?.top ?? pageRect.top + (pagePadding * currentScale),
-                maxBottom: pageRect.bottom - ((pagePadding + SAFETY_BUFFER) * currentScale),
-                minLeft: columnRect?.left,
-                maxRight: columnRect?.right,
-            });
-            const renderedTop = (elementRect.top - pageRect.top) / currentScale;
-            const targetTop = ((safeClientTop ?? elementRect.top) - pageRect.top) / currentScale;
-            const difference = targetTop - renderedTop;
-            pendingDraftPlacementRef.current = null;
-
-            if (Math.abs(difference) > 0.5) {
-                onUpdateProduct(
-                    pendingPlacement.id,
-                    'customMarginTop',
-                    (product.customMarginTop || 0) + difference
-                );
-            }
-        };
-
-        const frame = window.requestAnimationFrame(alignWithDraftPosition);
-        return () => {
-            cancelled = true;
-            window.cancelAnimationFrame(frame);
-            if (retryTimer !== null) window.clearTimeout(retryTimer);
-        };
-    }, [onStyleUpdate, onUpdateProduct, products, scale, sortedCategories, style.categoryPlacements, style.customCategoryOrder, style.customProductOrder, style.pageBreaks]);
 
     const getProductSelectionType = (product: Product | undefined): SelectionType => (
         product?.isFreeText ? 'freeText' : 'product'
@@ -371,26 +251,6 @@ export const useKeyboardMovement = (
             return currentOrder.length;
         };
 
-        const floorProduct = draftItem.floorId ? products.find(p => p.id === draftItem.floorId) : null;
-        const ceilingProduct = draftItem.ceilingId ? products.find(p => p.id === draftItem.ceilingId) : null;
-        const newItemMargin = draftItem.forcePagePlacement
-            ? Math.max(0, draftItem.top - (style.pagePadding || 48))
-            : Math.max(0, draftItem.top - draftItem.floorBottom);
-
-        pendingDraftPlacementRef.current = {
-            id: newId,
-            pageIndex: draftItem.pageIndex,
-            columnIndex: draftItem.columnIndex,
-            top: draftItem.top,
-            ghostCategory: ghostCategoryName,
-            anchorCategory: floorProduct?.category
-                || ceilingProduct?.category
-                || (draftItem.floorId && sortedCategories.includes(draftItem.floorId) ? draftItem.floorId : null)
-                || (draftItem.ceilingId && sortedCategories.includes(draftItem.ceilingId) ? draftItem.ceilingId : null),
-            forcePagePlacement: draftItem.forcePagePlacement === true,
-            relocated: false,
-        };
-
         onStyleUpdate(prev => {
             const currentOrder = getCurrentOrder(prev.customCategoryOrder);
             const insertIndex = getDraftInsertIndex(currentOrder);
@@ -407,14 +267,26 @@ export const useKeyboardMovement = (
                 blankPages: draftItem.blankPageId
                     ? (prev.blankPages || []).filter((blankPage) => blankPage.id !== draftItem.blankPageId)
                     : prev.blankPages,
-                pageBreaks: draftItem.forcePagePlacement
-                    ? Array.from(new Set([...(prev.pageBreaks || []), ghostCategoryName]))
-                    : prev.pageBreaks,
+                categoryPlacements: {
+                    ...(prev.categoryPlacements || {}),
+                    [ghostCategoryName]: {
+                        pageIndex: draftItem.pageIndex,
+                        columnIndex: draftItem.columnIndex,
+                    },
+                },
+                categoryPositions: {
+                    ...(prev.categoryPositions || {}),
+                    [ghostCategoryName]: {
+                        pageIndex: draftItem.pageIndex,
+                        columnIndex: draftItem.columnIndex,
+                        y: Math.max(0, draftItem.top),
+                    },
+                },
                 name: 'Custom'
             };
         });
 
-        onAddProduct(ghostCategoryName, undefined, true, newId, { customMarginTop: newItemMargin, name: text });
+        onAddProduct(ghostCategoryName, undefined, true, newId, { customMarginTop: 0, name: text });
         setDraftItem(null);
     };
 

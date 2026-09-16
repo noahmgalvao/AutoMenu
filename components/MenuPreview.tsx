@@ -1272,27 +1272,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         const newId = crypto.randomUUID();
         const ghostCategory = `${FREE_TEXT_PREFIX}${newId}`;
 
-        if (!placement) {
-            const marginTop = (product.customMarginTop || 0) + 20 + (indexOffset * NUDGE_STEP);
-            onStyleUpdate?.((prev) => {
-                const currentOrder = getCategoryOrder();
-                const nextOrder = insertCategoryAfter(currentOrder, product.category, ghostCategory);
-                return {
-                    ...prev,
-                    customCategoryOrder: nextOrder,
-                    customProductOrder: { ...(prev.customProductOrder || {}), [ghostCategory]: [newId] },
-                    name: 'Custom',
-                };
-            });
-            onAddProduct?.(ghostCategory, undefined, true, newId, {
-                name: product.name,
-                description: product.description,
-                price: product.price,
-                customMarginTop: marginTop,
-                styles: { ...(product.styles || {}) },
-            });
-            return true;
-        }
+        if (!placement) return false;
 
         const getCurrentOrder = (customOrder?: string[]) => {
             const currentOrder = customOrder && customOrder.length > 0
@@ -1363,7 +1343,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         });
 
         return true;
-    }, [getCategoryOrder, handlers.sortedCategories, insertCategoryAfter, onAddProduct, onStyleUpdate, products]);
+    }, [handlers.sortedCategories, onAddProduct, onStyleUpdate, products]);
 
     const addNativeClipboardText = useCallback((
         text: string,
