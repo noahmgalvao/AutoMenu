@@ -539,16 +539,16 @@ const downloadPdfBlob = (blob: Blob, filename: string) => {
 export const captureMenuPagePreview = async (
   pageElement: HTMLElement,
   pageNumber: number,
-  printBackgrounds: boolean
+  printBackgrounds: boolean,
+  assetCache: Map<string, string> = new Map()
 ) => {
-  const cache = new Map<string, string>();
   return capturePageAsJpeg(
     pageElement,
     pageNumber,
     { printBackgrounds, grayscale: false },
     PREVIEW_CAPTURE_SCALE,
     0.72,
-    cache
+    assetCache
   );
 };
 

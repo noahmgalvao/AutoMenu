@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Product, MenuStyle, SortOption, ElementStyle, AddedImage } from '../types';
 import { PRESET_TEMPLATES } from '../constants';
 import { MenuPreview } from './MenuPreview';
@@ -83,6 +83,16 @@ interface RenderedMoveEntry {
     centerY: number;
 }
 
+interface PrintPreviewCacheEntry {
+    revision: number;
+    printBackgrounds: boolean;
+    pageCount: number;
+    pages: Map<number, PrintPreviewPage>;
+    assetCache: Map<string, string>;
+    queue: Promise<void> | null;
+    listeners: Set<(pages: PrintPreviewPage[]) => void>;
+}
+
 const insertItemAtOriginalIndex = (order: string[], itemId: string, insertionIndex: number) => {
     const nextOrder = order.filter((id) => id !== itemId);
     nextOrder.splice(Math.max(0, Math.min(insertionIndex, nextOrder.length)), 0, itemId);
@@ -118,6 +128,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const [showZoomInfo, setShowZoomInfo] = useState(false);
     const zoomTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const printPreviewRevisionRef = useRef(0);
+    const printPreviewCachesRef = useRef<Map<string, PrintPreviewCacheEntry>>(new Map());
 
     const containerRef = useRef<HTMLDivElement>(null);
     const tipsAnchorRef = useRef<HTMLDivElement>(null);
@@ -321,12 +333,127 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         return () => el.removeEventListener('wheel', handleWheel);
     }, [scale]);
 
+    const ensurePrintPreviewPages = useCallback(async ({
+        printBackgrounds,
+        pageIndexes,
+        onProgress,
+    }: {
+        printBackgrounds: boolean;
+        pageIndexes?: number[];
+        onProgress?: (pages: PrintPreviewPage[]) => void;
+    }) => {
+        const revision = printPreviewRevisionRef.current;
+        const pageElements = Array.from(
+            containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]') || []
+        );
+        const requestedIndexes = (pageIndexes || pageElements.map((_, index) => index))
+            .filter((index) => index >= 0 && index < pageElements.length);
+        const cacheKey = `${revision}:${printBackgrounds ? 'backgrounds' : 'plain'}:${pageElements.length}`;
+        let cache = printPreviewCachesRef.current.get(cacheKey);
+
+        if (!cache) {
+            cache = {
+                revision,
+                printBackgrounds,
+                pageCount: pageElements.length,
+                pages: new Map(),
+                assetCache: new Map(),
+                queue: null,
+                listeners: new Set(),
+            };
+            printPreviewCachesRef.current.set(cacheKey, cache);
+        }
+
+        const getCachedPages = () => Array.from(cache!.pages.values())
+            .sort((left, right) => left.pageNumber - right.pageNumber);
+        if (onProgress) {
+            cache.listeners.add(onProgress);
+            onProgress(getCachedPages());
+        }
+
+        const previousQueue = cache.queue || Promise.resolve();
+        const nextQueue = previousQueue
+            .catch(() => undefined)
+            .then(async () => {
+                const { captureMenuPagePreview } = await import('../utils/pdfExport');
+                for (const index of requestedIndexes) {
+                    if (printPreviewRevisionRef.current !== revision) return;
+                    if (cache!.pages.has(index)) continue;
+
+                    const dataUrl = await captureMenuPagePreview(
+                        pageElements[index],
+                        index + 1,
+                        printBackgrounds,
+                        cache!.assetCache,
+                    );
+                    if (printPreviewRevisionRef.current !== revision) return;
+
+                    cache!.pages.set(index, { pageNumber: index + 1, dataUrl });
+                    const pages = getCachedPages();
+                    cache!.listeners.forEach((listener) => listener(pages));
+                }
+            });
+        cache.queue = nextQueue;
+
+        try {
+            await nextQueue;
+            return getCachedPages();
+        } finally {
+            if (cache.queue === nextQueue) cache.queue = null;
+            if (onProgress) cache.listeners.delete(onProgress);
+        }
+    }, []);
+
+    useEffect(() => {
+        const warmModules = () => {
+            void Promise.all([
+                import('./MenuDesigner/PrintCanvasModal'),
+                import('../utils/pdfExport'),
+            ]).catch(() => undefined);
+        };
+        const idleWindow = window as Window & {
+            requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+            cancelIdleCallback?: (id: number) => void;
+        };
+        const idleId = idleWindow.requestIdleCallback?.(warmModules, { timeout: 1200 });
+        const timeoutId = idleId === undefined ? window.setTimeout(warmModules, 250) : null;
+
+        return () => {
+            if (idleId !== undefined) idleWindow.cancelIdleCallback?.(idleId);
+            if (timeoutId !== null) window.clearTimeout(timeoutId);
+        };
+    }, []);
+
+    useEffect(() => {
+        printPreviewRevisionRef.current += 1;
+        printPreviewCachesRef.current.clear();
+        const revision = printPreviewRevisionRef.current;
+        const idleWindow = window as Window & {
+            requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+            cancelIdleCallback?: (id: number) => void;
+        };
+        let idleId: number | null = null;
+
+        const timeoutId = window.setTimeout(() => {
+            const prewarm = () => {
+                if (printPreviewRevisionRef.current !== revision) return;
+                void ensurePrintPreviewPages({ printBackgrounds: true }).catch(() => undefined);
+            };
+            idleId = idleWindow.requestIdleCallback?.(prewarm, { timeout: 1500 }) ?? null;
+            if (idleId === null) prewarm();
+        }, 450);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+            if (idleId !== null) idleWindow.cancelIdleCallback?.(idleId);
+        };
+    }, [ensurePrintPreviewPages, products, sortOption, splitCategoryAcrossPages, style]);
+
     const handlePrint = () => {
         setSelection({ type: null, id: null });
         document.dispatchEvent(new Event('automenu:close-inline-formatting'));
         const pageCount = containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]').length || 0;
         setPrintPageCount(pageCount);
-        setPrintPreviewPages([]);
         setPrintPreviewError(null);
         setShowPrintModal(true);
     };
@@ -339,57 +466,51 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     useEffect(() => {
         if (!showPrintModal) return;
 
-        const pageElements = Array.from(
-            containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]') || []
-        );
-        const pagesToPreviewPromise = import('../utils/pdfExport').then(({ resolvePdfPageIndexes }) => {
-            const selectedIndexes = resolvePdfPageIndexes(printOptions, pageElements.length, currentPrintPageIndex);
-            return pageElements
-                .map((element, index) => ({ element, index }))
-                .filter(({ index }) => selectedIndexes.has(index));
-        });
         let cancelled = false;
 
         setIsPrintPreviewLoading(true);
         setPrintPreviewError(null);
-        setPrintPreviewPages([]);
 
         const generatePreviews = async () => {
-            const [{ captureMenuPagePreview }, pagesToPreview] = await Promise.all([
-                import('../utils/pdfExport'),
-                pagesToPreviewPromise,
-            ]);
-            if (cancelled) return;
-            if (pagesToPreview.length === 0) {
+            const pageCount = containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]').length || 0;
+            const { resolvePdfPageIndexes } = await import('../utils/pdfExport');
+            const selectedIndexes = resolvePdfPageIndexes(printOptions, pageCount, currentPrintPageIndex);
+            const pageIndexes = Array.from(selectedIndexes).sort((left, right) => left - right);
+            if (pageIndexes.length === 0) {
                 setPrintPreviewError('Nenhuma página válida está selecionada para o preview.');
+                setPrintPreviewPages([]);
                 return;
             }
 
-            const nextPreviews: PrintPreviewPage[] = [];
-            for (const { element, index } of pagesToPreview) {
-                try {
-                    const dataUrl = await captureMenuPagePreview(element, index + 1, printOptions.printBackgrounds);
-                    nextPreviews.push({ pageNumber: index + 1, dataUrl });
-                    if (!cancelled) setPrintPreviewPages([...nextPreviews]);
-                } catch (error) {
-                    console.warn(`[PDF Preview] Falha na página ${index + 1}`, error);
+            const selectedPageNumbers = new Set(pageIndexes.map((index) => index + 1));
+            await ensurePrintPreviewPages({
+                printBackgrounds: printOptions.printBackgrounds,
+                pageIndexes,
+                onProgress: (pages) => {
                     if (!cancelled) {
-                        setPrintPreviewError(`Não foi possível gerar o preview da página ${index + 1}. O diagnóstico do download mostrará o motivo técnico.`);
+                        setPrintPreviewPages(pages.filter((page) => selectedPageNumbers.has(page.pageNumber)));
                     }
-                    break;
-                }
-            }
+                },
+            });
         };
 
-        void generatePreviews().finally(() => {
-            if (!cancelled) setIsPrintPreviewLoading(false);
-        });
+        void generatePreviews()
+            .catch((error) => {
+                console.warn('[PDF Preview] Falha ao gerar preview', error);
+                if (!cancelled) {
+                    setPrintPreviewError('Não foi possível gerar o preview. O diagnóstico do download mostrará o motivo técnico.');
+                }
+            })
+            .finally(() => {
+                if (!cancelled) setIsPrintPreviewLoading(false);
+            });
 
         return () => {
             cancelled = true;
         };
     }, [
         currentPrintPageIndex,
+        ensurePrintPreviewPages,
         printOptions.pageMode,
         printOptions.pageRange,
         printOptions.printBackgrounds,

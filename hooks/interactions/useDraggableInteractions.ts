@@ -432,9 +432,9 @@ export const useDraggableInteractions = (
         document.body.style.webkitUserSelect = 'none';
         document.body.style.cursor = 'grabbing';
         document.body.style.touchAction = 'none';
-        document.body.style.overflowY = 'hidden';
+        document.body.style.overflow = 'hidden';
         document.body.style.overscrollBehavior = 'none';
-        root.style.overflowY = 'hidden';
+        root.style.overflow = 'hidden';
         root.style.overscrollBehavior = 'none';
         root.style.touchAction = 'none';
     }, []);
@@ -447,11 +447,10 @@ export const useDraggableInteractions = (
 
         while (current && current !== document.body && current !== document.documentElement) {
             const computed = window.getComputedStyle(current);
-            const canScroll = (
-                /(auto|scroll|overlay)/.test(`${computed.overflowX} ${computed.overflowY}`) ||
-                current.scrollHeight > current.clientHeight ||
-                current.scrollWidth > current.clientWidth
-            );
+            // Only lock real scroll containers. Elements with visible overflow can have
+            // larger scroll dimensions because controls protrude from them; changing only
+            // one overflow axis on those elements turns them into nested scroll areas.
+            const canScroll = /(auto|scroll|overlay)/.test(`${computed.overflowX} ${computed.overflowY}`);
 
             if (canScroll) containers.push(current);
             current = current.parentElement;
@@ -469,6 +468,8 @@ export const useDraggableInteractions = (
         }));
 
         scrollContainerStyleRef.current.forEach(({ element }) => {
+            element.style.overflow = 'hidden';
+            element.style.overflowX = 'hidden';
             element.style.overflowY = 'hidden';
             element.style.touchAction = 'none';
             element.style.overscrollBehavior = 'none';
@@ -1991,11 +1992,9 @@ export const useDraggableInteractions = (
                     productOrder[sourceGroup] = newOrder;
                     return { ...prev, customProductOrder: productOrder, name: 'Custom' };
                 });
-            } else {
-                onCommitProductOrder?.(sourceGroup, newOrder);
             }
         },
-        [getCategoryLanes, getLatestProductById, getOrderedProductTargets, getRenderedDragElement, onCommitProductOrder, onStyleUpdate, resolveCategoryLaneKey, resolveCategoryPageIndex, resolveProductInsertionIndex]
+        [getCategoryLanes, getLatestProductById, getOrderedProductTargets, getRenderedDragElement, onStyleUpdate, resolveCategoryLaneKey, resolveCategoryPageIndex, resolveProductInsertionIndex]
     );
 
     const getFreeTextCategoryTargetAtPointer = useCallback(
@@ -2428,8 +2427,10 @@ export const useDraggableInteractions = (
                 attachNativeTouchBlocker();
 
                 try {
-                    pending.element.setPointerCapture(pending.pointerId);
-                    pointerCaptureRef.current = { element: pending.element, pointerId: pending.pointerId };
+                    const captureElement = pending.element.closest<HTMLElement>('[data-automenu-editor-canvas="true"]')
+                        || pending.element;
+                    captureElement.setPointerCapture(pending.pointerId);
+                    pointerCaptureRef.current = { element: captureElement, pointerId: pending.pointerId };
                 } catch {
                     // Some browsers may reject capture if the pointer was already cancelled.
                 }
@@ -3089,13 +3090,9 @@ export const useDraggableInteractions = (
                 event.stopPropagation();
                 event.stopImmediatePropagation();
                 keepScrollLocked();
-                if (event.touches.length === 0) {
-                    clearTouchCancelCommit();
-                    const touch = event.changedTouches[0];
-                    if (touch) updateDragAtReleasePointer({ x: touch.clientX, y: touch.clientY });
-                    performCommitAndCleanup();
-                    return;
-                }
+                // DOM reordering can emit a transient touchcancel even though the finger
+                // is still down. Keep the session alive; a subsequent move cancels this
+                // fallback, while a real cancellation still commits after the grace time.
                 scheduleTouchCancelCommit();
                 return;
             }
@@ -3107,7 +3104,7 @@ export const useDraggableInteractions = (
 
             removeNativeTouchBlockerRef.current();
         };
-    }, [cancelAndCleanup, clearTouchCancelCommit, keepScrollLocked, performCommitAndCleanup, scheduleTouchCancelCommit, updateDragAtReleasePointer]);
+    }, [cancelAndCleanup, keepScrollLocked, scheduleTouchCancelCommit]);
 
     useEffect(() => {
         blurHandlerRef.current = handleWindowBlur;
