@@ -1,7 +1,7 @@
 
 import React, { useRef } from 'react';
 import { MenuStyle, Product, ElementStyle, SortOption, AddedImage, FontSizeLimitKey } from '../../types';
-import { isMiniFoodTexture, normalizeTextureUrl } from '../../constants';
+import { DEFAULT_MINIMUM_FONT_SIZE, isMiniFoodTexture, normalizeTextureUrl } from '../../constants';
 import { resolveFontSizeLimits, resolveMenuContentSpacing, resolveMenuMargins, resolveMinimumFontSize, roundFontSize } from '../../utils/styleRules';
 import { StyleControls } from './StyleControls';
 import { FontSelect, MiniFoodTextureSelect, TemplateSelect, TextureSelect } from './SearchableSelects';
@@ -439,9 +439,9 @@ export const GeneralRulesSection: React.FC<GeneralRulesSectionProps> = ({ style,
           <span>Mínimo geral</span>
           <RuleNumberInput
             value={minimumFontSize}
-            min={1}
+            min={DEFAULT_MINIMUM_FONT_SIZE}
             max={300}
-            step={0.1}
+            step={1}
             normalizeValue={roundFontSize}
             onChange={(value) => setStyle((previous) => ({
               ...previous,
@@ -473,7 +473,7 @@ export const GeneralRulesSection: React.FC<GeneralRulesSectionProps> = ({ style,
         {fontLimitRows.map(({ key, label }) => (
           <label key={key} className="flex items-center justify-between gap-3 text-xs text-slate-600">
             <span>{label}</span>
-            <RuleNumberInput value={fontSizeLimits[key]} min={minimumFontSize} max={300} step={0.1} normalizeValue={roundFontSize} onChange={(value) => updateFontLimit(key, value)} />
+            <RuleNumberInput value={fontSizeLimits[key]} min={minimumFontSize} max={300} step={1} normalizeValue={roundFontSize} onChange={(value) => updateFontLimit(key, value)} />
           </label>
         ))}
       </div>

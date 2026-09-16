@@ -11,7 +11,7 @@ export const DEFAULT_FONT_SIZE_LIMITS: FontSizeLimits = {
   freeText: 50,
 };
 
-export const DEFAULT_MINIMUM_FONT_SIZE = 10;
+export const DEFAULT_MINIMUM_FONT_SIZE = 15;
 
 export const DEFAULT_MENU_MARGINS: MenuMargins = {
   top: 48,

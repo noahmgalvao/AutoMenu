@@ -426,7 +426,12 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                                 handlers.handleDraftCommit();
                             }
                         }}
-                        className="bg-white ring-2 ring-blue-500 rounded p-1 font-normal text-xl leading-snug outline-none shadow-xl min-h-[30px] border border-blue-200 text-blue-900"
+                        className="bg-indigo-500/15 ring-2 ring-blue-500 rounded p-1 font-normal text-xl leading-snug outline-none shadow-xl min-h-[30px] border border-blue-200 select-text"
+                        style={{
+                            color: style.textColor,
+                            WebkitTextFillColor: style.textColor,
+                            '--automenu-edit-color': style.textColor,
+                        } as React.CSSProperties}
                     >
                         Novo texto
                     </div>

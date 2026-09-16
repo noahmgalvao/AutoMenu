@@ -1,4 +1,5 @@
 import type { ElementStyle, MenuStyle } from '../types';
+import { DEFAULT_MINIMUM_FONT_SIZE } from '../constants';
 import { resolveMenuMargins } from './styleRules';
 import { normalizeColumnWidths } from './categoryColumns';
 
@@ -68,8 +69,8 @@ export const fitTextToUnbrokenWords = (
   allowSameWordBreak: boolean,
   options: MeasureOptions = {},
 ): WordFitMeasurement => {
-  const base = Math.max(minimumFontSize, Number(baseFontSize) || minimumFontSize);
-  const readableMinimum = Math.min(base, Math.max(minimumFontSize, Math.ceil(base * 0.78)));
+  const minimum = Math.max(1, Number(minimumFontSize) || DEFAULT_MINIMUM_FONT_SIZE);
+  const base = Math.max(minimum, Number(baseFontSize) || minimum);
   if (allowSameWordBreak || !text.trim() || availableWidth <= 0) {
     return { fontSize: base, fits: true };
   }
@@ -79,9 +80,9 @@ export const fitTextToUnbrokenWords = (
   if (widthAtBase <= safeWidth) return { fontSize: base, fits: true };
 
   const requiredSize = Math.floor((base * safeWidth) / Math.max(1, widthAtBase));
-  const fittedSize = Math.max(readableMinimum, Math.min(base, requiredSize));
-  const widthAtReadableMinimum = getLongestWordWidth(text, readableMinimum, options);
-  return { fontSize: fittedSize, fits: widthAtReadableMinimum <= safeWidth };
+  const fittedSize = Math.max(minimum, Math.min(base, requiredSize));
+  const widthAtMinimum = getLongestWordWidth(text, minimum, options);
+  return { fontSize: fittedSize, fits: widthAtMinimum <= safeWidth };
 };
 
 const getElementAvailableWidth = (element: HTMLElement) => {
@@ -125,7 +126,7 @@ export const measureWordFitElement = (
   options.text ?? element.innerText,
   options.availableWidth ?? getElementAvailableWidth(element),
   options.baseFontSize ?? Number(element.dataset.wordFitBaseSize),
-  Number(element.dataset.wordFitMinimum) || 10,
+  Number(element.dataset.wordFitMinimum) || DEFAULT_MINIMUM_FONT_SIZE,
   element.dataset.wordFitAllowBreak === 'true',
   readElementOptions(element),
 );
@@ -136,10 +137,9 @@ export const getLargestSafeFontSizeForElements = (
   minimumFontSize: number,
 ) => {
   const maximum = Math.max(minimumFontSize, Math.floor(Number(maximumFontSize) || minimumFontSize));
-  const minimum = Math.max(1, Math.ceil(Number(minimumFontSize) || 10));
-  const readableMinimum = Math.min(maximum, Math.max(minimum, Math.ceil(maximum * 0.78)));
+  const minimum = Math.max(1, Math.ceil(Number(minimumFontSize) || DEFAULT_MINIMUM_FONT_SIZE));
 
-  for (let fontSize = maximum; fontSize >= readableMinimum; fontSize -= 1) {
+  for (let fontSize = maximum; fontSize >= minimum; fontSize -= 1) {
     const allFit = elements.every((element) => {
       if (element.dataset.wordFitAllowBreak === 'true') return true;
       const result = measureWordFitElement(element, { baseFontSize: fontSize });
@@ -148,7 +148,7 @@ export const getLargestSafeFontSizeForElements = (
     if (allFit) return fontSize;
   }
 
-  return readableMinimum;
+  return minimum;
 };
 
 const getCanvasWordFitElements = () => Array.from(

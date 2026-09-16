@@ -470,21 +470,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 values={fontSizeLimits}
                 min={minimumFontSize}
                 max={300}
-                step={0.1}
+                step={1}
                 normalizeValue={roundFontSize}
                 headerContent={(
                   <label className="mb-3 flex items-center justify-between gap-3 border-b border-slate-200 pb-3 text-sm font-semibold text-slate-700">
                     <span>Mínimo geral</span>
                     <input
                       type="number"
-                      min={1}
+                      min={DEFAULT_MINIMUM_FONT_SIZE}
                       max={300}
-                      step={0.1}
+                      step={1}
                       value={minimumFontSize}
                       onChange={(event) => {
                         const parsed = Number(event.target.value);
                         if (!Number.isFinite(parsed)) return;
-                        const value = roundFontSize(Math.min(300, Math.max(1, parsed)));
+                        const value = roundFontSize(Math.min(300, Math.max(DEFAULT_MINIMUM_FONT_SIZE, parsed)));
                         setMinimumFontSize(value);
                         setFontSizeLimits((previous) => ({
                           menuTitle: Math.max(value, previous.menuTitle),

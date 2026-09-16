@@ -30,7 +30,7 @@ import {
   resolvePriceDecimalSeparator,
   roundPrice,
 } from '../utils/price';
-import { resolveFontSizeLimits, roundFontSize } from '../utils/styleRules';
+import { resolveFontSizeLimits, resolveMinimumFontSize, roundFontSize } from '../utils/styleRules';
 
 const LOCAL_STORAGE_KEYS = {
   products: 'automenu_products',
@@ -385,9 +385,7 @@ const withStyleDefaults = (style: MenuStyle | null | undefined): MenuStyle => {
     pageBackgrounds: Array.isArray(source.pageBackgrounds) ? source.pageBackgrounds.filter(isRecord) as any : [],
     pageBreaks: stringArray(source.pageBreaks),
     fontSizeLimits: resolveFontSizeLimits({ ...base, ...source } as MenuStyle),
-    minimumFontSize: Number.isFinite(Number(source.minimumFontSize))
-      ? roundFontSize(Math.min(300, Math.max(1, Number(source.minimumFontSize))))
-      : base.minimumFontSize,
+    minimumFontSize: resolveMinimumFontSize({ ...base, ...source } as MenuStyle),
     allowSameWordBreak: source.allowSameWordBreak === true,
     priceDecimalPlaces: resolvePriceDecimalPlaces(source.priceDecimalPlaces),
     priceDecimalSeparator: resolvePriceDecimalSeparator(source.priceDecimalSeparator),
