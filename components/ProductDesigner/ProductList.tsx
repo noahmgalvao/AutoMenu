@@ -239,8 +239,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                       </button>
                       {menuOpenId === cat && (
                         <>
-                          <div className="fixed inset-0 z-40" onClick={() => setMenuOpenId(null)} />
-                          <div className="absolute right-0 top-8 z-50 bg-white shadow-xl border border-slate-100 rounded-lg py-1 w-32 animate-in fade-in zoom-in-95 flex flex-col">
+                          <div data-product-designer-options-menu="true" className="absolute right-0 top-8 z-50 bg-white shadow-xl border border-slate-100 rounded-lg py-1 w-32 animate-in fade-in zoom-in-95 flex flex-col">
                             <button onPointerDown={(e) => e.stopPropagation()} onClick={() => { handlers.handleSelection('category', cat); startEdit(cat, { name: cat }); }} className="px-4 py-2 text-xs text-left hover:bg-slate-50 flex items-center gap-2"> <Edit3 size={14}/> Editar </button>
                             {!isPristineCategory && (
                               <button 
@@ -311,6 +310,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                         data-drag-type="product"
                         data-drag-id={product.id}
                         data-drag-group={cat}
+                        data-drag-context="product-designer"
                         data-category-id={cat}
                         onPointerDown={(e) => handlers.handleDragStart(e, 'product', product.id, cat)}
                         onDragStart={(e) => e.preventDefault()}
@@ -369,8 +369,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                           </button>
                           {menuOpenId === product.id && (
                             <>
-                              <div className="fixed inset-0 z-40" onClick={() => setMenuOpenId(null)} />
-                              <div className="absolute right-0 top-8 z-[140] bg-white shadow-xl border border-slate-100 rounded-lg py-1 w-32 animate-in fade-in zoom-in-95 flex flex-col">
+                              <div data-product-designer-options-menu="true" className="absolute right-0 top-8 z-[140] bg-white shadow-xl border border-slate-100 rounded-lg py-1 w-32 animate-in fade-in zoom-in-95 flex flex-col">
                                 <button onPointerDown={(e) => e.stopPropagation()} onClick={() => { handlers.handleSelection(productSelectionType, product.id); startEdit(product.id, product); }} className="px-4 py-2 text-xs text-left hover:bg-slate-50 flex items-center gap-2"> <Edit3 size={14}/> Editar </button>
                                 {!isPristineProduct && (
                                   <button 

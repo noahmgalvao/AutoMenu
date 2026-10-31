@@ -3,7 +3,6 @@ import { Product } from '../../types';
 import { InteractionProps, DraftItem, FREE_TEXT_PREFIX, A4_HEIGHT_PX, NUDGE_STEP, SelectionItem, SelectionType, MoveDirection } from './types';
 import { getCollisionSafeFreeTextTop, moveFreeTextOneStep } from './freeTextMovement';
 import { SAFETY_BUFFER } from '../../utils/menuPagination';
-import { isPristineNewCategory, isPristineNewProduct } from '../../utils/pristineItems';
 
 const isCanvasObjectOrControlTarget = (target: EventTarget | null, pageEl: HTMLElement) => {
     if (!(target instanceof HTMLElement)) return false;
@@ -309,24 +308,19 @@ export const useKeyboardMovement = (
         });
         
         const productIdsToDelete = new Set<string>();
-        const productIdsToHide = new Set<string>();
         const categoriesToDelete = new Set<string>();
-        const categoriesToHide = new Set<string>();
 
         actionItems.forEach(item => {
             if (item.type === 'category') {
-                if (isPristineNewCategory(item.id, products)) categoriesToDelete.add(item.id);
-                else categoriesToHide.add(item.id);
+                categoriesToDelete.add(item.id);
                 return;
             }
 
             const product = products.find(p => p.id === item.id);
-            if (product?.isFreeText || isPristineNewProduct(product)) {
-                productIdsToDelete.add(item.id);
-                if (product?.isFreeText && product.category.startsWith(FREE_TEXT_PREFIX)) {
-                    categoriesToDelete.add(product.category);
-                }
-            } else productIdsToHide.add(item.id);
+            productIdsToDelete.add(item.id);
+            if (product?.isFreeText && product.category.startsWith(FREE_TEXT_PREFIX)) {
+                categoriesToDelete.add(product.category);
+            }
         });
 
         const deletedProductIds = new Set(productIdsToDelete);
@@ -336,13 +330,9 @@ export const useKeyboardMovement = (
             });
         });
 
-        if (onStyleUpdate && (productIdsToHide.size > 0 || categoriesToHide.size > 0 || deletedProductIds.size > 0 || categoriesToDelete.size > 0)) {
+        if (onStyleUpdate && (deletedProductIds.size > 0 || categoriesToDelete.size > 0)) {
              onStyleUpdate(prev => {
                  const currentHidden = new Set(prev.hiddenProductIds || []);
-                 productIdsToHide.forEach(productId => currentHidden.add(productId));
-                 categoriesToHide.forEach(category => {
-                     (groupedProducts[category] || []).forEach(product => currentHidden.add(product.id));
-                 });
                  deletedProductIds.forEach(productId => currentHidden.delete(productId));
 
                  const nextProductOrder = { ...(prev.customProductOrder || {}) };

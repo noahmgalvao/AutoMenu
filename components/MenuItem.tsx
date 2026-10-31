@@ -1,8 +1,7 @@
 import React from 'react';
 import { Product, MenuStyle } from '../types';
-import { MoreHorizontal, Plus, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Edit3, EyeOff, ListChecks } from 'lucide-react';
+import { MoreHorizontal, Plus, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Edit3, ListChecks } from 'lucide-react';
 import { A4_HEIGHT_PX, FREE_TEXT_PREFIX } from '../utils/menuPagination';
-import { isPristineNewCategory, isPristineNewProduct } from '../utils/pristineItems';
 import { selectionLayerClasses } from './selectionLayers';
 import { getDirectionLabel, getEdgeControlClass, type FlowDirection } from '../utils/flowControls';
 import { InlineStyleToolbar } from './MenuDesigner/InlineStyleToolbar';
@@ -326,12 +325,11 @@ export const ResponsiveMoveButton: React.FC<
     );
 };
 
-const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMoveDown, canMoveLeft, canMoveRight, hideGeneralControls, isFreeText, isPristineNewDefault, handlers, onEdit, isDragging = false, showSelectionOutline = true, showAddControls = true, showTopAddControl = true, showBottomAddControl = true, compactControls = false, mobileExpandedControls = false, denseControls = false, containMobileControls = false, showGridMoveControls = false }: any) => {
+const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMoveDown, canMoveLeft, canMoveRight, hideGeneralControls, isFreeText, handlers, onEdit, isDragging = false, showSelectionOutline = true, showAddControls = true, showTopAddControl = true, showBottomAddControl = true, compactControls = false, mobileExpandedControls = false, denseControls = false, containMobileControls = false, showGridMoveControls = false }: any) => {
     const selectionType = type === 'category' ? 'category' : isFreeText ? 'freeText' : 'product';
     const selectionId = type === 'category' ? catName : id;
     const isSelected = handlers.isSelected?.(selectionType, selectionId) ?? handlers.selectedId === selectionId;
     const pointerEventsClass = isMobileSelected ? 'pointer-events-auto' : 'pointer-events-none md:group-hover:pointer-events-auto';
-    const usesDeleteAction = isFreeText || isPristineNewDefault;
     const flowDirections = handlers.getFlowControlDirections?.(selectionType, selectionId) || { before: 'top', after: 'bottom' };
     const addBeforeDirection: FlowDirection = showGridMoveControls ? 'top' : flowDirections.before;
     const addAfterDirection: FlowDirection = showGridMoveControls ? 'bottom' : flowDirections.after;
@@ -457,11 +455,11 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
                     </button>
                     <button 
                         onClick={(e) => handlers.handleRemove(e, id || catName, type)} 
-                        className={`${controlPadding} bg-white border border-slate-200 shadow-md rounded-full ${usesDeleteAction ? 'text-red-500 hover:bg-red-50' : 'text-slate-400 hover:text-red-500 hover:bg-slate-50'} hover:scale-110 transition-transform cursor-pointer`}
-                        title={usesDeleteAction ? "Excluir item" : "Ocultar item"}
+                        className={`${controlPadding} bg-white border border-slate-200 shadow-md rounded-full text-red-500 hover:bg-red-50 hover:scale-110 transition-transform cursor-pointer`}
+                        title="Excluir item"
                         onPointerDown={(e) => e.stopPropagation()}
                     >
-                        {usesDeleteAction ? <Trash2 size={iconSize} className={iconClass} /> : <EyeOff size={iconSize} className={iconClass} />}
+                        <Trash2 size={iconSize} className={iconClass} />
                     </button>
                     <button
                         onClick={(e) => handlers.openObjectMenu?.(e, { type: selectionType, id: selectionId })}
@@ -646,7 +644,6 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const isSelected = handlers.isSelected?.('category', item.data) ?? handlers.selectedId === item.data;
         const catStyle = style.elementStyles?.category || {};
         const elementId = `text-${item.data}`;
-        const isPristineNewDefault = isPristineNewCategory(item.data, products);
         const isBeingDragged = handlers.draggedItem?.type === 'category' && handlers.draggedItem?.id === item.data;
         const compactControls = (style.categoryColumnCount || 1) > 1;
         const categoryAlign = catStyle.textAlign || 'left';
@@ -678,7 +675,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     }`}
                 />
                 {renderFormattingToolbar('category', item.data, catStyle)}
-                <ProductControls type="category" catName={item.data} isMobileSelected={isSelected} index={idx} total={0} isLastInBlock={false} canMoveUp={false} canMoveDown={false} canMoveLeft={false} canMoveRight={false} hideGeneralControls={false} isPristineNewDefault={isPristineNewDefault} handlers={handlers} onEdit={(e: React.MouseEvent) => handlers.startEditing(e, item.data, elementId, 'category')} isDragging={isBeingDragged} showSelectionOutline={false} showAddControls={false} compactControls={compactControls} showGridMoveControls={false}/>
+            <ProductControls type="category" catName={item.data} isMobileSelected={isSelected} index={idx} total={0} isLastInBlock={false} canMoveUp={false} canMoveDown={false} canMoveLeft={false} canMoveRight={false} hideGeneralControls={false} handlers={handlers} onEdit={(e: React.MouseEvent) => handlers.startEditing(e, item.data, elementId, 'category')} isDragging={isBeingDragged} showSelectionOutline={false} showAddControls={false} compactControls={compactControls} showGridMoveControls={false}/>
                 <div className={`flex w-full max-w-full min-w-0 items-center gap-0 ${compactControls ? 'px-1' : 'px-2'} ${categoryAlign === 'center' ? 'justify-center' : categoryAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
                     {(categoryAlign === 'center' || categoryAlign === 'right') && renderCategoryDivider('before')}
                     {style.showCategoryImages !== false && categoryImage?.url && (
@@ -757,7 +754,6 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             ? Math.max(0, Math.min(A4_HEIGHT_PX, rawCustomMarginTop))
             : 0;
         const productAddControls = handlers.getSelectionAddControls?.(productSelectionType, product.id) || { top: true, bottom: true };
-        const isPristineNewDefault = isPristineNewProduct(product);
         return (
                 <div 
                     key={product.id}
@@ -794,7 +790,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     ? renderFormattingToolbar('freeText', product.id, product.styles || {})
                     : renderFormattingToolbar('product', product.id,
                         formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle)}
-                <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={false} canMoveRight={false} isFreeText={product.isFreeText} isPristineNewDefault={isPristineNewDefault} handlers={handlers} onEdit={compactControls && !product.isFreeText ? (e: React.MouseEvent) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name') : undefined} isDragging={isBeingDragged} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>
+                        <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={false} canMoveRight={false} isFreeText={product.isFreeText} handlers={handlers} onEdit={compactControls && !product.isFreeText ? (e: React.MouseEvent) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name') : undefined} isDragging={isBeingDragged} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>
                 
                 <div className={`transition-opacity duration-150 ${isBeingDragged && !product.isFreeText ? 'opacity-40' : ''}`}>
                 {product.isFreeText ? (
@@ -1007,7 +1003,6 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                      const isBeingDragged = handlers.draggedItem?.id === product.id;
                      const isEditing = handlers.editingId === product.id;
                      const productAddControls = handlers.getSelectionAddControls?.('product', product.id) || { top: true, bottom: true };
-                     const isPristineNewDefault = isPristineNewProduct(product);
                      return (
                             <div 
                                 key={product.id}
@@ -1024,7 +1019,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             >
                                 {renderFormattingToolbar('product', product.id,
                                     formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle)}
-                                <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={canMoveLeft} canMoveRight={canMoveRight} isFreeText={product.isFreeText} isPristineNewDefault={isPristineNewDefault} handlers={handlers} onEdit={compactControls ? (e: React.MouseEvent) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name') : undefined} isDragging={isBeingDragged} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} mobileExpandedControls={mobileExpandedControls} denseControls={denseControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>
+                        <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={canMoveLeft} canMoveRight={canMoveRight} isFreeText={product.isFreeText} handlers={handlers} onEdit={compactControls ? (e: React.MouseEvent) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name') : undefined} isDragging={isBeingDragged} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} mobileExpandedControls={mobileExpandedControls} denseControls={denseControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>
                                 
                                 <div
                                     className={`h-full transition-all duration-150 ${isCardLayout ? 'rounded-xl overflow-hidden border border-slate-200 shadow-sm' : 'bg-transparent'} ${isBeingDragged ? 'opacity-40' : isCardLayout ? 'group-hover:shadow-md' : ''}`}

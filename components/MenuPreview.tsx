@@ -582,31 +582,25 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             }
         }
 
-        const productIdsToHide = new Set<string>();
-        const categoriesToHide = new Set<string>();
         const productIdsToDelete = new Set<string>();
         const categoriesToDelete = new Set<string>();
-        const freeTextIdsToDelete = new Set<string>();
         const freeTextCategoriesToDelete = new Set<string>();
         const addedImageIdsToDelete = new Set<string>();
 
         selectedItems.forEach((item: any) => {
             if (item.type === 'category') {
-                if (isPristineNewCategory(item.id, products)) categoriesToDelete.add(item.id);
-                else categoriesToHide.add(item.id);
+                categoriesToDelete.add(item.id);
                 return;
             }
 
             if (item.type === 'product' || item.type === 'freeText') {
                 const product = products.find(candidate => candidate.id === item.id);
+                productIdsToDelete.add(item.id);
                 if (product?.isFreeText || item.type === 'freeText') {
-                    freeTextIdsToDelete.add(item.id);
                     if (product?.category.startsWith(FREE_TEXT_PREFIX)) {
                         freeTextCategoriesToDelete.add(product.category);
                     }
                 }
-                else if (isPristineNewProduct(product)) productIdsToDelete.add(item.id);
-                else productIdsToHide.add(item.id);
                 return;
             }
 
@@ -621,16 +615,12 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             });
         });
 
-        if (productIdsToHide.size === 0 && categoriesToHide.size === 0 && productIdsToDelete.size === 0 && categoriesToDelete.size === 0 && freeTextIdsToDelete.size === 0 && addedImageIdsToDelete.size === 0) {
+        if (productIdsToDelete.size === 0 && categoriesToDelete.size === 0 && addedImageIdsToDelete.size === 0) {
             return false;
         }
 
         onStyleUpdate?.(prev => {
             const currentHidden = new Set(prev.hiddenProductIds || []);
-            productIdsToHide.forEach(productId => currentHidden.add(productId));
-            categoriesToHide.forEach(category => {
-                (handlers.groupedProducts[category] || []).forEach((product: Product) => currentHidden.add(product.id));
-            });
             productIdsToDelete.forEach(productId => currentHidden.delete(productId));
 
             const nextProductOrder = { ...(prev.customProductOrder || {}) };
@@ -665,7 +655,6 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         });
 
         productIdsToDelete.forEach(productId => onDeleteProduct?.(productId));
-        freeTextIdsToDelete.forEach(productId => onDeleteProduct?.(productId));
         handlers.handleSelection(null, null);
         return true;
     }, [handlers, onDeleteProduct, onStyleUpdate, products]);
@@ -1554,31 +1543,25 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const deleteObjectItems = useCallback((items: ObjectSelectionItem[]) => {
         if (items.length === 0) return false;
 
-        const productIdsToHide = new Set<string>();
-        const categoriesToHide = new Set<string>();
         const productIdsToDelete = new Set<string>();
         const categoriesToDelete = new Set<string>();
-        const freeTextIdsToDelete = new Set<string>();
         const freeTextCategoriesToDelete = new Set<string>();
         const addedImageIdsToDelete = new Set<string>();
 
         items.forEach((item) => {
             if (item.type === 'category') {
-                if (isPristineNewCategory(item.id, products)) categoriesToDelete.add(item.id);
-                else categoriesToHide.add(item.id);
+                categoriesToDelete.add(item.id);
                 return;
             }
 
             if (item.type === 'product' || item.type === 'freeText') {
                 const product = products.find((candidate) => candidate.id === item.id);
+                productIdsToDelete.add(item.id);
                 if (product?.isFreeText || item.type === 'freeText') {
-                    freeTextIdsToDelete.add(item.id);
                     if (product?.category.startsWith(FREE_TEXT_PREFIX)) {
                         freeTextCategoriesToDelete.add(product.category);
                     }
                 }
-                else if (isPristineNewProduct(product)) productIdsToDelete.add(item.id);
-                else productIdsToHide.add(item.id);
                 return;
             }
 
@@ -1593,10 +1576,6 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
         onStyleUpdate?.((prev) => {
             const currentHidden = new Set(prev.hiddenProductIds || []);
-            productIdsToHide.forEach((productId) => currentHidden.add(productId));
-            categoriesToHide.forEach((category) => {
-                (handlers.groupedProducts[category] || []).forEach((product: Product) => currentHidden.add(product.id));
-            });
             productIdsToDelete.forEach(productId => currentHidden.delete(productId));
 
             const nextProductOrder = { ...(prev.customProductOrder || {}) };
@@ -1631,7 +1610,6 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         });
 
         productIdsToDelete.forEach((productId) => onDeleteProduct?.(productId));
-        freeTextIdsToDelete.forEach((productId) => onDeleteProduct?.(productId));
         handlers.handleSelection(null, null);
         return true;
     }, [handlers, onDeleteProduct, onStyleUpdate, products]);
@@ -2097,7 +2075,6 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     {(canHideFromObjectMenu || isBackgroundMenu) && (
                         <button disabled={isBackgroundMenu} onClick={() => runObjectAction('hide', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><EyeOff size={15} /> Ocultar</button>
                     )}
-                    <button disabled={isBackgroundMenu} onClick={() => runObjectAction('delete', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-red-50 text-red-600 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Trash2 size={15} /> Deletar</button>
                     <div className="my-1 h-px bg-slate-100" />
                     <button disabled={isBackgroundMenu} onClick={() => runObjectAction('front', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><BringToFront size={15} /> Trazer para frente</button>
                     <button disabled={isBackgroundMenu} onClick={() => runObjectAction('back', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><SendToBack size={15} /> Trazer para tras</button>

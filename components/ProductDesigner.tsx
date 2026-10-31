@@ -181,7 +181,16 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                 {/* List - Content Scrolls Here */}
                 <div
                     className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-4 space-y-4 pb-20 min-w-0"
+                    data-product-designer-scroll-container="true"
                     onScroll={() => { if (menuOpenId) setMenuOpenId(null); }}
+                    onClickCapture={(event) => {
+                        const target = event.target as Element | null;
+                        if (menuOpenId && !target?.closest('[data-product-designer-options-menu="true"]')) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setMenuOpenId(null);
+                        }
+                    }}
                 >
 
                     <ImportTools

@@ -1309,9 +1309,19 @@ const App: React.FC = () => {
       <nav className={`absolute top-0 left-0 right-0 bg-white border-b border-slate-200 h-16 ${isMenuImportOpen ? 'z-[1100]' : 'z-30'} transition-transform duration-300 ${isMenuImportOpen ? 'translate-y-0' : isScrolling ? '-translate-y-full md:translate-y-0' : 'translate-y-0'}`}>
         <div className="w-full px-4 h-full flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="bg-indigo-600 p-2 rounded-lg">
+            <div className="hidden md:block bg-indigo-600 p-2 rounded-lg">
               <ChefHat className="text-white w-6 h-6" />
             </div>
+            {!isMenuImportOpen && (
+              <button
+                onClick={() => void handleCreateMenu()}
+                disabled={isMenuActionLoading || isWorkspaceLoading}
+                className="md:hidden p-3 rounded-xl transition-all text-slate-400 hover:text-indigo-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Novo cardÃ¡pio"
+              >
+                {isMenuActionLoading ? <Loader2 size={24} className="animate-spin" /> : <Plus size={24} />}
+              </button>
+            )}
             <div className="min-w-0">
               <div className="font-bold text-xl bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-violet-600 hidden sm:block">
                 AutoMenu AI

@@ -114,7 +114,10 @@ const TOUCH_LONG_PRESS_MS = 320;
 const CATEGORY_COLUMN_SWITCH_INSET_PX = 32;
 const CATEGORY_PAGE_SWITCH_INSET_PX = 72;
 const CATEGORY_PAGE_SWITCH_THRESHOLD_PX = 96;
-const PRODUCT_DESIGNER_CATEGORY_REORDER_MIN_DISTANCE_PX = 56;
+const PRODUCT_DESIGNER_CATEGORY_REORDER_MIN_DISTANCE_PX = 12;
+const PRODUCT_DESIGNER_CATEGORY_REORDER_EDGE_RATIO = 0.2;
+const PRODUCT_DESIGNER_AUTO_SCROLL_EDGE_PX = 72;
+const PRODUCT_DESIGNER_AUTO_SCROLL_MAX_SPEED_PX = 18;
 const TOUCH_CANCEL_COMMIT_DELAY_MS = 900;
 const DRAG_EVENT_OPTIONS: AddEventListenerOptions = { passive: false, capture: true };
 
@@ -255,6 +258,7 @@ export const useDraggableInteractions = (
     const pointerMoveHandlerRef = useRef<(event: PointerEvent) => void>(() => { });
     const pointerUpHandlerRef = useRef<(event: PointerEvent) => void>(() => { });
     const pointerCancelHandlerRef = useRef<(event: PointerEvent) => void>(() => { });
+    const reorderAtPointerRef = useRef<(pointer: { x: number; y: number }) => void>(() => { });
     const touchMoveHandlerRef = useRef<(event: TouchEvent) => void>(() => { });
     const touchEndHandlerRef = useRef<(event: TouchEvent) => void>(() => { });
     const touchCancelHandlerRef = useRef<(event: TouchEvent) => void>(() => { });
@@ -275,6 +279,9 @@ export const useDraggableInteractions = (
         scrollY: number;
     } | null>(null);
     const scrollContainerStyleRef = useRef<ScrollContainerSnapshot[]>([]);
+    const productDesignerScrollContainerRef = useRef<HTMLElement | null>(null);
+    const productDesignerAutoScrollPointerRef = useRef<{ x: number; y: number } | null>(null);
+    const productDesignerAutoScrollFrameRef = useRef<number | null>(null);
 
     const getDiagnosticProduct = useCallback((productId?: string) => {
         if (!productId) return null;
@@ -439,10 +446,61 @@ export const useDraggableInteractions = (
         root.style.touchAction = 'none';
     }, []);
 
+    const scheduleProductDesignerAutoScroll = useCallback((pointer: { x: number; y: number }) => {
+        productDesignerAutoScrollPointerRef.current = pointer;
+        if (
+            dragSourceContextRef.current !== 'product-designer'
+            || productDesignerAutoScrollFrameRef.current !== null
+            || typeof window === 'undefined'
+        ) return;
+
+        const step = () => {
+            const container = productDesignerScrollContainerRef.current;
+            const currentPointer = productDesignerAutoScrollPointerRef.current;
+            if (!isDraggingRef.current || !container || !currentPointer) {
+                productDesignerAutoScrollFrameRef.current = null;
+                return;
+            }
+
+            const rect = container.getBoundingClientRect();
+            const edgeSize = Math.min(PRODUCT_DESIGNER_AUTO_SCROLL_EDGE_PX, rect.height * 0.25);
+            let direction = 0;
+            let intensity = 0;
+
+            if (currentPointer.y < rect.top + edgeSize) {
+                direction = -1;
+                intensity = Math.min(1, (rect.top + edgeSize - currentPointer.y) / Math.max(1, edgeSize));
+            } else if (currentPointer.y > rect.bottom - edgeSize) {
+                direction = 1;
+                intensity = Math.min(1, (currentPointer.y - (rect.bottom - edgeSize)) / Math.max(1, edgeSize));
+            }
+
+            if (direction === 0 || intensity === 0) {
+                productDesignerAutoScrollFrameRef.current = null;
+                return;
+            }
+
+            const previousScrollTop = container.scrollTop;
+            container.scrollTop += direction * Math.max(2, Math.ceil(PRODUCT_DESIGNER_AUTO_SCROLL_MAX_SPEED_PX * intensity));
+            const appliedDelta = container.scrollTop - previousScrollTop;
+            if (Math.abs(appliedDelta) < 0.5) {
+                productDesignerAutoScrollFrameRef.current = null;
+                return;
+            }
+
+            lastPointerRef.current = { x: currentPointer.x, y: currentPointer.y - appliedDelta };
+            productDesignerAutoScrollFrameRef.current = window.requestAnimationFrame(step);
+            reorderAtPointerRef.current(currentPointer);
+        };
+
+        productDesignerAutoScrollFrameRef.current = window.requestAnimationFrame(step);
+    }, []);
+
     const lockScrollableAncestors = useCallback((sourceElement: HTMLElement) => {
         if (typeof window === 'undefined' || scrollContainerStyleRef.current.length > 0) return;
 
         const containers: HTMLElement[] = [];
+        const productDesignerScrollContainer = sourceElement.closest<HTMLElement>('[data-product-designer-scroll-container="true"]');
         let current = sourceElement.parentElement;
 
         while (current && current !== document.body && current !== document.documentElement) {
@@ -452,7 +510,7 @@ export const useDraggableInteractions = (
             // one overflow axis on those elements turns them into nested scroll areas.
             const canScroll = /(auto|scroll|overlay)/.test(`${computed.overflowX} ${computed.overflowY}`);
 
-            if (canScroll) containers.push(current);
+            if (canScroll && current !== productDesignerScrollContainer) containers.push(current);
             current = current.parentElement;
         }
 
@@ -600,6 +658,12 @@ export const useDraggableInteractions = (
         productDragStartRectRef.current = null;
         productInitialIndexByIdRef.current = new Map();
         productInitialRectByIdRef.current = new Map();
+        if (productDesignerAutoScrollFrameRef.current !== null && typeof window !== 'undefined') {
+            window.cancelAnimationFrame(productDesignerAutoScrollFrameRef.current);
+        }
+        productDesignerAutoScrollFrameRef.current = null;
+        productDesignerAutoScrollPointerRef.current = null;
+        productDesignerScrollContainerRef.current = null;
         clearTouchCancelCommit();
         freeTextPointerOffsetYRef.current = null;
         freeTextActiveCategoryRef.current = {};
@@ -1439,7 +1503,8 @@ export const useDraggableInteractions = (
             if (!currentDragItem || currentDragItem.type !== 'category') return;
             const commitImmediately = options.commitImmediately ?? true;
 
-            if (dragSourceContextRef.current === 'product-designer') {
+            const isProductDesignerDrag = dragSourceContextRef.current === 'product-designer';
+            if (isProductDesignerDrag) {
                 const startPointer = dragStartPointerRef.current;
                 if (
                     startPointer &&
@@ -1649,7 +1714,17 @@ export const useDraggableInteractions = (
             }
 
             const targetCenterY = categoryDropTarget.rect.top + (categoryDropTarget.rect.height / 2);
-            const targetPosition: 'before' | 'after' = pointer.y < targetCenterY ? 'before' : 'after';
+            let targetPosition: 'before' | 'after' = pointer.y < targetCenterY ? 'before' : 'after';
+            if (isProductDesignerDrag) {
+                const sourceIndex = currentOrder.indexOf(currentDragItem.id);
+                const targetCurrentIndex = currentOrder.indexOf(categoryDropTarget.id);
+                const edgeOffset = categoryDropTarget.rect.height * PRODUCT_DESIGNER_CATEGORY_REORDER_EDGE_RATIO;
+                if (sourceIndex < targetCurrentIndex) {
+                    targetPosition = pointer.y >= categoryDropTarget.rect.top + edgeOffset ? 'after' : 'before';
+                } else if (sourceIndex > targetCurrentIndex) {
+                    targetPosition = pointer.y <= categoryDropTarget.rect.bottom - edgeOffset ? 'before' : 'after';
+                }
+            }
             const targetIndex = orderWithoutDragged.indexOf(categoryDropTarget.id);
             if (targetIndex === -1) return;
             const desiredInsertionIndex = targetIndex + (targetPosition === 'after' ? 1 : 0);
@@ -2462,6 +2537,7 @@ export const useDraggableInteractions = (
                 lastPointerRef.current = { x: pointer.x, y: pointer.y };
                 dragStartPointerRef.current = { x: pointer.x, y: pointer.y };
                 dragSourceContextRef.current = pending.element.dataset.dragContext || null;
+                productDesignerScrollContainerRef.current = pending.element.closest<HTMLElement>('[data-product-designer-scroll-container="true"]');
                 handleSelection(pending.type === 'product' && draggedProduct?.isFreeText ? 'freeText' : pending.type, pending.id);
 
                 if (pending.type === 'category') {
@@ -2494,6 +2570,8 @@ export const useDraggableInteractions = (
                 lastPointerRef.current = pointer;
                 return;
             }
+
+            scheduleProductDesignerAutoScroll(pointer);
 
             const categorySwapRebase = categorySwapRebaseRef.current;
             if (currentDragItem.type === 'category' && categorySwapRebase?.sourceId === currentDragItem.id) {
@@ -2925,12 +3003,17 @@ export const useDraggableInteractions = (
             reorderCategoryByPointer,
             reorderProductByPointer,
             rebaseFreeTextAfterSwap,
+            scheduleProductDesignerAutoScroll,
             setActiveProductGroup,
             swapDraggedFreeTextWithTarget,
             syncFreeTextCategoryOrderToLane,
             style,
         ]
     );
+
+    useEffect(() => {
+        reorderAtPointerRef.current = handlePointerReorder;
+    }, [handlePointerReorder]);
 
     const handleGlobalPointerMove = useCallback(
         (event: PointerEvent) => {
@@ -3334,6 +3417,7 @@ export const useDraggableInteractions = (
             lastPointerRef.current = pointer;
             dragStartPointerRef.current = pointer;
             dragSourceContextRef.current = event.currentTarget.dataset.dragContext || null;
+            productDesignerScrollContainerRef.current = (event.currentTarget as HTMLElement).closest<HTMLElement>('[data-product-designer-scroll-container="true"]');
 
             if (type === 'category') {
                 initializeCategoryDragState(id, pointer);
