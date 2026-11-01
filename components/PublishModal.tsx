@@ -1,9 +1,11 @@
 import React from 'react';
 import { FileText, Globe2, Loader2, Send, X } from 'lucide-react';
+import { loadUserPreferences, saveUserPreferences } from '../utils/userPreferences';
 
 interface PublishModalProps {
   open: boolean;
   loading?: boolean;
+  preferenceKey: string;
   onClose: () => void;
   onConfirm: (options: { pdf: boolean; virtualLink: boolean }) => void;
 }
@@ -25,15 +27,24 @@ const Choice: React.FC<{
   </label>
 );
 
-export const PublishModal: React.FC<PublishModalProps> = ({ open, loading = false, onClose, onConfirm }) => {
+const DEFAULT_PREFERENCES = { pdf: true, virtualLink: true };
+
+export const PublishModal: React.FC<PublishModalProps> = ({ open, loading = false, preferenceKey, onClose, onConfirm }) => {
   const [pdf, setPdf] = React.useState(true);
   const [virtualLink, setVirtualLink] = React.useState(true);
 
   React.useEffect(() => {
     if (!open) return;
-    setPdf(true);
-    setVirtualLink(true);
-  }, [open]);
+    const preferences = loadUserPreferences(preferenceKey, DEFAULT_PREFERENCES);
+    setPdf(preferences.pdf);
+    setVirtualLink(preferences.virtualLink);
+  }, [open, preferenceKey]);
+
+  const updatePreferences = (preferences: { pdf: boolean; virtualLink: boolean }) => {
+    setPdf(preferences.pdf);
+    setVirtualLink(preferences.virtualLink);
+    saveUserPreferences(preferenceKey, preferences);
+  };
 
   if (!open) return null;
   const canConfirm = (pdf || virtualLink) && !loading;
@@ -49,8 +60,8 @@ export const PublishModal: React.FC<PublishModalProps> = ({ open, loading = fals
           <button onClick={onClose} disabled={loading} className="p-2 rounded-xl text-slate-400 hover:bg-slate-100 disabled:opacity-40"><X size={18} /></button>
         </div>
         <div className="p-5 space-y-3">
-          <Choice checked={pdf} onChange={setPdf} icon={<FileText size={20} />} title="Gerar PDF" description="Abre as opções atuais de geração e baixa o arquivo." />
-          <Choice checked={virtualLink} onChange={setVirtualLink} icon={<Globe2 size={20} />} title="Gerar link virtual" description="Publica o cardápio e cria um link compartilhável com QR code." />
+          <Choice checked={pdf} onChange={(checked) => updatePreferences({ pdf: checked, virtualLink })} icon={<FileText size={20} />} title="Gerar PDF" description="Abre as opções atuais de geração e baixa o arquivo." />
+          <Choice checked={virtualLink} onChange={(checked) => updatePreferences({ pdf, virtualLink: checked })} icon={<Globe2 size={20} />} title="Gerar link virtual" description="Publica o cardápio e cria um link compartilhável com QR code." />
           {!pdf && !virtualLink && <p className="text-xs text-red-600">Selecione pelo menos uma opção.</p>}
         </div>
         <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">

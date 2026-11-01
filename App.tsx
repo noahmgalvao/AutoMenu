@@ -9,6 +9,7 @@ import { CreateMenuModal } from './components/CreateMenuModal';
 import { RevisionHistoryModal } from './components/RevisionHistoryModal';
 import type { PrintCanvasOptions } from './components/MenuDesigner/PrintCanvasModal';
 import type { PdfExportResult } from './utils/pdfExport';
+import { getErrorMessage } from './utils/errors';
 import { INITIAL_STYLE, PRESET_TEMPLATES } from './constants';
 import {
   FontSizeLimits,
@@ -592,7 +593,7 @@ const App: React.FC = () => {
     setPublication(null);
     void getMenuPublication(menuId)
       .then((result) => { if (!cancelled) setPublication(result); })
-      .catch((error) => { if (!cancelled) setLoadError(error instanceof Error ? error.message : 'Falha ao carregar publicação.'); });
+      .catch((error) => { if (!cancelled) setLoadError(getErrorMessage(error, 'Falha ao carregar publicação.')); });
     return () => { cancelled = true; };
   }, [workspaceData?.menu.id]);
 
@@ -1281,7 +1282,7 @@ const App: React.FC = () => {
       requestPrint(pdf ? 'publish' : 'publish-silent');
     } catch (error) {
       setIsPublishing(false);
-      setLoadError(error instanceof Error ? error.message : 'Falha ao preparar a publicação.');
+      setLoadError(getErrorMessage(error, 'Falha ao preparar a publicação.'));
     }
   };
 
@@ -1304,7 +1305,7 @@ const App: React.FC = () => {
       const url = `${window.location.origin}/cardapio/${encodeURIComponent(published.restaurantSlug)}/${encodeURIComponent(published.menuSlug)}`;
       window.location.assign(url);
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : 'Falha ao publicar cardápio.');
+      setLoadError(getErrorMessage(error, 'Falha ao publicar cardápio.'));
       setIsPublishing(false);
     }
   };
@@ -1482,6 +1483,7 @@ const App: React.FC = () => {
       <PublishModal
         open={isPublishOpen}
         loading={isPublishing}
+        preferenceKey={`automenu:publish-options:${session.user.id}`}
         onClose={() => setIsPublishOpen(false)}
         onConfirm={(options) => void handlePublishConfirm(options)}
       />
@@ -1499,6 +1501,7 @@ const App: React.FC = () => {
         open={isRevisionHistoryOpen}
         workspaceId={workspaceData.workspace.id}
         menuId={workspaceData.menu.id}
+        splitCategoryAcrossPages={workspaceData.workspace.settings.splitCategoryAcrossPages}
         onClose={() => setIsRevisionHistoryOpen(false)}
         onRestore={(revision) => {
           setProducts(revision.products);
@@ -1575,7 +1578,6 @@ const App: React.FC = () => {
               currentMenuId={workspaceData.menu.id}
               productsCanChangeCategory={workspaceData.workspace.settings?.productsCanChangeCategory}
               splitCategoryAcrossPages={workspaceData.workspace.settings.splitCategoryAcrossPages}
-              onPrint={() => requestPrint('download')}
               onImportVisibilityChange={setIsMenuImportOpen}
             />
           </React.Suspense>

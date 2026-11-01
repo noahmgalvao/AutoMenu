@@ -1,14 +1,16 @@
 import React from 'react';
-import { Check, CircleHelp, CopyPlus, Loader2, X } from 'lucide-react';
-import type { MenuProductSource } from '../../types';
-import { listMenuProductSources } from '../../services/workspaceService';
+import { Check, CircleHelp, CopyPlus, Link2Off, Loader2, X } from 'lucide-react';
+import type { MenuProductSource, MenuProductSync } from '../../types';
+import { listMenuProductSources, listMenuProductSyncs, unlinkSyncedMenuProducts } from '../../services/workspaceService';
 import type { Product } from '../../types';
+import { loadUserPreferences, saveUserPreferences } from '../../utils/userPreferences';
 
 interface ProductTransferModalProps {
   open: boolean;
   workspaceId: string;
   currentMenuId: string;
   products: Product[];
+  preferenceKey: string;
   onClose: () => void;
   onApply: (source: MenuProductSource, replace: boolean, sync: boolean) => Promise<void>;
 }
@@ -25,22 +27,40 @@ const CheckOption: React.FC<{ checked: boolean; label: string; help: string; onC
   </div>
 );
 
-export const ProductTransferModal: React.FC<ProductTransferModalProps> = ({ open, workspaceId, currentMenuId, products, onClose, onApply }) => {
+const DEFAULT_PREFERENCES = { replace: true, sync: true };
+
+export const ProductTransferModal: React.FC<ProductTransferModalProps> = ({ open, workspaceId, currentMenuId, products, preferenceKey, onClose, onApply }) => {
   const [sources, setSources] = React.useState<MenuProductSource[]>([]);
+  const [syncs, setSyncs] = React.useState<MenuProductSync[]>([]);
   const [selectedId, setSelectedId] = React.useState('');
   const [replace, setReplace] = React.useState(true);
   const [sync, setSync] = React.useState(true);
   const [loading, setLoading] = React.useState(false);
+  const [unlinkingMenuId, setUnlinkingMenuId] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (!open) return;
-    setLoading(true); setError(null); setReplace(true); setSync(true);
-    void listMenuProductSources({ workspaceId, currentMenuId, currentProducts: products })
-      .then((items) => { setSources(items); setSelectedId(items[0]?.menu.id || ''); })
+    const preferences = loadUserPreferences(preferenceKey, DEFAULT_PREFERENCES);
+    setLoading(true); setError(null); setSources([]); setSyncs([]); setSelectedId(''); setReplace(preferences.replace); setSync(preferences.sync);
+    void Promise.all([
+      listMenuProductSources({ workspaceId, currentMenuId, currentProducts: products }),
+      listMenuProductSyncs({ workspaceId, currentMenuId }),
+    ])
+      .then(([items, linkedMenus]) => {
+        setSources(items);
+        setSyncs(linkedMenus);
+        setSelectedId(items[0]?.menu.id || '');
+      })
       .catch((reason) => setError(reason instanceof Error ? reason.message : 'Falha ao carregar cardápios.'))
       .finally(() => setLoading(false));
-  }, [open, workspaceId, currentMenuId]);
+  }, [open, workspaceId, currentMenuId, preferenceKey]);
+
+  const updatePreferences = (preferences: { replace: boolean; sync: boolean }) => {
+    setReplace(preferences.replace);
+    setSync(preferences.sync);
+    saveUserPreferences(preferenceKey, preferences);
+  };
 
   if (!open) return null;
   const selected = sources.find((source) => source.menu.id === selectedId);
@@ -52,17 +72,50 @@ export const ProductTransferModal: React.FC<ProductTransferModalProps> = ({ open
     finally { setLoading(false); }
   };
 
+  const unlink = async (linkedMenu: MenuProductSync) => {
+    if (!window.confirm(`Desvincular os produtos de "${linkedMenu.menu.name}"? Os cardápios deixarão de receber alterações um do outro.`)) return;
+    setUnlinkingMenuId(linkedMenu.menu.id); setError(null);
+    try {
+      await unlinkSyncedMenuProducts({ workspaceId, sourceMenuId: currentMenuId, targetMenuId: linkedMenu.menu.id });
+      setSyncs((current) => current.filter((item) => item.menu.id !== linkedMenu.menu.id));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Falha ao desvincular produtos.');
+    } finally {
+      setUnlinkingMenuId(null);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[1300] bg-slate-950/45 flex items-center justify-center p-4" onMouseDown={(event) => event.target === event.currentTarget && !loading && onClose()}>
-      <div className="w-full max-w-md rounded-3xl bg-white shadow-2xl overflow-hidden">
+      <div className="w-full max-w-md max-h-[calc(100dvh-2rem)] rounded-3xl bg-white shadow-2xl overflow-hidden flex flex-col">
         <div className="p-5 border-b border-slate-100 flex justify-between"><div><h2 className="font-bold flex items-center gap-2"><CopyPlus size={18} className="text-indigo-600" /> Trazer produtos</h2><p className="text-xs text-slate-500 mt-1">Importe produtos de outro cardápio.</p></div><button onClick={onClose} className="p-2 text-slate-400"><X size={18} /></button></div>
-        <div className="p-5 space-y-3">
+        <div className="p-5 space-y-3 overflow-y-auto">
           {loading && sources.length === 0 ? <div className="h-28 flex items-center justify-center"><Loader2 className="animate-spin text-indigo-600" /></div> : sources.length === 0 ? <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">Nenhum outro cardápio possui produtos diferentes.</div> : (
             <>
               <label className="block"><span className="text-xs font-bold text-slate-600">Cardápio</span><select value={selectedId} onChange={(event) => setSelectedId(event.target.value)} className="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm">{sources.map((source) => <option key={source.menu.id} value={source.menu.id}>{source.menu.name} · {source.products.length} produtos</option>)}</select></label>
-              <CheckOption checked={replace} onChange={setReplace} label="Substituir produtos atuais" help="Remove os produtos atuais e mantém somente os produtos do cardápio selecionado." />
-              <CheckOption checked={sync} onChange={setSync} label="Manter cardápios sincronizados" help="Alterações nesses produtos serão refletidas em todos os cardápios que também os possuem." />
+              <CheckOption checked={replace} onChange={(checked) => updatePreferences({ replace: checked, sync })} label="Substituir produtos atuais" help="Remove os produtos atuais e mantém somente os produtos do cardápio selecionado." />
+              <CheckOption checked={sync} onChange={(checked) => updatePreferences({ replace, sync: checked })} label="Manter cardápios sincronizados" help="Alterações nesses produtos serão refletidas em todos os cardápios que também os possuem." />
             </>
+          )}
+          {syncs.length > 0 && (
+            <div className="pt-2 space-y-2">
+              <div>
+                <h3 className="text-xs font-bold text-slate-700">Produtos sincronizados</h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">Desvincule um cardápio para que eles deixem de compartilhar alterações.</p>
+              </div>
+              {syncs.map((linkedMenu) => (
+                <div key={linkedMenu.menu.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-700">{linkedMenu.menu.name}</p>
+                    <p className="text-[11px] text-slate-500">{linkedMenu.productCount} produto{linkedMenu.productCount === 1 ? '' : 's'} sincronizado{linkedMenu.productCount === 1 ? '' : 's'}</p>
+                  </div>
+                  <button type="button" onClick={() => void unlink(linkedMenu)} disabled={Boolean(unlinkingMenuId)} className="shrink-0 rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50 flex items-center gap-1.5">
+                    {unlinkingMenuId === linkedMenu.menu.id ? <Loader2 size={13} className="animate-spin" /> : <Link2Off size={13} />}
+                    Desvincular
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
           {error && <p className="text-xs text-red-600">{error}</p>}
         </div>

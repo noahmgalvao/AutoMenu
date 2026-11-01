@@ -1,5 +1,3 @@
-alter type public.asset_type add value if not exists 'published_pdf';
-
 alter table public.menu_versions
   add column if not exists action_label text;
 
@@ -11,6 +9,8 @@ create table if not exists public.menu_publications (
   menu_slug text not null,
   published_version_id text not null references public.menu_versions(id) on delete cascade,
   pdf_asset_id text references public.assets(id) on delete set null,
+  pdf_bucket text not null default 'menu-assets',
+  pdf_path text,
   pdf_filename text not null default 'cardapio.pdf',
   pdf_options jsonb not null default '{}'::jsonb,
   snapshot jsonb not null default '{}'::jsonb,
@@ -76,6 +76,13 @@ for select using (
 drop policy if exists storage_read_published_menu_files on storage.objects;
 create policy storage_read_published_menu_files on storage.objects
 for select using (
+  exists (
+    select 1
+    from public.menu_publications publication
+    where publication.pdf_bucket = bucket_id
+      and publication.pdf_path = name
+  )
+  or
   exists (
     select 1
     from public.assets asset

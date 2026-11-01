@@ -7,6 +7,7 @@ import {
   Menu,
   MenuEditorState,
   MenuProductSource,
+  MenuProductSync,
   MenuPublication,
   MenuStyle,
   MenuVersion,
@@ -25,8 +26,9 @@ import { FREE_TEXT_PREFIX } from '../utils/menuPagination';
 import {
   registerExternalAsset,
   resolveAssetMapForIds,
+  resolveStorageFileUrl,
   uploadDataUrlAsset,
-  uploadFileAsset,
+  uploadPublicationPdf,
 } from './storageService';
 import {
   resolvePriceDecimalPlaces,
@@ -34,6 +36,7 @@ import {
   roundPrice,
 } from '../utils/price';
 import { resolveFontSizeLimits, resolveMinimumFontSize, roundFontSize } from '../utils/styleRules';
+import { getErrorMessage } from '../utils/errors';
 
 const LOCAL_STORAGE_KEYS = {
   products: 'automenu_products',
@@ -338,6 +341,8 @@ const mapPublicationRow = (row: any, pdfUrl: string | null = null): MenuPublicat
   menuSlug: row.menu_slug,
   publishedVersionId: row.published_version_id,
   pdfAssetId: row.pdf_asset_id,
+  pdfBucket: row.pdf_bucket || 'menu-assets',
+  pdfPath: row.pdf_path || null,
   pdfUrl,
   pdfFilename: row.pdf_filename || 'cardapio.pdf',
   pdfOptions: row.pdf_options || {},
@@ -1528,27 +1533,17 @@ const propagateSyncedProducts = async ({
 }) => {
   const supabase = getSupabaseClient();
   const { data: sourceLinks, error: sourceLinksError } = await supabase
-    .from('menu_synced_products')
-    .select('product_id')
-    .eq('menu_id', sourceMenuId);
+    .from('menu_product_sync_links')
+    .select('target_menu_id, product_id')
+    .eq('workspace_id', workspaceId)
+    .eq('source_menu_id', sourceMenuId);
   if (sourceLinksError) throw sourceLinksError;
 
-  const syncedIds = Array.from(new Set((sourceLinks || []).map((row) => row.product_id)));
-  if (syncedIds.length === 0) return;
-
-  const { data: allLinks, error: allLinksError } = await supabase
-    .from('menu_synced_products')
-    .select('menu_id, product_id')
-    .eq('workspace_id', workspaceId)
-    .in('product_id', syncedIds)
-    .neq('menu_id', sourceMenuId);
-  if (allLinksError) throw allLinksError;
-
   const targetLinks = new Map<string, Set<string>>();
-  (allLinks || []).forEach((row) => {
-    const ids = targetLinks.get(row.menu_id) || new Set<string>();
+  (sourceLinks || []).forEach((row) => {
+    const ids = targetLinks.get(row.target_menu_id) || new Set<string>();
     ids.add(row.product_id);
-    targetLinks.set(row.menu_id, ids);
+    targetLinks.set(row.target_menu_id, ids);
   });
   if (targetLinks.size === 0) return;
 
@@ -2052,14 +2047,79 @@ export const linkSyncedMenuProducts = async ({
   if (uniqueIds.length === 0) return;
   const supabase = getSupabaseClient();
   const rows = uniqueIds.flatMap((productId) => [
-    { workspace_id: workspaceId, menu_id: sourceMenuId, product_id: productId },
-    { workspace_id: workspaceId, menu_id: targetMenuId, product_id: productId },
+    { workspace_id: workspaceId, source_menu_id: sourceMenuId, target_menu_id: targetMenuId, product_id: productId },
+    { workspace_id: workspaceId, source_menu_id: targetMenuId, target_menu_id: sourceMenuId, product_id: productId },
   ]);
-  const { error } = await supabase.from('menu_synced_products').upsert(rows, { onConflict: 'menu_id,product_id' });
+  const { error } = await supabase.from('menu_product_sync_links').upsert(rows, { onConflict: 'source_menu_id,target_menu_id,product_id' });
+  if (error) throw error;
+};
+
+export const listMenuProductSyncs = async ({
+  workspaceId,
+  currentMenuId,
+}: {
+  workspaceId: string;
+  currentMenuId: string;
+}): Promise<MenuProductSync[]> => {
+  const supabase = getSupabaseClient();
+  const { data: links, error: linksError } = await supabase
+    .from('menu_product_sync_links')
+    .select('target_menu_id, product_id')
+    .eq('workspace_id', workspaceId)
+    .eq('source_menu_id', currentMenuId);
+  if (linksError) throw linksError;
+
+  const counts = new Map<string, Set<string>>();
+  (links || []).forEach((link) => {
+    const productIds = counts.get(link.target_menu_id) || new Set<string>();
+    productIds.add(link.product_id);
+    counts.set(link.target_menu_id, productIds);
+  });
+  if (counts.size === 0) return [];
+
+  const { data: menus, error: menusError } = await supabase
+    .from('menus')
+    .select('*')
+    .in('id', Array.from(counts.keys()))
+    .neq('status', 'archived');
+  if (menusError) throw menusError;
+
+  return (menus || []).map((menuRow) => ({
+    menu: mapMenuRow(menuRow),
+    productCount: counts.get(menuRow.id)?.size || 0,
+  }));
+};
+
+export const unlinkSyncedMenuProducts = async ({
+  workspaceId,
+  sourceMenuId,
+  targetMenuId,
+}: {
+  workspaceId: string;
+  sourceMenuId: string;
+  targetMenuId: string;
+}) => {
+  const supabase = getSupabaseClient();
+  const directions = [
+    [sourceMenuId, targetMenuId],
+    [targetMenuId, sourceMenuId],
+  ] as const;
+  const results = await Promise.all(directions.map(([sourceId, targetId]) => (
+    supabase
+      .from('menu_product_sync_links')
+      .delete()
+      .eq('workspace_id', workspaceId)
+      .eq('source_menu_id', sourceId)
+      .eq('target_menu_id', targetId)
+  )));
+  const error = results.find((result) => result.error)?.error;
   if (error) throw error;
 };
 
 const resolvePublicationPdfUrl = async (row: any) => {
+  if (row?.pdf_bucket && row?.pdf_path) {
+    return resolveStorageFileUrl(row.pdf_bucket, row.pdf_path);
+  }
   if (!row?.pdf_asset_id) return null;
   const urls = await resolveAssetMapForIds(row.workspace_id, [row.pdf_asset_id]);
   return urls.get(row.pdf_asset_id) || null;
@@ -2099,31 +2159,40 @@ export const publishWorkspaceMenu = async ({
   pdfOptions: Record<string, unknown>;
 }): Promise<MenuPublication> => {
   const supabase = getSupabaseClient();
-  const existing = await getMenuPublication(menu.id);
-  const pdfAssetId = existing?.pdfAssetId || crypto.randomUUID();
-  const uploaded = await uploadFileAsset({
-    assetId: pdfAssetId,
-    workspaceId: workspace.id,
-    userId,
-    bucket: 'menu-assets',
-    assetType: 'published_pdf',
-    file: new File([pdfBlob], pdfFilename, { type: 'application/pdf' }),
-    metadata: { menu_id: menu.id, role: 'published_pdf' },
+  const runStep = async <T,>(label: string, action: () => Promise<T>) => {
+    try {
+      return await action();
+    } catch (error) {
+      throw new Error(`${label}: ${getErrorMessage(error, 'erro inesperado')}`);
+    }
+  };
+  const existing = await runStep('Falha ao consultar a publicação', async () => {
+    const { data, error } = await supabase
+      .from('menu_publications')
+      .select('*')
+      .eq('menu_id', menu.id)
+      .maybeSingle();
+    if (error) throw error;
+    return data ? mapPublicationRow(data) : null;
   });
+  const uploaded = await runStep('Falha ao enviar o PDF', () => uploadPublicationPdf({
+    workspaceId: workspace.id,
+    menuId: menu.id,
+    file: new File([pdfBlob], pdfFilename, { type: 'application/pdf' }),
+  }));
 
   const editorState = createEditorState(style, products.filter((product) => product.isFreeText), sortOption);
   const renderSnapshot = createRenderSnapshot(products, style, sortOption);
-  const { versionId } = await insertMenuVersionWithRetry({
+  const { versionId } = await runStep('Falha ao criar a versão publicada', () => insertMenuVersionWithRetry({
     menuId: menu.id,
     userId,
     editorState,
     renderSnapshot,
     versionType: 'published',
     actionLabel: 'Cardápio publicado',
-  });
+  }));
   const assetIds = collectStyleAssetIds(style);
   collectProductAssetIds(products).forEach((assetId) => assetIds.add(assetId));
-  assetIds.add(uploaded.asset.id);
 
   const baseSlug = slugify(menu.name);
   let publicationRow: any = null;
@@ -2137,7 +2206,9 @@ export const publishWorkspaceMenu = async ({
       restaurant_slug: workspace.slug,
       menu_slug: menuSlug,
       published_version_id: versionId,
-      pdf_asset_id: uploaded.asset.id,
+      pdf_asset_id: null,
+      pdf_bucket: uploaded.bucket,
+      pdf_path: uploaded.path,
       pdf_filename: pdfFilename,
       pdf_options: pdfOptions,
       snapshot: renderSnapshot,
@@ -2154,7 +2225,9 @@ export const publishWorkspaceMenu = async ({
       break;
     }
     lastError = error;
-    if (existing || error.code !== '23505') throw error;
+    if (existing || error.code !== '23505') {
+      throw new Error(`Falha ao salvar o link público: ${getErrorMessage(error, 'erro inesperado')}`);
+    }
   }
   if (!publicationRow) throw lastError || new Error('Não foi possível criar o link público.');
 
@@ -2162,7 +2235,7 @@ export const publishWorkspaceMenu = async ({
     .from('menus')
     .update({ published_version_id: versionId, status: 'published' })
     .eq('id', menu.id);
-  if (menuUpdateError) throw menuUpdateError;
+  if (menuUpdateError) throw new Error(`Falha ao concluir a publicação: ${getErrorMessage(menuUpdateError, 'erro inesperado')}`);
   return mapPublicationRow(publicationRow, uploaded.url);
 };
 

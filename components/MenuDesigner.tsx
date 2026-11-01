@@ -1658,7 +1658,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             <MenuSidebar
                 isOpen={isOpen || false}
                 onClose={onClose}
-                handlePrint={handlePrint}
                 handleResetDesign={handleResetDesign}
                 style={style}
                 setStyle={setStyle}

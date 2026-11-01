@@ -54,8 +54,7 @@ export type AssetType =
   | 'added_image'
   | 'ai_source_image'
   | 'ai_extracted_asset'
-  | 'template_preview'
-  | 'published_pdf';
+  | 'template_preview';
 export type AiImportStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
 export interface BoundingBox {
@@ -343,6 +342,8 @@ export interface MenuPublication {
   menuSlug: string;
   publishedVersionId: string;
   pdfAssetId: string | null;
+  pdfBucket: string;
+  pdfPath: string | null;
   pdfUrl: string | null;
   pdfFilename: string;
   pdfOptions: Record<string, unknown>;
@@ -355,6 +356,11 @@ export interface MenuPublication {
 export interface MenuProductSource {
   menu: Menu;
   products: Product[];
+}
+
+export interface MenuProductSync {
+  menu: Menu;
+  productCount: number;
 }
 
 export interface Template {

@@ -1,6 +1,6 @@
 import React from 'react';
 import { MenuStyle, Product, ElementStyle, SortOption, AddedImage } from '../../types';
-import { Layout, PanelLeftClose, Printer, RotateCcw } from 'lucide-react';
+import { Layout, PanelLeftClose, RotateCcw } from 'lucide-react';
 import { useBottomSheetDrag } from '../../hooks/useBottomSheetDrag';
 import { 
   ElementsSection, 
@@ -14,7 +14,6 @@ import { resolveFontSizeLimits, resolveMinimumFontSize } from '../../utils/style
 interface MenuSidebarProps {
     isOpen: boolean;
     onClose?: () => void;
-    handlePrint: () => void;
     handleResetDesign: () => void;
     
     // Data Props
@@ -43,7 +42,7 @@ interface MenuSidebarProps {
 }
 
 export const MenuSidebar: React.FC<MenuSidebarProps> = ({
-    isOpen, onClose, handlePrint, handleResetDesign,
+    isOpen, onClose, handleResetDesign,
     style, setStyle, templates, applyTemplate, sortOption, setSortOption,
     selection, setSelection, selectedFreeText, selectedAddedImage, selectedAddedImageIds,
     updateFreeTextStyle, updateGlobalElementStyle, setPreviewAction, handleAddedImageUpload,
@@ -92,7 +91,6 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
           </h2>
           <div className="flex gap-2">
             <button onClick={onClose} className="md:hidden text-slate-500 hover:text-slate-800 pointer-events-auto" onPointerDown={e => e.stopPropagation()}> <PanelLeftClose size={18} /> </button>
-            <button onClick={handlePrint} className="text-xs bg-slate-900 text-white px-3 py-1.5 rounded hover:bg-slate-800 flex items-center gap-1 pointer-events-auto" onPointerDown={e => e.stopPropagation()}> <Printer size={12} /> PDF </button>
           </div>
         </div>
 

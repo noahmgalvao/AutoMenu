@@ -114,6 +114,34 @@ export const resolveAssetMap = async (assets: Asset[]) => {
   return resolved;
 };
 
+export const resolveStorageFileUrl = async (bucket: string, path: string) => {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60 * 24 * 365);
+  if (error) throw error;
+  return data.signedUrl;
+};
+
+export const uploadPublicationPdf = async ({
+  workspaceId,
+  menuId,
+  file,
+}: {
+  workspaceId: string;
+  menuId: string;
+  file: File;
+}) => {
+  const bucket = 'menu-assets';
+  const path = `${workspaceId}/published-menus/${menuId}.pdf`;
+  const supabase = getSupabaseClient();
+  const { error } = await supabase.storage.from(bucket).upload(path, file, {
+    upsert: true,
+    contentType: 'application/pdf',
+    cacheControl: '0',
+  });
+  if (error) throw error;
+  return { bucket, path, url: await resolveStorageFileUrl(bucket, path) };
+};
+
 export const resolveAssetMapForIds = async (workspaceId: string, assetIds: string[]) => {
   const uniqueAssetIds = Array.from(new Set(assetIds.filter(Boolean)));
   if (uniqueAssetIds.length === 0) return new Map<string, string>();
