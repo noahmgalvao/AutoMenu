@@ -1,9 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { AlertCircle, ChefHat, Loader2, Paintbrush, Plus, Save, ShoppingCart } from 'lucide-react';
+import { AlertCircle, ChefHat, Clock3, ExternalLink, Loader2, Paintbrush, Plus, Save, Send, ShoppingCart } from 'lucide-react';
 import MenuDesigner from './components/MenuDesigner';
 import { AuthScreen } from './components/AuthScreen';
 import { ProfileMenu } from './components/ProfileMenu';
+import { PublishModal } from './components/PublishModal';
+import { CreateMenuModal } from './components/CreateMenuModal';
+import { RevisionHistoryModal } from './components/RevisionHistoryModal';
+import type { PrintCanvasOptions } from './components/MenuDesigner/PrintCanvasModal';
+import type { PdfExportResult } from './utils/pdfExport';
 import { INITIAL_STYLE, PRESET_TEMPLATES } from './constants';
 import {
   FontSizeLimits,
@@ -11,6 +16,7 @@ import {
   MenuContentSpacing,
   MenuMargins,
   MenuStyle,
+  MenuPublication,
   PriceDecimalPlaces,
   PriceDecimalSeparator,
   Product,
@@ -29,9 +35,12 @@ import { getSupabaseConfigError, isSupabaseConfigured } from './services/supabas
 import {
   createWorkspaceMenu,
   deleteWorkspaceMenu,
+  getMenuContentSignature,
+  getMenuPublication,
   loadWorkspaceData,
   loadWorkspaceMenuData,
   normalizeWorkspaceClientState,
+  publishWorkspaceMenu,
   renameWorkspaceMenu,
   saveWorkspaceState,
   updateAccountIdentity,
@@ -246,6 +255,12 @@ const App: React.FC = () => {
   const [activePanel, setActivePanel] = useState<'product' | 'style' | null>('style');
   const [hasOpenedProductDesigner, setHasOpenedProductDesigner] = useState(false);
   const [printRequestId, setPrintRequestId] = useState(0);
+  const [printRequestMode, setPrintRequestMode] = useState<'download' | 'publish' | 'publish-silent'>('download');
+  const [publication, setPublication] = useState<MenuPublication | null>(null);
+  const [isPublishOpen, setIsPublishOpen] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [isCreateMenuOpen, setIsCreateMenuOpen] = useState(false);
+  const [isRevisionHistoryOpen, setIsRevisionHistoryOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSettingsSaving, setIsSettingsSaving] = useState(false);
@@ -566,6 +581,20 @@ const App: React.FC = () => {
       sortOption,
     };
   }, [products, sortOption, style, templates, workspaceData]);
+
+  useEffect(() => {
+    const menuId = workspaceData?.menu.id;
+    if (!menuId) {
+      setPublication(null);
+      return;
+    }
+    let cancelled = false;
+    setPublication(null);
+    void getMenuPublication(menuId)
+      .then((result) => { if (!cancelled) setPublication(result); })
+      .catch((error) => { if (!cancelled) setLoadError(error instanceof Error ? error.message : 'Falha ao carregar publicação.'); });
+    return () => { cancelled = true; };
+  }, [workspaceData?.menu.id]);
 
   useEffect(() => {
     if (!isSupabaseConfigured()) {
@@ -1120,21 +1149,27 @@ const App: React.FC = () => {
     }
   };
 
-  const handleCreateMenu = async () => {
+  const handleCreateMenu = () => {
+    if (!workspaceData) return;
+    setIsProfileMenuOpen(false);
+    setIsCreateMenuOpen(true);
+  };
+
+  const performCreateMenu = async (name: string, sourceMenuId: string | null) => {
     if (!session || !workspaceData) return;
 
     setIsMenuActionLoading(true);
     setLoadError(null);
     setActivePanel('style');
     setIsProfileMenuOpen(false);
-    saveCurrentMenuInBackground();
 
     try {
-      const nextIndex = workspaceData.menus.length + 1;
+      await forceSaveCurrentMenu();
       const menu = await createWorkspaceMenu({
         workspaceId: workspaceData.workspace.id,
         userId: session.user.id,
-        name: `Cardápio ${nextIndex}`,
+        name,
+        sourceMenuId,
       });
 
       const data = await loadWorkspaceMenuData({
@@ -1145,6 +1180,7 @@ const App: React.FC = () => {
         menuId: menu.id,
       });
       hydrateWorkspaceState(data);
+      setIsCreateMenuOpen(false);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : 'Falha ao criar cardápio.');
     } finally {
@@ -1226,9 +1262,58 @@ const App: React.FC = () => {
     setActivePanel(activePanel === 'style' ? null : 'style');
   };
 
-  const requestPrint = () => {
+  const requestPrint = (mode: 'download' | 'publish' | 'publish-silent' = 'download') => {
+    setPrintRequestMode(mode);
     setPrintRequestId((prev) => prev + 1);
   };
+
+  const handlePublishConfirm = async ({ pdf, virtualLink }: { pdf: boolean; virtualLink: boolean }) => {
+    setIsPublishOpen(false);
+    if (!virtualLink) {
+      requestPrint('download');
+      return;
+    }
+
+    setIsPublishing(true);
+    setLoadError(null);
+    try {
+      await forceSaveCurrentMenu();
+      requestPrint(pdf ? 'publish' : 'publish-silent');
+    } catch (error) {
+      setIsPublishing(false);
+      setLoadError(error instanceof Error ? error.message : 'Falha ao preparar a publicação.');
+    }
+  };
+
+  const handlePrintComplete = async (result: PdfExportResult, options: PrintCanvasOptions) => {
+    if (printRequestMode !== 'publish' && printRequestMode !== 'publish-silent') return;
+    if (!workspaceData || !session) return;
+    try {
+      const published = await publishWorkspaceMenu({
+        workspace: workspaceData.workspace,
+        menu: workspaceData.menu,
+        userId: session.user.id,
+        products,
+        style,
+        sortOption,
+        pdfBlob: result.blob,
+        pdfFilename: result.filename,
+        pdfOptions: options,
+      });
+      setPublication(published);
+      const url = `${window.location.origin}/cardapio/${encodeURIComponent(published.restaurantSlug)}/${encodeURIComponent(published.menuSlug)}`;
+      window.location.assign(url);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'Falha ao publicar cardápio.');
+      setIsPublishing(false);
+    }
+  };
+
+  const contentSignature = useMemo(
+    () => getMenuContentSignature(products, style, sortOption),
+    [products, style, sortOption],
+  );
+  const hasPublishedChanges = Boolean(publication && publication.contentSignature !== contentSignature);
 
   const saveBadge = useMemo(() => {
     if (saveState === 'dirty') {
@@ -1326,8 +1411,19 @@ const App: React.FC = () => {
               <div className="font-bold text-xl bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-violet-600 hidden sm:block">
                 AutoMenu AI
               </div>
-              <div className="text-xs text-slate-500 truncate">
-                {workspaceData.menu.name} · {workspaceData.workspace.name}
+              <div className="text-xs text-slate-500 flex items-center gap-1 min-w-0">
+                <span className="truncate">{workspaceData.menu.name} · {workspaceData.workspace.name}</span>
+                {publication && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!hasPublishedChanges) window.location.assign(`/cardapio/${encodeURIComponent(publication.restaurantSlug)}/${encodeURIComponent(publication.menuSlug)}`);
+                    }}
+                    className={`md:hidden shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${hasPublishedChanges ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}
+                  >
+                    {hasPublishedChanges ? 'Alterações Pendentes' : 'Alterações Salvas'}
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1337,6 +1433,29 @@ const App: React.FC = () => {
               <Save size={12} />
               <span>{saveBadge.label}</span>
             </div>
+            {publication && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (hasPublishedChanges) return;
+                  window.location.assign(`/cardapio/${encodeURIComponent(publication.restaurantSlug)}/${encodeURIComponent(publication.menuSlug)}`);
+                }}
+                className={`hidden md:flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ${hasPublishedChanges ? 'bg-amber-50 text-amber-700 cursor-default' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
+              >
+                {!hasPublishedChanges && <ExternalLink size={12} />}
+                {hasPublishedChanges ? 'Alterações Pendentes' : 'Alterações Salvas'}
+              </button>
+            )}
+            <button type="button" onClick={() => setIsRevisionHistoryOpen(true)} className="h-10 w-10 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 flex items-center justify-center" title="Histórico de revisões"><Clock3 size={17} /></button>
+            <button
+              type="button"
+              onClick={() => setIsPublishOpen(true)}
+              disabled={isPublishing}
+              className={`h-10 px-3 sm:px-4 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors disabled:opacity-60 ${hasPublishedChanges ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200 hover:bg-indigo-700' : 'border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'}`}
+            >
+              {isPublishing ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+              <span className="hidden sm:inline">Publicar</span>
+            </button>
             <ProfileMenu
               profile={workspaceData.profile}
               workspace={workspaceData.workspace}
@@ -1359,6 +1478,35 @@ const App: React.FC = () => {
           </div>
         </div>
       </nav>
+
+      <PublishModal
+        open={isPublishOpen}
+        loading={isPublishing}
+        onClose={() => setIsPublishOpen(false)}
+        onConfirm={(options) => void handlePublishConfirm(options)}
+      />
+
+      <CreateMenuModal
+        open={isCreateMenuOpen}
+        menus={workspaceData.menus}
+        defaultName={`Cardápio ${workspaceData.menus.length + 1}`}
+        loading={isMenuActionLoading}
+        onClose={() => setIsCreateMenuOpen(false)}
+        onCreate={(name, sourceMenuId) => void performCreateMenu(name, sourceMenuId)}
+      />
+
+      <RevisionHistoryModal
+        open={isRevisionHistoryOpen}
+        workspaceId={workspaceData.workspace.id}
+        menuId={workspaceData.menu.id}
+        onClose={() => setIsRevisionHistoryOpen(false)}
+        onRestore={(revision) => {
+          setProducts(revision.products);
+          setStyle(revision.style);
+          setSortOption(revision.sortOption);
+          setIsRevisionHistoryOpen(false);
+        }}
+      />
 
       {isSettingsOpen && (
         <React.Suspense fallback={null}>
@@ -1427,7 +1575,7 @@ const App: React.FC = () => {
               currentMenuId={workspaceData.menu.id}
               productsCanChangeCategory={workspaceData.workspace.settings?.productsCanChangeCategory}
               splitCategoryAcrossPages={workspaceData.workspace.settings.splitCategoryAcrossPages}
-              onPrint={requestPrint}
+              onPrint={() => requestPrint('download')}
               onImportVisibilityChange={setIsMenuImportOpen}
             />
           </React.Suspense>
@@ -1449,6 +1597,19 @@ const App: React.FC = () => {
             isOpen={activePanel === 'style'}
             isProductDesignerOpen={activePanel === 'product'}
             printRequestId={printRequestId}
+            printRequestMode={printRequestMode}
+            onPrintComplete={(result, options) => void handlePrintComplete(result, options)}
+            onPrintError={(error) => {
+              if (printRequestMode === 'publish' || printRequestMode === 'publish-silent') {
+                setIsPublishing(false);
+                setLoadError(error.message);
+              }
+            }}
+            onPrintCancel={() => {
+              setIsPublishing(false);
+              setPrintRequestMode('download');
+            }}
+            silentPrintOptions={(publication?.pdfOptions || {}) as Partial<PrintCanvasOptions>}
             onClose={() => setActivePanel(null)}
             onScrollActivity={setIsScrolling}
             workspaceId={workspaceData.workspace.id}

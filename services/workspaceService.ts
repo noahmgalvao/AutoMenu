@@ -6,6 +6,8 @@ import {
   LoadedWorkspaceData,
   Menu,
   MenuEditorState,
+  MenuProductSource,
+  MenuPublication,
   MenuStyle,
   MenuVersion,
   Product,
@@ -24,6 +26,7 @@ import {
   registerExternalAsset,
   resolveAssetMapForIds,
   uploadDataUrlAsset,
+  uploadFileAsset,
 } from './storageService';
 import {
   resolvePriceDecimalPlaces,
@@ -311,6 +314,35 @@ const mapMenuRow = (row: any): Menu => ({
   status: row.status,
   currentDraftVersionId: row.current_draft_version_id,
   publishedVersionId: row.published_version_id,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+const mapMenuVersionRow = (row: any, editorState = row.editor_state): MenuVersion => ({
+  id: row.id,
+  menuId: row.menu_id,
+  versionNumber: row.version_number,
+  versionType: row.version_type,
+  editorState,
+  renderSnapshot: row.render_snapshot || {},
+  createdBy: row.created_by,
+  createdAt: row.created_at,
+  actionLabel: row.action_label || null,
+});
+
+const mapPublicationRow = (row: any, pdfUrl: string | null = null): MenuPublication => ({
+  id: row.id,
+  menuId: row.menu_id,
+  workspaceId: row.workspace_id,
+  restaurantSlug: row.restaurant_slug,
+  menuSlug: row.menu_slug,
+  publishedVersionId: row.published_version_id,
+  pdfAssetId: row.pdf_asset_id,
+  pdfUrl,
+  pdfFilename: row.pdf_filename || 'cardapio.pdf',
+  pdfOptions: row.pdf_options || {},
+  snapshot: row.snapshot || {},
+  contentSignature: row.content_signature,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -713,6 +745,37 @@ const createRenderSnapshot = (products: Product[], style: MenuStyle, sortOption:
   sortOption,
 });
 
+const canonicalizeMenuValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(canonicalizeMenuValue);
+  if (isRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => key !== 'savedAt')
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonicalizeMenuValue(item)]),
+    );
+  }
+  if (typeof value === 'string' && /^https?:\/\//i.test(value)) {
+    try {
+      const url = new URL(value);
+      return `${url.origin}${url.pathname}`;
+    } catch {
+      return value;
+    }
+  }
+  return value;
+};
+
+export const getMenuContentSignature = (products: Product[], style: MenuStyle, sortOption: SortOption) => {
+  const serialized = JSON.stringify(canonicalizeMenuValue({ products, style, sortOption }));
+  let hash = 2166136261;
+  for (let index = 0; index < serialized.length; index += 1) {
+    hash ^= serialized.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `v1-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+};
+
 const createEditorState = (style: MenuStyle, freeTextProducts: Product[], sortOption: SortOption): MenuEditorState => ({
   style,
   freeTextProducts,
@@ -893,6 +956,7 @@ const initializeWorkspaceMenu = async (menu: Menu, userId: string) => {
     userId,
     editorState,
     renderSnapshot,
+    actionLabel: 'Cardápio criado',
   });
 
   const { data: updatedMenuRow, error: updateError } = await supabase
@@ -974,10 +1038,12 @@ export const createWorkspaceMenu = async ({
   workspaceId,
   userId,
   name,
+  sourceMenuId,
 }: {
   workspaceId: string;
   userId: string;
   name: string;
+  sourceMenuId?: string | null;
 }) => {
   const supabase = getSupabaseClient();
   const menuId = crypto.randomUUID();
@@ -995,6 +1061,39 @@ export const createWorkspaceMenu = async ({
 
   if (error) {
     throw error;
+  }
+
+  if (sourceMenuId) {
+    const { data: sourceMenu, error: sourceMenuError } = await supabase
+      .from('menus')
+      .select('current_draft_version_id')
+      .eq('id', sourceMenuId)
+      .eq('workspace_id', workspaceId)
+      .single();
+    if (sourceMenuError) throw sourceMenuError;
+
+    const { data: sourceVersion, error: sourceVersionError } = await supabase
+      .from('menu_versions')
+      .select('*')
+      .eq('id', sourceMenu.current_draft_version_id)
+      .single();
+    if (sourceVersionError) throw sourceVersionError;
+
+    const { versionId } = await insertMenuVersionWithRetry({
+      menuId,
+      userId,
+      editorState: cloneJson(sourceVersion.editor_state),
+      renderSnapshot: cloneJson(sourceVersion.render_snapshot),
+      actionLabel: 'Cardápio criado a partir de outro cardápio',
+    });
+    const { data: copiedMenu, error: copiedMenuError } = await supabase
+      .from('menus')
+      .update({ current_draft_version_id: versionId })
+      .eq('id', menuId)
+      .select('*')
+      .single();
+    if (copiedMenuError) throw copiedMenuError;
+    return mapMenuRow(copiedMenu);
   }
 
   return initializeWorkspaceMenu(mapMenuRow(menuRow), userId);
@@ -1360,11 +1459,15 @@ const insertMenuVersionWithRetry = async ({
   userId,
   editorState,
   renderSnapshot,
+  versionType = 'snapshot',
+  actionLabel = 'Alteração salva',
 }: {
   menuId: string;
   userId: string;
   editorState: MenuEditorState;
   renderSnapshot: ReturnType<typeof createRenderSnapshot>;
+  versionType?: MenuVersion['versionType'];
+  actionLabel?: string;
 }) => {
   const supabase = getSupabaseClient();
   let lastError: unknown = null;
@@ -1388,10 +1491,11 @@ const insertMenuVersionWithRetry = async ({
       id: versionId,
       menu_id: menuId,
       version_number: versionNumber,
-      version_type: 'snapshot',
+      version_type: versionType,
       editor_state: editorState,
       render_snapshot: renderSnapshot,
       created_by: userId,
+      action_label: actionLabel,
     });
 
     if (!insertVersionError) {
@@ -1409,6 +1513,120 @@ const insertMenuVersionWithRetry = async ({
   throw lastError;
 };
 
+const propagateSyncedProducts = async ({
+  workspaceId,
+  sourceMenuId,
+  sourceMenuName,
+  userId,
+  sourceProducts,
+}: {
+  workspaceId: string;
+  sourceMenuId: string;
+  sourceMenuName: string;
+  userId: string;
+  sourceProducts: Product[];
+}) => {
+  const supabase = getSupabaseClient();
+  const { data: sourceLinks, error: sourceLinksError } = await supabase
+    .from('menu_synced_products')
+    .select('product_id')
+    .eq('menu_id', sourceMenuId);
+  if (sourceLinksError) throw sourceLinksError;
+
+  const syncedIds = Array.from(new Set((sourceLinks || []).map((row) => row.product_id)));
+  if (syncedIds.length === 0) return;
+
+  const { data: allLinks, error: allLinksError } = await supabase
+    .from('menu_synced_products')
+    .select('menu_id, product_id')
+    .eq('workspace_id', workspaceId)
+    .in('product_id', syncedIds)
+    .neq('menu_id', sourceMenuId);
+  if (allLinksError) throw allLinksError;
+
+  const targetLinks = new Map<string, Set<string>>();
+  (allLinks || []).forEach((row) => {
+    const ids = targetLinks.get(row.menu_id) || new Set<string>();
+    ids.add(row.product_id);
+    targetLinks.set(row.menu_id, ids);
+  });
+  if (targetLinks.size === 0) return;
+
+  const { data: targetMenus, error: targetMenusError } = await supabase
+    .from('menus')
+    .select('*')
+    .in('id', Array.from(targetLinks.keys()))
+    .neq('status', 'archived');
+  if (targetMenusError) throw targetMenusError;
+
+  const sourceById = new Map(sourceProducts.filter((product) => !product.isFreeText).map((product) => [product.id, product]));
+  await Promise.all((targetMenus || []).map(async (targetMenuRow) => {
+    if (!targetMenuRow.current_draft_version_id) return;
+    const { data: targetVersion, error: targetVersionError } = await supabase
+      .from('menu_versions')
+      .select('*')
+      .eq('id', targetMenuRow.current_draft_version_id)
+      .single();
+    if (targetVersionError) throw targetVersionError;
+
+    const linkedIds = targetLinks.get(targetMenuRow.id) || new Set<string>();
+    const currentProducts = normalizePersistedProducts(targetVersion.render_snapshot?.products);
+    const presentIds = new Set<string>();
+    const nextProducts = currentProducts.flatMap((product) => {
+      if (!linkedIds.has(product.id)) return [product];
+      const sourceProduct = sourceById.get(product.id);
+      if (!sourceProduct) return [];
+      presentIds.add(product.id);
+      return [cloneJson(sourceProduct)];
+    });
+    linkedIds.forEach((productId) => {
+      const sourceProduct = sourceById.get(productId);
+      if (sourceProduct && !presentIds.has(productId)) nextProducts.push(cloneJson(sourceProduct));
+    });
+
+    const editorState = targetVersion.editor_state as MenuEditorState;
+    const nextEditorState = createEditorState(
+      editorState.style,
+      nextProducts.filter((product) => product.isFreeText),
+      editorState.sortOption || DEFAULT_SORT_OPTION,
+    );
+    const nextSnapshot = createRenderSnapshot(
+      nextProducts,
+      editorState.style,
+      editorState.sortOption || DEFAULT_SORT_OPTION,
+    );
+    const { versionId } = await insertMenuVersionWithRetry({
+      menuId: targetMenuRow.id,
+      userId,
+      editorState: nextEditorState,
+      renderSnapshot: nextSnapshot,
+      actionLabel: `Produtos sincronizados de ${sourceMenuName}`,
+    });
+    const { error: updateTargetError } = await supabase
+      .from('menus')
+      .update({ current_draft_version_id: versionId, status: 'draft' })
+      .eq('id', targetMenuRow.id);
+    if (updateTargetError) throw updateTargetError;
+  }));
+};
+
+const describeRevisionChange = (previousSnapshot: Record<string, any> | null, nextSnapshot: Record<string, any>) => {
+  if (!previousSnapshot) return 'Cardápio criado';
+  const previousProducts = normalizePersistedProducts(previousSnapshot.products);
+  const nextProducts = normalizePersistedProducts(nextSnapshot.products);
+  const previousIds = new Set(previousProducts.map((product) => product.id));
+  const nextIds = new Set(nextProducts.map((product) => product.id));
+  const added = nextProducts.filter((product) => !previousIds.has(product.id)).length;
+  const removed = previousProducts.filter((product) => !nextIds.has(product.id)).length;
+  const labels: string[] = [];
+  if (added) labels.push(`${added} produto${added === 1 ? '' : 's'} adicionado${added === 1 ? '' : 's'}`);
+  if (removed) labels.push(`${removed} produto${removed === 1 ? '' : 's'} removido${removed === 1 ? '' : 's'}`);
+  if (!added && !removed && productComparisonSignature(previousProducts) !== productComparisonSignature(nextProducts)) labels.push('Produtos atualizados');
+  if (JSON.stringify(canonicalizeMenuValue(previousSnapshot.style)) !== JSON.stringify(canonicalizeMenuValue(nextSnapshot.style))) labels.push('Visual atualizado');
+  if (JSON.stringify(previousSnapshot.sortOption) !== JSON.stringify(nextSnapshot.sortOption)) labels.push('Ordenação atualizada');
+  return labels.slice(0, 2).join(' · ') || 'Alteração salva';
+};
+
 export const saveWorkspaceState = async ({
   workspaceId,
   userId,
@@ -1417,6 +1635,7 @@ export const saveWorkspaceState = async ({
   style,
   templates,
   sortOption,
+  actionLabel = 'Alteração salva',
 }: {
   workspaceId: string;
   userId: string;
@@ -1425,6 +1644,7 @@ export const saveWorkspaceState = async ({
   style: MenuStyle;
   templates: MenuStyle[];
   sortOption: SortOption;
+  actionLabel?: string;
 }): Promise<SaveWorkspaceResult> => {
   const supabase = getSupabaseClient();
   const normalizedProducts = await normalizeProductAssets(workspaceId, userId, assignCategoryIds(products));
@@ -1503,11 +1723,21 @@ export const saveWorkspaceState = async ({
   const activeMenu = await resolveActiveMenu(workspaceId, menuId);
   const editorState = createEditorState(normalizedStyle, freeTextProducts, sortOption);
   const renderSnapshot = createRenderSnapshot([...productsWithCategoryIds, ...freeTextProducts], normalizedStyle, sortOption);
+  let resolvedActionLabel = actionLabel;
+  if (actionLabel === 'Alteração salva' && activeMenu.currentDraftVersionId) {
+    const { data: previousVersion } = await supabase
+      .from('menu_versions')
+      .select('render_snapshot')
+      .eq('id', activeMenu.currentDraftVersionId)
+      .maybeSingle();
+    resolvedActionLabel = describeRevisionChange(previousVersion?.render_snapshot || null, renderSnapshot);
+  }
   const { versionId: currentVersionId, versionNumber: nextVersionNumber } = await insertMenuVersionWithRetry({
     menuId: activeMenu.id,
     userId,
     editorState,
     renderSnapshot,
+    actionLabel: resolvedActionLabel,
   });
 
   const { data: menuRow, error: updateMenuError } = await supabase
@@ -1525,6 +1755,14 @@ export const saveWorkspaceState = async ({
     throw updateMenuError;
   }
 
+  await propagateSyncedProducts({
+    workspaceId,
+    sourceMenuId: activeMenu.id,
+    sourceMenuName: activeMenu.name,
+    userId,
+    sourceProducts: [...productsWithCategoryIds, ...freeTextProducts],
+  });
+
   const savedMenu = mapMenuRow(menuRow);
   const savedVersion: MenuVersion = {
     id: currentVersionId,
@@ -1535,6 +1773,7 @@ export const saveWorkspaceState = async ({
     renderSnapshot,
     createdBy: userId,
     createdAt: new Date().toISOString(),
+    actionLabel: resolvedActionLabel,
   };
 
   return {
@@ -1730,6 +1969,254 @@ export const loadWorkspaceData = async (userId: string, menuId?: string | null):
     templates,
     sortOption: editorState.sortOption,
   };
+};
+
+const hydrateSnapshot = async (workspaceId: string, snapshot: Record<string, any>) => {
+  const snapshotProducts = normalizePersistedProducts(snapshot.products);
+  const snapshotStyle = withStyleDefaults(snapshot.style || INITIAL_STYLE);
+  const assetIds = collectStyleAssetIds(snapshotStyle);
+  collectProductAssetIds(snapshotProducts).forEach((assetId) => assetIds.add(assetId));
+  const assetUrlMap = await resolveWorkspaceAssetMap(workspaceId, assetIds);
+  return {
+    products: hydrateProductAssets(snapshotProducts, assetUrlMap),
+    style: hydrateStyleAssets(snapshotStyle, assetUrlMap),
+    sortOption: (snapshot.sortOption || DEFAULT_SORT_OPTION) as SortOption,
+  };
+};
+
+export const listMenuRevisions = async (menuId: string) => {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('menu_versions')
+    .select('*')
+    .eq('menu_id', menuId)
+    .order('version_number', { ascending: false });
+  if (error) throw error;
+  return (data || []).map((row) => mapMenuVersionRow(row));
+};
+
+export const loadMenuRevisionState = async ({
+  workspaceId,
+  versionId,
+}: {
+  workspaceId: string;
+  versionId: string;
+}) => {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('menu_versions')
+    .select('*')
+    .eq('id', versionId)
+    .single();
+  if (error) throw error;
+  return hydrateSnapshot(workspaceId, data.render_snapshot || {});
+};
+
+const productComparisonSignature = (products: Product[]) => JSON.stringify(
+  canonicalizeMenuValue(products.filter((product) => !product.isFreeText).sort((left, right) => left.id.localeCompare(right.id))),
+);
+
+export const listMenuProductSources = async ({
+  workspaceId,
+  currentMenuId,
+  currentProducts,
+}: {
+  workspaceId: string;
+  currentMenuId: string;
+  currentProducts: Product[];
+}): Promise<MenuProductSource[]> => {
+  const menus = await listWorkspaceMenus(workspaceId);
+  const currentSignature = productComparisonSignature(currentProducts);
+  const sources = await Promise.all(menus.filter((menu) => menu.id !== currentMenuId).map(async (menu) => {
+    if (!menu.currentDraftVersionId) return null;
+    const state = await loadMenuRevisionState({ workspaceId, versionId: menu.currentDraftVersionId });
+    const products = state.products.filter((product) => !product.isFreeText);
+    if (products.length === 0 || productComparisonSignature(products) === currentSignature) return null;
+    return { menu, products } satisfies MenuProductSource;
+  }));
+  return sources.filter(Boolean) as MenuProductSource[];
+};
+
+export const linkSyncedMenuProducts = async ({
+  workspaceId,
+  sourceMenuId,
+  targetMenuId,
+  productIds,
+}: {
+  workspaceId: string;
+  sourceMenuId: string;
+  targetMenuId: string;
+  productIds: string[];
+}) => {
+  const uniqueIds = Array.from(new Set(productIds));
+  if (uniqueIds.length === 0) return;
+  const supabase = getSupabaseClient();
+  const rows = uniqueIds.flatMap((productId) => [
+    { workspace_id: workspaceId, menu_id: sourceMenuId, product_id: productId },
+    { workspace_id: workspaceId, menu_id: targetMenuId, product_id: productId },
+  ]);
+  const { error } = await supabase.from('menu_synced_products').upsert(rows, { onConflict: 'menu_id,product_id' });
+  if (error) throw error;
+};
+
+const resolvePublicationPdfUrl = async (row: any) => {
+  if (!row?.pdf_asset_id) return null;
+  const urls = await resolveAssetMapForIds(row.workspace_id, [row.pdf_asset_id]);
+  return urls.get(row.pdf_asset_id) || null;
+};
+
+export const getMenuPublication = async (menuId: string): Promise<MenuPublication | null> => {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('menu_publications')
+    .select('*')
+    .eq('menu_id', menuId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return mapPublicationRow(data, await resolvePublicationPdfUrl(data));
+};
+
+export const publishWorkspaceMenu = async ({
+  workspace,
+  menu,
+  userId,
+  products,
+  style,
+  sortOption,
+  pdfBlob,
+  pdfFilename,
+  pdfOptions,
+}: {
+  workspace: Workspace;
+  menu: Menu;
+  userId: string;
+  products: Product[];
+  style: MenuStyle;
+  sortOption: SortOption;
+  pdfBlob: Blob;
+  pdfFilename: string;
+  pdfOptions: Record<string, unknown>;
+}): Promise<MenuPublication> => {
+  const supabase = getSupabaseClient();
+  const existing = await getMenuPublication(menu.id);
+  const pdfAssetId = existing?.pdfAssetId || crypto.randomUUID();
+  const uploaded = await uploadFileAsset({
+    assetId: pdfAssetId,
+    workspaceId: workspace.id,
+    userId,
+    bucket: 'menu-assets',
+    assetType: 'published_pdf',
+    file: new File([pdfBlob], pdfFilename, { type: 'application/pdf' }),
+    metadata: { menu_id: menu.id, role: 'published_pdf' },
+  });
+
+  const editorState = createEditorState(style, products.filter((product) => product.isFreeText), sortOption);
+  const renderSnapshot = createRenderSnapshot(products, style, sortOption);
+  const { versionId } = await insertMenuVersionWithRetry({
+    menuId: menu.id,
+    userId,
+    editorState,
+    renderSnapshot,
+    versionType: 'published',
+    actionLabel: 'Cardápio publicado',
+  });
+  const assetIds = collectStyleAssetIds(style);
+  collectProductAssetIds(products).forEach((assetId) => assetIds.add(assetId));
+  assetIds.add(uploaded.asset.id);
+
+  const baseSlug = slugify(menu.name);
+  let publicationRow: any = null;
+  let lastError: any = null;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const menuSlug = existing?.menuSlug || (attempt === 0 ? baseSlug : `${baseSlug}-${attempt + 1}`);
+    const payload = {
+      id: existing?.id || crypto.randomUUID(),
+      menu_id: menu.id,
+      workspace_id: workspace.id,
+      restaurant_slug: workspace.slug,
+      menu_slug: menuSlug,
+      published_version_id: versionId,
+      pdf_asset_id: uploaded.asset.id,
+      pdf_filename: pdfFilename,
+      pdf_options: pdfOptions,
+      snapshot: renderSnapshot,
+      asset_ids: Array.from(assetIds),
+      content_signature: getMenuContentSignature(products, style, sortOption),
+    };
+    const { data, error } = await supabase
+      .from('menu_publications')
+      .upsert(payload, { onConflict: 'menu_id' })
+      .select('*')
+      .single();
+    if (!error) {
+      publicationRow = data;
+      break;
+    }
+    lastError = error;
+    if (existing || error.code !== '23505') throw error;
+  }
+  if (!publicationRow) throw lastError || new Error('Não foi possível criar o link público.');
+
+  const { error: menuUpdateError } = await supabase
+    .from('menus')
+    .update({ published_version_id: versionId, status: 'published' })
+    .eq('id', menu.id);
+  if (menuUpdateError) throw menuUpdateError;
+  return mapPublicationRow(publicationRow, uploaded.url);
+};
+
+export const loadPublicMenuPublication = async ({
+  restaurantSlug,
+  menuSlug,
+}: {
+  restaurantSlug: string;
+  menuSlug: string;
+}) => {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('menu_publications')
+    .select('*')
+    .eq('restaurant_slug', restaurantSlug)
+    .eq('menu_slug', menuSlug)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const hydrated = await hydrateSnapshot(data.workspace_id, data.snapshot || {});
+  return {
+    publication: mapPublicationRow(data, await resolvePublicationPdfUrl(data)),
+    ...hydrated,
+  };
+};
+
+export const updatePublicationMenuSlug = async ({
+  publicationId,
+  menuSlug,
+}: {
+  publicationId: string;
+  menuSlug: string;
+}) => {
+  const supabase = getSupabaseClient();
+  const normalizedSlug = slugify(menuSlug);
+  const { data, error } = await supabase
+    .from('menu_publications')
+    .update({ menu_slug: normalizedSlug })
+    .eq('id', publicationId)
+    .select('*')
+    .single();
+  if (error?.code === '23505') throw new Error('Este endereço já está em uso. Escolha outro nome.');
+  if (error) throw error;
+  return mapPublicationRow(data, await resolvePublicationPdfUrl(data));
+};
+
+export const canEditPublishedMenu = async (workspaceId: string) => {
+  const supabase = getSupabaseClient();
+  const { count, error } = await supabase
+    .from('workspace_members')
+    .select('workspace_id', { count: 'exact', head: true })
+    .eq('workspace_id', workspaceId);
+  if (error) return false;
+  return Boolean(count);
 };
 
 export const createAiImportJob = async ({

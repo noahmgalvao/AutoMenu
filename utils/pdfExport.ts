@@ -35,6 +35,7 @@ export type PdfExportResult = {
   pageCount: number;
   sizeBytes: number;
   durationMs: number;
+  blob: Blob;
 };
 
 type PdfDebugReporter = (entry: PdfDebugEntry) => void;
@@ -45,6 +46,7 @@ type ExportMenuPagesParams = {
   currentPageIndex: number | null;
   title: string;
   onDebug?: PdfDebugReporter;
+  download?: boolean;
 };
 
 const A4_PAGE_MM = { width: 210, height: 297 };
@@ -558,6 +560,7 @@ export const exportMenuPagesToPdf = async ({
   currentPageIndex,
   title,
   onDebug,
+  download = true,
 }: ExportMenuPagesParams): Promise<PdfExportResult> => {
   const startedAt = performance.now();
   const selectedIndexes = resolvePdfPageIndexes(options, pageElements.length, currentPageIndex);
@@ -676,15 +679,23 @@ export const exportMenuPagesToPdf = async ({
   emitDebug(onDebug, 'success', 'validate', 'PDF_VALIDATE_OK', 'PDF validado.', { sizeBytes: blob.size });
 
   const filename = `${sanitizeFileName(title || 'menu')}.pdf`;
-  emitDebug(onDebug, 'info', 'download', 'PDF_DOWNLOAD_START', 'Iniciando download.', { filename });
-  downloadPdfBlob(blob, filename);
+  if (download) {
+    emitDebug(onDebug, 'info', 'download', 'PDF_DOWNLOAD_START', 'Iniciando download.', { filename });
+    downloadPdfBlob(blob, filename);
+  }
 
   const result = {
     filename,
     pageCount: pagesToPrint.length,
     sizeBytes: blob.size,
     durationMs: Math.round(performance.now() - startedAt),
+    blob,
   };
-  emitDebug(onDebug, 'success', 'complete', 'PDF_EXPORT_OK', 'PDF gerado e enviado ao navegador para download.', result);
+  emitDebug(onDebug, 'success', 'complete', 'PDF_EXPORT_OK', download ? 'PDF gerado e enviado ao navegador para download.' : 'PDF gerado.', {
+    filename: result.filename,
+    pageCount: result.pageCount,
+    sizeBytes: result.sizeBytes,
+    durationMs: result.durationMs,
+  });
   return result;
 };

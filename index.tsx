@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { PublicMenuPage } from './components/PublicMenuPage';
 import './index.css';
 
 const rootElement = document.getElementById('root');
@@ -9,8 +10,9 @@ if (!rootElement) {
 }
 
 const root = ReactDOM.createRoot(rootElement);
+const isPublicMenu = /^\/cardapio\/[^/]+\/[^/]+\/?$/.test(window.location.pathname);
 root.render(
   <React.StrictMode>
-    <App />
+    {isPublicMenu ? <PublicMenuPage /> : <App />}
   </React.StrictMode>
 );

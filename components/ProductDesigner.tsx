@@ -1,6 +1,6 @@
 import React from 'react';
 import { Product, MenuStyle, SortOption } from '../types';
-import { ShoppingCart, PanelLeftClose, Printer } from 'lucide-react';
+import { ShoppingCart, PanelLeftClose, Printer, CopyPlus } from 'lucide-react';
 import { useProductDesignerLogic } from '../hooks/useProductDesignerLogic';
 import { ImportTools } from './ProductDesigner/ImportTools';
 import { ProductList } from './ProductDesigner/ProductList';
@@ -11,6 +11,9 @@ import {
     MenuImportFlow,
     MenuImportFlowHandle,
 } from './ProductDesigner/MenuImportFlow';
+import { ProductTransferModal } from './ProductDesigner/ProductTransferModal';
+import { linkSyncedMenuProducts } from '../services/workspaceService';
+import type { MenuProductSource } from '../types';
 
 interface ProductDesignerProps {
     products: Product[];
@@ -99,6 +102,32 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
 
     const { height, isDragging, isMobile, dragHandlers } = useBottomSheetDrag(isOpen, onClose);
     const importFlowRef = React.useRef<MenuImportFlowHandle>(null);
+    const [isProductTransferOpen, setIsProductTransferOpen] = React.useState(false);
+
+    const handleProductTransfer = async (source: MenuProductSource, replace: boolean, sync: boolean) => {
+        const importedProducts = source.products.map((product) => ({ ...product }));
+        if (sync) {
+            await linkSyncedMenuProducts({
+                workspaceId,
+                sourceMenuId: source.menu.id,
+                targetMenuId: currentMenuId,
+                productIds: importedProducts.map((product) => product.id),
+            });
+        }
+        setProducts((current) => {
+            const freeText = current.filter((product) => product.isFreeText);
+            if (replace) return [...importedProducts, ...freeText];
+            const existingIds = new Set(current.map((product) => product.id));
+            return [...current, ...importedProducts.filter((product) => !existingIds.has(product.id))];
+        });
+        setStyle((current) => ({
+            ...current,
+            customCategoryOrder: Array.from(new Set([
+                ...(current.customCategoryOrder || []),
+                ...importedProducts.map((product) => product.category),
+            ])),
+        }));
+    };
 
     const grouped = React.useMemo(() => (
         Object.fromEntries(
@@ -173,6 +202,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                         <ShoppingCart size={16} /> Designer de produtos
                     </h2>
                     <div className="flex gap-2">
+                        <button onClick={() => setIsProductTransferOpen(true)} className="text-xs border border-slate-200 bg-white text-slate-700 px-2.5 py-1.5 rounded hover:bg-slate-100 flex items-center gap-1 pointer-events-auto" onPointerDown={e => e.stopPropagation()} title="Trazer produtos de outro cardápio"><CopyPlus size={12} /><span className="hidden sm:inline">Trazer</span></button>
                         <button onClick={onClose} className="md:hidden text-slate-500 hover:text-slate-800 pointer-events-auto" onPointerDown={e => e.stopPropagation()}><PanelLeftClose size={18} /></button>
                         <button onClick={onPrint} className="text-xs bg-slate-900 text-white px-3 py-1.5 rounded hover:bg-slate-800 flex items-center gap-1 pointer-events-auto" onPointerDown={e => e.stopPropagation()}> <Printer size={12} /> PDF </button>
                     </div>
@@ -263,6 +293,14 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                 onPrepare={prepareAIImport}
                 onComplete={commitAIImport}
                 onVisibilityChange={onImportVisibilityChange}
+            />
+            <ProductTransferModal
+                open={isProductTransferOpen}
+                workspaceId={workspaceId}
+                currentMenuId={currentMenuId}
+                products={products}
+                onClose={() => setIsProductTransferOpen(false)}
+                onApply={handleProductTransfer}
             />
         </>
     );

@@ -28,6 +28,8 @@ interface PrintCanvasModalProps {
   onChange: React.Dispatch<React.SetStateAction<PrintCanvasOptions>>;
   onClose: () => void;
   onPrint: (onDebug: (entry: PdfDebugEntry) => void) => Promise<PdfExportResult>;
+  onComplete?: (result: PdfExportResult) => void;
+  onError?: (error: Error) => void;
 }
 
 const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
@@ -194,6 +196,8 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
   onChange,
   onClose,
   onPrint,
+  onComplete,
+  onError,
 }) => {
   const [isPrinting, setIsPrinting] = React.useState(false);
   const [debugEntries, setDebugEntries] = React.useState<PdfDebugEntry[]>([]);
@@ -226,6 +230,7 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
         setDebugEntries((current) => [...current.slice(-99), entry]);
       });
       setExportResult(result);
+      onComplete?.(result);
     } catch (error) {
       const normalizedError = error instanceof PdfExportError
         ? error
@@ -237,6 +242,7 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
             error
           );
       setExportError(normalizedError);
+      onError?.(normalizedError);
       setDebugEntries((current) => [
         ...current,
         {

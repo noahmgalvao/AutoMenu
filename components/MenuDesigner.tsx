@@ -9,7 +9,7 @@ import type { PrintCanvasOptions, PrintPreviewPage } from './MenuDesigner/PrintC
 import { uploadFileAsset } from '../services/storageService';
 import type { MoveDirection, SelectionItem } from '../hooks/interactions/types';
 import { getImageLayerIndexes } from '../utils/imageLayers';
-import type { PdfDebugEntry } from '../utils/pdfExport';
+import type { PdfDebugEntry, PdfExportResult } from '../utils/pdfExport';
 import {
     canIncreaseCanvasFontSize,
     getLargestSafeFontSizeForElements,
@@ -36,6 +36,11 @@ interface MenuDesignerProps {
     isOpen?: boolean;
     isProductDesignerOpen?: boolean;
     printRequestId?: number;
+    printRequestMode?: 'download' | 'publish' | 'publish-silent';
+    onPrintComplete?: (result: PdfExportResult, options: PrintCanvasOptions) => void;
+    onPrintError?: (error: Error) => void;
+    onPrintCancel?: () => void;
+    silentPrintOptions?: Partial<PrintCanvasOptions>;
     onClose?: () => void;
     onScrollActivity?: (isScrolling: boolean) => void;
     workspaceId: string;
@@ -109,12 +114,14 @@ const WORD_FIT_SCOPE_LABELS: Record<WordFitScope, string> = {
     freeText: 'textos livres',
 };
 
-const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, templates = [], sortOption, setSortOption, undo, redo, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, printRequestId = 0, onClose, onScrollActivity, workspaceId, currentUserId, splitCategoryAcrossPages = false, productsCanChangeCategory = false }) => {
+const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, templates = [], sortOption, setSortOption, undo, redo, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions, onClose, onScrollActivity, workspaceId, currentUserId, splitCategoryAcrossPages = false, productsCanChangeCategory = false }) => {
     const [scale, setScale] = useState(DEFAULT_PREVIEW_ZOOM);
     const [isDesktopViewport, setIsDesktopViewport] = useState(() => window.matchMedia('(min-width: 768px)').matches);
     const renderScale = scale * (isDesktopViewport ? DESKTOP_PREVIEW_ZOOM_RENDER_MULTIPLIER : MOBILE_PREVIEW_ZOOM_RENDER_MULTIPLIER);
     const [showPrintModal, setShowPrintModal] = useState(false);
     const [printOptions, setPrintOptions] = useState<PrintCanvasOptions>(DEFAULT_PRINT_OPTIONS);
+    const [lastCompletedPrintOptions, setLastCompletedPrintOptions] = useState<PrintCanvasOptions | null>(null);
+    const [activePrintMode, setActivePrintMode] = useState<'download' | 'publish' | 'publish-silent'>('download');
     const [printPageCount, setPrintPageCount] = useState(0);
     const [printPreviewPages, setPrintPreviewPages] = useState<PrintPreviewPage[]>([]);
     const [isPrintPreviewLoading, setIsPrintPreviewLoading] = useState(false);
@@ -449,7 +456,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         };
     }, [ensurePrintPreviewPages, products, sortOption, splitCategoryAcrossPages, style]);
 
-    const handlePrint = () => {
+    const handlePrint = (mode: 'download' | 'publish' = 'download') => {
+        setActivePrintMode(mode);
         setSelection({ type: null, id: null });
         document.dispatchEvent(new Event('automenu:close-inline-formatting'));
         const pageCount = containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]').length || 0;
@@ -460,7 +468,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
     useEffect(() => {
         if (printRequestId <= 0) return;
-        handlePrint();
+        if (printRequestMode !== 'publish-silent') handlePrint(printRequestMode);
     }, [printRequestId]);
 
     useEffect(() => {
@@ -533,8 +541,42 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             currentPageIndex: currentPrintPageIndex,
             title: style.menuTitle || 'Cardápio',
             onDebug,
+            download: activePrintMode !== 'publish-silent',
         });
     };
+
+    useEffect(() => {
+        if (printRequestId <= 0 || printRequestMode !== 'publish-silent') return;
+        setActivePrintMode('publish-silent');
+        setSelection({ type: null, id: null });
+        document.dispatchEvent(new Event('automenu:close-inline-formatting'));
+        void (async () => {
+            const requestedOptions: PrintCanvasOptions = {
+                ...DEFAULT_PRINT_OPTIONS,
+                ...(silentPrintOptions && Object.keys(silentPrintOptions).length > 0 ? silentPrintOptions : {}),
+                ...(lastCompletedPrintOptions || {}),
+            };
+            const options: PrintCanvasOptions = requestedOptions.pageMode === 'current'
+                || (requestedOptions.pageMode === 'range' && !requestedOptions.pageRange.trim())
+                ? { ...requestedOptions, pageMode: 'all' }
+                : requestedOptions;
+            const pageElements = Array.from(
+                containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]') || []
+            );
+            const { exportMenuPagesToPdf } = await import('../utils/pdfExport');
+            const result = await exportMenuPagesToPdf({
+                pageElements,
+                options,
+                currentPageIndex: null,
+                title: style.menuTitle || 'Cardápio',
+                download: false,
+            });
+            onPrintComplete?.(result, options);
+        })().catch((error) => {
+            console.error('[Publicação] Falha ao gerar PDF padrão', error);
+            onPrintError?.(error instanceof Error ? error : new Error(String(error)));
+        });
+    }, [printRequestId]);
 
     // Scroll Activity Handler
     const handleScroll = () => {
@@ -1648,8 +1690,16 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                         previewLoading={isPrintPreviewLoading}
                         previewError={printPreviewError}
                         onChange={setPrintOptions}
-                        onClose={() => setShowPrintModal(false)}
+                        onClose={() => {
+                            setShowPrintModal(false);
+                            if (activePrintMode === 'publish') onPrintCancel?.();
+                        }}
                         onPrint={executeCanvasPrint}
+                        onComplete={(result) => {
+                            setLastCompletedPrintOptions(printOptions);
+                            if (activePrintMode === 'publish') onPrintComplete?.(result, printOptions);
+                        }}
+                        onError={activePrintMode === 'publish' ? onPrintError : undefined}
                     />
                 </React.Suspense>
             )}
