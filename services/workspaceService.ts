@@ -28,6 +28,7 @@ import {
   resolveAssetMapForIds,
   resolveStorageFileUrl,
   uploadDataUrlAsset,
+  uploadPortablePublication,
   uploadPublicationPdf,
 } from './storageService';
 import {
@@ -348,6 +349,7 @@ const mapPublicationRow = (row: any, pdfUrl: string | null = null): MenuPublicat
   pdfOptions: row.pdf_options || {},
   snapshot: row.snapshot || {},
   contentSignature: row.content_signature,
+  portableSnapshotUrl: null,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -1459,6 +1461,16 @@ const isVersionConflictError = (error: any) => {
   return error?.code === '23505' || /duplicate key|menu_versions/i.test(message);
 };
 
+const isMissingSchemaObjectError = (error: any, objectName: string) => {
+  const message = String(error?.message || error?.details || error?.hint || '');
+  return error?.code === 'PGRST205' || (message.includes(objectName) && /schema cache|could not find/i.test(message));
+};
+
+const isMissingActionLabelError = (error: any) => {
+  const message = String(error?.message || error?.details || error?.hint || '');
+  return message.includes('action_label') && (error?.code === 'PGRST204' || /schema cache|column/i.test(message));
+};
+
 const insertMenuVersionWithRetry = async ({
   menuId,
   userId,
@@ -1492,7 +1504,7 @@ const insertMenuVersionWithRetry = async ({
 
     const versionNumber = Number(latestVersionRow?.version_number || 0) + 1;
     const versionId = crypto.randomUUID();
-    const { error: insertVersionError } = await supabase.from('menu_versions').insert({
+    const versionPayload = {
       id: versionId,
       menu_id: menuId,
       version_number: versionNumber,
@@ -1501,7 +1513,13 @@ const insertMenuVersionWithRetry = async ({
       render_snapshot: renderSnapshot,
       created_by: userId,
       action_label: actionLabel,
-    });
+    };
+    let { error: insertVersionError } = await supabase.from('menu_versions').insert(versionPayload);
+    if (insertVersionError && isMissingActionLabelError(insertVersionError)) {
+      const { action_label: _actionLabel, ...legacyPayload } = versionPayload;
+      const legacyResult = await supabase.from('menu_versions').insert(legacyPayload);
+      insertVersionError = legacyResult.error;
+    }
 
     if (!insertVersionError) {
       return { versionId, versionNumber };
@@ -2125,6 +2143,33 @@ const resolvePublicationPdfUrl = async (row: any) => {
   return urls.get(row.pdf_asset_id) || null;
 };
 
+const getPortablePublicationStorageKey = (menuId: string) => `automenu:portable-publication:${menuId}`;
+
+const readPortablePublication = (menuId: string): MenuPublication | null => {
+  try {
+    const stored = window.localStorage.getItem(getPortablePublicationStorageKey(menuId));
+    if (!stored) return null;
+    const publication = JSON.parse(stored) as MenuPublication;
+    return publication.menuId === menuId && publication.portableSnapshotUrl ? publication : null;
+  } catch {
+    return null;
+  }
+};
+
+const savePortablePublication = (publication: MenuPublication) => {
+  try {
+    window.localStorage.setItem(getPortablePublicationStorageKey(publication.menuId), JSON.stringify(publication));
+  } catch {
+    // The public link still works even when local preference storage is unavailable.
+  }
+};
+
+export const updatePortablePublicationMenuSlug = (publication: MenuPublication, menuSlug: string) => {
+  const updated = { ...publication, menuSlug: slugify(menuSlug), updatedAt: new Date().toISOString() };
+  savePortablePublication(updated);
+  return updated;
+};
+
 export const getMenuPublication = async (menuId: string): Promise<MenuPublication | null> => {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
@@ -2132,6 +2177,7 @@ export const getMenuPublication = async (menuId: string): Promise<MenuPublicatio
     .select('*')
     .eq('menu_id', menuId)
     .maybeSingle();
+  if (error && isMissingSchemaObjectError(error, 'menu_publications')) return readPortablePublication(menuId);
   if (error) throw error;
   if (!data) return null;
   return mapPublicationRow(data, await resolvePublicationPdfUrl(data));
@@ -2166,15 +2212,21 @@ export const publishWorkspaceMenu = async ({
       throw new Error(`${label}: ${getErrorMessage(error, 'erro inesperado')}`);
     }
   };
-  const existing = await runStep('Falha ao consultar a publicação', async () => {
-    const { data, error } = await supabase
-      .from('menu_publications')
-      .select('*')
-      .eq('menu_id', menu.id)
-      .maybeSingle();
-    if (error) throw error;
-    return data ? mapPublicationRow(data) : null;
-  });
+  let publicationTableAvailable = true;
+  let existing: MenuPublication | null = null;
+  const publicationLookup = await supabase
+    .from('menu_publications')
+    .select('*')
+    .eq('menu_id', menu.id)
+    .maybeSingle();
+  if (publicationLookup.error && isMissingSchemaObjectError(publicationLookup.error, 'menu_publications')) {
+    publicationTableAvailable = false;
+    existing = readPortablePublication(menu.id);
+  } else if (publicationLookup.error) {
+    throw new Error(`Falha ao consultar a publicação: ${getErrorMessage(publicationLookup.error, 'erro inesperado')}`);
+  } else {
+    existing = publicationLookup.data ? mapPublicationRow(publicationLookup.data) : null;
+  }
   const uploaded = await runStep('Falha ao enviar o PDF', () => uploadPublicationPdf({
     workspaceId: workspace.id,
     menuId: menu.id,
@@ -2191,10 +2243,48 @@ export const publishWorkspaceMenu = async ({
     versionType: 'published',
     actionLabel: 'Cardápio publicado',
   }));
+  const contentSignature = getMenuContentSignature(products, style, sortOption);
+  const baseSlug = slugify(menu.name);
+
+  if (!publicationTableAvailable) {
+    const now = new Date().toISOString();
+    const portableBase: MenuPublication = {
+      id: existing?.id || crypto.randomUUID(),
+      menuId: menu.id,
+      workspaceId: workspace.id,
+      restaurantSlug: workspace.slug,
+      menuSlug: existing?.menuSlug || `${baseSlug}-${menu.id.slice(0, 8)}`,
+      publishedVersionId: versionId,
+      pdfAssetId: null,
+      pdfBucket: uploaded.bucket,
+      pdfPath: uploaded.path,
+      pdfUrl: uploaded.url,
+      pdfFilename,
+      pdfOptions,
+      snapshot: renderSnapshot,
+      contentSignature,
+      portableSnapshotUrl: null,
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
+    };
+    const portableFile = await runStep('Falha ao criar o link público', () => uploadPortablePublication({
+      workspaceId: workspace.id,
+      menuId: menu.id,
+      publication: { publication: portableBase },
+    }));
+    const portablePublication = { ...portableBase, portableSnapshotUrl: portableFile.url };
+    const { error: menuUpdateError } = await supabase
+      .from('menus')
+      .update({ published_version_id: versionId, status: 'published' })
+      .eq('id', menu.id);
+    if (menuUpdateError) throw new Error(`Falha ao concluir a publicação: ${getErrorMessage(menuUpdateError, 'erro inesperado')}`);
+    savePortablePublication(portablePublication);
+    return portablePublication;
+  }
+
   const assetIds = collectStyleAssetIds(style);
   collectProductAssetIds(products).forEach((assetId) => assetIds.add(assetId));
 
-  const baseSlug = slugify(menu.name);
   let publicationRow: any = null;
   let lastError: any = null;
   for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -2213,7 +2303,7 @@ export const publishWorkspaceMenu = async ({
       pdf_options: pdfOptions,
       snapshot: renderSnapshot,
       asset_ids: Array.from(assetIds),
-      content_signature: getMenuContentSignature(products, style, sortOption),
+      content_signature: contentSignature,
     };
     const { data, error } = await supabase
       .from('menu_publications')
@@ -2242,10 +2332,32 @@ export const publishWorkspaceMenu = async ({
 export const loadPublicMenuPublication = async ({
   restaurantSlug,
   menuSlug,
+  portableSnapshotUrl,
 }: {
   restaurantSlug: string;
   menuSlug: string;
+  portableSnapshotUrl?: string | null;
 }) => {
+  if (portableSnapshotUrl) {
+    const response = await fetch(portableSnapshotUrl, { cache: 'no-store' });
+    if (!response.ok) throw new Error('O link público expirou ou está indisponível. Publique o cardápio novamente.');
+    const payload = await response.json() as { publication?: MenuPublication };
+    if (!payload.publication?.pdfUrl || !payload.publication.workspaceId) throw new Error('Publicação inválida.');
+    const publication: MenuPublication = {
+      ...payload.publication,
+      restaurantSlug,
+      menuSlug,
+      portableSnapshotUrl,
+    };
+    const snapshot = publication.snapshot || {};
+    return {
+      publication,
+      products: normalizePersistedProducts(snapshot.products),
+      style: withStyleDefaults((snapshot.style as MenuStyle | undefined) || INITIAL_STYLE),
+      sortOption: (snapshot.sortOption || DEFAULT_SORT_OPTION) as SortOption,
+    };
+  }
+
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from('menu_publications')
@@ -2253,6 +2365,7 @@ export const loadPublicMenuPublication = async ({
     .eq('restaurant_slug', restaurantSlug)
     .eq('menu_slug', menuSlug)
     .maybeSingle();
+  if (error && isMissingSchemaObjectError(error, 'menu_publications')) return null;
   if (error) throw error;
   if (!data) return null;
   const hydrated = await hydrateSnapshot(data.workspace_id, data.snapshot || {});

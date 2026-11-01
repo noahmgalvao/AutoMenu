@@ -349,6 +349,7 @@ export interface MenuPublication {
   pdfOptions: Record<string, unknown>;
   snapshot: Record<string, unknown>;
   contentSignature: string;
+  portableSnapshotUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }

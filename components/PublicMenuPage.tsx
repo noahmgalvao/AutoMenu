@@ -1,8 +1,9 @@
 import React from 'react';
 import QRCode from 'qrcode';
 import { Check, Download, ExternalLink, Link2, Loader2, QrCode, Share2 } from 'lucide-react';
-import { canEditPublishedMenu, loadPublicMenuPublication, updatePublicationMenuSlug } from '../services/workspaceService';
+import { canEditPublishedMenu, loadPublicMenuPublication, updatePortablePublicationMenuSlug, updatePublicationMenuSlug } from '../services/workspaceService';
 import type { MenuPublication } from '../types';
+import { getPublicationUrl } from '../utils/publicationUrl';
 
 const copyText = async (value: string) => {
   if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(value);
@@ -15,6 +16,7 @@ export const PublicMenuPage: React.FC = () => {
   const parts = window.location.pathname.split('/').filter(Boolean);
   const restaurantSlug = decodeURIComponent(parts[1] || '');
   const initialMenuSlug = decodeURIComponent(parts[2] || '');
+  const portableSnapshotUrl = React.useMemo(() => new URLSearchParams(window.location.search).get('source'), []);
   const [publication, setPublication] = React.useState<MenuPublication | null>(null);
   const [editable, setEditable] = React.useState(false);
   const [menuSlug, setMenuSlug] = React.useState(initialMenuSlug);
@@ -24,10 +26,13 @@ export const PublicMenuPage: React.FC = () => {
   const [copied, setCopied] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const publicUrl = React.useMemo(() => `${window.location.origin}/cardapio/${encodeURIComponent(restaurantSlug)}/${encodeURIComponent(publication?.menuSlug || menuSlug)}`, [restaurantSlug, publication?.menuSlug, menuSlug]);
+  const publicUrl = React.useMemo(() => publication
+    ? getPublicationUrl(publication)
+    : `${window.location.origin}/cardapio/${encodeURIComponent(restaurantSlug)}/${encodeURIComponent(menuSlug)}`,
+  [restaurantSlug, publication, menuSlug]);
 
   React.useEffect(() => {
-    void loadPublicMenuPublication({ restaurantSlug, menuSlug: initialMenuSlug })
+    void loadPublicMenuPublication({ restaurantSlug, menuSlug: initialMenuSlug, portableSnapshotUrl })
       .then(async (result) => {
         if (!result) { setError('Cardápio não encontrado.'); return; }
         setPublication(result.publication); setMenuSlug(result.publication.menuSlug);
@@ -35,7 +40,7 @@ export const PublicMenuPage: React.FC = () => {
       })
       .catch((reason) => setError(reason instanceof Error ? reason.message : 'Falha ao abrir o cardápio.'))
       .finally(() => setLoading(false));
-  }, [restaurantSlug, initialMenuSlug]);
+  }, [restaurantSlug, initialMenuSlug, portableSnapshotUrl]);
 
   React.useEffect(() => {
     if (!publication) return;
@@ -47,6 +52,12 @@ export const PublicMenuPage: React.FC = () => {
     if (!publication || menuSlug === publication.menuSlug) return;
     setSaving(true); setError(null);
     try {
+      if (publication.portableSnapshotUrl) {
+        const updated = updatePortablePublicationMenuSlug(publication, menuSlug);
+        setPublication(updated); setMenuSlug(updated.menuSlug);
+        window.history.replaceState({}, '', getPublicationUrl(updated));
+        return;
+      }
       const updated = await updatePublicationMenuSlug({ publicationId: publication.id, menuSlug });
       setPublication(updated); setMenuSlug(updated.menuSlug);
       window.history.replaceState({}, '', `/cardapio/${encodeURIComponent(updated.restaurantSlug)}/${encodeURIComponent(updated.menuSlug)}`);

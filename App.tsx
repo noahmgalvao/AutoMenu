@@ -10,6 +10,7 @@ import { RevisionHistoryModal } from './components/RevisionHistoryModal';
 import type { PrintCanvasOptions } from './components/MenuDesigner/PrintCanvasModal';
 import type { PdfExportResult } from './utils/pdfExport';
 import { getErrorMessage } from './utils/errors';
+import { getPublicationUrl } from './utils/publicationUrl';
 import { INITIAL_STYLE, PRESET_TEMPLATES } from './constants';
 import {
   FontSizeLimits,
@@ -1302,8 +1303,7 @@ const App: React.FC = () => {
         pdfOptions: options,
       });
       setPublication(published);
-      const url = `${window.location.origin}/cardapio/${encodeURIComponent(published.restaurantSlug)}/${encodeURIComponent(published.menuSlug)}`;
-      window.location.assign(url);
+      window.location.assign(getPublicationUrl(published));
     } catch (error) {
       setLoadError(getErrorMessage(error, 'Falha ao publicar cardápio.'));
       setIsPublishing(false);
@@ -1418,7 +1418,7 @@ const App: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => {
-                      if (!hasPublishedChanges) window.location.assign(`/cardapio/${encodeURIComponent(publication.restaurantSlug)}/${encodeURIComponent(publication.menuSlug)}`);
+                      if (!hasPublishedChanges) window.location.assign(getPublicationUrl(publication));
                     }}
                     className={`md:hidden shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${hasPublishedChanges ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}
                   >
@@ -1439,7 +1439,7 @@ const App: React.FC = () => {
                 type="button"
                 onClick={() => {
                   if (hasPublishedChanges) return;
-                  window.location.assign(`/cardapio/${encodeURIComponent(publication.restaurantSlug)}/${encodeURIComponent(publication.menuSlug)}`);
+                  window.location.assign(getPublicationUrl(publication));
                 }}
                 className={`hidden md:flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ${hasPublishedChanges ? 'bg-amber-50 text-amber-700 cursor-default' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
               >

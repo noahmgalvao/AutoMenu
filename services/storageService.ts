@@ -114,9 +114,11 @@ export const resolveAssetMap = async (assets: Asset[]) => {
   return resolved;
 };
 
-export const resolveStorageFileUrl = async (bucket: string, path: string) => {
+const PUBLICATION_LINK_TTL_SECONDS = 60 * 60 * 24 * 365 * 10;
+
+export const resolveStorageFileUrl = async (bucket: string, path: string, expiresIn = 60 * 60 * 24 * 365) => {
   const supabase = getSupabaseClient();
-  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60 * 24 * 365);
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, expiresIn);
   if (error) throw error;
   return data.signedUrl;
 };
@@ -139,7 +141,28 @@ export const uploadPublicationPdf = async ({
     cacheControl: '0',
   });
   if (error) throw error;
-  return { bucket, path, url: await resolveStorageFileUrl(bucket, path) };
+  return { bucket, path, url: await resolveStorageFileUrl(bucket, path, PUBLICATION_LINK_TTL_SECONDS) };
+};
+
+export const uploadPortablePublication = async ({
+  workspaceId,
+  menuId,
+  publication,
+}: {
+  workspaceId: string;
+  menuId: string;
+  publication: Record<string, unknown>;
+}) => {
+  const bucket = 'menu-assets';
+  const path = `${workspaceId}/published-menus/${menuId}.json`;
+  const supabase = getSupabaseClient();
+  const { error } = await supabase.storage.from(bucket).upload(path, JSON.stringify(publication), {
+    upsert: true,
+    contentType: 'application/json; charset=utf-8',
+    cacheControl: '0',
+  });
+  if (error) throw error;
+  return { bucket, path, url: await resolveStorageFileUrl(bucket, path, PUBLICATION_LINK_TTL_SECONDS) };
 };
 
 export const resolveAssetMapForIds = async (workspaceId: string, assetIds: string[]) => {
