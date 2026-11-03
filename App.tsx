@@ -286,6 +286,15 @@ const App: React.FC = () => {
   const menuSavedSignatureCacheRef = useRef<Record<string, string>>({});
   const prefetchingMenuIdsRef = useRef<Set<string>>(new Set());
 
+  useEffect(() => {
+    const resetPublishingState = () => {
+      setIsPublishing(false);
+      setPrintRequestMode('download');
+    };
+    window.addEventListener('pageshow', resetPublishingState);
+    return () => window.removeEventListener('pageshow', resetPublishingState);
+  }, []);
+
   const saveCheckpoint = useCallback(() => {
     setHistory((prev) => {
       const newEntry = { products, style };
@@ -1303,6 +1312,8 @@ const App: React.FC = () => {
         pdfOptions: options,
       });
       setPublication(published);
+      setIsPublishing(false);
+      setPrintRequestMode('download');
       window.location.assign(getPublicationUrl(published));
     } catch (error) {
       setLoadError(getErrorMessage(error, 'Falha ao publicar cardápio.'));
