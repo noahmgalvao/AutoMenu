@@ -2,8 +2,7 @@ import type { ElementStyle, MenuStyle } from '../types';
 import { DEFAULT_MINIMUM_FONT_SIZE } from '../constants';
 import { resolveMenuMargins } from './styleRules';
 import { normalizeColumnWidths } from './categoryColumns';
-
-const MENU_PAGE_WIDTH_PX = 794;
+import { resolveMenuPageDimensions } from './pageSetup';
 
 export type WordFitScope =
   | 'menuTitle'
@@ -179,7 +178,7 @@ export const canApplyCanvasColumnCounts = (
 ) => {
   if (typeof document === 'undefined' || style.allowSameWordBreak) return true;
   const margins = resolveMenuMargins(style);
-  const usableWidth = MENU_PAGE_WIDTH_PX - margins.left - margins.right;
+  const usableWidth = resolveMenuPageDimensions(style).widthPx - margins.left - margins.right;
   const categoryContentWidth = Math.max(1, usableWidth - (margins.columnGap * (nextCategoryColumnCount - 1)));
   const categoryWidthRatios = normalizeColumnWidths(
     nextCategoryColumnCount === (style.categoryColumnCount || 1) ? style.categoryColumnWidths : undefined,

@@ -3,6 +3,7 @@ import { Check, CircleHelp, CopyPlus, Link2Off, Loader2, X } from 'lucide-react'
 import type { MenuProductSource, MenuProductSync } from '../../types';
 import { listMenuProductSources, listMenuProductSyncs, unlinkSyncedMenuProducts } from '../../services/workspaceService';
 import type { Product } from '../../types';
+import { getErrorMessage } from '../../utils/errors';
 import { loadUserPreferences, saveUserPreferences } from '../../utils/userPreferences';
 
 interface ProductTransferModalProps {
@@ -52,7 +53,7 @@ export const ProductTransferModal: React.FC<ProductTransferModalProps> = ({ open
         setSyncs(linkedMenus);
         setSelectedId(items[0]?.menu.id || '');
       })
-      .catch((reason) => setError(reason instanceof Error ? reason.message : 'Falha ao carregar cardápios.'))
+      .catch((reason) => setError(getErrorMessage(reason, 'Falha ao carregar cardápios.')))
       .finally(() => setLoading(false));
   }, [open, workspaceId, currentMenuId, preferenceKey]);
 
@@ -68,7 +69,7 @@ export const ProductTransferModal: React.FC<ProductTransferModalProps> = ({ open
     if (!selected) return;
     setLoading(true); setError(null);
     try { await onApply(selected, replace, sync); onClose(); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha ao trazer produtos.'); }
+    catch (reason) { setError(getErrorMessage(reason, 'Falha ao trazer produtos.')); }
     finally { setLoading(false); }
   };
 
@@ -79,7 +80,7 @@ export const ProductTransferModal: React.FC<ProductTransferModalProps> = ({ open
       await unlinkSyncedMenuProducts({ workspaceId, sourceMenuId: currentMenuId, targetMenuId: linkedMenu.menu.id });
       setSyncs((current) => current.filter((item) => item.menu.id !== linkedMenu.menu.id));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Falha ao desvincular produtos.');
+      setError(getErrorMessage(reason, 'Falha ao desvincular produtos.'));
     } finally {
       setUnlinkingMenuId(null);
     }

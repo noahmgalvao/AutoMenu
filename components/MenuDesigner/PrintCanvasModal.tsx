@@ -1,6 +1,7 @@
 import React from 'react';
 import { AlertTriangle, Bug, CheckCircle2, Copy, Image as ImageIcon, Loader2, Printer, Scissors, Settings2, X } from 'lucide-react';
 import {
+  getCapturedMenuPageSize,
   getPaperDimensionsMm,
   getPrintFrameSizeMm,
   getPrintMarginMm,
@@ -53,9 +54,15 @@ const Toggle: React.FC<{ checked: boolean; label: string; onChange: (checked: bo
 );
 
 const PreviewPaper: React.FC<{ options: PrintCanvasOptions; page?: PrintPreviewPage }> = ({ options, page }) => {
+  const [fallbackAspectRatio, setFallbackAspectRatio] = React.useState<number | null>(null);
+  React.useEffect(() => setFallbackAspectRatio(null), [page?.dataUrl]);
   const paper = getPaperDimensionsMm(options);
   const margin = getPrintMarginMm(options);
-  const frame = getPrintFrameSizeMm(options, paper, margin);
+  const capturedSize = page ? getCapturedMenuPageSize(page.dataUrl) : null;
+  const fallbackSize = fallbackAspectRatio
+    ? { width: 1123 * fallbackAspectRatio, height: 1123 }
+    : undefined;
+  const frame = getPrintFrameSizeMm(options, paper, margin, capturedSize || fallbackSize);
   const bleed = Math.max(0, Math.min(10, options.bleedMm || 0));
   const maxWidth = 270;
   const maxHeight = 310;
@@ -115,6 +122,10 @@ const PreviewPaper: React.FC<{ options: PrintCanvasOptions; page?: PrintPreviewP
               className="w-full h-full"
               style={{
                 filter: options.grayscale ? 'grayscale(1)' : 'none',
+              }}
+              onLoad={(event) => {
+                if (capturedSize || !event.currentTarget.naturalHeight) return;
+                setFallbackAspectRatio(event.currentTarget.naturalWidth / event.currentTarget.naturalHeight);
               }}
             />
           ) : (
@@ -217,6 +228,15 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
 
   const update = <K extends keyof PrintCanvasOptions>(key: K, value: PrintCanvasOptions[K]) => {
     onChange((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const updateCustomPaperDimension = (axis: 'width' | 'height', value: number) => {
+    if (!Number.isFinite(value)) return;
+    const normalizedValue = Math.max(50, Math.min(1000, value));
+    const key = axis === 'width'
+      ? (options.orientation === 'landscape' ? 'customPaperHeightMm' : 'customPaperWidthMm')
+      : (options.orientation === 'landscape' ? 'customPaperWidthMm' : 'customPaperHeightMm');
+    update(key, normalizedValue);
   };
 
   const handlePrintClick = async () => {
@@ -345,6 +365,7 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
                   <option value="A4">A4</option>
                   <option value="Letter">Carta</option>
                   <option value="Legal">Oficio</option>
+                  <option value="custom">Personalizado</option>
                 </select>
               </Field>
               <Field label="Orientacao">
@@ -354,6 +375,37 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
                 </select>
               </Field>
             </div>
+            {options.paperSize === 'custom' && (() => {
+              const dimensions = getPaperDimensionsMm(options);
+              return (
+                <div className="mt-3 grid grid-cols-2 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  {([
+                    { axis: 'width', label: 'Largura', value: dimensions.width },
+                    { axis: 'height', label: 'Altura', value: dimensions.height },
+                  ] as const).map(({ axis, label, value }) => (
+                    <Field key={axis} label={`${label} (mm)`}>
+                      <input
+                        key={`${axis}-${options.orientation}-${value}`}
+                        type="number"
+                        min={50}
+                        max={1000}
+                        step={0.1}
+                        defaultValue={Number(value.toFixed(1))}
+                        onBlur={(event) => updateCustomPaperDimension(axis, Number(event.target.value))}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') event.currentTarget.blur();
+                        }}
+                        className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                        aria-label={`${label} personalizada do papel em milímetros`}
+                      />
+                    </Field>
+                  ))}
+                  <p className="col-span-2 text-[10px] text-slate-500">
+                    Tamanho final do PDF: {Number(dimensions.width.toFixed(1))} × {Number(dimensions.height.toFixed(1))} mm.
+                  </p>
+                </div>
+              );
+            })()}
           </section>
 
           <section>
@@ -376,7 +428,7 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
               <Field label="Escala">
                 <select value={options.scaleMode} onChange={(e) => update('scaleMode', e.target.value as PrintCanvasOptions['scaleMode'])} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm bg-white text-ellipsis overflow-hidden whitespace-nowrap">
                   <option value="fit">Ajustar ao papel</option>
-                  <option value="actual">A4 real em px</option>
+                  <option value="actual">Tamanho real do canvas</option>
                   <option value="custom">Personalizado</option>
                 </select>
               </Field>

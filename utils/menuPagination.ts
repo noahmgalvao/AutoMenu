@@ -2,9 +2,8 @@ import { Product, MenuStyle } from '../types';
 import { clampFontSize, resolveMenuContentSpacing, resolveMenuMargins } from './styleRules';
 import { normalizeColumnWidths } from './categoryColumns';
 import { formatMenuPriceValue } from './price';
+import { resolveMenuPageDimensions } from './pageSetup';
 
-export const A4_HEIGHT_PX = 1123;
-export const A4_WIDTH_PX = 794;
 export const SAFETY_BUFFER = 20;
 export const STANDARD_GAP = 15;
 export const FREE_TEXT_PREFIX = 'ft_zone_';
@@ -132,7 +131,7 @@ const getCategoryColumnWidth = (
     columnIndex?: number,
 ): number => {
     const margins = resolveMenuMargins(style);
-    const usableWidth = A4_WIDTH_PX - margins.left - margins.right;
+    const usableWidth = resolveMenuPageDimensions(style).widthPx - margins.left - margins.right;
     const categoryColumnCount = categoryColumnCountOverride || style.categoryColumnCount || 1;
     const availableColumnsWidth = usableWidth - (margins.columnGap * (categoryColumnCount - 1));
     const columnWidths = normalizeColumnWidths(style.categoryColumnWidths, categoryColumnCount);
@@ -393,7 +392,10 @@ const buildLockedPagination = (
 ): PageLayout[] => {
     const categoryColumnCount = style.categoryColumnCount || 1;
     const margins = resolveMenuMargins(style);
-    const baseColumnHeight = A4_HEIGHT_PX - margins.top - margins.bottom - getPaginationSafetyBuffer(style);
+    const baseColumnHeight = Math.max(
+        1,
+        resolveMenuPageDimensions(style).heightPx - margins.top - margins.bottom - getPaginationSafetyBuffer(style),
+    );
     const headerHeight = getMainHeaderHeight(style);
     const normalizePlacement = (placement?: CategoryPlacementAssignment | null): CategoryPlacementAssignment => {
         const pageIndex = Number(placement?.pageIndex);
@@ -674,7 +676,10 @@ export const calculatePagination = (
 ): PageLayout[] => {
     const categoryColumnCount = style.categoryColumnCount || 1;
     const margins = resolveMenuMargins(style);
-    const baseColumnHeight = A4_HEIGHT_PX - margins.top - margins.bottom - getPaginationSafetyBuffer(style);
+    const baseColumnHeight = Math.max(
+        1,
+        resolveMenuPageDimensions(style).heightPx - margins.top - margins.bottom - getPaginationSafetyBuffer(style),
+    );
     const headerHeight = getMainHeaderHeight(style);
     const pageBreaks = new Set(style.pageBreaks || []);
     const isHidden = (id: string) => style.hiddenProductIds?.includes(id);

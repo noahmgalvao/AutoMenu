@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { MenuStyle, Product } from '../../types';
-import { A4_WIDTH_PX, calculatePagination, type PageItem } from '../../utils/menuPagination';
+import { calculatePagination, type PageItem } from '../../utils/menuPagination';
 import { normalizeColumnWidths } from '../../utils/categoryColumns';
 import { resolveMenuMargins } from '../../utils/styleRules';
 import { canApplyLiveColumnWidths, triggerLimitFeedback } from '../../utils/textFit';
@@ -142,7 +142,7 @@ export const useCategoryColumnResize = (
 
             const gridRect = session.grid.getBoundingClientRect();
             const pageRect = session.page.getBoundingClientRect();
-            const scale = Math.max(0.001, pageRect.width / A4_WIDTH_PX);
+            const scale = Math.max(0.001, pageRect.width / Math.max(1, session.page.offsetWidth));
             const margins = resolveMenuMargins(style);
             const gap = Math.max(0, margins.columnGap * scale);
             const usableColumnsWidth = Math.max(1, gridRect.width - (gap * (session.columnCount - 1)));
@@ -318,7 +318,7 @@ export const useCategoryColumnResize = (
         const scrollContainer = source.closest<HTMLElement>('[data-automenu-editor-canvas="true"]');
         const gridRect = grid.getBoundingClientRect();
         const pageRect = page.getBoundingClientRect();
-        const scale = Math.max(0.001, pageRect.width / A4_WIDTH_PX);
+        const scale = Math.max(0.001, pageRect.width / Math.max(1, page.offsetWidth));
         const margins = resolveMenuMargins(style);
         const gap = Math.max(0, margins.columnGap * scale);
         const usableColumnsWidth = Math.max(1, gridRect.width - (gap * (columnCount - 1)));

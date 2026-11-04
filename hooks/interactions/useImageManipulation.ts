@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { A4_HEIGHT_PX, A4_WIDTH_PX } from '../../utils/menuPagination';
 import { getImageLayerIndexes } from '../../utils/imageLayers';
 import { InteractionProps, SelectionItem } from './types';
+import { resolveMenuPageDimensions } from '../../utils/pageSetup';
 
 const NEW_PAGE_SWITCH_THRESHOLD_PX = 96;
 type ImageResizeDirection = 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight';
@@ -35,6 +35,7 @@ export const useImageManipulation = (
     selectedItems: SelectionItem[] = []
 ) => {
     const { onStyleUpdate, scale, style } = props;
+    const { widthPx: pageWidthPx, heightPx: pageHeightPx } = resolveMenuPageDimensions(style);
     const [draggedImageId, setDraggedImageId] = useState<string | null>(null);
     const imageDragCleanupRef = React.useRef<(() => void) | null>(null);
     const imageResizeCleanupRef = React.useRef<(() => void) | null>(null);
@@ -133,13 +134,13 @@ export const useImageManipulation = (
                             nextBlankPages = [...nextBlankPages, { id: crypto.randomUUID(), index: targetPageIndex, fixedPosition: true }];
                         }
 
-                       return {
-                           ...img,
-                           pageIndex: targetPageIndex,
-                           x: clamp(newX, 0, Math.max(0, A4_WIDTH_PX - img.width)),
-                           y: clamp(newY, 0, Math.max(0, A4_HEIGHT_PX - imageHeight)),
-                       };
-                   });
+                        return {
+                            ...img,
+                            pageIndex: targetPageIndex,
+                            x: clamp(newX, 0, Math.max(0, pageWidthPx - img.width)),
+                            y: clamp(newY, 0, Math.max(0, pageHeightPx - imageHeight)),
+                        };
+                    });
 
                    return {
                        ...prev,
@@ -235,8 +236,8 @@ export const useImageManipulation = (
             const y = Number(image.y);
             const width = Number(image.width);
             images.set(image.id, {
-                x: Number.isFinite(x) ? clamp(x, 0, A4_WIDTH_PX) : 0,
-                y: Number.isFinite(y) ? clamp(y, 0, A4_HEIGHT_PX) : 0,
+                x: Number.isFinite(x) ? clamp(x, 0, pageWidthPx) : 0,
+                y: Number.isFinite(y) ? clamp(y, 0, pageHeightPx) : 0,
                 width: Number.isFinite(width) && width > 0 ? width : 50,
                 aspectRatio: renderedAspectRatios.get(image.id) || 1,
             });
@@ -280,10 +281,10 @@ export const useImageManipulation = (
                 const currentHeight = snapshot.width * aspectRatio;
                 const horizontalLimit = resizesFromLeft
                     ? snapshot.x + snapshot.width
-                    : A4_WIDTH_PX - snapshot.x;
+                    : pageWidthPx - snapshot.x;
                 const verticalLimit = resizesFromTop
                     ? (snapshot.y + currentHeight) / aspectRatio
-                    : (A4_HEIGHT_PX - snapshot.y) / aspectRatio;
+                    : (pageHeightPx - snapshot.y) / aspectRatio;
                 const safeHorizontalLimit = Number.isFinite(horizontalLimit) ? horizontalLimit : snapshot.width;
                 const safeVerticalLimit = Number.isFinite(verticalLimit) ? verticalLimit : snapshot.width;
                 const maxWidth = Math.max(50, Math.min(safeHorizontalLimit, safeVerticalLimit));

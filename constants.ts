@@ -1,5 +1,6 @@
 import { FontSizeLimits, MenuContentSpacing, MenuMargins, Product, MenuStyle } from './types';
 import { DEFAULT_PRICE_DECIMAL_PLACES, DEFAULT_PRICE_DECIMAL_SEPARATOR } from './utils/price';
+import { DEFAULT_MENU_PAGE_SETUP } from './utils/pageSetup';
 
 export const DEFAULT_FONT_SIZE_LIMITS: FontSizeLimits = {
   menuTitle: 120,
@@ -90,6 +91,7 @@ const createTemplate = (template: Omit<MenuStyle, 'scope' | 'sourceType' | 'isLo
   floatingText: [],
   categoryImages: {},
   pageBreaks: [],
+  pageSetup: { ...DEFAULT_MENU_PAGE_SETUP },
   cardBackgroundColor: '#ffffff',
   fontSizeLimits: { ...DEFAULT_FONT_SIZE_LIMITS },
   minimumFontSize: DEFAULT_MINIMUM_FONT_SIZE,

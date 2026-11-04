@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { flushSync } from 'react-dom';
 import { CategoryPosition, Product } from '../../types';
 import { InteractionProps } from './types';
-import { A4_HEIGHT_PX, A4_WIDTH_PX, FREE_TEXT_PREFIX, SAFETY_BUFFER, STANDARD_GAP, type CategoryPlacementAssignment } from '../../utils/menuPagination';
+import { FREE_TEXT_PREFIX, SAFETY_BUFFER, STANDARD_GAP, type CategoryPlacementAssignment } from '../../utils/menuPagination';
 import {
     getCollisionSafeFreeTextTop,
     getNearestRenderedFreeTextTarget,
@@ -13,6 +13,7 @@ import {
     type FreeTextCategoryPlacement,
 } from './freeTextMovement';
 import { resolveMenuMargins } from '../../utils/styleRules';
+import { resolveMenuPageDimensions } from '../../utils/pageSetup';
 
 type DragType = 'category' | 'product';
 type DragItem = { type: DragType; id: string; group?: string } | null;
@@ -133,10 +134,10 @@ const isInteractiveTarget = (target: EventTarget | null) => {
 const areOrdersEqual = (left: string[], right: string[]) =>
     left.length === right.length && left.every((value, index) => value === right[index]);
 
-const getSafeFreeTextMargin = (value: unknown) => {
+const getSafeFreeTextMargin = (value: unknown, pageHeightPx: number) => {
     const margin = Number(value);
     return Number.isFinite(margin)
-        ? Math.max(0, Math.min(A4_HEIGHT_PX, Math.round(margin)))
+        ? Math.max(0, Math.min(pageHeightPx, Math.round(margin)))
         : 0;
 };
 
@@ -194,6 +195,7 @@ export const useDraggableInteractions = (
     multiSelectMode: boolean = false
 ) => {
     const { products, style, onCommitCategoryOrder, onCommitProductOrder, onStyleUpdate, onUpdateProduct, onUpdateProducts } = props;
+    const { heightPx: pageHeightPx } = resolveMenuPageDimensions(style);
 
     const dragScope = useRef(`drag-scope-${Math.random().toString(36).slice(2)}`).current;
 
@@ -1084,7 +1086,7 @@ export const useDraggableInteractions = (
                 const rect = element.getBoundingClientRect();
                 const pageElement = element.closest<HTMLElement>('[data-drag-page-container="category"][data-drag-page-index]');
                 const pageRect = pageElement?.getBoundingClientRect();
-                const scale = pageRect && pageRect.height > 0 ? pageRect.height / A4_HEIGHT_PX : 1;
+                const scale = pageRect && pageRect.height > 0 ? pageRect.height / Math.max(1, pageElement?.offsetHeight || 1) : 1;
                 const margins = resolveMenuMargins(style);
                 const topPadding = margins.top * scale;
                 const bottomPadding = margins.bottom * scale;
@@ -1151,7 +1153,7 @@ export const useDraggableInteractions = (
             const currentPage = currentElement?.closest<HTMLElement>('[data-drag-page-container="category"]');
             const currentPageRect = currentPage?.getBoundingClientRect();
             const currentScale = currentPageRect && currentPageRect.width > 0
-                ? Math.max(0.001, currentPageRect.width / A4_WIDTH_PX)
+                ? Math.max(0.001, currentPageRect.width / Math.max(1, currentPage?.offsetWidth || 1))
                 : 1;
             categoryPointerOffsetYRef.current = currentRect
                 ? Math.max(0, Math.min(currentRect.height, pointer.y - currentRect.top))
@@ -1195,7 +1197,7 @@ export const useDraggableInteractions = (
                 '[data-drag-page-container="category"][data-drag-page-index]'
             );
             const pageRect = pageElement?.getBoundingClientRect();
-            if (!sourceElement || !sourceRect || !pageRect) {
+            if (!sourceElement || !sourceRect || !pageElement || !pageRect) {
                 attempts += 1;
                 if (attempts < 3) {
                     categorySwapRebaseFrameRef.current = window.requestAnimationFrame(applyRebase);
@@ -1206,7 +1208,7 @@ export const useDraggableInteractions = (
                 return;
             }
 
-            const scale = Math.max(0.001, pageRect.width / A4_WIDTH_PX);
+            const scale = Math.max(0.001, pageRect.width / Math.max(1, pageElement.offsetWidth));
             categoryPointerOffsetYRef.current = Math.max(
                 0,
                 Math.min(sourceRect.height, current.pointer.y - sourceRect.top),
@@ -1240,7 +1242,7 @@ export const useDraggableInteractions = (
 
         const pageRect = page.getBoundingClientRect();
         const elementRect = element.getBoundingClientRect();
-        const scale = Math.max(0.001, pageRect.width / A4_WIDTH_PX);
+        const scale = Math.max(0.001, pageRect.width / Math.max(1, page.offsetWidth));
         const elementHeight = elementRect.height > 0
             ? elementRect.height
             : (categoryDraggedHeightRef.current || 0) * scale;
@@ -2474,7 +2476,7 @@ export const useDraggableInteractions = (
             freeTextPointerOffsetYRef.current = currentRect ? pointer.y - currentRect.top : null;
             freeTextActiveCategoryRef.current[product.id] = group;
             const rawProductMargin = Number(product.customMarginTop);
-            const productMargin = getSafeFreeTextMargin(rawProductMargin);
+            const productMargin = getSafeFreeTextMargin(rawProductMargin, pageHeightPx);
             freeTextDragSlotRef.current = {
                 category: group,
                 marginTop: productMargin,
@@ -2493,17 +2495,17 @@ export const useDraggableInteractions = (
             const categoryRect = categoryElement?.getBoundingClientRect();
             const pageElement = currentElement?.closest<HTMLElement>('[data-drag-page-container="category"]');
             const pageRect = pageElement?.getBoundingClientRect();
-            const scale = pageRect && pageRect.height > 0 ? pageRect.height / A4_HEIGHT_PX : 1;
+            const scale = pageRect && pageRect.height > 0 ? pageRect.height / Math.max(1, pageElement?.offsetHeight || 1) : 1;
             const rawInitialMargin = currentRect && categoryRect
                 ? Math.max(0, Math.round((currentRect.top - categoryRect.top) / Math.max(scale, 0.001)))
                 : product.customMarginTop || 0;
-            const initialMargin = getSafeFreeTextMargin(rawInitialMargin);
+            const initialMargin = getSafeFreeTextMargin(rawInitialMargin, pageHeightPx);
 
             if (group.startsWith(FREE_TEXT_PREFIX)) {
                 ensureFreeTextCategoryDragState(product, pointer, group, 'before', initialMargin);
             }
         },
-        [ensureFreeTextCategoryDragState, getRenderedDragElement, initializeProductDragState, style.categoryPositions]
+        [ensureFreeTextCategoryDragState, getRenderedDragElement, initializeProductDragState, pageHeightPx, style.categoryPositions]
     );
 
     const activateDrag = useCallback(
@@ -2688,16 +2690,16 @@ export const useDraggableInteractions = (
                             );
                             const sourcePageRect = sourcePageElement?.getBoundingClientRect();
                             const sourceScale = sourcePageRect && sourcePageRect.height > 0
-                                ? sourcePageRect.height / A4_HEIGHT_PX
+                                ? sourcePageRect.height / Math.max(1, sourcePageElement?.offsetHeight || 1)
                                 : 1;
                             const rawSourceMargin = Number(activeProduct.customMarginTop);
-                            const sourceMargin = getSafeFreeTextMargin(rawSourceMargin);
+                            const sourceMargin = getSafeFreeTextMargin(rawSourceMargin, pageHeightPx);
                             const sourceNaturalTop = currentRect.top - (sourceMargin * sourceScale);
                             const rawContactMargin =
                                 (freeTextSwapTarget.contactTop - sourceNaturalTop) / Math.max(sourceScale, 0.001);
                             freeTextDragSlotRef.current = {
                                 category: currentCategory,
-                                marginTop: getSafeFreeTextMargin(rawContactMargin),
+                                marginTop: getSafeFreeTextMargin(rawContactMargin, pageHeightPx),
                             };
 
                             let collisionResult = { moved: false, shouldLock: false };
@@ -2815,7 +2817,7 @@ export const useDraggableInteractions = (
                     );
                     freeTextPointerOffsetYRef.current = pointerOffset;
                     const rawCurrentMargin = Number(refreshedProduct.customMarginTop);
-                    const currentMargin = getSafeFreeTextMargin(rawCurrentMargin);
+                    const currentMargin = getSafeFreeTextMargin(rawCurrentMargin, pageHeightPx);
                     const activePlacement = liveCategoryPageAssignmentsRef.current?.[activeFreeTextCategory];
                     const activeLaneKey = activePlacement
                         ? getCategoryLaneKey(String(activePlacement.pageIndex), String(activePlacement.columnIndex))
@@ -2830,7 +2832,7 @@ export const useDraggableInteractions = (
                         )
                         : refreshedElement?.closest<HTMLElement>('[data-drag-page-container="category"][data-drag-page-index]');
                     const pageRect = pageElement?.getBoundingClientRect();
-                    const scale = pageRect && pageRect.height > 0 ? pageRect.height / A4_HEIGHT_PX : 1;
+                    const scale = pageRect && pageRect.height > 0 ? pageRect.height / Math.max(1, pageElement?.offsetHeight || 1) : 1;
                     const safeTop = activeLane?.rect.top
                         ?? (pageRect ? pageRect.top + ((style.pagePadding || 48) * scale) : refreshedRect?.top ?? pointer.y);
                     const safeBottom = pageRect
@@ -2913,7 +2915,7 @@ export const useDraggableInteractions = (
                                 : Math.max(roundedDesiredMargin, exactContactMargin)
                         )
                         : roundedDesiredMargin;
-                    const desiredMargin = getSafeFreeTextMargin(rawDesiredMargin);
+                    const desiredMargin = getSafeFreeTextMargin(rawDesiredMargin, pageHeightPx);
 
                     if (desiredMargin !== currentMargin) {
                         freeTextDragSlotRef.current = {

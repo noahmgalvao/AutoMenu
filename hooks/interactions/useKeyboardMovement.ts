@@ -1,8 +1,9 @@
 import React, { useRef, useMemo } from 'react';
 import { Product } from '../../types';
-import { InteractionProps, DraftItem, FREE_TEXT_PREFIX, A4_HEIGHT_PX, NUDGE_STEP, SelectionItem, SelectionType, MoveDirection } from './types';
+import { InteractionProps, DraftItem, FREE_TEXT_PREFIX, NUDGE_STEP, SelectionItem, SelectionType, MoveDirection } from './types';
 import { getCollisionSafeFreeTextTop, moveFreeTextOneStep } from './freeTextMovement';
 import { SAFETY_BUFFER } from '../../utils/menuPagination';
+import { resolveMenuPageDimensions } from '../../utils/pageSetup';
 
 const isCanvasObjectOrControlTarget = (target: EventTarget | null, pageEl: HTMLElement) => {
     if (!(target instanceof HTMLElement)) return false;
@@ -40,6 +41,7 @@ export const useKeyboardMovement = (
         onMoveCategory, onMoveProduct, onUpdateProduct, onUpdateProducts,
         onStyleUpdate, onAddProduct, onAddCategory, onToggleProductVisibility, onDeleteProduct
     } = props;
+    const pageHeightPx = resolveMenuPageDimensions(style).heightPx;
 
     const draftInputRef = useRef<HTMLDivElement>(null);
 
@@ -137,7 +139,7 @@ export const useKeyboardMovement = (
         let floorId: string | null = null;
         let floorBottom = 0; 
         let ceilingId: string | null = null;
-        let ceilingTop = A4_HEIGHT_PX; 
+        let ceilingTop = pageHeightPx;
         
         let minDistAbove = Infinity;
         let minDistBelow = Infinity;

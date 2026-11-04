@@ -2,7 +2,7 @@ import React, { useMemo, useEffect, useRef, useCallback, useState } from 'react'
 import { createPortal } from 'react-dom';
 import { AddedImage, ElementStyle, Product, MenuStyle, SortOption } from '../types';
 import { AlertTriangle, BringToFront, Copy, CopyPlus, EyeOff, Paintbrush, Clipboard, Plus, Scissors, SendToBack, Trash2, ListChecks } from 'lucide-react';
-import { A4_HEIGHT_PX, calculatePagination, FREE_TEXT_PREFIX, SAFETY_BUFFER, type PageLayout } from '../utils/menuPagination';
+import { calculatePagination, FREE_TEXT_PREFIX, SAFETY_BUFFER, type PageLayout } from '../utils/menuPagination';
 import { isPristineNewCategory, isPristineNewProduct } from '../utils/pristineItems';
 import { useMenuInteractions } from '../hooks/useMenuInteractions';
 import { NUDGE_STEP, type DraftItem, type MoveDirection, type SelectionItem } from '../hooks/interactions/types';
@@ -12,6 +12,7 @@ import type { FlowDirection } from '../utils/flowControls';
 import { getCollisionSafeFreeTextTop } from '../hooks/interactions/freeTextMovement';
 import { resolveMenuMargins } from '../utils/styleRules';
 import { canIncreaseCanvasFontSize } from '../utils/textFit';
+import { resolveMenuPageDimensions } from '../utils/pageSetup';
 
 interface MenuPreviewProps {
     products: Product[];
@@ -163,6 +164,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         products, style, onAddProduct, onStyleUpdate, onDeleteProduct, onToggleProductVisibility, onSelectedItemsChange,
         readOnly = false, visiblePageIndex, onPageCountChange,
     } = props;
+    const pageDimensions = resolveMenuPageDimensions(style);
 
     useEffect(() => () => {
         if (backgroundPressRef.current) {
@@ -898,7 +900,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         const pageIndex = Number(pageEl.dataset.pageIndex ?? 0);
         const menuMargins = resolveMenuMargins(style);
         const targetX = point?.x ?? pageRect.left + menuMargins.left;
-        let clickY = clamp(((point?.y ?? pageRect.top + menuMargins.top) - pageRect.top) / currentScale, 0, A4_HEIGHT_PX);
+        let clickY = clamp(((point?.y ?? pageRect.top + menuMargins.top) - pageRect.top) / currentScale, 0, pageDimensions.heightPx);
 
         const columnEls = Array.from(
             pageEl.querySelectorAll<HTMLElement>('[data-drag-column-container="category"][data-drag-column-index]')
@@ -920,7 +922,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         let floorId: string | null = null;
         let floorBottom = ((columnRect?.top ?? (pageRect.top + (menuMargins.top * currentScale))) - pageRect.top) / currentScale;
         let ceilingId: string | null = null;
-        let ceilingTop = A4_HEIGHT_PX;
+        let ceilingTop = pageDimensions.heightPx;
         let minDistAbove = Infinity;
         let minDistBelow = Infinity;
         const searchRoot = clickedColumnEl || pageEl;
@@ -972,7 +974,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             const updates: NonNullable<DraftItem['freeTextPositionUpdates']> = {};
             let cursorY = ((desiredClientTop - pageRect.top) / currentScale) + 40 + NUDGE_STEP;
             let targetPageIndex = pageIndex;
-            const maximumBottom = A4_HEIGHT_PX - menuMargins.bottom - SAFETY_BUFFER;
+            const maximumBottom = pageDimensions.heightPx - menuMargins.bottom - SAFETY_BUFFER;
 
             renderedFreeTexts.forEach(({ category, productId, rect }) => {
                 const currentTop = (rect.top - pageRect.top) / currentScale;
@@ -1054,7 +1056,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             ceilingTop,
             freeTextPositionUpdates,
         };
-    }, [products, props.scale, style.categoryPositions, style.margins, style.pagePadding]);
+    }, [pageDimensions.heightPx, products, props.scale, style.categoryPositions, style.margins, style.pagePadding]);
 
     const getFreeTextPlacementBelowSelection = useCallback((): DraftItem | null => {
         const selectedObjects = (handlers.selectedItems || []).filter(isObjectItem);
@@ -1185,9 +1187,9 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             : pageEls[0];
         const pageRect = pageEl.getBoundingClientRect();
         const currentScale = (typeof props.scale === 'number' && props.scale > 0) ? props.scale : 1;
-        const width = 300;
-        const x = clamp((((targetPoint?.x ?? pageRect.left + 100) - pageRect.left) / currentScale) - (width / 2), 0, 794 - width);
-        const y = clamp((((targetPoint?.y ?? pageRect.top + 100) - pageRect.top) / currentScale), 0, A4_HEIGHT_PX - 120);
+        const width = Math.min(300, pageDimensions.widthPx);
+        const x = clamp((((targetPoint?.x ?? pageRect.left + 100) - pageRect.left) / currentScale) - (width / 2), 0, Math.max(0, pageDimensions.widthPx - width));
+        const y = clamp((((targetPoint?.y ?? pageRect.top + 100) - pageRect.top) / currentScale), 0, Math.max(0, pageDimensions.heightPx - 120));
         const newId = crypto.randomUUID();
 
         onStyleUpdate((prev) => {
@@ -1214,7 +1216,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
         handlers.handleSelection('addedImage', newId);
         return true;
-    }, [getImagePastePoint, handlers, onStyleUpdate, props.scale]);
+    }, [getImagePastePoint, handlers, onStyleUpdate, pageDimensions.heightPx, pageDimensions.widthPx, props.scale]);
 
     const readNativeClipboardPayload = useCallback(async (): Promise<NativeClipboardPayload | null> => {
         const clipboard = navigator.clipboard as (Clipboard & { read?: () => Promise<globalThis.ClipboardItem[]> }) | undefined;

@@ -12,12 +12,12 @@ export const getSupabaseConfigError = () => {
     return null;
   }
 
-  return 'Configure VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY no ambiente antes de usar o app.';
+  return 'A configuração do serviço de dados está incompleta.';
 };
 
 export const getSupabaseClient = () => {
   if (!isSupabaseConfigured()) {
-    throw new Error(getSupabaseConfigError() || 'Supabase não configurado.');
+    throw new Error(getSupabaseConfigError() || 'Serviço de dados não configurado.');
   }
 
   if (!client) {

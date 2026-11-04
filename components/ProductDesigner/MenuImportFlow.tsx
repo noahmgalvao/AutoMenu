@@ -41,7 +41,9 @@ import {
   getDefaultDocumentCorners,
   getScannerImageInfo,
 } from '../../utils/documentScanner';
-import { A4_HEIGHT_PX, A4_WIDTH_PX, FREE_TEXT_PREFIX } from '../../utils/menuPagination';
+import { FREE_TEXT_PREFIX } from '../../utils/menuPagination';
+import { resolveMenuPageDimensions } from '../../utils/pageSetup';
+import { getErrorMessage } from '../../utils/errors';
 import { useProductDesignerLogic } from '../../hooks/useProductDesignerLogic';
 import { MenuPreview } from '../MenuPreview';
 import { ProductList } from './ProductList';
@@ -158,6 +160,7 @@ const PreviewCanvas: React.FC<{
   const [scale, setScale] = useState(0.42);
   const [pageIndex, setPageIndex] = useState(0);
   const [pageCount, setPageCount] = useState(1);
+  const pageDimensions = useMemo(() => resolveMenuPageDimensions(style), [style.pageSetup]);
   scaleRef.current = scale;
 
   useEffect(() => {
@@ -169,7 +172,7 @@ const PreviewCanvas: React.FC<{
     if (!container) return;
     const updateScale = () => {
       const rect = container.getBoundingClientRect();
-      const fitScale = Math.max(0.1, Math.min(1, (rect.width - 24) / A4_WIDTH_PX, (rect.height - 24) / A4_HEIGHT_PX));
+      const fitScale = Math.max(0.1, Math.min(1, (rect.width - 24) / pageDimensions.widthPx, (rect.height - 24) / pageDimensions.heightPx));
       fitScaleRef.current = fitScale;
       if (!manualZoomRef.current) setScale(fitScale);
     };
@@ -177,7 +180,7 @@ const PreviewCanvas: React.FC<{
     const observer = new ResizeObserver(updateScale);
     observer.observe(container);
     return () => observer.disconnect();
-  }, []);
+  }, [pageDimensions.heightPx, pageDimensions.widthPx]);
 
   const updateZoom = useCallback((delta: number) => {
     manualZoomRef.current = true;
@@ -534,7 +537,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
         setPreviewTab(selectedMode === 'products' ? 'items' : 'menu');
       } catch (error) {
         console.error(error);
-        setProcessingError(error instanceof Error ? error.message : 'Não foi possível processar o cardápio.');
+        setProcessingError(getErrorMessage(error, 'Não foi possível processar o cardápio.'));
         setPreviewStale(true);
       } finally {
         setProcessing(false);

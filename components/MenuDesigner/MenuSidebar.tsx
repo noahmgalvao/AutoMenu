@@ -1,10 +1,11 @@
 import React from 'react';
 import { MenuStyle, Product, ElementStyle, SortOption, AddedImage } from '../../types';
-import { Layout, PanelLeftClose, RotateCcw } from 'lucide-react';
+import { FileText, Layout, PanelLeftClose, RotateCcw } from 'lucide-react';
 import { useBottomSheetDrag } from '../../hooks/useBottomSheetDrag';
 import { 
   ElementsSection, 
   TemplatesSection, 
+  PageSection,
   LayoutSection, 
   StyleSection, 
   SortingSection 
@@ -14,6 +15,7 @@ import { resolveFontSizeLimits, resolveMinimumFontSize } from '../../utils/style
 interface MenuSidebarProps {
     isOpen: boolean;
     onClose?: () => void;
+    onPdfClick?: () => void;
     handleResetDesign: () => void;
     
     // Data Props
@@ -42,7 +44,7 @@ interface MenuSidebarProps {
 }
 
 export const MenuSidebar: React.FC<MenuSidebarProps> = ({
-    isOpen, onClose, handleResetDesign,
+    isOpen, onClose, onPdfClick, handleResetDesign,
     style, setStyle, templates, applyTemplate, sortOption, setSortOption,
     selection, setSelection, selectedFreeText, selectedAddedImage, selectedAddedImageIds,
     updateFreeTextStyle, updateGlobalElementStyle, setPreviewAction, handleAddedImageUpload,
@@ -90,6 +92,7 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
             <Layout size={16} /> Controles de design
           </h2>
           <div className="flex gap-2">
+            <button type="button" onClick={onPdfClick} className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-100 flex items-center gap-1.5 pointer-events-auto" onPointerDown={e => e.stopPropagation()} title="Exportar PDF"><FileText size={14} /> PDF</button>
             <button onClick={onClose} className="md:hidden text-slate-500 hover:text-slate-800 pointer-events-auto" onPointerDown={e => e.stopPropagation()}> <PanelLeftClose size={18} /> </button>
           </div>
         </div>
@@ -121,6 +124,13 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
             templates={templates}
             currentStyleId={style.id}
             applyTemplate={applyTemplate}
+          />
+
+          <hr className="border-slate-100" />
+
+          <PageSection
+            style={style}
+            setStyle={setStyle}
           />
 
           <hr className="border-slate-100" />

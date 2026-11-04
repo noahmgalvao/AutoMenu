@@ -37,6 +37,7 @@ import {
   roundPrice,
 } from '../utils/price';
 import { resolveFontSizeLimits, resolveMinimumFontSize, roundFontSize } from '../utils/styleRules';
+import { normalizeMenuPageSetup } from '../utils/pageSetup';
 import { getErrorMessage } from '../utils/errors';
 
 const LOCAL_STORAGE_KEYS = {
@@ -423,6 +424,7 @@ const withStyleDefaults = (style: MenuStyle | null | undefined): MenuStyle => {
       : {},
     pageBackgrounds: Array.isArray(source.pageBackgrounds) ? source.pageBackgrounds.filter(isRecord) as any : [],
     pageBreaks: stringArray(source.pageBreaks),
+    pageSetup: normalizeMenuPageSetup(source.pageSetup),
     fontSizeLimits: resolveFontSizeLimits({ ...base, ...source } as MenuStyle),
     minimumFontSize: resolveMinimumFontSize({ ...base, ...source } as MenuStyle),
     allowSameWordBreak: source.allowSameWordBreak === true,
@@ -2212,6 +2214,7 @@ export const publishWorkspaceMenu = async ({
       throw new Error(`${label}: ${getErrorMessage(error, 'erro inesperado')}`);
     }
   };
+  const releaseId = crypto.randomUUID();
   let publicationTableAvailable = true;
   let existing: MenuPublication | null = null;
   const publicationLookup = await supabase
@@ -2230,6 +2233,7 @@ export const publishWorkspaceMenu = async ({
   const uploaded = await runStep('Falha ao enviar o PDF', () => uploadPublicationPdf({
     workspaceId: workspace.id,
     menuId: menu.id,
+    releaseId,
     file: new File([pdfBlob], pdfFilename, { type: 'application/pdf' }),
   }));
 
@@ -2245,6 +2249,7 @@ export const publishWorkspaceMenu = async ({
   }));
   const contentSignature = getMenuContentSignature(products, style, sortOption);
   const baseSlug = slugify(menu.name);
+  const uniqueBaseSlug = `${baseSlug}-${menu.id.slice(0, 8)}`;
 
   if (!publicationTableAvailable) {
     const now = new Date().toISOString();
@@ -2253,7 +2258,7 @@ export const publishWorkspaceMenu = async ({
       menuId: menu.id,
       workspaceId: workspace.id,
       restaurantSlug: workspace.slug,
-      menuSlug: existing?.menuSlug || `${baseSlug}-${menu.id.slice(0, 8)}`,
+      menuSlug: existing?.menuSlug || uniqueBaseSlug,
       publishedVersionId: versionId,
       pdfAssetId: null,
       pdfBucket: uploaded.bucket,
@@ -2270,6 +2275,7 @@ export const publishWorkspaceMenu = async ({
     const portableFile = await runStep('Falha ao criar o link público', () => uploadPortablePublication({
       workspaceId: workspace.id,
       menuId: menu.id,
+      releaseId,
       publication: { publication: portableBase },
     }));
     const portablePublication = { ...portableBase, portableSnapshotUrl: portableFile.url };
@@ -2285,10 +2291,16 @@ export const publishWorkspaceMenu = async ({
   const assetIds = collectStyleAssetIds(style);
   collectProductAssetIds(products).forEach((assetId) => assetIds.add(assetId));
 
+  const { error: menuUpdateError } = await supabase
+    .from('menus')
+    .update({ published_version_id: versionId, status: 'published' })
+    .eq('id', menu.id);
+  if (menuUpdateError) throw new Error(`Falha ao concluir a publicação: ${getErrorMessage(menuUpdateError, 'erro inesperado')}`);
+
   let publicationRow: any = null;
   let lastError: any = null;
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    const menuSlug = existing?.menuSlug || (attempt === 0 ? baseSlug : `${baseSlug}-${attempt + 1}`);
+    const menuSlug = existing?.menuSlug || (attempt === 0 ? uniqueBaseSlug : `${uniqueBaseSlug}-${attempt + 1}`);
     const payload = {
       id: existing?.id || crypto.randomUUID(),
       menu_id: menu.id,
@@ -2321,11 +2333,6 @@ export const publishWorkspaceMenu = async ({
   }
   if (!publicationRow) throw lastError || new Error('Não foi possível criar o link público.');
 
-  const { error: menuUpdateError } = await supabase
-    .from('menus')
-    .update({ published_version_id: versionId, status: 'published' })
-    .eq('id', menu.id);
-  if (menuUpdateError) throw new Error(`Falha ao concluir a publicação: ${getErrorMessage(menuUpdateError, 'erro inesperado')}`);
   return mapPublicationRow(publicationRow, uploaded.url);
 };
 

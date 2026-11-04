@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { AlertCircle, ChefHat, Clock3, ExternalLink, Loader2, Paintbrush, Plus, Save, Send, ShoppingCart } from 'lucide-react';
+import QRCode from 'qrcode';
+import { AlertCircle, ChefHat, History, Loader2, Paintbrush, Plus, Save, Send, ShoppingCart } from 'lucide-react';
 import MenuDesigner from './components/MenuDesigner';
 import { AuthScreen } from './components/AuthScreen';
 import { ProfileMenu } from './components/ProfileMenu';
@@ -45,6 +46,8 @@ import {
   publishWorkspaceMenu,
   renameWorkspaceMenu,
   saveWorkspaceState,
+  updatePortablePublicationMenuSlug,
+  updatePublicationMenuSlug,
   updateAccountIdentity,
   updateWorkspaceRuleSettings,
 } from './services/workspaceService';
@@ -62,10 +65,59 @@ interface HistoryState {
 }
 
 type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'local' | 'error';
+type PrintRequestMode = 'download' | 'download-direct' | 'share-direct' | 'publish' | 'publish-silent';
+type PublishLinkAction = 'copy-link' | 'share-link' | 'download-qr' | 'share-qr' | 'open-link';
+type PublishAction = PublishLinkAction | 'publish' | 'pdf-options' | 'download-pdf' | 'share-pdf' | 'save-slug' | null;
+type CachedPdfExport = {
+  contentSignature: string;
+  result: PdfExportResult;
+};
 
 const DEFAULT_SORT_OPTION: SortOption = { field: 'name', direction: 'asc' };
 const SAVE_DEBOUNCE_MS = 2000;
 const SAVE_RETRY_DELAYS_MS = [600, 1600, 3200];
+
+const copyText = async (value: string) => {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const input = document.createElement('textarea');
+  input.value = value;
+  input.style.position = 'fixed';
+  input.style.opacity = '0';
+  document.body.appendChild(input);
+  input.select();
+  document.execCommand('copy');
+  input.remove();
+};
+
+const downloadBlob = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+};
+
+const qrCodeBlobCache = new Map<string, Promise<Blob>>();
+
+const createQrCodeBlob = (value: string) => {
+  const cached = qrCodeBlobCache.get(value);
+  if (cached) return cached;
+  const task = QRCode.toDataURL(value, {
+    width: 1024,
+    margin: 4,
+    errorCorrectionLevel: 'H',
+    color: { dark: '#0f172a', light: '#ffffff' },
+  }).then(async (dataUrl) => (await fetch(dataUrl)).blob());
+  qrCodeBlobCache.set(value, task);
+  void task.catch(() => {
+    if (qrCodeBlobCache.get(value) === task) qrCodeBlobCache.delete(value);
+  });
+  return task;
+};
 
 interface PersistPayload {
   workspaceId: string;
@@ -257,10 +309,12 @@ const App: React.FC = () => {
   const [activePanel, setActivePanel] = useState<'product' | 'style' | null>('style');
   const [hasOpenedProductDesigner, setHasOpenedProductDesigner] = useState(false);
   const [printRequestId, setPrintRequestId] = useState(0);
-  const [printRequestMode, setPrintRequestMode] = useState<'download' | 'publish' | 'publish-silent'>('download');
+  const [printRequestMode, setPrintRequestMode] = useState<PrintRequestMode>('download');
   const [publication, setPublication] = useState<MenuPublication | null>(null);
   const [isPublishOpen, setIsPublishOpen] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [publishAction, setPublishAction] = useState<PublishAction>(null);
+  const [publishFeedback, setPublishFeedback] = useState<string | null>(null);
   const [isCreateMenuOpen, setIsCreateMenuOpen] = useState(false);
   const [isRevisionHistoryOpen, setIsRevisionHistoryOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
@@ -285,14 +339,26 @@ const App: React.FC = () => {
   const menuCacheRef = useRef<Record<string, LoadedWorkspaceData>>({});
   const menuSavedSignatureCacheRef = useRef<Record<string, string>>({});
   const prefetchingMenuIdsRef = useRef<Set<string>>(new Set());
+  const pendingPublishActionRef = useRef<PublishLinkAction | null>(null);
+  const publishFeedbackTimeoutRef = useRef<number | null>(null);
+  const cachedPdfExportRef = useRef<CachedPdfExport | null>(null);
+  const pendingPrintContentSignatureRef = useRef<string | null>(null);
+  const currentContentSignatureRef = useRef('');
 
   useEffect(() => {
     const resetPublishingState = () => {
       setIsPublishing(false);
       setPrintRequestMode('download');
+      setPublishAction(null);
+      pendingPublishActionRef.current = null;
+      pendingPrintContentSignatureRef.current = null;
     };
     window.addEventListener('pageshow', resetPublishingState);
     return () => window.removeEventListener('pageshow', resetPublishingState);
+  }, []);
+
+  useEffect(() => () => {
+    if (publishFeedbackTimeoutRef.current) window.clearTimeout(publishFeedbackTimeoutRef.current);
   }, []);
 
   const saveCheckpoint = useCallback(() => {
@@ -416,7 +482,7 @@ const App: React.FC = () => {
       const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
       setSaveState(isOffline ? 'local' : 'error');
       if (!isOffline) {
-        setLoadError(error instanceof Error ? error.message : 'Falha ao salvar dados no Supabase.');
+        setLoadError(getErrorMessage(error, 'Falha ao salvar os dados.'));
       }
     } finally {
       isSavingRef.current = false;
@@ -571,8 +637,7 @@ const App: React.FC = () => {
       hydrateWorkspaceState(data);
     } catch (error) {
       if (requestId !== workspaceLoadRequestRef.current) return;
-      const message = error instanceof Error ? error.message : 'Falha ao carregar dados do ambiente.';
-      setLoadError(message);
+      setLoadError(getErrorMessage(error, 'Falha ao carregar dados do ambiente.'));
     } finally {
       if (requestId === workspaceLoadRequestRef.current) {
         setIsWorkspaceLoading(false);
@@ -622,7 +687,7 @@ const App: React.FC = () => {
       })
       .catch((error) => {
         if (isMounted) {
-          setLoadError(error instanceof Error ? error.message : 'Falha ao iniciar sessão.');
+      setLoadError(getErrorMessage(error, 'Falha ao iniciar sessão.'));
         }
       })
       .finally(() => {
@@ -846,7 +911,7 @@ const App: React.FC = () => {
         const latestPayload = latestPersistPayloadRef.current;
         if (latestPayload?.menuId === payload.menuId) {
           setSaveState('error');
-          setLoadError(error instanceof Error ? error.message : 'Falha ao salvar dados no Supabase.');
+          setLoadError(getErrorMessage(error, 'Falha ao salvar os dados.'));
         }
       })
       .finally(() => {
@@ -960,7 +1025,7 @@ const App: React.FC = () => {
     try {
       await signInWithEmail(email, password);
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'Falha ao entrar.');
+      setAuthError(getErrorMessage(error, 'Falha ao entrar.'));
     } finally {
       setIsAuthSubmitting(false);
     }
@@ -974,7 +1039,7 @@ const App: React.FC = () => {
       await signUpWithEmail(payload);
       setAuthError('Conta criada. Verifique o e-mail se a confirmação estiver habilitada.');
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'Falha ao criar conta.');
+      setAuthError(getErrorMessage(error, 'Falha ao criar conta.'));
     } finally {
       setIsAuthSubmitting(false);
     }
@@ -988,7 +1053,7 @@ const App: React.FC = () => {
       setSaveState('idle');
       setLoadError(null);
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : 'Falha ao sair da conta.');
+      setLoadError(getErrorMessage(error, 'Falha ao sair da conta.'));
     }
   };
 
@@ -1152,7 +1217,7 @@ const App: React.FC = () => {
       hydrateWorkspaceState(data);
     } catch (error) {
       if (requestId !== workspaceLoadRequestRef.current) return;
-      setLoadError(error instanceof Error ? error.message : 'Falha ao trocar cardápio.');
+      setLoadError(getErrorMessage(error, 'Falha ao trocar cardápio.'));
     } finally {
       if (requestId === workspaceLoadRequestRef.current) {
         setIsMenuActionLoading(false);
@@ -1193,7 +1258,7 @@ const App: React.FC = () => {
       hydrateWorkspaceState(data);
       setIsCreateMenuOpen(false);
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : 'Falha ao criar cardápio.');
+      setLoadError(getErrorMessage(error, 'Falha ao criar cardápio.'));
     } finally {
       setIsMenuActionLoading(false);
     }
@@ -1218,7 +1283,7 @@ const App: React.FC = () => {
         menus: prev.menus.map((menu) => menu.id === renamedMenu.id ? renamedMenu : menu),
       } : prev);
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : 'Falha ao renomear cardápio.');
+      setLoadError(getErrorMessage(error, 'Falha ao renomear cardápio.'));
     } finally {
       setIsMenuActionLoading(false);
     }
@@ -1258,7 +1323,7 @@ const App: React.FC = () => {
         await loadWorkspace(session.user.id);
       }
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : 'Falha ao excluir cardápio.');
+      setLoadError(getErrorMessage(error, 'Falha ao excluir cardápio.'));
     } finally {
       setIsMenuActionLoading(false);
     }
@@ -1273,34 +1338,267 @@ const App: React.FC = () => {
     setActivePanel(activePanel === 'style' ? null : 'style');
   };
 
-  const requestPrint = (mode: 'download' | 'publish' | 'publish-silent' = 'download') => {
+  const contentSignature = useMemo(
+    () => getMenuContentSignature(products, style, sortOption),
+    [products, style, sortOption],
+  );
+  currentContentSignatureRef.current = contentSignature;
+  const hasPublishedChanges = Boolean(publication && publication.contentSignature !== contentSignature);
+
+  useEffect(() => {
+    if (cachedPdfExportRef.current?.contentSignature !== contentSignature) {
+      cachedPdfExportRef.current = null;
+    }
+    if (pendingPrintContentSignatureRef.current
+      && pendingPrintContentSignatureRef.current !== contentSignature) {
+      pendingPrintContentSignatureRef.current = null;
+    }
+  }, [contentSignature]);
+
+  useEffect(() => {
+    if (!publication) return;
+    void createQrCodeBlob(getPublicationUrl(publication)).catch(() => undefined);
+  }, [publication?.id, publication?.menuSlug, publication?.portableSnapshotUrl, publication?.updatedAt]);
+
+  const showPublishFeedback = useCallback((message: string) => {
+    if (publishFeedbackTimeoutRef.current) window.clearTimeout(publishFeedbackTimeoutRef.current);
+    setPublishFeedback(message);
+    publishFeedbackTimeoutRef.current = window.setTimeout(() => setPublishFeedback(null), 2200);
+  }, []);
+
+  const requestPrint = (mode: PrintRequestMode = 'download') => {
+    pendingPrintContentSignatureRef.current = contentSignature;
     setPrintRequestMode(mode);
     setPrintRequestId((prev) => prev + 1);
   };
 
+  const performPublishedLinkAction = useCallback(async (
+    published: MenuPublication,
+    action: PublishLinkAction,
+    afterPublish = false,
+  ) => {
+    const url = getPublicationUrl(published);
+    const qrFilename = `qrcode-${published.menuSlug || 'cardapio'}.png`;
+
+    if (action === 'open-link') {
+      window.open(url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    if (action === 'copy-link') {
+      await copyText(url);
+      showPublishFeedback('Copiado');
+      return;
+    }
+
+    if (action === 'share-link') {
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: published.pdfFilename.replace(/\.pdf$/i, ''), url });
+          return;
+        } catch (error) {
+          if (error instanceof DOMException && error.name === 'AbortError') {
+            if (afterPublish) showPublishFeedback('Link publicado');
+            return;
+          }
+          if (afterPublish && error instanceof DOMException && error.name === 'NotAllowedError') {
+            showPublishFeedback('Publicado. Toque novamente para compartilhar.');
+            return;
+          }
+        }
+      }
+      await copyText(url);
+      showPublishFeedback('Link copiado');
+      return;
+    }
+
+    const qrBlob = await createQrCodeBlob(url);
+    if (action === 'share-qr') {
+      const file = new File([qrBlob], qrFilename, { type: 'image/png' });
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ title: 'QR code do cardápio', files: [file] });
+          return;
+        } catch (error) {
+          if (error instanceof DOMException && error.name === 'AbortError') {
+            if (afterPublish) showPublishFeedback('Link publicado');
+            return;
+          }
+          if (afterPublish && error instanceof DOMException && error.name === 'NotAllowedError') {
+            showPublishFeedback('Publicado. Toque novamente para compartilhar o QR.');
+            return;
+          }
+        }
+      }
+    }
+    downloadBlob(qrBlob, qrFilename);
+    showPublishFeedback('QR code baixado');
+  }, [showPublishFeedback]);
+
+  const handleLinkAction = async (action: PublishLinkAction) => {
+    setPublishAction(action);
+    setLoadError(null);
+
+    if (publication && !hasPublishedChanges) {
+      try {
+        await performPublishedLinkAction(publication, action);
+      } catch (error) {
+        setLoadError(getErrorMessage(error, 'Não foi possível concluir a ação.'));
+      } finally {
+        setPublishAction(null);
+      }
+      return;
+    }
+
+    pendingPublishActionRef.current = action;
+    setIsPublishing(true);
+    try {
+      await forceSaveCurrentMenu();
+      requestPrint('publish-silent');
+    } catch (error) {
+      pendingPublishActionRef.current = null;
+      setPublishAction(null);
+      setIsPublishing(false);
+      setLoadError(getErrorMessage(error, 'Falha ao preparar a publicação.'));
+    }
+  };
+
   const handlePublishConfirm = async ({ pdf, virtualLink }: { pdf: boolean; virtualLink: boolean }) => {
-    setIsPublishOpen(false);
     if (!virtualLink) {
+      setIsPublishOpen(false);
       requestPrint('download');
       return;
     }
 
+    pendingPublishActionRef.current = null;
+    setPublishAction('publish');
     setIsPublishing(true);
     setLoadError(null);
     try {
       await forceSaveCurrentMenu();
       requestPrint(pdf ? 'publish' : 'publish-silent');
     } catch (error) {
+      setPublishAction(null);
       setIsPublishing(false);
       setLoadError(getErrorMessage(error, 'Falha ao preparar a publicação.'));
     }
   };
 
-  const handlePrintComplete = async (result: PdfExportResult, options: PrintCanvasOptions) => {
-    if (printRequestMode !== 'publish' && printRequestMode !== 'publish-silent') return;
-    if (!workspaceData || !session) return;
+  const sharePdfResult = async (result: PdfExportResult, generatedAfterClick: boolean) => {
+    const file = new File([result.blob], result.filename, { type: 'application/pdf' });
+    const webShareNavigator = navigator as unknown as {
+      share?: Navigator['share'];
+      canShare?: Navigator['canShare'];
+    };
+    let canUseFileShare = false;
     try {
-      const published = await publishWorkspaceMenu({
+      canUseFileShare = Boolean(
+        webShareNavigator.share
+        && (!webShareNavigator.canShare || webShareNavigator.canShare({ files: [file] }))
+      );
+    } catch {
+      canUseFileShare = false;
+    }
+
+    if (!canUseFileShare) {
+      downloadBlob(result.blob, result.filename);
+      showPublishFeedback('PDF baixado');
+      return;
+    }
+
+    try {
+      await webShareNavigator.share?.({ title: result.filename.replace(/\.pdf$/i, ''), files: [file] });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      if (generatedAfterClick && error instanceof DOMException && error.name === 'NotAllowedError') {
+        showPublishFeedback('PDF pronto. Toque novamente para compartilhar.');
+        return;
+      }
+      setLoadError(getErrorMessage(error, 'Não foi possível compartilhar o PDF.'));
+    }
+  };
+
+  const handlePdfAction = async (action: 'options' | 'download' | 'share') => {
+    setPublishAction(action === 'options' ? 'pdf-options' : action === 'download' ? 'download-pdf' : 'share-pdf');
+    setLoadError(null);
+
+    if (action === 'share') {
+      const cachedPdf = cachedPdfExportRef.current;
+      if (cachedPdf?.contentSignature === contentSignature) {
+        try {
+          await sharePdfResult(cachedPdf.result, false);
+        } finally {
+          setPublishAction(null);
+        }
+        return;
+      }
+    }
+
+    requestPrint(action === 'options' ? 'download' : action === 'download' ? 'download-direct' : 'share-direct');
+    if (action === 'options') window.setTimeout(() => setPublishAction(null), 0);
+  };
+
+  const handlePublicationSlugChange = async (menuSlug: string) => {
+    if (!publication || menuSlug.trim() === publication.menuSlug) return;
+    setPublishAction('save-slug');
+    setLoadError(null);
+    try {
+      const updated = publication.portableSnapshotUrl
+        ? updatePortablePublicationMenuSlug(publication, menuSlug)
+        : await updatePublicationMenuSlug({ publicationId: publication.id, menuSlug });
+      setPublication(updated);
+      showPublishFeedback('Endereço atualizado');
+    } catch (error) {
+      setLoadError(getErrorMessage(error, 'Não foi possível atualizar o endereço.'));
+    } finally {
+      setPublishAction(null);
+    }
+  };
+
+  const handlePrintComplete = async (result: PdfExportResult, options: PrintCanvasOptions) => {
+    const generatedForSignature = pendingPrintContentSignatureRef.current;
+    pendingPrintContentSignatureRef.current = null;
+    const generatedPdfIsCurrent = Boolean(
+      generatedForSignature
+      && generatedForSignature === currentContentSignatureRef.current
+    );
+    if (generatedPdfIsCurrent && generatedForSignature) {
+      cachedPdfExportRef.current = { contentSignature: generatedForSignature, result };
+    }
+
+    if (printRequestMode === 'download-direct') {
+      setPrintRequestMode('download');
+      setPublishAction(null);
+      showPublishFeedback('PDF baixado');
+      return;
+    }
+
+    if (printRequestMode === 'share-direct') {
+      if (!generatedPdfIsCurrent) {
+        setPrintRequestMode('download');
+        setPublishAction(null);
+        showPublishFeedback('O cardápio mudou. Toque novamente para compartilhar.');
+        return;
+      }
+      try {
+        await sharePdfResult(result, true);
+      } finally {
+        setPrintRequestMode('download');
+        setPublishAction(null);
+      }
+      return;
+    }
+
+    if (printRequestMode !== 'publish' && printRequestMode !== 'publish-silent') return;
+    if (!workspaceData || !session) {
+      pendingPublishActionRef.current = null;
+      setPublishAction(null);
+      setIsPublishing(false);
+      return;
+    }
+    let published: MenuPublication;
+    try {
+      published = await publishWorkspaceMenu({
         workspace: workspaceData.workspace,
         menu: workspaceData.menu,
         userId: session.user.id,
@@ -1312,20 +1610,31 @@ const App: React.FC = () => {
         pdfOptions: options,
       });
       setPublication(published);
-      setIsPublishing(false);
-      setPrintRequestMode('download');
-      window.location.assign(getPublicationUrl(published));
     } catch (error) {
       setLoadError(getErrorMessage(error, 'Falha ao publicar cardápio.'));
+      pendingPublishActionRef.current = null;
+      setPublishAction(null);
       setIsPublishing(false);
+      setPrintRequestMode('download');
+      return;
+    }
+
+    const pendingAction = pendingPublishActionRef.current;
+    pendingPublishActionRef.current = null;
+    setIsPublishing(false);
+    setPrintRequestMode('download');
+    setPublishAction(null);
+    if (!pendingAction) {
+      showPublishFeedback('Link publicado');
+      return;
+    }
+
+    try {
+      await performPublishedLinkAction(published, pendingAction, true);
+    } catch (error) {
+      setLoadError(getErrorMessage(error, 'O link foi publicado, mas a ação não foi concluída.'));
     }
   };
-
-  const contentSignature = useMemo(
-    () => getMenuContentSignature(products, style, sortOption),
-    [products, style, sortOption],
-  );
-  const hasPublishedChanges = Boolean(publication && publication.contentSignature !== contentSignature);
 
   const saveBadge = useMemo(() => {
     if (saveState === 'dirty') {
@@ -1344,7 +1653,7 @@ const App: React.FC = () => {
       return { label: 'Erro - salvo localmente', className: 'text-red-600 bg-red-50' };
     }
 
-    return { label: 'Todas as alterações salvas', className: 'text-emerald-600 bg-emerald-50' };
+    return null;
   }, [saveState]);
 
   if (!isSupabaseConfigured()) {
@@ -1353,14 +1662,12 @@ const App: React.FC = () => {
         <div className="max-w-xl w-full bg-white rounded-3xl shadow-xl border border-slate-200 p-8 space-y-4">
           <div className="flex items-center gap-3 text-slate-900">
             <AlertCircle className="w-6 h-6 text-amber-500" />
-            <h1 className="text-xl font-semibold">Supabase não configurado</h1>
+            <h1 className="text-xl font-semibold">Serviço indisponível</h1>
           </div>
           <p className="text-slate-600">
             {getSupabaseConfigError()}
           </p>
-          <p className="text-sm text-slate-500">
-            Use as variáveis `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` e `VITE_GEMINI_API_KEY`.
-          </p>
+          <p className="text-sm text-slate-500">A configuração do serviço de dados está incompleta. Contate o suporte.</p>
         </div>
       </div>
     );
@@ -1425,47 +1732,30 @@ const App: React.FC = () => {
               </div>
               <div className="text-xs text-slate-500 flex items-center gap-1 min-w-0">
                 <span className="truncate">{workspaceData.menu.name} · {workspaceData.workspace.name}</span>
-                {publication && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!hasPublishedChanges) window.location.assign(getPublicationUrl(publication));
-                    }}
-                    className={`md:hidden shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${hasPublishedChanges ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}
-                  >
-                    {hasPublishedChanges ? 'Alterações Pendentes' : 'Alterações Salvas'}
-                  </button>
-                )}
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${saveBadge.className}`}>
-              <Save size={12} />
-              <span>{saveBadge.label}</span>
-            </div>
-            {publication && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (hasPublishedChanges) return;
-                  window.location.assign(getPublicationUrl(publication));
-                }}
-                className={`hidden md:flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ${hasPublishedChanges ? 'bg-amber-50 text-amber-700 cursor-default' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
-              >
-                {!hasPublishedChanges && <ExternalLink size={12} />}
-                {hasPublishedChanges ? 'Alterações Pendentes' : 'Alterações Salvas'}
-              </button>
+            {saveBadge && (
+              <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${saveBadge.className}`}>
+                <Save size={12} />
+                <span>{saveBadge.label}</span>
+              </div>
             )}
-            <button type="button" onClick={() => setIsRevisionHistoryOpen(true)} className="h-10 w-10 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 flex items-center justify-center" title="Histórico de revisões"><Clock3 size={17} /></button>
+            <button type="button" onClick={() => setIsRevisionHistoryOpen(true)} className="h-10 w-10 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 flex items-center justify-center" title="Histórico de revisões"><History size={18} /></button>
             <button
               type="button"
               onClick={() => setIsPublishOpen(true)}
               disabled={isPublishing}
-              className={`h-10 px-3 sm:px-4 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors disabled:opacity-60 ${hasPublishedChanges ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200 hover:bg-indigo-700' : 'border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'}`}
+              className={`h-10 px-3 sm:px-4 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors disabled:opacity-60 ${publication && hasPublishedChanges
+                ? 'border border-red-500 bg-red-50 text-red-700 shadow-sm shadow-red-100 hover:bg-red-100'
+                : !publication
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200 hover:bg-indigo-700'
+                  : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+              }`}
             >
-              {isPublishing ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+              {isPublishing ? <Loader2 size={16} className="animate-spin" /> : publication && hasPublishedChanges ? <AlertCircle size={17} /> : <Send size={16} />}
               <span className="hidden sm:inline">Publicar</span>
             </button>
             <ProfileMenu
@@ -1495,8 +1785,17 @@ const App: React.FC = () => {
         open={isPublishOpen}
         loading={isPublishing}
         preferenceKey={`automenu:publish-options:${session.user.id}`}
+        hasPendingChanges={Boolean(publication && hasPublishedChanges)}
+        hasPublication={Boolean(publication)}
+        publicUrl={publication ? getPublicationUrl(publication) : null}
+        publicationMenuSlug={publication?.menuSlug || null}
+        activeAction={publishAction}
+        feedback={publishFeedback}
         onClose={() => setIsPublishOpen(false)}
         onConfirm={(options) => void handlePublishConfirm(options)}
+        onLinkAction={(action) => void handleLinkAction(action)}
+        onPdfAction={handlePdfAction}
+        onSaveMenuSlug={(menuSlug) => void handlePublicationSlugChange(menuSlug)}
       />
 
       <CreateMenuModal
@@ -1587,6 +1886,7 @@ const App: React.FC = () => {
               workspaceId={workspaceData.workspace.id}
               currentUserId={session.user.id}
               currentMenuId={workspaceData.menu.id}
+              onPdfClick={() => requestPrint('download')}
               productsCanChangeCategory={workspaceData.workspace.settings?.productsCanChangeCategory}
               splitCategoryAcrossPages={workspaceData.workspace.settings.splitCategoryAcrossPages}
               onImportVisibilityChange={setIsMenuImportOpen}
@@ -1613,13 +1913,20 @@ const App: React.FC = () => {
             printRequestMode={printRequestMode}
             onPrintComplete={(result, options) => void handlePrintComplete(result, options)}
             onPrintError={(error) => {
+              pendingPrintContentSignatureRef.current = null;
               if (printRequestMode === 'publish' || printRequestMode === 'publish-silent') {
                 setIsPublishing(false);
-                setLoadError(error.message);
+                pendingPublishActionRef.current = null;
               }
+              setPublishAction(null);
+              setPrintRequestMode('download');
+              setLoadError(getErrorMessage(error, 'Falha ao gerar o PDF.'));
             }}
             onPrintCancel={() => {
+              pendingPrintContentSignatureRef.current = null;
               setIsPublishing(false);
+              setPublishAction(null);
+              pendingPublishActionRef.current = null;
               setPrintRequestMode('download');
             }}
             silentPrintOptions={(publication?.pdfOptions || {}) as Partial<PrintCanvasOptions>}

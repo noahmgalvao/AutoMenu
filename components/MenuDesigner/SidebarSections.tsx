@@ -3,12 +3,13 @@ import React, { useRef } from 'react';
 import { MenuStyle, Product, ElementStyle, SortOption, AddedImage, FontSizeLimitKey } from '../../types';
 import { DEFAULT_MINIMUM_FONT_SIZE, isMiniFoodTexture, normalizeTextureUrl } from '../../constants';
 import { resolveFontSizeLimits, resolveMenuContentSpacing, resolveMenuMargins, resolveMinimumFontSize, roundFontSize } from '../../utils/styleRules';
+import { normalizeMenuPageSetup, resolveMenuPageDimensions } from '../../utils/pageSetup';
 import { StyleControls } from './StyleControls';
 import { FontSelect, MiniFoodTextureSelect, TemplateSelect, TextureSelect } from './SearchableSelects';
 import { 
   Type, ImagePlus, Minus, Plus, LayoutTemplate, 
   Layout, List, Maximize, Palette, ArrowUpAZ, SortAsc, SortDesc, BringToFront, SendToBack, SlidersHorizontal,
-  ImageIcon, Eye, EyeOff
+  ImageIcon, Eye, EyeOff, FileCog, RectangleHorizontal, RectangleVertical
 } from 'lucide-react';
 
 // --- ELEMENTS SECTION ---
@@ -234,6 +235,331 @@ export const TemplatesSection: React.FC<TemplatesSectionProps> = ({ templates, c
     <TemplateSelect templates={templates} currentStyleId={currentStyleId} onChange={applyTemplate} />
   </section>
 );
+
+// --- PAGE SECTION ---
+interface PageSectionProps {
+  style: MenuStyle;
+  setStyle: React.Dispatch<React.SetStateAction<MenuStyle>>;
+}
+
+const PAGE_PRESET_OPTIONS = [
+  { value: 'A4', label: 'A4' },
+  { value: 'Letter', label: 'Carta' },
+  { value: 'Legal', label: 'Legal' },
+  { value: 'custom', label: 'Personalizado' },
+] as const;
+
+const MIN_POSITIONED_OBJECT_VISIBLE_PX = 24;
+const MIN_USABLE_PAGE_HEIGHT_PX = 96;
+const MIN_USABLE_PAGE_WIDTH_PX = 96;
+const MIN_USABLE_COLUMN_WIDTH_PX = 48;
+const MIN_USABLE_COLUMN_GAP_PX = 8;
+
+const clampPageValue = (value: number, minimum: number, maximum: number) => (
+  Math.min(Math.max(minimum, value), Math.max(minimum, maximum))
+);
+
+const finitePageValue = (value: unknown, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const clampMarginPair = (
+  first: number,
+  second: number,
+  pageSize: number,
+  minimumContentSize: number,
+) => {
+  const safeFirst = Math.max(0, finitePageValue(first));
+  const safeSecond = Math.max(0, finitePageValue(second));
+  const maximumCombinedMargin = Math.max(0, pageSize - Math.min(pageSize, minimumContentSize));
+  const combinedMargin = safeFirst + safeSecond;
+  if (combinedMargin <= maximumCombinedMargin || combinedMargin === 0) {
+    return [safeFirst, safeSecond] as const;
+  }
+  const scale = maximumCombinedMargin / combinedMargin;
+  return [safeFirst * scale, safeSecond * scale] as const;
+};
+
+const getSafePageMargins = (
+  style: MenuStyle,
+  widthPx: number,
+  heightPx: number,
+) => {
+  const margins = resolveMenuMargins(style);
+  const columnCount = Math.max(1, Math.min(3, Math.floor(style.categoryColumnCount || 1)));
+  const minimumContentWidth = Math.min(
+    widthPx,
+    Math.max(
+      MIN_USABLE_PAGE_WIDTH_PX,
+      (columnCount * MIN_USABLE_COLUMN_WIDTH_PX)
+        + (Math.max(0, columnCount - 1) * MIN_USABLE_COLUMN_GAP_PX),
+    ),
+  );
+  const minimumContentHeight = Math.min(heightPx, MIN_USABLE_PAGE_HEIGHT_PX);
+  const [left, right] = clampMarginPair(
+    margins.left,
+    margins.right,
+    widthPx,
+    minimumContentWidth,
+  );
+  const [top, bottom] = clampMarginPair(
+    margins.top,
+    margins.bottom,
+    heightPx,
+    minimumContentHeight,
+  );
+  const contentWidth = Math.max(0, widthPx - left - right);
+  const maximumColumnGap = columnCount > 1
+    ? Math.max(
+      0,
+      (contentWidth - (columnCount * MIN_USABLE_COLUMN_WIDTH_PX)) / (columnCount - 1),
+    )
+    : margins.columnGap;
+
+  return {
+    top,
+    bottom,
+    left,
+    right,
+    columnGap: Math.min(margins.columnGap, maximumColumnGap),
+  };
+};
+
+const getRenderedAddedImageAspectRatios = () => {
+  const ratios = new Map<string, number>();
+  if (typeof document === 'undefined') return ratios;
+
+  document.querySelectorAll<HTMLElement>('[data-added-image-id]').forEach((container) => {
+    const imageId = container.dataset.addedImageId;
+    const image = container.querySelector<HTMLImageElement>('img');
+    if (!imageId || !image) return;
+    const renderedRect = image.getBoundingClientRect();
+    const width = image.naturalWidth || renderedRect.width;
+    const height = image.naturalHeight || renderedRect.height;
+    if (width > 0 && height > 0) ratios.set(imageId, height / width);
+  });
+
+  return ratios;
+};
+
+export const PageSection: React.FC<PageSectionProps> = ({ style, setStyle }) => {
+  const setup = normalizeMenuPageSetup(style.pageSetup);
+  const dimensions = resolveMenuPageDimensions(setup);
+
+  const updatePageSetup = (nextSetup: typeof setup) => {
+    const normalizedNextSetup = normalizeMenuPageSetup(nextSetup);
+    const renderedImageAspectRatios = getRenderedAddedImageAspectRatios();
+
+    setStyle((previous) => {
+      const currentDimensions = resolveMenuPageDimensions(previous);
+      const nextDimensions = resolveMenuPageDimensions(normalizedNextSetup);
+      const horizontalScale = nextDimensions.widthPx / currentDimensions.widthPx;
+      const verticalScale = nextDimensions.heightPx / currentDimensions.heightPx;
+      const safeMargins = getSafePageMargins(
+        previous,
+        nextDimensions.widthPx,
+        nextDimensions.heightPx,
+      );
+      const currentMargins = resolveMenuMargins(previous);
+      const marginsWereClamped = (Object.keys(safeMargins) as Array<keyof typeof safeMargins>)
+        .some((key) => Math.abs(safeMargins[key] - currentMargins[key]) > 0.01);
+      const averageSafeMargin = (
+        safeMargins.top + safeMargins.bottom + safeMargins.left + safeMargins.right
+      ) / 4;
+      const currentPagePadding = finitePageValue(previous.pagePadding, averageSafeMargin);
+      const pagePaddingWasClamped = currentPagePadding > averageSafeMargin;
+      const minimumCategoryY = Math.min(
+        safeMargins.top,
+        Math.max(
+          0,
+          nextDimensions.heightPx - safeMargins.bottom - MIN_POSITIONED_OBJECT_VISIBLE_PX,
+        ),
+      );
+      const maximumCategoryY = Math.max(
+        minimumCategoryY,
+        nextDimensions.heightPx - safeMargins.bottom - MIN_POSITIONED_OBJECT_VISIBLE_PX,
+      );
+      const nextCategoryPositions = previous.categoryPositions
+        ? Object.fromEntries(Object.entries(previous.categoryPositions).map(([category, position]) => [
+          category,
+          {
+            ...position,
+            y: clampPageValue(
+              finitePageValue(position.y, minimumCategoryY) * verticalScale,
+              minimumCategoryY,
+              maximumCategoryY,
+            ),
+          },
+        ]))
+        : previous.categoryPositions;
+      const nextFloatingText = previous.floatingText?.map((item) => ({
+        ...item,
+        x: clampPageValue(
+          finitePageValue(item.x) * horizontalScale,
+          0,
+          nextDimensions.widthPx - MIN_POSITIONED_OBJECT_VISIBLE_PX,
+        ),
+        y: clampPageValue(
+          finitePageValue(item.y) * verticalScale,
+          0,
+          nextDimensions.heightPx - MIN_POSITIONED_OBJECT_VISIBLE_PX,
+        ),
+      }));
+      const nextAddedImages = previous.addedImages?.map((image) => {
+        const boundingBoxAspectRatio = image.boundingBox
+          && image.boundingBox.width > 0
+          && image.boundingBox.height > 0
+          ? image.boundingBox.height / image.boundingBox.width
+          : null;
+        const measuredAspectRatio = renderedImageAspectRatios.get(image.id)
+          || boundingBoxAspectRatio;
+        const aspectRatio = measuredAspectRatio
+          && Number.isFinite(measuredAspectRatio)
+          && measuredAspectRatio > 0
+          ? measuredAspectRatio
+          : null;
+        const currentWidth = Math.max(0, finitePageValue(image.width));
+        const maximumWidthByHeight = aspectRatio
+          ? nextDimensions.heightPx / aspectRatio
+          : Number.POSITIVE_INFINITY;
+        const width = Math.min(
+          currentWidth,
+          nextDimensions.widthPx,
+          maximumWidthByHeight,
+        );
+        const height = aspectRatio
+          ? width * aspectRatio
+          : Math.min(MIN_POSITIONED_OBJECT_VISIBLE_PX, nextDimensions.heightPx);
+
+        return {
+          ...image,
+          x: clampPageValue(
+            finitePageValue(image.x) * horizontalScale,
+            0,
+            nextDimensions.widthPx - width,
+          ),
+          y: clampPageValue(
+            finitePageValue(image.y) * verticalScale,
+            0,
+            nextDimensions.heightPx - height,
+          ),
+          width,
+        };
+      });
+      const nextPagePadding = marginsWereClamped || pagePaddingWasClamped
+        ? Math.min(Math.max(0, currentPagePadding), averageSafeMargin)
+        : previous.pagePadding;
+
+      return {
+        ...previous,
+        pageSetup: normalizedNextSetup,
+        categoryPositions: nextCategoryPositions,
+        floatingText: nextFloatingText,
+        addedImages: nextAddedImages,
+        ...(marginsWereClamped ? { margins: safeMargins } : {}),
+        ...(marginsWereClamped || pagePaddingWasClamped ? { pagePadding: nextPagePadding } : {}),
+        name: 'Custom',
+      };
+    });
+  };
+
+  const updateCustomDimension = (axis: 'width' | 'height', value: number) => {
+    if (!Number.isFinite(value)) return;
+
+    const nextValue = Math.min(1000, Math.max(50, value));
+    const isLandscape = setup.orientation === 'landscape';
+    const field = axis === 'width'
+      ? (isLandscape ? 'heightMm' : 'widthMm')
+      : (isLandscape ? 'widthMm' : 'heightMm');
+
+    updatePageSetup({ ...setup, preset: 'custom', [field]: nextValue });
+  };
+
+  return (
+    <section className="space-y-3">
+      <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-400">
+        <FileCog size={14} /> Página
+      </h3>
+
+      <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <label className="block space-y-1">
+          <span className="text-[10px] font-bold uppercase text-slate-500">Tamanho</span>
+          <select
+            value={setup.preset}
+            onChange={(event) => updatePageSetup({
+              ...setup,
+              preset: event.target.value as typeof setup.preset,
+            })}
+            className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
+            aria-label="Tamanho da página"
+          >
+            {PAGE_PRESET_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+
+        <div className="space-y-1">
+          <span className="text-[10px] font-bold uppercase text-slate-500">Orientação</span>
+          <div className="grid grid-cols-2 gap-2">
+            {([
+              { value: 'portrait', label: 'Retrato', icon: RectangleVertical },
+              { value: 'landscape', label: 'Paisagem', icon: RectangleHorizontal },
+            ] as const).map(({ value, label, icon: Icon }) => {
+              const selected = setup.orientation === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => updatePageSetup({ ...setup, orientation: value })}
+                  className={`flex h-9 items-center justify-center gap-1.5 rounded-md border text-xs font-semibold transition-colors ${selected ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'}`}
+                  aria-pressed={selected}
+                >
+                  <Icon size={15} /> {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {setup.preset === 'custom' && (
+          <div className="grid grid-cols-2 gap-2">
+            {([
+              { axis: 'width', label: 'Largura', value: dimensions.widthMm },
+              { axis: 'height', label: 'Altura', value: dimensions.heightMm },
+            ] as const).map(({ axis, label, value }) => (
+              <label key={axis} className="space-y-1">
+                <span className="text-[10px] font-bold uppercase text-slate-500">{label}</span>
+                <div className="relative">
+                  <input
+                    key={`${axis}-${value}`}
+                    type="number"
+                    min={50}
+                    max={1000}
+                    step={0.1}
+                    defaultValue={Number(value.toFixed(1))}
+                    onBlur={(event) => updateCustomDimension(axis, Number(event.target.value))}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') event.currentTarget.blur();
+                    }}
+                    className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 pr-8 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
+                    aria-label={`${label} da página em milímetros`}
+                  />
+                  <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-slate-400">mm</span>
+                </div>
+              </label>
+            ))}
+          </div>
+        )}
+
+        <p className="text-[10px] text-slate-500">
+          Canvas: {Number(dimensions.widthMm.toFixed(1))} × {Number(dimensions.heightMm.toFixed(1))} mm
+        </p>
+      </div>
+    </section>
+  );
+};
 
 // --- LAYOUT SECTION ---
 interface LayoutSectionProps {

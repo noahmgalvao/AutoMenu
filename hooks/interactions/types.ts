@@ -2,7 +2,6 @@ import React from 'react';
 import { Product, MenuStyle, SortOption } from '../../types';
 
 export const NUDGE_STEP = 10;
-export const A4_HEIGHT_PX = 1123;
 export const FREE_TEXT_PREFIX = 'ft_zone_';
 export const STANDARD_GAP = 15;
 

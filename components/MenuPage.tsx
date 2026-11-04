@@ -3,7 +3,7 @@ import { Product, MenuStyle } from '../types';
 import { BringToFront, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Minus, MoreHorizontal, Plus, SendToBack, Trash2 } from 'lucide-react';
 import { Resizable } from 're-resizable';
 import { MenuItem, ResponsiveMoveButton } from './MenuItem';
-import { PageLayout, CategoryChunkLayout, PageItem, FREE_TEXT_PREFIX, A4_WIDTH_PX } from '../utils/menuPagination';
+import { PageLayout, CategoryChunkLayout, PageItem, FREE_TEXT_PREFIX } from '../utils/menuPagination';
 import { selectionLayerClasses } from './selectionLayers';
 import { getDirectionLabel, getEdgeControlClass, type FlowDirection } from '../utils/flowControls';
 import { normalizeTextureUrl } from '../constants';
@@ -11,6 +11,7 @@ import { InlineStyleToolbar } from './MenuDesigner/InlineStyleToolbar';
 import { resolveMenuMargins, resolveMinimumFontSize, roundFontSize } from '../utils/styleRules';
 import { getColumnGridTemplate, getPageColumnWidths } from '../utils/categoryColumns';
 import { ColumnResizeHandles } from './ColumnResizeHandles';
+import { resolveMenuPageDimensions } from '../utils/pageSetup';
 
 const CategoryMoveIcon = ({ direction }: { direction: FlowDirection }) => {
     if (direction === 'left') return <ChevronLeft size={18} />;
@@ -63,7 +64,7 @@ const PositionedCategoryChunk: React.FC<
             const pageRect = page.getBoundingClientRect();
             const columnRect = column.getBoundingClientRect();
             const elementRect = element.getBoundingClientRect();
-            const scale = Math.max(0.001, pageRect.width / A4_WIDTH_PX);
+            const scale = Math.max(0.001, pageRect.width / Math.max(1, page.offsetWidth));
             const requestedTop = pageRect.top + (Number(desiredPageY) * scale);
 
             if (detachedFromFlow) {
@@ -201,6 +202,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
     const isFormattingPageNumber = handlers.formattingTarget?.type === 'pageNumber'
         && handlers.formattingTarget?.elementId === pageNumberElementId;
     const margins = resolveMenuMargins(style);
+    const pageDimensions = resolveMenuPageDimensions(style);
     const categoryColumnWidths = getPageColumnWidths(
         style,
         renderedColumnCount,
@@ -215,8 +217,8 @@ export const MenuPage: React.FC<MenuPageProps> = ({
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         backgroundBlendMode: 'normal',
-        width: '794px',
-        height: '1123px',
+        width: `${pageDimensions.widthPx}px`,
+        height: `${pageDimensions.heightPx}px`,
         position: 'relative',
         overflow: 'hidden',
         flexShrink: 0,
@@ -431,7 +433,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
 
         if (handlers.draftItem && handlers.draftItem.pageIndex === pageIndex) {
             const columnGap = columnCount > 1 ? margins.columnGap : 0;
-            const contentWidth = A4_WIDTH_PX - margins.left - margins.right;
+            const contentWidth = Math.max(1, pageDimensions.widthPx - margins.left - margins.right);
             const usableColumnsWidth = contentWidth - (columnGap * (columnCount - 1));
             const draftColumnIndex = Math.max(0, Math.min(columnCount - 1, handlers.draftItem.columnIndex || 0));
             const columnWidth = usableColumnsWidth * categoryColumnWidths[draftColumnIndex];
@@ -487,6 +489,10 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 data-drag-scope={handlers.dragScope}
                 data-drag-page-container="category"
                 data-drag-page-index={pageIndex}
+                data-menu-page-width-px={pageDimensions.widthPx}
+                data-menu-page-height-px={pageDimensions.heightPx}
+                data-menu-page-width-mm={pageDimensions.widthMm}
+                data-menu-page-height-mm={pageDimensions.heightMm}
                 style={pageStyle}
                 onDragOver={(e) => handlers.handleDragOverItem?.(e)}
                 className={`shadow-2xl ${isImportedMenu ? '' : 'bg-white'} print:shadow-none print:mb-0 print:break-after-page group/page transition-all md:cursor-default ${isPageSelected ? 'ring-4 ring-blue-500' : ''}`}
@@ -721,7 +727,10 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                     className="absolute shadow-lg rounded-full flex gap-1 p-1 bg-white pointer-events-auto"
                     style={{
                         top: `${Math.max(-56, img.y - 56)}px`,
-                        left: `${Math.max(104, Math.min(A4_WIDTH_PX - 104, img.x + (img.width / 2)))}px`,
+                        left: `${Math.max(
+                            Math.min(104, pageDimensions.widthPx / 2),
+                            Math.min(Math.max(pageDimensions.widthPx / 2, pageDimensions.widthPx - 104), img.x + (img.width / 2)),
+                        )}px`,
                         transform: 'translateX(-50%)',
                         zIndex: 100000,
                     }}

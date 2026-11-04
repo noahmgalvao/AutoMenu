@@ -4,7 +4,9 @@ import { jsPDF } from 'jspdf';
 export type PdfPrintOptions = {
   pageMode: 'all' | 'current' | 'range';
   pageRange: string;
-  paperSize: 'A4' | 'Letter' | 'Legal';
+  paperSize: 'A4' | 'Letter' | 'Legal' | 'custom';
+  customPaperWidthMm: number;
+  customPaperHeightMm: number;
   orientation: 'portrait' | 'landscape';
   marginPreset: '0' | '3' | '5' | '10' | 'custom';
   customMarginMm: number;
@@ -38,6 +40,13 @@ export type PdfExportResult = {
   blob: Blob;
 };
 
+export type PdfPageSizePx = {
+  width: number;
+  height: number;
+  widthMm?: number;
+  heightMm?: number;
+};
+
 type PdfDebugReporter = (entry: PdfDebugEntry) => void;
 
 type ExportMenuPagesParams = {
@@ -52,14 +61,63 @@ type ExportMenuPagesParams = {
 const A4_PAGE_MM = { width: 210, height: 297 };
 const PAGE_WIDTH_PX = 794;
 const PAGE_HEIGHT_PX = 1123;
+const CSS_PIXELS_PER_INCH = 96;
+const MIN_CUSTOM_PAPER_MM = 50;
+const MAX_CUSTOM_PAPER_MM = 1000;
 const EXPORT_CAPTURE_SCALE = 1.5;
 const PREVIEW_CAPTURE_SCALE = 0.28;
 const TRANSPARENT_PIXEL_DATA_URL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+const previewPageSizes = new Map<string, PdfPageSizePx>();
 
-export const PAPER_SIZES_MM: Record<PdfPrintOptions['paperSize'], { width: number; height: number }> = {
+export const PAPER_SIZES_MM: Record<Exclude<PdfPrintOptions['paperSize'], 'custom'>, { width: number; height: number }> = {
   A4: A4_PAGE_MM,
   Letter: { width: 215.9, height: 279.4 },
   Legal: { width: 215.9, height: 355.6 },
+};
+
+const normalizePageDimension = (value: number) => (
+  Number.isFinite(value) && value > 0 ? Math.round(value) : 0
+);
+
+const normalizePhysicalDimension = (value: number) => (
+  Number.isFinite(value) && value > 0 ? value : undefined
+);
+
+export const getPageElementSizePx = (element: HTMLElement): PdfPageSizePx => {
+  const computedStyle = window.getComputedStyle(element);
+  const rect = element.getBoundingClientRect();
+  const width = [
+    Number(element.dataset.menuPageWidthPx),
+    element.offsetWidth,
+    element.clientWidth,
+    Number.parseFloat(computedStyle.width),
+    Number.parseFloat(element.style.width),
+    rect.width,
+  ].map(normalizePageDimension).find(Boolean) || PAGE_WIDTH_PX;
+  const height = [
+    Number(element.dataset.menuPageHeightPx),
+    element.offsetHeight,
+    element.clientHeight,
+    Number.parseFloat(computedStyle.height),
+    Number.parseFloat(element.style.height),
+    rect.height,
+  ].map(normalizePageDimension).find(Boolean) || PAGE_HEIGHT_PX;
+
+  const widthMm = normalizePhysicalDimension(Number(element.dataset.menuPageWidthMm));
+  const heightMm = normalizePhysicalDimension(Number(element.dataset.menuPageHeightMm));
+
+  return { width, height, widthMm, heightMm };
+};
+
+export const getCapturedMenuPageSize = (dataUrl: string): PdfPageSizePx | null => (
+  previewPageSizes.get(dataUrl) || null
+);
+
+const rememberPreviewPageSize = (dataUrl: string, size: PdfPageSizePx) => {
+  previewPageSizes.set(dataUrl, size);
+  if (previewPageSizes.size <= 100) return;
+  const oldestKey = previewPageSizes.keys().next().value;
+  if (oldestKey) previewPageSizes.delete(oldestKey);
 };
 
 export class PdfExportError extends Error {
@@ -227,6 +285,7 @@ const stripEditorState = (page: HTMLElement) => {
 
 const preparePageClone = async (
   source: HTMLElement,
+  pageSize: PdfPageSizePx,
   printBackgrounds: boolean,
   assetCache: Map<string, string>,
   onDebug?: PdfDebugReporter
@@ -237,8 +296,8 @@ const preparePageClone = async (
     position: 'fixed',
     left: '-12000px',
     top: '0',
-    width: `${PAGE_WIDTH_PX}px`,
-    height: `${PAGE_HEIGHT_PX}px`,
+    width: `${pageSize.width}px`,
+    height: `${pageSize.height}px`,
     overflow: 'hidden',
     pointerEvents: 'none',
     background: '#ffffff',
@@ -247,8 +306,8 @@ const preparePageClone = async (
 
   const clone = source.cloneNode(true) as HTMLElement;
   Object.assign(clone.style, {
-    width: `${PAGE_WIDTH_PX}px`,
-    height: `${PAGE_HEIGHT_PX}px`,
+    width: `${pageSize.width}px`,
+    height: `${pageSize.height}px`,
     margin: '0',
     transform: 'none',
     boxShadow: 'none',
@@ -359,15 +418,16 @@ const capturePageAsJpeg = async (
   assetCache: Map<string, string>,
   onDebug?: PdfDebugReporter
 ) => {
+  const pageSize = getPageElementSizePx(source);
   emitDebug(onDebug, 'info', 'capture', 'PDF_CAPTURE_START', `Capturando página ${pageNumber}.`, {
     scale: captureScale,
-    width: PAGE_WIDTH_PX,
-    height: PAGE_HEIGHT_PX,
+    width: pageSize.width,
+    height: pageSize.height,
   });
 
   let sandbox: HTMLDivElement | null = null;
   try {
-    const preparedPage = await preparePageClone(source, options.printBackgrounds, assetCache, onDebug);
+    const preparedPage = await preparePageClone(source, pageSize, options.printBackgrounds, assetCache, onDebug);
     sandbox = preparedPage.sandbox;
     const { clone } = preparedPage;
     const canvas = await html2canvas(clone, {
@@ -378,10 +438,10 @@ const capturePageAsJpeg = async (
       logging: false,
       removeContainer: true,
       imageTimeout: 15000,
-      width: PAGE_WIDTH_PX,
-      height: PAGE_HEIGHT_PX,
-      windowWidth: PAGE_WIDTH_PX,
-      windowHeight: PAGE_HEIGHT_PX,
+      width: pageSize.width,
+      height: pageSize.height,
+      windowWidth: pageSize.width,
+      windowHeight: pageSize.height,
       scrollX: 0,
       scrollY: 0,
     });
@@ -405,7 +465,7 @@ const capturePageAsJpeg = async (
       height,
       approximateKb: Math.round(dataUrl.length * 0.75 / 1024),
     });
-    return dataUrl;
+    return { dataUrl, pageSize };
   } catch (error) {
     throw mapCaptureError(error, pageNumber);
   } finally {
@@ -418,6 +478,23 @@ export const getPrintMarginMm = (options: PdfPrintOptions) => (
 );
 
 export const getPaperDimensionsMm = (options: PdfPrintOptions) => {
+  if (options.paperSize === 'custom') {
+    const normalizeCustomDimension = (value: number, defaultValue: number) => (
+      Number.isFinite(value)
+        ? Math.max(MIN_CUSTOM_PAPER_MM, Math.min(MAX_CUSTOM_PAPER_MM, value))
+        : defaultValue
+    );
+    const firstDimension = normalizeCustomDimension(options.customPaperWidthMm, A4_PAGE_MM.width);
+    const secondDimension = normalizeCustomDimension(options.customPaperHeightMm, A4_PAGE_MM.height);
+    const source = {
+      width: Math.min(firstDimension, secondDimension),
+      height: Math.max(firstDimension, secondDimension),
+    };
+    return options.orientation === 'landscape'
+      ? { width: source.height, height: source.width }
+      : source;
+  }
+
   const source = PAPER_SIZES_MM[options.paperSize];
   return options.orientation === 'landscape'
     ? { width: source.height, height: source.width }
@@ -427,16 +504,23 @@ export const getPaperDimensionsMm = (options: PdfPrintOptions) => {
 export const getPrintFrameSizeMm = (
   options: PdfPrintOptions,
   paper: { width: number; height: number },
-  marginMm: number
+  marginMm: number,
+  sourceSize?: PdfPageSizePx
 ) => {
   const availableWidth = Math.max(1, paper.width - (marginMm * 2));
   const availableHeight = Math.max(1, paper.height - (marginMm * 2));
-  const ratio = A4_PAGE_MM.width / A4_PAGE_MM.height;
+  const sourceFrameMm = sourceSize
+    ? {
+        width: sourceSize.widthMm || sourceSize.width * 25.4 / CSS_PIXELS_PER_INCH,
+        height: sourceSize.heightMm || sourceSize.height * 25.4 / CSS_PIXELS_PER_INCH,
+      }
+    : A4_PAGE_MM;
+  const ratio = sourceFrameMm.width / sourceFrameMm.height;
 
-  if (options.scaleMode === 'actual') return { ...A4_PAGE_MM };
+  if (options.scaleMode === 'actual') return { ...sourceFrameMm };
   if (options.scaleMode === 'custom') {
     const scale = Math.max(25, Math.min(200, options.customScale)) / 100;
-    return { width: A4_PAGE_MM.width * scale, height: A4_PAGE_MM.height * scale };
+    return { width: sourceFrameMm.width * scale, height: sourceFrameMm.height * scale };
   }
 
   const widthByHeight = availableHeight * ratio;
@@ -544,7 +628,7 @@ export const captureMenuPagePreview = async (
   printBackgrounds: boolean,
   assetCache: Map<string, string> = new Map()
 ) => {
-  return capturePageAsJpeg(
+  const capture = await capturePageAsJpeg(
     pageElement,
     pageNumber,
     { printBackgrounds, grayscale: false },
@@ -552,6 +636,8 @@ export const captureMenuPagePreview = async (
     0.72,
     assetCache
   );
+  rememberPreviewPageSize(capture.dataUrl, capture.pageSize);
+  return capture.dataUrl;
 };
 
 export const exportMenuPagesToPdf = async ({
@@ -589,14 +675,7 @@ export const exportMenuPagesToPdf = async ({
 
   const paper = getPaperDimensionsMm(options);
   const marginMm = getPrintMarginMm(options);
-  const frame = getPrintFrameSizeMm(options, paper, marginMm);
   const bleedMm = Math.max(0, Math.min(10, options.bleedMm || 0));
-  const renderWidth = frame.width + (bleedMm * 2);
-  const renderHeight = frame.height + (bleedMm * 2);
-  const renderX = (paper.width - renderWidth) / 2;
-  const renderY = (paper.height - renderHeight) / 2;
-  const trimX = renderX + bleedMm;
-  const trimY = renderY + bleedMm;
   const assetCache = new Map<string, string>();
 
   const pdf = new jsPDF({
@@ -616,7 +695,7 @@ export const exportMenuPagesToPdf = async ({
     const { element, index } = pagesToPrint[outputIndex];
     if (outputIndex > 0) pdf.addPage([paper.width, paper.height], options.orientation);
 
-    const imageData = await capturePageAsJpeg(
+    const capture = await capturePageAsJpeg(
       element,
       index + 1,
       options,
@@ -625,6 +704,13 @@ export const exportMenuPagesToPdf = async ({
       assetCache,
       onDebug
     );
+    const frame = getPrintFrameSizeMm(options, paper, marginMm, capture.pageSize);
+    const renderWidth = frame.width + (bleedMm * 2);
+    const renderHeight = frame.height + (bleedMm * 2);
+    const renderX = (paper.width - renderWidth) / 2;
+    const renderY = (paper.height - renderHeight) / 2;
+    const trimX = renderX + bleedMm;
+    const trimY = renderY + bleedMm;
 
     emitDebug(onDebug, 'info', 'compose', 'PDF_COMPOSE_PAGE', `Montando página ${outputIndex + 1} no PDF.`, {
       sourcePage: index + 1,
@@ -639,7 +725,7 @@ export const exportMenuPagesToPdf = async ({
     }
 
     pdf.addImage(
-      imageData,
+      capture.dataUrl,
       'JPEG',
       renderX,
       renderY,

@@ -17,6 +17,7 @@ import type {
   Profile,
   Workspace,
 } from '../types';
+import { getErrorMessage } from '../utils/errors';
 import {
   resolveFontSizeLimits,
   resolveMenuContentSpacing,
@@ -190,7 +191,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       await onSave(getValues(), 'account');
       setMessage('Alterações salvas automaticamente.');
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Falha ao salvar configurações.');
+      setError(getErrorMessage(saveError, 'Falha ao salvar configurações.'));
     }
   }, [fullName, getValues, onSave, workspaceName]);
 
@@ -216,7 +217,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       await onSave(getValues(), 'rules');
       setMessage('Alterações salvas automaticamente.');
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Falha ao salvar configurações.');
+      setError(getErrorMessage(saveError, 'Falha ao salvar configurações.'));
     }
   }, [
     allowSameWordBreak,
@@ -326,7 +327,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setShowPasswordVerification(true);
       setMessage('Código de verificação enviado para o seu e-mail.');
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao enviar o e-mail.');
+      setError(getErrorMessage(requestError, 'Falha ao enviar o e-mail.'));
     } finally {
       setSendingPasswordEmail(false);
     }
@@ -357,7 +358,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setPasswordConfirmation('');
       setMessage('Senha alterada com segurança.');
     } catch (passwordError) {
-      setError(passwordError instanceof Error ? passwordError.message : 'Falha ao alterar a senha.');
+      setError(getErrorMessage(passwordError, 'Falha ao alterar a senha.'));
     } finally {
       setUpdatingPassword(false);
     }

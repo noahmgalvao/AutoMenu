@@ -28,6 +28,7 @@ import {
 import { roundPrice } from '../utils/price';
 import { roundFontSize } from '../utils/styleRules';
 import { optimizeImageForUpload, preloadImage } from '../utils/imageUpload';
+import { resolveMenuPageDimensions } from '../utils/pageSetup';
 
 interface UseProductDesignerLogicProps {
     products: Product[];
@@ -513,8 +514,7 @@ export const useProductDesignerLogic = ({
             const sortedImages = sortSpatialElements(res.extractedImages);
             const sortedFreeTextElements = sortSpatialElements(freeTextElements);
 
-            const A4_WIDTH = 794;
-            const A4_HEIGHT = 1123;
+            const pageDimensions = resolveMenuPageDimensions(style);
             const processedImages = (await Promise.all(sortedImages.map(async (image) => {
                 const boundingBox = image.boundingBox;
                 if (!boundingBox) return null;
@@ -542,9 +542,9 @@ export const useProductDesignerLogic = ({
                         id: image.id,
                         url: uploadedCrop.url,
                         assetId: uploadedCrop.asset.id,
-                        x: (boundingBox.x / imageDimensions.width) * A4_WIDTH,
-                        y: (boundingBox.y / imageDimensions.height) * A4_HEIGHT,
-                        width: (boundingBox.width / imageDimensions.width) * A4_WIDTH,
+                        x: (boundingBox.x / imageDimensions.width) * pageDimensions.widthPx,
+                        y: (boundingBox.y / imageDimensions.height) * pageDimensions.heightPx,
+                        width: (boundingBox.width / imageDimensions.width) * pageDimensions.widthPx,
                         pageIndex: 0,
                         zIndex: 1,
                         boundingBox,

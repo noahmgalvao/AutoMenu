@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, Clock3, Eye, Loader2, RotateCcw, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { ArrowLeft, Eye, History, Loader2, RotateCcw, X, ZoomIn, ZoomOut } from 'lucide-react';
 import type { MenuVersion, MenuStyle, Product, SortOption } from '../types';
 import { listMenuRevisions, loadMenuRevisionState } from '../services/workspaceService';
 import { getErrorMessage } from '../utils/errors';
@@ -203,7 +203,7 @@ export const RevisionHistoryModal: React.FC<RevisionHistoryModalProps> = ({
   return (
     <div className="fixed inset-0 z-[1250] bg-slate-950/50 backdrop-blur-sm p-2 md:p-6 flex items-center justify-center">
       <div className="w-full h-full max-w-5xl max-h-[96vh] md:max-h-[90vh] bg-white rounded-2xl md:rounded-3xl shadow-2xl overflow-hidden flex flex-col">
-        <div className="px-4 py-3.5 border-b flex items-center justify-between"><div><h2 className="font-bold flex items-center gap-2"><Clock3 size={18} className="text-indigo-600" /> Histórico de revisões</h2><p className="text-xs text-slate-500 mt-0.5">{revisions.length} {revisions.length === 1 ? 'estado salvo' : 'estados salvos'}</p></div><button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400"><X size={18} /></button></div>
+        <div className="px-4 py-3.5 border-b flex items-center justify-between"><div><h2 className="font-bold flex items-center gap-2"><History size={18} className="text-indigo-600" /> Histórico de revisões</h2><p className="text-xs text-slate-500 mt-0.5">{revisions.length} {revisions.length === 1 ? 'estado salvo' : 'estados salvos'}</p></div><button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400"><X size={18} /></button></div>
         <div className="min-h-0 flex-1 grid md:grid-cols-[310px_minmax(0,1fr)]">
           <aside className="overflow-y-auto md:border-r custom-scrollbar bg-slate-50">
             {revisionGroups.map((group) => (

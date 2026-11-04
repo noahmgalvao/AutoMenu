@@ -21,6 +21,7 @@ import { clampFontSize, resolveFontSizeLimits, roundFontSize } from '../utils/st
 import { FREE_TEXT_PREFIX } from '../utils/menuPagination';
 import { normalizeColumnWidths } from '../utils/categoryColumns';
 import { roundPrice } from '../utils/price';
+import { resolveMenuPageDimensions } from '../utils/pageSetup';
 
 export interface ProcessMenuImportOptions {
   files: File[];
@@ -129,6 +130,31 @@ interface AnalyzedPage {
   };
 }
 
+interface ImportPageDimensions {
+  widthPx: number;
+  heightPx: number;
+  horizontalScale: number;
+  verticalScale: number;
+  uniformScale: number;
+}
+
+const ANALYSIS_REFERENCE_PAGE_DIMENSIONS = resolveMenuPageDimensions();
+
+const getImportPageDimensions = (style: MenuStyle): ImportPageDimensions => {
+  const { widthPx, heightPx } = resolveMenuPageDimensions(style);
+  return {
+    widthPx,
+    heightPx,
+    horizontalScale: widthPx / ANALYSIS_REFERENCE_PAGE_DIMENSIONS.widthPx,
+    verticalScale: heightPx / ANALYSIS_REFERENCE_PAGE_DIMENSIONS.heightPx,
+    uniformScale: Math.min(widthPx, heightPx)
+      / Math.min(
+        ANALYSIS_REFERENCE_PAGE_DIMENSIONS.widthPx,
+        ANALYSIS_REFERENCE_PAGE_DIMENSIONS.heightPx,
+      ),
+  };
+};
+
 const isBoundingBox = (value: any): value is BoundingBox => (
   value
   && [value.x, value.y, value.width, value.height].every((coordinate) => (
@@ -156,7 +182,10 @@ const getDecorationExclusions = (
   && getBoundingBoxIntersectionRatio(target, candidate) < 0.72
 ));
 
-const getAnalyzedPageColumnGeometry = (page: AnalyzedPage) => {
+const getAnalyzedPageColumnGeometry = (
+  page: AnalyzedPage,
+  pageDimensions: ImportPageDimensions,
+) => {
   const layout = page.result.styleSuggestion?.layout || {};
   const columnCount = [1, 2, 3].includes(Number(layout.categoryColumnCount))
     ? Number(layout.categoryColumnCount)
@@ -208,11 +237,15 @@ const getAnalyzedPageColumnGeometry = (page: AnalyzedPage) => {
   } else {
     const left = Math.max(
       0,
-      (Number(layout.marginLeft) || 0) / 794 * page.imageDimensions.width,
+      ((Number(layout.marginLeft) || 0) * pageDimensions.horizontalScale)
+        / pageDimensions.widthPx * page.imageDimensions.width,
     );
     const right = Math.min(
       page.imageDimensions.width,
-      page.imageDimensions.width - ((Number(layout.marginRight) || 0) / 794 * page.imageDimensions.width),
+      page.imageDimensions.width - (
+        ((Number(layout.marginRight) || 0) * pageDimensions.horizontalScale)
+          / pageDimensions.widthPx * page.imageDimensions.width
+      ),
     );
     const boundaries = [
       left,
@@ -241,11 +274,12 @@ const estimateFontSizeFromBoundingBox = (
   page: AnalyzedPage,
   box: BoundingBox | undefined,
   text: string,
+  pageDimensions: ImportPageDimensions,
   lineHeight = 1.2,
 ) => {
   if (!box) return null;
-  const height = (box.height / page.imageDimensions.height) * 1123;
-  const width = (box.width / page.imageDimensions.width) * 794;
+  const height = (box.height / page.imageDimensions.height) * pageDimensions.heightPx;
+  const width = (box.width / page.imageDimensions.width) * pageDimensions.widthPx;
   if (height <= 0 || width <= 0) return null;
 
   const explicitLineCount = Math.max(1, String(text || '').split(/\r?\n/).length);
@@ -284,10 +318,11 @@ const estimateFontSizeFromKnownLines = (
   page: AnalyzedPage,
   box: BoundingBox | undefined,
   lineCount: number,
+  pageDimensions: ImportPageDimensions,
   lineHeight = 1.18,
 ) => {
   if (!box) return null;
-  const height = (box.height / page.imageDimensions.height) * 1123;
+  const height = (box.height / page.imageDimensions.height) * pageDimensions.heightPx;
   const lines = Math.max(1, Math.round(Number(lineCount) || 1));
   const size = height / (0.82 + ((lines - 1) * lineHeight));
   return Number.isFinite(size) && size > 0 ? size : null;
@@ -296,11 +331,13 @@ const estimateFontSizeFromKnownLines = (
 const estimateProductPriceFontSize = (
   page: AnalyzedPage,
   product: AnalysisResult['categories'][number]['products'][number],
+  pageDimensions: ImportPageDimensions,
 ) => {
   const directEstimate = estimateFontSizeFromKnownLines(
     page,
     product.priceBoundingBox,
     product.priceLineCount || 1,
+    pageDimensions,
     1.18,
   );
   if (!directEstimate || !product.priceBoundingBox) return directEstimate;
@@ -309,6 +346,7 @@ const estimateProductPriceFontSize = (
     page,
     product.nameBoundingBox,
     product.name,
+    pageDimensions,
     1.18,
   );
   if (!nameEstimate) return directEstimate;
@@ -325,7 +363,8 @@ const estimateProductPriceFontSize = (
     return directEstimate;
   }
 
-  const scaledHeight = (product.priceBoundingBox.height / page.imageDimensions.height) * 1123;
+  const scaledHeight = (product.priceBoundingBox.height / page.imageDimensions.height)
+    * pageDimensions.heightPx;
   const reportedLines = Math.max(1, Math.min(6, Math.round(Number(product.priceLineCount) || 1)));
   let bestSize = directEstimate;
   let bestScore = Number.POSITIVE_INFINITY;
@@ -348,11 +387,12 @@ const getScaledVerticalGap = (
   page: AnalyzedPage,
   upperBox: BoundingBox | undefined,
   lowerBox: BoundingBox | undefined,
+  pageDimensions: ImportPageDimensions,
 ) => {
   if (!upperBox || !lowerBox) return null;
   const sourceGap = lowerBox.y - (upperBox.y + upperBox.height);
   if (!Number.isFinite(sourceGap) || sourceGap < 0) return null;
-  return (sourceGap / page.imageDimensions.height) * 1123;
+  return (sourceGap / page.imageDimensions.height) * pageDimensions.heightPx;
 };
 
 const getCategoryHeaderBox = (category: AnalysisResult['categories'][number]) => (
@@ -376,6 +416,7 @@ const getLargeGapCategoryPositions = (
   page: AnalyzedPage,
   geometry: ReturnType<typeof getAnalyzedPageColumnGeometry>,
   categoryNameByKey: Map<string, string>,
+  pageDimensions: ImportPageDimensions,
 ) => {
   const positions: NonNullable<MenuStyle['categoryPositions']> = {};
   const categoriesByColumn = Array.from({ length: geometry.columnCount }, () => [] as AnalysisResult['categories']);
@@ -395,7 +436,8 @@ const getLargeGapCategoryPositions = (
       const box = getCategoryHeaderBox(category);
       const previousBottom = getCategoryBlockBottom(ordered[index]);
       if (!box) return null;
-      const gap = ((box.y - previousBottom) / page.imageDimensions.height) * 1123;
+      const gap = ((box.y - previousBottom) / page.imageDimensions.height)
+        * pageDimensions.heightPx;
       return Number.isFinite(gap) && gap >= 0 ? gap : null;
     });
 
@@ -403,19 +445,27 @@ const getLargeGapCategoryPositions = (
       const box = getCategoryHeaderBox(category);
       if (!box) return;
       const previousBottom = getCategoryBlockBottom(ordered[index]);
-      const gap = ((box.y - previousBottom) / page.imageDimensions.height) * 1123;
+      const gap = ((box.y - previousBottom) / page.imageDimensions.height)
+        * pageDimensions.heightPx;
       const peerGaps = gaps
         .filter((peerGap, gapIndex): peerGap is number => gapIndex !== index && peerGap !== null)
         .sort((left, right) => left - right);
       const baselineSample = peerGaps.slice(0, Math.max(1, Math.ceil(peerGaps.length / 2)));
-      const typicalGap = baselineSample.length > 0 ? (getMedian(baselineSample) || 16) : 16;
-      const largeGapThreshold = Math.max(72, typicalGap + 48, typicalGap * 1.8);
+      const defaultGap = 16 * pageDimensions.verticalScale;
+      const typicalGap = baselineSample.length > 0 ? (getMedian(baselineSample) || defaultGap) : defaultGap;
+      const largeGapThreshold = Math.max(
+        72 * pageDimensions.verticalScale,
+        typicalGap + (48 * pageDimensions.verticalScale),
+        typicalGap * 1.8,
+      );
       if (!Number.isFinite(gap) || gap < largeGapThreshold) return;
       const categoryName = categoryNameByKey.get(normalizeEntityName(category.name)) || category.name;
       positions[categoryName] = {
         pageIndex: page.pageIndex,
         columnIndex,
-        y: Math.max(0, Math.round((box.y / page.imageDimensions.height) * 1123)),
+        y: Math.max(0, Math.round(
+          (box.y / page.imageDimensions.height) * pageDimensions.heightPx,
+        )),
       };
     });
   });
@@ -426,6 +476,7 @@ const getLargeGapCategoryPositions = (
 const buildFreeTextProduct = (
   freeText: any,
   pageIndex: number,
+  pageDimensions: ImportPageDimensions,
 ): Product => {
   const id = crypto.randomUUID();
   return {
@@ -437,10 +488,13 @@ const buildFreeTextProduct = (
     categoryId: null,
     image: '',
     isFreeText: true,
-    customMarginTop: 10,
+    customMarginTop: 10 * pageDimensions.verticalScale,
     boundingBox: isBoundingBox(freeText.boundingBox) ? freeText.boundingBox : undefined,
     styles: {
-      fontSize: roundFontSize(freeText.fontSize, 18),
+      fontSize: roundFontSize(
+        Number(freeText.fontSize) * pageDimensions.uniformScale,
+        18 * pageDimensions.uniformScale,
+      ),
       color: freeText.color,
       textAlign: freeText.alignment || 'left',
       fontFamily: freeText.fontFamily,
@@ -516,16 +570,29 @@ const getCategoryImageTarget = (
   return nearest?.name || null;
 };
 
-const getCategoryImageSize = (page: AnalyzedPage, image: ProcessedImage) => {
+const getCategoryImageSize = (
+  page: AnalyzedPage,
+  image: ProcessedImage,
+  pageDimensions: ImportPageDimensions,
+) => {
   const box = image.extractedImage.boundingBox;
-  if (!box) return { width: 36, height: 36 };
-  const rawWidth = (box.width / page.imageDimensions.width) * 794;
-  const rawHeight = (box.height / page.imageDimensions.height) * 1123;
+  if (!box) {
+    const fallbackSize = Math.round(36 * pageDimensions.uniformScale);
+    return { width: fallbackSize, height: fallbackSize };
+  }
+  const rawWidth = (box.width / page.imageDimensions.width) * pageDimensions.widthPx;
+  const rawHeight = (box.height / page.imageDimensions.height) * pageDimensions.heightPx;
   const largestEdge = Math.max(1, rawWidth, rawHeight);
-  const scale = Math.min(72 / largestEdge, Math.max(1, 18 / largestEdge));
+  const maximumEdge = 72 * pageDimensions.uniformScale;
+  const minimumEdge = 18 * pageDimensions.uniformScale;
+  const minimumRenderedEdge = 12 * pageDimensions.uniformScale;
+  const scale = Math.min(
+    maximumEdge / largestEdge,
+    Math.max(1, minimumEdge / largestEdge),
+  );
   return {
-    width: Math.max(12, Math.round(rawWidth * scale)),
-    height: Math.max(12, Math.round(rawHeight * scale)),
+    width: Math.max(minimumRenderedEdge, Math.round(rawWidth * scale)),
+    height: Math.max(minimumRenderedEdge, Math.round(rawHeight * scale)),
   };
 };
 
@@ -693,8 +760,7 @@ export const processMenuImport = async ({
 
   const importsProducts = importMode !== 'visual';
   const importsVisual = importMode !== 'products';
-  const A4_WIDTH = 794;
-  const A4_HEIGHT = 1123;
+  const pageDimensions = getImportPageDimensions(currentStyle);
   const analyzedPages: AnalyzedPage[] = [];
 
   for (let pageIndex = 0; pageIndex < files.length; pageIndex += 1) {
@@ -803,9 +869,9 @@ export const processMenuImport = async ({
               id: image.id,
               url: uploadedCrop.url,
               assetId: uploadedCrop.asset.id,
-              x: (boundingBox.x / imageDimensions.width) * A4_WIDTH,
-              y: (boundingBox.y / imageDimensions.height) * A4_HEIGHT,
-              width: (boundingBox.width / imageDimensions.width) * A4_WIDTH,
+              x: (boundingBox.x / imageDimensions.width) * pageDimensions.widthPx,
+              y: (boundingBox.y / imageDimensions.height) * pageDimensions.heightPx,
+              width: (boundingBox.width / imageDimensions.width) * pageDimensions.widthPx,
               pageIndex,
               zIndex: 1,
               boundingBox,
@@ -867,7 +933,11 @@ export const processMenuImport = async ({
   ));
   const freeTextProducts = importMode === 'complete'
     ? analyzedPages.flatMap((page) => (
-      page.freeTextElements.map((freeText) => buildFreeTextProduct(freeText, page.pageIndex))
+      page.freeTextElements.map((freeText) => buildFreeTextProduct(
+        freeText,
+        page.pageIndex,
+        pageDimensions,
+      ))
     ))
     : [];
   const mergedImport = mergeImportedProducts(
@@ -894,7 +964,7 @@ export const processMenuImport = async ({
       categoryImages[categoryName] = {
         url: processedImage.addedImage.url,
         assetId: processedImage.addedImage.assetId,
-        ...getCategoryImageSize(page, processedImage),
+        ...getCategoryImageSize(page, processedImage, pageDimensions),
       };
       importedCategoryImageNames.add(categoryName);
       categoryLinkedImageIds.add(processedImage.addedImage.id);
@@ -914,7 +984,9 @@ export const processMenuImport = async ({
     ...mergedImport.customCategoryOrder,
     ...freeTextProducts.map((product) => product.category),
   ]));
-  const pageColumnGeometry = analyzedPages.map(getAnalyzedPageColumnGeometry);
+  const pageColumnGeometry = analyzedPages.map((page) => (
+    getAnalyzedPageColumnGeometry(page, pageDimensions)
+  ));
   const categoryPlacements = importsProducts
     ? analyzedPages.reduce<Record<string, { pageIndex: number; columnIndex: number }>>((placements, page) => {
       const geometry = pageColumnGeometry[page.pageIndex];
@@ -948,7 +1020,12 @@ export const processMenuImport = async ({
       const geometry = pageColumnGeometry[page.pageIndex];
       Object.assign(
         positions,
-        getLargeGapCategoryPositions(page, geometry, mergedImport.categoryNameByKey),
+        getLargeGapCategoryPositions(
+          page,
+          geometry,
+          mergedImport.categoryNameByKey,
+          pageDimensions,
+        ),
       );
       return positions;
     }, {})
@@ -996,13 +1073,34 @@ export const processMenuImport = async ({
       const parsed = Number(value);
       return Number.isFinite(parsed) ? parsed : fallback;
     };
+    const scaledVerticalMetric = (value: unknown, fallback: number) => (
+      importedMetric(value, fallback) * pageDimensions.verticalScale
+    );
+    const scaledHorizontalMetric = (value: unknown, fallback: number) => (
+      importedMetric(value, fallback) * pageDimensions.horizontalScale
+    );
     const fallbackPadding = importedMetric(layout.contentPadding, 48);
     const margins = {
-      top: Math.min(300, Math.max(0, importedMetric(layout.marginTop, fallbackPadding))),
-      bottom: Math.min(300, Math.max(0, importedMetric(layout.marginBottom, fallbackPadding))),
-      left: Math.min(300, Math.max(0, importedMetric(layout.marginLeft, fallbackPadding))),
-      right: Math.min(300, Math.max(0, importedMetric(layout.marginRight, fallbackPadding))),
-      columnGap: Math.min(300, Math.max(0, importedMetric(layout.columnGap, 32))),
+      top: Math.min(
+        300 * pageDimensions.verticalScale,
+        Math.max(0, scaledVerticalMetric(layout.marginTop, fallbackPadding)),
+      ),
+      bottom: Math.min(
+        300 * pageDimensions.verticalScale,
+        Math.max(0, scaledVerticalMetric(layout.marginBottom, fallbackPadding)),
+      ),
+      left: Math.min(
+        300 * pageDimensions.horizontalScale,
+        Math.max(0, scaledHorizontalMetric(layout.marginLeft, fallbackPadding)),
+      ),
+      right: Math.min(
+        300 * pageDimensions.horizontalScale,
+        Math.max(0, scaledHorizontalMetric(layout.marginRight, fallbackPadding)),
+      ),
+      columnGap: Math.min(
+        300 * pageDimensions.horizontalScale,
+        Math.max(0, scaledHorizontalMetric(layout.columnGap, 32)),
+      ),
     };
     const titleBox = isBoundingBox(typography.mainTitle?.boundingBox)
       ? typography.mainTitle.boundingBox as BoundingBox
@@ -1014,18 +1112,39 @@ export const processMenuImport = async ({
       .map(getCategoryHeaderBox)
       .filter(isBoundingBox)
       .sort((left, right) => left.y - right.y)[0];
-    const measuredTitleToSubtitle = getScaledVerticalGap(firstPage, titleBox, subtitleBox);
+    const measuredTitleToSubtitle = getScaledVerticalGap(
+      firstPage,
+      titleBox,
+      subtitleBox,
+      pageDimensions,
+    );
     const measuredHeaderToContent = getScaledVerticalGap(
       firstPage,
       subtitleBox || titleBox,
       firstCategoryBox,
+      pageDimensions,
     );
     const contentSpacing = {
-      headerToContent: Math.min(200, Math.max(0, measuredHeaderToContent ?? importedMetric(spacing.headerToContent, 20))),
-      categoryToProduct: Math.min(200, Math.max(0, importedMetric(spacing.categoryToFirstProduct, 16))),
-      productNameToDescription: Math.min(200, Math.max(0, importedMetric(spacing.productNameToDescription, 4))),
-      betweenProducts: Math.min(200, Math.max(0, importedMetric(spacing.betweenProducts, 16))),
-      productNameToPrice: Math.min(200, Math.max(0, importedMetric(spacing.productNameToPrice, 4))),
+      headerToContent: Math.min(
+        200 * pageDimensions.verticalScale,
+        Math.max(0, measuredHeaderToContent ?? scaledVerticalMetric(spacing.headerToContent, 20)),
+      ),
+      categoryToProduct: Math.min(
+        200 * pageDimensions.verticalScale,
+        Math.max(0, scaledVerticalMetric(spacing.categoryToFirstProduct, 16)),
+      ),
+      productNameToDescription: Math.min(
+        200 * pageDimensions.verticalScale,
+        Math.max(0, scaledVerticalMetric(spacing.productNameToDescription, 4)),
+      ),
+      betweenProducts: Math.min(
+        200 * pageDimensions.verticalScale,
+        Math.max(0, scaledVerticalMetric(spacing.betweenProducts, 16)),
+      ),
+      productNameToPrice: Math.min(
+        200 * pageDimensions.horizontalScale,
+        Math.max(0, scaledHorizontalMetric(spacing.productNameToPrice, 4)),
+      ),
     };
     const fontLimits = resolveFontSizeLimits(currentStyle);
     const categoryFontMeasurement = getMedian(analyzedPages.flatMap((page) => (
@@ -1033,28 +1152,42 @@ export const processMenuImport = async ({
         page,
         category.boundingBox,
         category.name,
+        pageDimensions,
         1.16,
       ))
     )));
     const productNameFontMeasurement = getMedian(analyzedPages.flatMap((page) => (
       page.categories.flatMap((category) => category.products.map((product) => (
-        estimateFontSizeFromBoundingBox(page, product.nameBoundingBox, product.name, 1.18)
+        estimateFontSizeFromBoundingBox(
+          page,
+          product.nameBoundingBox,
+          product.name,
+          pageDimensions,
+          1.18,
+        )
       )))
     )));
     const productDescriptionFontMeasurement = getMedian(analyzedPages.flatMap((page) => (
       page.categories.flatMap((category) => category.products.map((product) => (
-        estimateFontSizeFromBoundingBox(page, product.descriptionBoundingBox, product.description, 1.32)
+        estimateFontSizeFromBoundingBox(
+          page,
+          product.descriptionBoundingBox,
+          product.description,
+          pageDimensions,
+          1.32,
+        )
       )))
     )));
     const productPriceFontMeasurement = getMedian(analyzedPages.flatMap((page) => (
       page.categories.flatMap((category) => category.products.map((product) => (
-        estimateProductPriceFontSize(page, product)
+        estimateProductPriceFontSize(page, product, pageDimensions)
       )))
     )));
     const titleFontMeasurement = estimateFontSizeFromBoundingBox(
       firstPage,
       typography.mainTitle?.boundingBox,
       typography.mainTitle?.text || '',
+      pageDimensions,
       1.14,
     );
     const subtitleFontMeasurement = typography.subtitle?.exists
@@ -1062,6 +1195,7 @@ export const processMenuImport = async ({
         firstPage,
         typography.subtitle?.boundingBox,
         typography.subtitle?.text || '',
+        pageDimensions,
         1.2,
       )
       : null;
@@ -1071,7 +1205,8 @@ export const processMenuImport = async ({
       fallback: number,
       measuredValue?: number | null,
     ) => {
-      const modelValue = Number(value);
+      const modelValue = Number(value) * pageDimensions.uniformScale;
+      const scaledFallback = fallback * pageDimensions.uniformScale;
       const hasModelValue = Number.isFinite(modelValue) && modelValue > 0;
       const hasMeasuredValue = Number.isFinite(measuredValue) && Number(measuredValue) > 0;
       const preciseValue = hasMeasuredValue
@@ -1080,8 +1215,8 @@ export const processMenuImport = async ({
           : Number(measuredValue)
         : hasModelValue
           ? modelValue
-          : fallback;
-      return clampFontSize(currentStyle, key, preciseValue, fallback);
+          : scaledFallback;
+      return clampFontSize(currentStyle, key, preciseValue, scaledFallback);
     };
 
     importedStyle = {
@@ -1123,7 +1258,7 @@ export const processMenuImport = async ({
       categoryColumnWidths,
       pagePadding: (margins.top + margins.bottom + margins.left + margins.right) / 4,
       margins,
-      globalRadius: layout.globalRadius ?? 0,
+      globalRadius: importedMetric(layout.globalRadius, 0) * pageDimensions.uniformScale,
       itemGap: contentSpacing.betweenProducts,
       contentSpacing,
       fontSizeLimits: fontLimits,
@@ -1147,7 +1282,10 @@ export const processMenuImport = async ({
           textTransform: typography.mainTitle?.textTransform || 'uppercase',
           fontWeight: '700',
           marginBottom: typography.subtitle?.exists
-            ? Math.min(200, Math.max(0, measuredTitleToSubtitle ?? importedMetric(spacing.titleToSubtitle, 10)))
+            ? Math.min(
+              200 * pageDimensions.verticalScale,
+              Math.max(0, measuredTitleToSubtitle ?? scaledVerticalMetric(spacing.titleToSubtitle, 10)),
+            )
             : (currentStyle.elementStyles.menuTitle?.marginBottom ?? 10),
         },
         menuSubtitle: {

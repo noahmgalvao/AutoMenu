@@ -41,6 +41,15 @@ export interface MenuContentSpacing {
 export type FontSizeLimitKey = keyof FontSizeLimits;
 export type PriceDecimalPlaces = 0 | 1 | 2;
 export type PriceDecimalSeparator = ',' | '.';
+export type MenuPagePreset = 'A4' | 'Letter' | 'Legal' | 'custom';
+export type MenuPageOrientation = 'portrait' | 'landscape';
+
+export interface MenuPageSetup {
+  preset: MenuPagePreset;
+  orientation: MenuPageOrientation;
+  widthMm: number;
+  heightMm: number;
+}
 
 export type WorkspaceStatus = 'active' | 'archived';
 export type WorkspaceRole = 'owner' | 'member';
@@ -195,6 +204,7 @@ export interface MenuStyle {
   categoryImages?: Record<string, CategoryImage>;
   blankPages?: BlankPageSlot[];
   pageBreaks?: string[];
+  pageSetup?: MenuPageSetup;
   contentLayer?: 'front' | 'back';
   pagePadding?: number;
   globalRadius?: number;

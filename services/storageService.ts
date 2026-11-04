@@ -126,17 +126,19 @@ export const resolveStorageFileUrl = async (bucket: string, path: string, expire
 export const uploadPublicationPdf = async ({
   workspaceId,
   menuId,
+  releaseId,
   file,
 }: {
   workspaceId: string;
   menuId: string;
+  releaseId: string;
   file: File;
 }) => {
   const bucket = 'menu-assets';
-  const path = `${workspaceId}/published-menus/${menuId}.pdf`;
+  const path = `${workspaceId}/published-menus/${menuId}/${releaseId}.pdf`;
   const supabase = getSupabaseClient();
   const { error } = await supabase.storage.from(bucket).upload(path, file, {
-    upsert: true,
+    upsert: false,
     contentType: 'application/pdf',
     cacheControl: '0',
   });
@@ -147,17 +149,19 @@ export const uploadPublicationPdf = async ({
 export const uploadPortablePublication = async ({
   workspaceId,
   menuId,
+  releaseId,
   publication,
 }: {
   workspaceId: string;
   menuId: string;
+  releaseId: string;
   publication: Record<string, unknown>;
 }) => {
   const bucket = 'menu-assets';
-  const path = `${workspaceId}/published-menus/${menuId}.json`;
+  const path = `${workspaceId}/published-menus/${menuId}/${releaseId}.json`;
   const supabase = getSupabaseClient();
   const { error } = await supabase.storage.from(bucket).upload(path, JSON.stringify(publication), {
-    upsert: true,
+    upsert: false,
     contentType: 'application/json; charset=utf-8',
     cacheControl: '0',
   });

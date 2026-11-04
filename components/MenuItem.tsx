@@ -1,7 +1,7 @@
 import React from 'react';
 import { Product, MenuStyle } from '../types';
 import { MoreHorizontal, Plus, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Edit3, ListChecks } from 'lucide-react';
-import { A4_HEIGHT_PX, FREE_TEXT_PREFIX } from '../utils/menuPagination';
+import { FREE_TEXT_PREFIX } from '../utils/menuPagination';
 import { selectionLayerClasses } from './selectionLayers';
 import { getDirectionLabel, getEdgeControlClass, type FlowDirection } from '../utils/flowControls';
 import { InlineStyleToolbar } from './MenuDesigner/InlineStyleToolbar';
@@ -10,6 +10,7 @@ import { clampFontSize, resolveFontSizeLimits, resolveMenuContentSpacing, resolv
 import { ColumnResizeHandles } from './ColumnResizeHandles';
 import { AutoFitText } from './AutoFitText';
 import { formatMenuPriceValue } from '../utils/price';
+import { resolveMenuPageDimensions } from '../utils/pageSetup';
 
 interface MenuItemProps {
     item: any;
@@ -750,8 +751,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const imageSizePx = (categoryColumnCount >= 3 ? 96 : categoryColumnCount === 2 ? 64 : 96) * imgScale;
         const rawCustomMarginTop = Number(product.customMarginTop);
         const isFreeTextGhost = product.isFreeText && item.category?.startsWith(FREE_TEXT_PREFIX);
+        const pageHeight = resolveMenuPageDimensions(style).heightPx;
         const customMarginTop = Number.isFinite(rawCustomMarginTop)
-            ? Math.max(0, Math.min(A4_HEIGHT_PX, rawCustomMarginTop))
+            ? Math.max(0, Math.min(pageHeight, rawCustomMarginTop))
             : 0;
         const productAddControls = handlers.getSelectionAddControls?.(productSelectionType, product.id) || { top: true, bottom: true };
         return (

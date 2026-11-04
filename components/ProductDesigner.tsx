@@ -1,6 +1,6 @@
 import React from 'react';
 import { Product, MenuStyle, SortOption } from '../types';
-import { ShoppingCart, PanelLeftClose, CopyPlus } from 'lucide-react';
+import { ShoppingCart, PanelLeftClose, CopyPlus, FileText } from 'lucide-react';
 import { useProductDesignerLogic } from '../hooks/useProductDesignerLogic';
 import { ImportTools } from './ProductDesigner/ImportTools';
 import { ProductList } from './ProductDesigner/ProductList';
@@ -26,6 +26,7 @@ interface ProductDesignerProps {
     currentUserId: string;
     currentMenuId: string;
     onClose?: () => void;
+    onPdfClick?: () => void;
     isOpen?: boolean;
     productsCanChangeCategory?: boolean;
     splitCategoryAcrossPages?: boolean;
@@ -43,6 +44,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
     currentUserId,
     currentMenuId,
     onClose,
+    onPdfClick,
     isOpen = true,
     productsCanChangeCategory,
     splitCategoryAcrossPages,
@@ -200,6 +202,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                         <ShoppingCart size={16} /> Designer de produtos
                     </h2>
                     <div className="flex gap-2">
+                        <button type="button" onClick={onPdfClick} className="text-xs border border-slate-200 bg-white text-slate-700 px-2.5 py-1.5 rounded hover:bg-slate-100 flex items-center gap-1 pointer-events-auto" onPointerDown={e => e.stopPropagation()} title="Exportar PDF"><FileText size={12} /> PDF</button>
                         <button onClick={() => setIsProductTransferOpen(true)} className="text-xs border border-slate-200 bg-white text-slate-700 px-2.5 py-1.5 rounded hover:bg-slate-100 flex items-center gap-1 pointer-events-auto" onPointerDown={e => e.stopPropagation()} title="Trazer produtos ou gerenciar sincronização"><CopyPlus size={12} /><span className="hidden sm:inline">Trazer</span></button>
                         <button onClick={onClose} className="md:hidden text-slate-500 hover:text-slate-800 pointer-events-auto" onPointerDown={e => e.stopPropagation()}><PanelLeftClose size={18} /></button>
                     </div>

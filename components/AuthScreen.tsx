@@ -41,7 +41,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSignIn, onSignUp, load
             </div>
             <div>
               <div className="text-lg font-semibold">AutoMenu AI</div>
-              <div className="text-sm text-indigo-100">Ambiente privado no Supabase</div>
+            <div className="text-sm text-indigo-100">Ambiente seguro e privado</div>
             </div>
           </div>
 

@@ -16,6 +16,7 @@ import {
     type WordFitScope,
 } from '../utils/textFit';
 import { roundPrice } from '../utils/price';
+import { resolveMenuPageDimensions } from '../utils/pageSetup';
 
 const PrintCanvasModal = React.lazy(() => import('./MenuDesigner/PrintCanvasModal').then((module) => ({
     default: module.PrintCanvasModal,
@@ -36,7 +37,7 @@ interface MenuDesignerProps {
     isOpen?: boolean;
     isProductDesignerOpen?: boolean;
     printRequestId?: number;
-    printRequestMode?: 'download' | 'publish' | 'publish-silent';
+    printRequestMode?: 'download' | 'download-direct' | 'share-direct' | 'publish' | 'publish-silent';
     onPrintComplete?: (result: PdfExportResult, options: PrintCanvasOptions) => void;
     onPrintError?: (error: Error) => void;
     onPrintCancel?: () => void;
@@ -57,6 +58,8 @@ const DEFAULT_PRINT_OPTIONS: PrintCanvasOptions = {
     pageMode: 'all',
     pageRange: '',
     paperSize: 'A4',
+    customPaperWidthMm: 210,
+    customPaperHeightMm: 297,
     orientation: 'portrait',
     marginPreset: '0',
     customMarginMm: 0,
@@ -69,6 +72,24 @@ const DEFAULT_PRINT_OPTIONS: PrintCanvasOptions = {
     grayscale: false,
     includeCanvasShadow: false,
 };
+
+const getCanvasPrintPaperDefaults = (style: MenuStyle): Pick<
+    PrintCanvasOptions,
+    'paperSize' | 'orientation' | 'customPaperWidthMm' | 'customPaperHeightMm'
+> => {
+    const dimensions = resolveMenuPageDimensions(style);
+    return {
+        paperSize: dimensions.setup.preset,
+        orientation: dimensions.setup.orientation,
+        customPaperWidthMm: dimensions.setup.widthMm,
+        customPaperHeightMm: dimensions.setup.heightMm,
+    };
+};
+
+const getDefaultPrintOptions = (style: MenuStyle): PrintCanvasOptions => ({
+    ...DEFAULT_PRINT_OPTIONS,
+    ...getCanvasPrintPaperDefaults(style),
+});
 
 interface FontTip {
     scope: WordFitScope;
@@ -119,7 +140,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const [isDesktopViewport, setIsDesktopViewport] = useState(() => window.matchMedia('(min-width: 768px)').matches);
     const renderScale = scale * (isDesktopViewport ? DESKTOP_PREVIEW_ZOOM_RENDER_MULTIPLIER : MOBILE_PREVIEW_ZOOM_RENDER_MULTIPLIER);
     const [showPrintModal, setShowPrintModal] = useState(false);
-    const [printOptions, setPrintOptions] = useState<PrintCanvasOptions>(DEFAULT_PRINT_OPTIONS);
+    const [printOptions, setPrintOptions] = useState<PrintCanvasOptions>(() => getDefaultPrintOptions(style));
     const [lastCompletedPrintOptions, setLastCompletedPrintOptions] = useState<PrintCanvasOptions | null>(null);
     const [activePrintMode, setActivePrintMode] = useState<'download' | 'publish' | 'publish-silent'>('download');
     const [printPageCount, setPrintPageCount] = useState(0);
@@ -130,6 +151,19 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const [fontTips, setFontTips] = useState<FontTip[]>([]);
     const [dismissedTips, setDismissedTips] = useState<Set<string>>(() => new Set());
     const [hoveredFontScope, setHoveredFontScope] = useState<WordFitScope | null>(null);
+    const canvasPrintPaperDefaults = getCanvasPrintPaperDefaults(style);
+
+    useEffect(() => {
+        setPrintOptions((current) => ({ ...current, ...canvasPrintPaperDefaults }));
+        setLastCompletedPrintOptions((current) => current
+            ? { ...current, ...canvasPrintPaperDefaults }
+            : current);
+    }, [
+        canvasPrintPaperDefaults.paperSize,
+        canvasPrintPaperDefaults.orientation,
+        canvasPrintPaperDefaults.customPaperWidthMm,
+        canvasPrintPaperDefaults.customPaperHeightMm,
+    ]);
 
     // Zoom Indicator State
     const [showZoomInfo, setShowZoomInfo] = useState(false);
@@ -468,7 +502,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
     useEffect(() => {
         if (printRequestId <= 0) return;
-        if (printRequestMode !== 'publish-silent') handlePrint(printRequestMode);
+        if (printRequestMode === 'download' || printRequestMode === 'publish') handlePrint(printRequestMode);
     }, [printRequestId]);
 
     useEffect(() => {
@@ -552,7 +586,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         document.dispatchEvent(new Event('automenu:close-inline-formatting'));
         void (async () => {
             const requestedOptions: PrintCanvasOptions = {
-                ...DEFAULT_PRINT_OPTIONS,
+                ...getDefaultPrintOptions(style),
                 ...(silentPrintOptions && Object.keys(silentPrintOptions).length > 0 ? silentPrintOptions : {}),
                 ...(lastCompletedPrintOptions || {}),
             };
@@ -574,6 +608,39 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             onPrintComplete?.(result, options);
         })().catch((error) => {
             console.error('[Publicação] Falha ao gerar PDF padrão', error);
+            onPrintError?.(error instanceof Error ? error : new Error(String(error)));
+        });
+    }, [printRequestId]);
+
+    useEffect(() => {
+        if (printRequestId <= 0 || (printRequestMode !== 'download-direct' && printRequestMode !== 'share-direct')) return;
+        setSelection({ type: null, id: null });
+        document.dispatchEvent(new Event('automenu:close-inline-formatting'));
+        void (async () => {
+            const requestedOptions: PrintCanvasOptions = {
+                ...getDefaultPrintOptions(style),
+                ...(silentPrintOptions && Object.keys(silentPrintOptions).length > 0 ? silentPrintOptions : {}),
+                ...(lastCompletedPrintOptions || {}),
+            };
+            const options: PrintCanvasOptions = requestedOptions.pageMode === 'current'
+                || (requestedOptions.pageMode === 'range' && !requestedOptions.pageRange.trim())
+                ? { ...requestedOptions, pageMode: 'all' }
+                : requestedOptions;
+            const pageElements = Array.from(
+                containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]') || []
+            );
+            const { exportMenuPagesToPdf } = await import('../utils/pdfExport');
+            const result = await exportMenuPagesToPdf({
+                pageElements,
+                options,
+                currentPageIndex: null,
+                title: style.menuTitle || 'Cardápio',
+                download: printRequestMode === 'download-direct',
+            });
+            setLastCompletedPrintOptions(options);
+            onPrintComplete?.(result, options);
+        })().catch((error) => {
+            console.error('[PDF] Falha ao concluir ação direta', error);
             onPrintError?.(error instanceof Error ? error : new Error(String(error)));
         });
     }, [printRequestId]);
@@ -726,7 +793,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             floatingText: prev.floatingText || [],
             addedImages: prev.addedImages || [],
             menuTitle: prev.menuTitle,
-            menuSubtitle: prev.menuSubtitle
+            menuSubtitle: prev.menuSubtitle,
+            pageSetup: prev.pageSetup,
         }));
     };
 
@@ -820,7 +888,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                         const pageRect = pageContainer.getBoundingClientRect();
                         
                         // Calculate scaled threshold
-                        const scale = pageRect.width / 794; // A4_WIDTH_PX
+                        const scale = pageRect.width / resolveMenuPageDimensions(style).widthPx;
                         const threshold = pageRect.bottom - (48 * scale) - (40 * scale);
                         
                         if (lastChunkRect.bottom > threshold) {
@@ -1616,7 +1684,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                     }}
                 >
                     <div
-                        style={{ transform: `scale(${renderScale})`, transformOrigin: 'top left', width: 'fit-content', minWidth: '794px', }}
+                        style={{ transform: `scale(${renderScale})`, transformOrigin: 'top left', width: 'fit-content', minWidth: `${resolveMenuPageDimensions(style).widthPx}px`, }}
                         className="transition-transform duration-200 ease-out"
                         onClick={(e) => e.stopPropagation()}
                     >
@@ -1658,6 +1726,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             <MenuSidebar
                 isOpen={isOpen || false}
                 onClose={onClose}
+                onPdfClick={() => handlePrint('download')}
                 handleResetDesign={handleResetDesign}
                 style={style}
                 setStyle={setStyle}
@@ -1696,7 +1765,10 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                         onPrint={executeCanvasPrint}
                         onComplete={(result) => {
                             setLastCompletedPrintOptions(printOptions);
-                            if (activePrintMode === 'publish') onPrintComplete?.(result, printOptions);
+                            if (activePrintMode === 'publish') {
+                                setShowPrintModal(false);
+                                onPrintComplete?.(result, printOptions);
+                            }
                         }}
                         onError={activePrintMode === 'publish' ? onPrintError : undefined}
                     />

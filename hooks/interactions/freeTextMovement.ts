@@ -1,6 +1,7 @@
 import { Product, MenuStyle } from '../../types';
 import { FREE_TEXT_PREFIX, NUDGE_STEP, STANDARD_GAP, InteractionProps } from './types';
-import { A4_HEIGHT_PX as MENU_PAGE_HEIGHT_PX, SAFETY_BUFFER } from '../../utils/menuPagination';
+import { SAFETY_BUFFER } from '../../utils/menuPagination';
+import { resolveMenuPageDimensions } from '../../utils/pageSetup';
 
 type FreeTextVisualItem =
     | { type: 'category'; id: string; category: string }
@@ -121,7 +122,7 @@ export const getCollisionSafeFreeTextTop = ({
 
 export const getFreeTextPageOverflow = (
     productId: string,
-    style?: Pick<MenuStyle, 'pagePadding'>,
+    style?: Pick<MenuStyle, 'pagePadding' | 'pageSetup'>,
     marginDelta: number = 0
 ) => {
     if (typeof document === 'undefined') return null;
@@ -132,9 +133,10 @@ export const getFreeTextPageOverflow = (
 
     const pageRect = pageElement.getBoundingClientRect();
     const rect = element.getBoundingClientRect();
-    const scale = pageRect.height > 0 ? pageRect.height / MENU_PAGE_HEIGHT_PX : 1;
+    const pageHeightPx = resolveMenuPageDimensions(style).heightPx;
+    const scale = pageRect.height > 0 ? pageRect.height / Math.max(1, pageElement.offsetHeight) : 1;
     const pagePadding = style?.pagePadding || 48;
-    const safeBottom = pageRect.top + ((MENU_PAGE_HEIGHT_PX - pagePadding - SAFETY_BUFFER) * scale);
+    const safeBottom = pageRect.top + ((pageHeightPx - pagePadding - SAFETY_BUFFER) * scale);
     const projectedBottom = rect.bottom + (marginDelta * scale);
     const columnElement = element.closest<HTMLElement>('[data-drag-column-container="category"][data-drag-column-index]');
 
@@ -207,7 +209,7 @@ const getRenderedLayoutScale = (element: HTMLElement) => {
     const pageElement = element.closest<HTMLElement>('[data-menu-print-page="true"][data-page-index]');
     const pageRect = pageElement?.getBoundingClientRect();
     return pageRect && pageRect.height > 0
-        ? pageRect.height / MENU_PAGE_HEIGHT_PX
+        ? pageRect.height / Math.max(1, pageElement?.offsetHeight || 1)
         : 1;
 };
 
@@ -562,7 +564,7 @@ export const moveFreeTextOneStep = (
                 const elementRect = element.getBoundingClientRect();
                 const pageRect = pageElement.getBoundingClientRect();
                 const columnRect = columnElement?.getBoundingClientRect();
-                const scale = pageRect.height > 0 ? pageRect.height / MENU_PAGE_HEIGHT_PX : 1;
+                const scale = pageRect.height > 0 ? pageRect.height / Math.max(1, pageElement.offsetHeight) : 1;
                 const safeTop = columnRect?.top
                     ?? pageRect.top + ((context.style?.pagePadding || 48) * scale);
                 const availableDelta = (safeTop - elementRect.top) / Math.max(scale, 0.001);
