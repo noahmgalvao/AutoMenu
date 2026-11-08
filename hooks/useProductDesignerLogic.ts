@@ -29,6 +29,7 @@ import { roundPrice } from '../utils/price';
 import { roundFontSize } from '../utils/styleRules';
 import { optimizeImageForUpload, preloadImage } from '../utils/imageUpload';
 import { resolveMenuPageDimensions } from '../utils/pageSetup';
+import type { PricePropagationRequest } from '../components/PricePropagationPrompt';
 
 interface UseProductDesignerLogicProps {
     products: Product[];
@@ -61,8 +62,9 @@ export const useProductDesignerLogic = ({
     const [editModeId, setEditModeId] = useState<string | null>(null);
     const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
     const [showInsights, setShowInsights] = useState(false);
-    const [bulkPercentage, setBulkPercentage] = useState<number | string>('');
+    const [bulkPercentage, setBulkPercentage] = useState<number | string>(10);
     const [bulkAdjustmentMode, setBulkAdjustmentMode] = useState<'percentage' | 'integer'>('percentage');
+    const [pendingPricePropagation, setPendingPricePropagation] = useState<PricePropagationRequest | null>(null);
     const [isUploading, setIsUploading] = useState(false);
 
     // Draft State
@@ -363,10 +365,26 @@ export const useProductDesignerLogic = ({
             }
             setNewItemDraft(null);
         } else {
+            const editedProduct = products.find((product) => product.id === editModeId && !product.isFreeText);
+            const nextEditedPrice = roundPrice(formData.price ?? editedProduct?.price ?? 0);
             setProducts(prev => prev.map(p => {
-                if (p.id === editModeId) return { ...p, ...formData } as Product;
+                if (p.id === editModeId) {
+                    return editedProduct
+                        ? { ...p, ...formData, price: nextEditedPrice } as Product
+                        : { ...p, ...formData } as Product;
+                }
                 return p;
             }));
+            if (editedProduct && editedProduct.price !== nextEditedPrice) {
+                setPendingPricePropagation({
+                    productId: editedProduct.id,
+                    productName: editedProduct.name,
+                    previousPrice: editedProduct.price,
+                    nextPrice: nextEditedPrice,
+                    mode: 'integer',
+                    signedAmount: Math.round((nextEditedPrice - editedProduct.price) * 100) / 100,
+                });
+            }
             if (handlers.sortedCategories.includes(editModeId)) {
                 const oldName = editModeId;
                 const newName = formData.name;
@@ -397,6 +415,18 @@ export const useProductDesignerLogic = ({
         }
         setEditModeId(null);
         setFormData({});
+    };
+
+    const applyPricePropagation = () => {
+        if (!pendingPricePropagation) return;
+        setProducts(previous => previous.map(product => {
+            if (product.isFreeText || product.id === pendingPricePropagation.productId) return product;
+            const nextPrice = pendingPricePropagation.mode === 'percentage'
+                ? product.price * (1 + (pendingPricePropagation.signedAmount / 100))
+                : product.price + pendingPricePropagation.signedAmount;
+            return { ...product, price: roundPrice(nextPrice) };
+        }));
+        setPendingPricePropagation(null);
     };
 
     const remove = (id: string, type: 'product' | 'category') => {
@@ -796,6 +826,7 @@ export const useProductDesignerLogic = ({
         showInsights,
         bulkPercentage,
         bulkAdjustmentMode,
+        pendingPricePropagation,
         isUploading,
         newItemDraft,
         formData,
@@ -818,6 +849,8 @@ export const useProductDesignerLogic = ({
         handlers,
         toggleCollapse,
         handleBulkAdjust,
+        applyPricePropagation,
+        dismissPricePropagation: () => setPendingPricePropagation(null),
         handleProductImageUpload,
         onProductImageClick,
         onRemoveProductImage,

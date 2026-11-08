@@ -1,9 +1,10 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlignCenter, AlignLeft, AlignRight, Bold, Italic, Underline } from 'lucide-react';
+import { AlignCenter, AlignLeft, AlignRight, Bold, ChevronDown, Italic, Minus, Plus, Underline } from 'lucide-react';
 import { ElementStyle } from '../../types';
 import { FontSelect } from './SearchableSelects';
 import { FontSizeInput } from './FontSizeInput';
+import type { PriceAdjustmentMode } from '../PricePropagationPrompt';
 
 interface InlineStyleToolbarProps {
     targetElementId: string;
@@ -15,13 +16,22 @@ interface InlineStyleToolbarProps {
     minFontSize?: number;
     header?: React.ReactNode;
     compact?: boolean;
+    onAdjustPrice?: (direction: 1 | -1, amount: number, mode: PriceAdjustmentMode) => void;
 }
 
-export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, value, onChange, onDismiss, controls = 'all', maxFontSize, minFontSize, header, compact = false }) => {
+export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, value, onChange, onDismiss, controls = 'all', maxFontSize, minFontSize, header, compact = false, onAdjustPrice }) => {
     const toolbarRef = useRef<HTMLDivElement>(null);
     const [position, setPosition] = useState({ left: 8, top: 8, width: 270 });
+    const [priceAdjustment, setPriceAdjustment] = useState('10');
+    const [priceAdjustmentMode, setPriceAdjustmentMode] = useState<PriceAdjustmentMode>('percentage');
     const isSizeColorOnly = controls === 'sizeColor';
     const hasHeader = Boolean(header);
+    const hasPriceAdjustment = Boolean(onAdjustPrice);
+
+    useEffect(() => {
+        setPriceAdjustment('10');
+        setPriceAdjustmentMode('percentage');
+    }, [targetElementId]);
 
     useEffect(() => {
         const dismissOnOutsidePointer = (event: PointerEvent) => {
@@ -44,7 +54,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
         const updatePosition = () => {
             const targetRect = target.getBoundingClientRect();
             const toolbarHeight = toolbarRef.current?.getBoundingClientRect().height || 76;
-            const preferredWidth = hasHeader ? (compact ? 148 : 210) : isSizeColorOnly ? 120 : 270;
+            const preferredWidth = hasHeader ? (compact ? 148 : 210) : isSizeColorOnly ? 120 : hasPriceAdjustment ? 300 : 270;
             const minimumWidth = hasHeader ? (compact ? 144 : 190) : isSizeColorOnly ? 120 : 210;
             const width = Math.min(preferredWidth, Math.max(minimumWidth, window.innerWidth - 16));
             const left = Math.max(8, Math.min(window.innerWidth - width - 8, targetRect.left + (targetRect.width / 2) - (width / 2)));
@@ -66,7 +76,10 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
             window.removeEventListener('resize', updatePosition);
             window.removeEventListener('scroll', updatePosition, true);
         };
-    }, [compact, hasHeader, isSizeColorOnly, targetElementId]);
+    }, [compact, hasHeader, hasPriceAdjustment, isSizeColorOnly, targetElementId]);
+
+    const parsedPriceAdjustment = Number(priceAdjustment);
+    const canAdjustPrice = Number.isFinite(parsedPriceAdjustment) && parsedPriceAdjustment > 0;
 
     return createPortal(
         <div
@@ -146,6 +159,53 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                     >
                         <Underline size={14} />
                     </button>
+                </div>
+            )}
+            {onAdjustPrice && (
+                <div className="mt-2 border-t border-slate-100 pt-2">
+                    <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Alterar valor</div>
+                    <div className="grid grid-cols-[2rem_minmax(0,1fr)_4.5rem_2rem] items-center gap-1">
+                        <button
+                            type="button"
+                            disabled={!canAdjustPrice}
+                            onClick={() => onAdjustPrice(-1, parsedPriceAdjustment, priceAdjustmentMode)}
+                            className="flex h-8 items-center justify-center rounded-lg border border-slate-200 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+                            title="Diminuir preço"
+                        >
+                            <Minus size={15} />
+                        </button>
+                        <input
+                            type="number"
+                            min="0"
+                            step={priceAdjustmentMode === 'percentage' ? '0.1' : '1'}
+                            value={priceAdjustment}
+                            onChange={(event) => setPriceAdjustment(event.target.value)}
+                            onFocus={(event) => event.currentTarget.select()}
+                            className="h-8 min-w-0 rounded-lg border border-slate-200 px-2 text-center text-sm font-semibold text-slate-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                            aria-label="Valor do reajuste"
+                        />
+                        <label className="relative block">
+                            <select
+                                value={priceAdjustmentMode}
+                                onChange={(event) => setPriceAdjustmentMode(event.target.value as PriceAdjustmentMode)}
+                                className="h-8 w-full appearance-none rounded-lg border border-slate-200 bg-slate-50 pl-2 pr-5 text-xs font-medium text-slate-600 outline-none focus:border-indigo-400"
+                                aria-label="Tipo do reajuste"
+                            >
+                                <option value="percentage">%</option>
+                                <option value="integer">R$</option>
+                            </select>
+                            <ChevronDown size={11} className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                        </label>
+                        <button
+                            type="button"
+                            disabled={!canAdjustPrice}
+                            onClick={() => onAdjustPrice(1, parsedPriceAdjustment, priceAdjustmentMode)}
+                            className="flex h-8 items-center justify-center rounded-lg border border-slate-200 text-emerald-600 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
+                            title="Aumentar preço"
+                        >
+                            <Plus size={15} />
+                        </button>
+                    </div>
                 </div>
             )}
         </div>,

@@ -23,7 +23,17 @@ export const EditForm: React.FC<EditFormProps> = ({
 }) => {
   const priceInputFocusedRef = React.useRef(false);
   const priceAtFocusRef = React.useRef<number | undefined>(undefined);
+  const replacePriceOnNextInputRef = React.useRef(false);
   const [priceInput, setPriceInput] = React.useState(() => formatMenuPriceValue(formData.price ?? 0, style));
+
+  const replacePriceInput = (nextValue: string) => {
+    const sanitized = nextValue.replace(/[^0-9.,]/g, '');
+    if (!sanitized) return;
+    replacePriceOnNextInputRef.current = false;
+    setPriceInput(sanitized);
+    const normalized = parseAndRoundPrice(sanitized);
+    if (normalized !== null) setFormData((previous) => ({ ...previous, price: normalized }));
+  };
 
   React.useEffect(() => {
     if (!priceInputFocusedRef.current) {
@@ -59,18 +69,56 @@ export const EditForm: React.FC<EditFormProps> = ({
               className="w-20 bg-white text-slate-900 [color-scheme:light] text-xs font-mono border-b border-slate-200 focus:border-indigo-500 outline-none pb-1"
               placeholder={formatMenuPriceValue(0, style)}
               value={priceInput}
-              onFocus={() => {
+              onFocus={(event) => {
                 priceInputFocusedRef.current = true;
                 priceAtFocusRef.current = formData.price;
+                replacePriceOnNextInputRef.current = true;
+                event.currentTarget.select();
               }}
               onChange={(event) => {
-                const nextValue = event.target.value;
+                const inputEvent = event.nativeEvent as InputEvent;
+                if (replacePriceOnNextInputRef.current && inputEvent.data) {
+                  replacePriceInput(inputEvent.data);
+                  return;
+                }
+                replacePriceOnNextInputRef.current = false;
+                const nextValue = event.currentTarget.value;
                 setPriceInput(nextValue);
                 const normalized = parseAndRoundPrice(nextValue);
                 if (normalized !== null) setFormData((previous) => ({ ...previous, price: normalized }));
               }}
+              onBeforeInput={(event) => {
+                if (!replacePriceOnNextInputRef.current) return;
+                const inputEvent = event.nativeEvent as InputEvent;
+                if (!inputEvent.inputType?.startsWith('insert') || !inputEvent.data) return;
+                event.preventDefault();
+                replacePriceInput(inputEvent.data);
+              }}
+              onKeyDown={(event) => {
+                const isPriceCharacter = event.key.length === 1
+                  && /^[0-9.,]$/.test(event.key)
+                  && !event.ctrlKey
+                  && !event.metaKey
+                  && !event.altKey;
+                if (replacePriceOnNextInputRef.current && isPriceCharacter) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  replacePriceInput(event.key);
+                }
+              }}
+              onPointerUp={(event) => {
+                if (replacePriceOnNextInputRef.current) event.currentTarget.select();
+              }}
+              onPaste={(event) => {
+                if (!replacePriceOnNextInputRef.current) return;
+                const pastedValue = event.clipboardData.getData('text');
+                if (!pastedValue) return;
+                event.preventDefault();
+                replacePriceInput(pastedValue);
+              }}
               onBlur={(event) => {
                 priceInputFocusedRef.current = false;
+                replacePriceOnNextInputRef.current = false;
                 const normalized = parseAndRoundPrice(event.target.value);
                 const originalPrice = priceAtFocusRef.current;
                 const unchangedVisibleValue = originalPrice !== undefined

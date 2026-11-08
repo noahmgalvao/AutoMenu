@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Loader2, Sparkles, Minus, Plus, BarChart, ListChecks, ChevronDown } from 'lucide-react';
+import { Loader2, Sparkles, Minus, Plus, BarChart, CopyCheck, ChevronDown } from 'lucide-react';
 
 interface ImportToolsProps {
   onStartAIImport: () => void;
@@ -43,7 +43,7 @@ export const ImportTools: React.FC<ImportToolsProps> = ({
           <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-1 min-w-0">
             <input 
               className="min-w-0 flex-1 bg-transparent text-lg leading-none px-1 py-1 outline-none font-semibold text-slate-800"
-              placeholder="0"
+              placeholder="10"
               type="number"
               min="0"
               step={bulkAdjustmentMode === 'percentage' ? '0.1' : '1'}
@@ -84,7 +84,7 @@ export const ImportTools: React.FC<ImportToolsProps> = ({
           className={`h-10 rounded-lg border flex items-center justify-center gap-2 px-2 text-[10px] font-semibold transition-colors ${multiSelectMode ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-100'}`}
           title="Seleção múltipla"
         >
-          <ListChecks size={15} />
+          <CopyCheck size={15} />
           Seleção múltipla
         </button>
       </div>

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import QRCode from 'qrcode';
-import { AlertCircle, ChefHat, History, Loader2, Paintbrush, Plus, Save, Share2, ShoppingCart, X } from 'lucide-react';
+import { AlertCircle, ChefHat, History, Loader2, Paintbrush, Plus, Save, Send, ShoppingCart, X } from 'lucide-react';
 import MenuDesigner from './components/MenuDesigner';
 import { AuthScreen } from './components/AuthScreen';
 import { ProfileMenu } from './components/ProfileMenu';
@@ -1761,7 +1761,7 @@ const App: React.FC = () => {
                   : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
               }`}
             >
-              {isPublishing ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={17} />}
+              {isPublishing ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
               <span className="hidden sm:inline">Publicar</span>
             </button>
             <ProfileMenu

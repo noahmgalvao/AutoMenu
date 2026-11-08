@@ -1,11 +1,12 @@
 import React from 'react';
 import { Product, MenuStyle } from '../types';
-import { MoreHorizontal, Plus, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Edit3, ListChecks } from 'lucide-react';
+import { MoreHorizontal, Plus, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Edit3, CopyCheck } from 'lucide-react';
 import { FREE_TEXT_PREFIX } from '../utils/menuPagination';
 import { selectionLayerClasses } from './selectionLayers';
 import { getDirectionLabel, getEdgeControlClass, type FlowDirection } from '../utils/flowControls';
 import { InlineStyleToolbar } from './MenuDesigner/InlineStyleToolbar';
 import type { MoveDirection } from '../hooks/interactions/types';
+import type { PriceAdjustmentMode } from './PricePropagationPrompt';
 import { clampFontSize, resolveFontSizeLimits, resolveMenuContentSpacing, resolveMinimumFontSize } from '../utils/styleRules';
 import { ColumnResizeHandles } from './ColumnResizeHandles';
 import { AutoFitText } from './AutoFitText';
@@ -342,24 +343,29 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
         : compactControls
             ? 'h-6 w-6 md:h-[15px] md:w-[15px]'
             : 'h-7 w-7 md:h-6 md:w-6';
-    const generalControlsPosition = compactControls && containMobileControls
-        ? `bottom-full right-8 mb-2 md:bottom-auto md:mb-0 ${type === 'product' ? 'md:-top-[21px]' : 'md:-top-[38px]'}`
+    const generalControlsPosition = type === 'product'
+        ? `bottom-full mb-2 ${compactControls ? 'right-8' : 'right-0'}`
+        : compactControls && containMobileControls
+        ? 'bottom-full right-8 mb-2 md:bottom-auto md:mb-0 md:-top-[38px]'
         : compactControls
-            ? `${type === 'product' ? 'top-[-21px]' : 'top-[-38px]'} right-8`
-            : `${type === 'product' ? 'top-[-10px] md:-top-[36px]' : 'top-[-10px]'} right-[-10px]`;
+            ? 'top-[-38px] right-8'
+            : 'top-[-10px] right-[-10px]';
     const generalControlsMaxWidth = compactControls
         ? 'max-w-[calc(100%_-_2.5rem)]'
         : 'max-w-[calc(100%_-_0.5rem)]';
     
+    const hasMultipleSelectedItems = Boolean(handlers.selectedItems && handlers.selectedItems.length > 1);
+    let isActiveSelection = true;
     let effectiveHideGeneralControls = hideGeneralControls;
-    if (handlers.multiSelectMode && handlers.selectedItems && handlers.selectedItems.length > 1) {
-        const firstItem = handlers.selectedItems[0];
-        const isFirst = firstItem.type === selectionType && firstItem.id === selectionId;
-        if (!isFirst) {
+    if (hasMultipleSelectedItems) {
+        const activeItem = handlers.selectedItems.find((item: any) => item.id === handlers.selectedId)
+            || handlers.selectedItems[handlers.selectedItems.length - 1];
+        isActiveSelection = activeItem.type === selectionType && activeItem.id === selectionId;
+        if (!isActiveSelection) {
             effectiveHideGeneralControls = true;
         }
     }
-    const showMoveControls = !effectiveHideGeneralControls || (isFreeText && isSelected);
+    const showMoveControls = isActiveSelection && (!effectiveHideGeneralControls || (isFreeText && isSelected));
     
     const [shakingCategory, setShakingCategory] = React.useState<string | null>(null);
 
@@ -401,7 +407,7 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
              <div className={`absolute inset-0 border-2 border-indigo-500 rounded-lg pointer-events-none ${selectionLayerClasses.outline}`} />
         )}
 
-        {isSelected && !isDragging && !isFreeText && showAddControls && (
+        {isSelected && isActiveSelection && !isDragging && !isFreeText && showAddControls && (
             <>
                 {showTopAddControl && (
                     <ResponsiveMoveButton
@@ -452,7 +458,7 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
                         onClick={(e) => { e.stopPropagation(); handlers.setMultiSelectMode?.(!handlers.multiSelectMode); }}
                         title="Seleção múltipla"
                     >
-                        <ListChecks size={iconSize} className={iconClass} />
+                        <CopyCheck size={iconSize} className={iconClass} />
                     </button>
                     <button 
                         onClick={(e) => handlers.handleRemove(e, id || catName, type)} 
@@ -533,6 +539,64 @@ export const MenuItem: React.FC<MenuItemProps> = ({
     const minimumFontSize = resolveMinimumFontSize(style);
     const allowSameWordBreak = style.allowSameWordBreak === true;
     const contentSpacing = resolveMenuContentSpacing(style);
+    const replacePriceOnNextInputRef = React.useRef<Set<string>>(new Set());
+    const replacePriceText = (element: HTMLElement, productId: string, text: string) => {
+        const nextText = text.replace(/[^0-9.,]/g, '');
+        if (!nextText) return;
+        element.innerText = nextText;
+        replacePriceOnNextInputRef.current.delete(productId);
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        range.collapse(false);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+    };
+    const handlePriceFocus = (event: React.FocusEvent<HTMLElement>, productId: string) => {
+        if (handlers.editingId !== productId) return;
+        handlers.setProductEditingField?.(productId, 'price', `product-price-${productId}`);
+        replacePriceOnNextInputRef.current.add(productId);
+        handleMobileFocusScroll(event.currentTarget);
+        window.setTimeout(() => {
+            if (document.activeElement !== event.currentTarget || !replacePriceOnNextInputRef.current.has(productId)) return;
+            const range = document.createRange();
+            range.selectNodeContents(event.currentTarget);
+            const selection = window.getSelection();
+            selection?.removeAllRanges();
+            selection?.addRange(range);
+        }, 0);
+    };
+    const handlePriceKeyDown = (event: React.KeyboardEvent<HTMLElement>, productId: string) => {
+        const isPlainCharacter = event.key !== 'Unidentified'
+            && event.key.length === 1
+            && !event.ctrlKey
+            && !event.metaKey
+            && !event.altKey;
+        const isPriceCharacter = isPlainCharacter && /^[0-9.,]$/.test(event.key);
+        if (replacePriceOnNextInputRef.current.has(productId) && isPriceCharacter) {
+            event.preventDefault();
+            replacePriceText(event.currentTarget, productId, event.key);
+            return;
+        }
+        if (isPlainCharacter && !isPriceCharacter) event.preventDefault();
+        handlers.handleKeyDown(event);
+    };
+    const handlePriceBeforeInput = (event: React.FormEvent<HTMLElement>, productId: string) => {
+        if (!replacePriceOnNextInputRef.current.has(productId)) return;
+        const inputEvent = event.nativeEvent as InputEvent;
+        if (!inputEvent.inputType?.startsWith('insert') || !inputEvent.data) return;
+        const nextText = inputEvent.data.replace(/[^0-9.,]/g, '');
+        if (!nextText) return;
+        event.preventDefault();
+        replacePriceText(event.currentTarget, productId, nextText);
+    };
+    const handlePricePaste = (event: React.ClipboardEvent<HTMLElement>, productId: string) => {
+        if (!replacePriceOnNextInputRef.current.has(productId)) return;
+        const nextText = event.clipboardData.getData('text').replace(/[^0-9.,]/g, '');
+        if (!nextText) return;
+        event.preventDefault();
+        replacePriceText(event.currentTarget, productId, nextText);
+    };
     const getToolbarFontSizeLimit = (type: string) => {
         if (type === 'menuTitle') return fontSizeLimits.menuTitle;
         if (type === 'menuSubtitle') return fontSizeLimits.menuSubtitle;
@@ -547,7 +611,17 @@ export const MenuItem: React.FC<MenuItemProps> = ({
     };
     const renderFormattingToolbar = (type: string, id: string, value: any) => (
         formattingTarget?.type === type && formattingTarget?.id === id
-            ? <InlineStyleToolbar targetElementId={formattingTarget.elementId} value={value || {}} maxFontSize={getToolbarFontSizeLimit(type)} minFontSize={minimumFontSize} onChange={(newStyle) => handlers.handleInlineStyleChange?.(formattingTarget, newStyle)} onDismiss={() => handlers.setFormattingTarget?.(null)} />
+            ? <InlineStyleToolbar
+                targetElementId={formattingTarget.elementId}
+                value={value || {}}
+                maxFontSize={getToolbarFontSizeLimit(type)}
+                minFontSize={minimumFontSize}
+                onChange={(newStyle) => handlers.handleInlineStyleChange?.(formattingTarget, newStyle)}
+                onDismiss={() => handlers.setFormattingTarget?.(null)}
+                onAdjustPrice={type === 'product' && formattingTarget.field === 'price'
+                    ? (direction: 1 | -1, amount: number, mode: PriceAdjustmentMode) => handlers.adjustProductPrice?.(id, direction, amount, mode)
+                    : undefined}
+              />
             : null
     );
     
@@ -911,7 +985,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                         textAlign: priceStyle.textAlign,
                                         display: 'inline-block'
                                     }}
-                                    contentEditable={isEditing} tabIndex={isEditing ? 0 : undefined} inputMode="decimal" enterKeyHint="done" suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'price')} onKeyDown={(e) => { if (isEditing && e.key !== 'Unidentified' && e.key.length === 1 && !/^[0-9.,]$/.test(e.key) && !e.ctrlKey && !e.metaKey) e.preventDefault(); handlers.handleKeyDown(e); }} onFocus={(e) => { if (!isEditing) return; handlers.setProductEditingField?.(product.id, 'price', `product-price-${product.id}`); handleMobileFocusScroll(e.currentTarget); setTimeout(() => { if (document.activeElement === e.currentTarget) { const range = document.createRange(); range.selectNodeContents(e.currentTarget); const sel = window.getSelection(); sel?.removeAllRanges(); sel?.addRange(range); } }, 0); }} onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }} onClick={(e) => { if (isEditing) e.stopPropagation(); }}
+                                    contentEditable={isEditing} tabIndex={isEditing ? 0 : undefined} inputMode="decimal" enterKeyHint="done" suppressContentEditableWarning onBlur={(e) => { replacePriceOnNextInputRef.current.delete(product.id); handlers.handleBlur(e, 'product', product.id, 'price'); }} onKeyDown={(e) => handlePriceKeyDown(e, product.id)} onBeforeInput={(e) => handlePriceBeforeInput(e, product.id)} onPaste={(e) => handlePricePaste(e, product.id)} onFocus={(e) => handlePriceFocus(e, product.id)} onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }} onClick={(e) => { if (isEditing) e.stopPropagation(); }}
                                 />
                             </div>}
                         </div>
@@ -1099,9 +1173,11 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         inputMode="decimal"
                                                         enterKeyHint="done"
                                                         suppressContentEditableWarning
-                                                        onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'price')}
-                                                        onKeyDown={(e) => { if (isEditing && e.key !== 'Unidentified' && e.key.length === 1 && !/^[0-9.,]$/.test(e.key) && !e.ctrlKey && !e.metaKey) e.preventDefault(); handlers.handleKeyDown(e); }}
-                                                        onFocus={(e) => { if (!isEditing) return; handlers.setProductEditingField?.(product.id, 'price', `product-price-${product.id}`); handleMobileFocusScroll(e.currentTarget); setTimeout(() => { if (document.activeElement === e.currentTarget) { const range = document.createRange(); range.selectNodeContents(e.currentTarget); const sel = window.getSelection(); sel?.removeAllRanges(); sel?.addRange(range); } }, 0); }}
+                                                        onBlur={(e) => { replacePriceOnNextInputRef.current.delete(product.id); handlers.handleBlur(e, 'product', product.id, 'price'); }}
+                                                        onKeyDown={(e) => handlePriceKeyDown(e, product.id)}
+                                                        onBeforeInput={(e) => handlePriceBeforeInput(e, product.id)}
+                                                        onPaste={(e) => handlePricePaste(e, product.id)}
+                                                        onFocus={(e) => handlePriceFocus(e, product.id)}
                                                         onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }}
                                                         onClick={(e) => { if (isEditing) e.stopPropagation(); }}
                                                     />

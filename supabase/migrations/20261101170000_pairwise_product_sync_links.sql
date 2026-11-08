@@ -21,20 +21,30 @@ create policy menu_product_sync_links_member on public.menu_product_sync_links
 for all using (public.is_workspace_member(workspace_id))
 with check (public.is_workspace_member(workspace_id));
 
-insert into public.menu_product_sync_links (
-  workspace_id,
-  source_menu_id,
-  target_menu_id,
-  product_id
-)
-select
-  source_link.workspace_id,
-  source_link.menu_id,
-  target_link.menu_id,
-  source_link.product_id
-from public.menu_synced_products source_link
-join public.menu_synced_products target_link
-  on target_link.workspace_id = source_link.workspace_id
- and target_link.product_id = source_link.product_id
- and target_link.menu_id <> source_link.menu_id
-on conflict do nothing;
+do $$
+begin
+  if to_regclass('public.menu_synced_products') is not null then
+    execute $migration$
+      insert into public.menu_product_sync_links (
+        workspace_id,
+        source_menu_id,
+        target_menu_id,
+        product_id
+      )
+      select
+        source_link.workspace_id,
+        source_link.menu_id,
+        target_link.menu_id,
+        source_link.product_id
+      from public.menu_synced_products source_link
+      join public.menu_synced_products target_link
+        on target_link.workspace_id = source_link.workspace_id
+       and target_link.product_id = source_link.product_id
+       and target_link.menu_id <> source_link.menu_id
+      on conflict do nothing
+    $migration$;
+  end if;
+end
+$$;
+
+notify pgrst, 'reload schema';

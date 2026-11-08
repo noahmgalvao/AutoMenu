@@ -14,6 +14,7 @@ import {
 import { ProductTransferModal } from './ProductDesigner/ProductTransferModal';
 import { linkSyncedMenuProducts } from '../services/workspaceService';
 import type { MenuProductSource } from '../types';
+import { PricePropagationPrompt } from './PricePropagationPrompt';
 
 interface ProductDesignerProps {
     products: Product[];
@@ -58,6 +59,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
         showInsights,
         bulkPercentage,
         bulkAdjustmentMode,
+        pendingPricePropagation,
         isUploading,
         newItemDraft,
         formData,
@@ -73,6 +75,8 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
         handlers,
         toggleCollapse,
         handleBulkAdjust,
+        applyPricePropagation,
+        dismissPricePropagation,
         handleProductImageUpload,
         onProductImageClick,
         onRemoveProductImage,
@@ -276,6 +280,12 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                     onClose={() => setShowInsights(false)}
                 />
             )}
+            <PricePropagationPrompt
+                request={pendingPricePropagation}
+                style={style}
+                onApply={applyPricePropagation}
+                onDismiss={dismissPricePropagation}
+            />
 
             <input type="file" ref={productFileInputRef} className="hidden" onChange={handleProductImageUpload} accept="image/*" />
             <input type="file" ref={categoryFileInputRef} className="hidden" onChange={handleCategoryImageUpload} accept="image/*" />

@@ -1,7 +1,7 @@
 import React, { useMemo, useEffect, useRef, useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AddedImage, ElementStyle, Product, MenuStyle, SortOption } from '../types';
-import { AlertTriangle, BringToFront, Copy, CopyPlus, EyeOff, Paintbrush, Clipboard, Plus, Scissors, SendToBack, Trash2, ListChecks } from 'lucide-react';
+import { AlertTriangle, BringToFront, Copy, CopyCheck, CopyPlus, EyeOff, Paintbrush, Clipboard, Plus, Scissors, SendToBack, Trash2 } from 'lucide-react';
 import { calculatePagination, FREE_TEXT_PREFIX, SAFETY_BUFFER, type PageLayout } from '../utils/menuPagination';
 import { isPristineNewCategory, isPristineNewProduct } from '../utils/pristineItems';
 import { useMenuInteractions } from '../hooks/useMenuInteractions';
@@ -13,6 +13,12 @@ import { getCollisionSafeFreeTextTop } from '../hooks/interactions/freeTextMovem
 import { resolveMenuMargins } from '../utils/styleRules';
 import { canIncreaseCanvasFontSize } from '../utils/textFit';
 import { resolveMenuPageDimensions } from '../utils/pageSetup';
+import { roundPrice } from '../utils/price';
+import {
+    PricePropagationPrompt,
+    type PriceAdjustmentMode,
+    type PricePropagationRequest,
+} from './PricePropagationPrompt';
 
 interface MenuPreviewProps {
     products: Product[];
@@ -139,7 +145,28 @@ const DynamicFontLoader: React.FC<{ fonts: string[] }> = ({ fonts }) => {
 
 export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     // 1. Hook for all interactions and state
-    const handlers = useMenuInteractions(props);
+    const [pendingPricePropagation, setPendingPricePropagation] = useState<PricePropagationRequest | null>(null);
+    const handleProductUpdateWithPricePrompt = useCallback((id: string, field: keyof Product, value: any) => {
+        if (field !== 'price') {
+            props.onUpdateProduct?.(id, field, value);
+            return;
+        }
+
+        const product = props.products.find((candidate) => candidate.id === id);
+        const nextPrice = roundPrice(value);
+        props.onUpdateProduct?.(id, field, nextPrice);
+        if (!product || product.isFreeText || product.price === nextPrice) return;
+
+        setPendingPricePropagation({
+            productId: id,
+            productName: product.name,
+            previousPrice: product.price,
+            nextPrice,
+            mode: 'integer',
+            signedAmount: Math.round((nextPrice - product.price) * 100) / 100,
+        });
+    }, [props.onUpdateProduct, props.products]);
+    const handlers = useMenuInteractions({ ...props, onUpdateProduct: handleProductUpdateWithPricePrompt });
     const clipboardRef = useRef<CanvasClipboard | null>(null);
     const previewRootRef = useRef<HTMLDivElement | null>(null);
     const objectMenuRef = useRef<HTMLDivElement | null>(null);
@@ -167,6 +194,55 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         readOnly = false, visiblePageIndex, onPageCountChange,
     } = props;
     const pageDimensions = resolveMenuPageDimensions(style);
+
+    const adjustProductPrice = useCallback((
+        productId: string,
+        direction: 1 | -1,
+        amount: number,
+        mode: PriceAdjustmentMode,
+    ) => {
+        const product = products.find((candidate) => candidate.id === productId);
+        if (!product || product.isFreeText || !Number.isFinite(amount) || amount <= 0) return;
+        const signedAmount = direction * amount;
+        const nextPrice = roundPrice(
+            mode === 'percentage'
+                ? product.price * (1 + (signedAmount / 100))
+                : product.price + signedAmount,
+        );
+        if (nextPrice === product.price) return;
+        props.onUpdateProduct?.(productId, 'price', nextPrice);
+        setPendingPricePropagation({
+            productId,
+            productName: product.name,
+            previousPrice: product.price,
+            nextPrice,
+            mode,
+            signedAmount,
+        });
+    }, [products, props.onUpdateProduct]);
+
+    const applyPricePropagation = useCallback(() => {
+        if (!pendingPricePropagation) return;
+        const updates = products
+            .filter((product) => !product.isFreeText && product.id !== pendingPricePropagation.productId)
+            .map((product) => ({
+                id: product.id,
+                field: 'price' as keyof Product,
+                value: roundPrice(
+                    pendingPricePropagation.mode === 'percentage'
+                        ? product.price * (1 + (pendingPricePropagation.signedAmount / 100))
+                        : product.price + pendingPricePropagation.signedAmount,
+                ),
+            }));
+
+        if (updates.length > 0) {
+            if (props.onUpdateProducts) props.onUpdateProducts(updates);
+            else updates.forEach((update) => props.onUpdateProduct?.(update.id, update.field, update.value));
+        }
+        setPendingPricePropagation(null);
+    }, [pendingPricePropagation, products, props.onUpdateProduct, props.onUpdateProducts]);
+
+    (handlers as any).adjustProductPrice = adjustProductPrice;
 
     useEffect(() => () => {
         if (backgroundPressRef.current) {
@@ -1991,6 +2067,14 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             }}
         >
             <DynamicFontLoader fonts={usedFonts} />
+            {!readOnly && (
+                <PricePropagationPrompt
+                    request={pendingPricePropagation}
+                    style={style}
+                    onApply={applyPricePropagation}
+                    onDismiss={() => setPendingPricePropagation(null)}
+                />
+            )}
 
             {readOnly && (
                 <div
@@ -2063,7 +2147,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                         </button>
                     ) : (
                     <>
-                    <button onClick={() => { handlers.setMultiSelectMode?.(!handlers.multiSelectMode); setObjectMenu(null); }} className={`w-full px-3 py-2 text-left flex items-center gap-2 ${handlers.multiSelectMode ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-slate-50'}`}><ListChecks size={15} /> Seleção múltipla</button>
+                    <button onClick={() => { handlers.setMultiSelectMode?.(!handlers.multiSelectMode); setObjectMenu(null); }} className={`w-full px-3 py-2 text-left flex items-center gap-2 ${handlers.multiSelectMode ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-slate-50'}`}><CopyCheck size={15} /> Seleção múltipla</button>
                     <button disabled={isBackgroundMenu} onClick={() => runObjectAction('copy', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Copy size={15} /> Copiar</button>
                     <button disabled={isBackgroundMenu} onClick={() => runObjectAction('copyFormat', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Paintbrush size={15} /> Copiar formatacao</button>
                     <button

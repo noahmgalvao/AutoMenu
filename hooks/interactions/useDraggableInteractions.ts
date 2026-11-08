@@ -397,12 +397,13 @@ export const useDraggableInteractions = (
         const keepTwoColumnCategoryDragAlive = draggedItemRef.current?.type === 'category'
             && dragSourceContextRef.current === 'product-designer'
             && (style.categoryColumnCount || 1) === 2;
+        if (keepTwoColumnCategoryDragAlive) return;
         touchCancelCommitTimeoutRef.current = window.setTimeout(() => {
             touchCancelCommitTimeoutRef.current = null;
             if (isDraggingRef.current && draggedItemRef.current) {
                 performCommitAndCleanupRef.current();
             }
-        }, keepTwoColumnCategoryDragAlive ? 2400 : TOUCH_CANCEL_COMMIT_DELAY_MS);
+        }, TOUCH_CANCEL_COMMIT_DELAY_MS);
     }, [clearTouchCancelCommit, style.categoryColumnCount]);
 
     const restoreBodyDragStyles = useCallback(() => {
@@ -3271,8 +3272,8 @@ export const useDraggableInteractions = (
                 event.stopImmediatePropagation();
                 keepScrollLocked();
                 // DOM reordering can emit a transient touchcancel even though the finger
-                // is still down. Keep the session alive; a subsequent move cancels this
-                // fallback, while a real cancellation still commits after the grace time.
+                // is still down. Keep two-column category drags alive until touchend;
+                // other drags still commit after the cancellation grace time.
                 scheduleTouchCancelCommit();
                 return;
             }

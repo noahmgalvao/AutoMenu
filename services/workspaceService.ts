@@ -1473,6 +1473,54 @@ const isMissingActionLabelError = (error: any) => {
   return message.includes('action_label') && (error?.code === 'PGRST204' || /schema cache|column/i.test(message));
 };
 
+type ProductSyncLinkRow = { target_menu_id: string; product_id: string };
+
+const loadProductSyncLinks = async (
+  workspaceId: string,
+  sourceMenuId: string,
+): Promise<ProductSyncLinkRow[]> => {
+  const supabase = getSupabaseClient();
+  const pairwiseResult = await supabase
+    .from('menu_product_sync_links')
+    .select('target_menu_id, product_id')
+    .eq('workspace_id', workspaceId)
+    .eq('source_menu_id', sourceMenuId);
+
+  if (!pairwiseResult.error) return pairwiseResult.data || [];
+  if (!isMissingSchemaObjectError(pairwiseResult.error, 'menu_product_sync_links')) {
+    throw pairwiseResult.error;
+  }
+
+  const sourceResult = await supabase
+    .from('menu_synced_products')
+    .select('product_id')
+    .eq('workspace_id', workspaceId)
+    .eq('menu_id', sourceMenuId);
+  if (sourceResult.error) {
+    if (isMissingSchemaObjectError(sourceResult.error, 'menu_synced_products')) return [];
+    throw sourceResult.error;
+  }
+
+  const productIds = Array.from(new Set((sourceResult.data || []).map(row => row.product_id)));
+  if (productIds.length === 0) return [];
+
+  const targetResult = await supabase
+    .from('menu_synced_products')
+    .select('menu_id, product_id')
+    .eq('workspace_id', workspaceId)
+    .in('product_id', productIds)
+    .neq('menu_id', sourceMenuId);
+  if (targetResult.error) {
+    if (isMissingSchemaObjectError(targetResult.error, 'menu_synced_products')) return [];
+    throw targetResult.error;
+  }
+
+  return (targetResult.data || []).map(row => ({
+    target_menu_id: row.menu_id,
+    product_id: row.product_id,
+  }));
+};
+
 const insertMenuVersionWithRetry = async ({
   menuId,
   userId,
@@ -1552,15 +1600,10 @@ const propagateSyncedProducts = async ({
   sourceProducts: Product[];
 }) => {
   const supabase = getSupabaseClient();
-  const { data: sourceLinks, error: sourceLinksError } = await supabase
-    .from('menu_product_sync_links')
-    .select('target_menu_id, product_id')
-    .eq('workspace_id', workspaceId)
-    .eq('source_menu_id', sourceMenuId);
-  if (sourceLinksError) throw sourceLinksError;
+  const sourceLinks = await loadProductSyncLinks(workspaceId, sourceMenuId);
 
   const targetLinks = new Map<string, Set<string>>();
-  (sourceLinks || []).forEach((row) => {
+  sourceLinks.forEach((row) => {
     const ids = targetLinks.get(row.target_menu_id) || new Set<string>();
     ids.add(row.product_id);
     targetLinks.set(row.target_menu_id, ids);
@@ -2071,7 +2114,19 @@ export const linkSyncedMenuProducts = async ({
     { workspace_id: workspaceId, source_menu_id: targetMenuId, target_menu_id: sourceMenuId, product_id: productId },
   ]);
   const { error } = await supabase.from('menu_product_sync_links').upsert(rows, { onConflict: 'source_menu_id,target_menu_id,product_id' });
-  if (error) throw error;
+  if (!error) return;
+  if (!isMissingSchemaObjectError(error, 'menu_product_sync_links')) throw error;
+
+  const legacyRows = uniqueIds.flatMap((productId) => [
+    { workspace_id: workspaceId, menu_id: sourceMenuId, product_id: productId },
+    { workspace_id: workspaceId, menu_id: targetMenuId, product_id: productId },
+  ]);
+  const legacyResult = await supabase
+    .from('menu_synced_products')
+    .upsert(legacyRows, { onConflict: 'menu_id,product_id' });
+  if (legacyResult.error && !isMissingSchemaObjectError(legacyResult.error, 'menu_synced_products')) {
+    throw legacyResult.error;
+  }
 };
 
 export const listMenuProductSyncs = async ({
@@ -2082,15 +2137,10 @@ export const listMenuProductSyncs = async ({
   currentMenuId: string;
 }): Promise<MenuProductSync[]> => {
   const supabase = getSupabaseClient();
-  const { data: links, error: linksError } = await supabase
-    .from('menu_product_sync_links')
-    .select('target_menu_id, product_id')
-    .eq('workspace_id', workspaceId)
-    .eq('source_menu_id', currentMenuId);
-  if (linksError) throw linksError;
+  const links = await loadProductSyncLinks(workspaceId, currentMenuId);
 
   const counts = new Map<string, Set<string>>();
-  (links || []).forEach((link) => {
+  links.forEach((link) => {
     const productIds = counts.get(link.target_menu_id) || new Set<string>();
     productIds.add(link.product_id);
     counts.set(link.target_menu_id, productIds);
@@ -2133,7 +2183,39 @@ export const unlinkSyncedMenuProducts = async ({
       .eq('target_menu_id', targetId)
   )));
   const error = results.find((result) => result.error)?.error;
-  if (error) throw error;
+  if (!error) return;
+  if (!isMissingSchemaObjectError(error, 'menu_product_sync_links')) throw error;
+
+  const legacyLinksResult = await supabase
+    .from('menu_synced_products')
+    .select('menu_id, product_id')
+    .eq('workspace_id', workspaceId)
+    .in('menu_id', [sourceMenuId, targetMenuId]);
+  if (legacyLinksResult.error) {
+    if (isMissingSchemaObjectError(legacyLinksResult.error, 'menu_synced_products')) return;
+    throw legacyLinksResult.error;
+  }
+
+  const productsByMenu = new Map<string, Set<string>>();
+  (legacyLinksResult.data || []).forEach(row => {
+    const ids = productsByMenu.get(row.menu_id) || new Set<string>();
+    ids.add(row.product_id);
+    productsByMenu.set(row.menu_id, ids);
+  });
+  const sourceIds = productsByMenu.get(sourceMenuId) || new Set<string>();
+  const targetIds = productsByMenu.get(targetMenuId) || new Set<string>();
+  const sharedProductIds = Array.from(sourceIds).filter(productId => targetIds.has(productId));
+  if (sharedProductIds.length === 0) return;
+
+  const legacyDeleteResult = await supabase
+    .from('menu_synced_products')
+    .delete()
+    .eq('workspace_id', workspaceId)
+    .in('menu_id', [sourceMenuId, targetMenuId])
+    .in('product_id', sharedProductIds);
+  if (legacyDeleteResult.error && !isMissingSchemaObjectError(legacyDeleteResult.error, 'menu_synced_products')) {
+    throw legacyDeleteResult.error;
+  }
 };
 
 const resolvePublicationPdfUrl = async (row: any) => {

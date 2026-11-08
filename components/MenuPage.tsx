@@ -243,6 +243,10 @@ export const MenuPage: React.FC<MenuPageProps> = ({
         const isFreeTextTarget = chunk.category.startsWith(FREE_TEXT_PREFIX);
         const isDragTarget = isCategoryTarget || isFreeTextTarget;
         const isCategorySelected = isCategoryTarget && (handlers.isSelected?.('category', chunk.category) ?? handlers.selectedId === chunk.category);
+        const activeSelectedItem = handlers.selectedItems?.find((item: any) => item.id === handlers.selectedId)
+            || handlers.selectedItems?.[handlers.selectedItems.length - 1];
+        const isCategoryControlAnchor = (handlers.selectedItems?.length || 0) <= 1
+            || (activeSelectedItem?.type === 'category' && activeSelectedItem.id === chunk.category);
         const isCategoryDragged = isCategoryTarget && handlers.draggedItem?.type === 'category' && handlers.draggedItem?.id === chunk.category;
         const categoryAddControls = handlers.getSelectionAddControls?.('category', chunk.category) || { top: true, bottom: true };
         const categoryFlowDirections = handlers.getFlowControlDirections?.('category', chunk.category) || { before: 'top', after: 'bottom' };
@@ -302,14 +306,14 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 onDragOver={(e) => handlers.handleDragOverItem?.(e, chunk.category, 'category')}
                 className={`relative rounded-xl ${isCategoryDragged || Number.isFinite(desiredPageY) ? 'transition-none' : 'transition-all duration-200'} pointer-events-none ${isCategorySelected ? `ring-2 ring-indigo-500 bg-indigo-50/10 ${selectionLayerClasses.outline}` : ''}`}
             >
-                {isCategorySelected && !isCategoryDragged && (
+                {isCategorySelected && isCategoryControlAnchor && !isCategoryDragged && (
                     <ColumnResizeHandles
                         columnIndex={chunk.columnIndex}
                         columnCount={renderedColumnCount}
                         onResizeStart={handlers.startCategoryColumnResize}
                     />
                 )}
-                {isCategorySelected && !isCategoryDragged && (
+                {isCategorySelected && isCategoryControlAnchor && !isCategoryDragged && (
                     <>
                         {categoryAddControls.top && (
                             <ResponsiveMoveButton
