@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, Bug, CheckCircle2, Copy, Image as ImageIcon, Loader2, Printer, Scissors, Settings2, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Image as ImageIcon, Loader2, Printer, Scissors, Settings2, X } from 'lucide-react';
 import {
   getCapturedMenuPageSize,
   getPaperDimensionsMm,
@@ -10,6 +10,7 @@ import {
   type PdfExportResult,
   type PdfPrintOptions,
 } from '../../utils/pdfExport';
+import { getErrorMessage } from '../../utils/errors';
 
 export type PrintCanvasOptions = PdfPrintOptions;
 
@@ -170,7 +171,7 @@ const PrintOptionsPreview: React.FC<{
         {previewError ? (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 flex gap-2">
             <AlertTriangle size={15} className="shrink-0 mt-0.5" />
-            <span>{previewError}</span>
+            <span>{getErrorMessage(previewError, 'Não foi possível gerar a visualização. Tente novamente.')}</span>
           </div>
         ) : (
           <div className="overflow-x-auto pb-2">
@@ -214,14 +215,12 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
   const [debugEntries, setDebugEntries] = React.useState<PdfDebugEntry[]>([]);
   const [exportError, setExportError] = React.useState<PdfExportError | null>(null);
   const [exportResult, setExportResult] = React.useState<PdfExportResult | null>(null);
-  const [diagnosticCopied, setDiagnosticCopied] = React.useState(false);
 
   React.useEffect(() => {
     if (!isOpen) return;
     setDebugEntries([]);
     setExportError(null);
     setExportResult(null);
-    setDiagnosticCopied(false);
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -279,42 +278,6 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
       setIsPrinting(false);
     }
   };
-
-  const copyDiagnostic = async () => {
-    const diagnostic = JSON.stringify({
-      generatedAt: new Date().toISOString(),
-      browser: navigator.userAgent,
-      options,
-      totalPages,
-      currentPageIndex,
-      previewError,
-      exportError: exportError ? {
-        code: exportError.code,
-        stage: exportError.stage,
-        message: exportError.message,
-        details: exportError.details,
-      } : null,
-      entries: debugEntries,
-    }, null, 2);
-
-    try {
-      await navigator.clipboard.writeText(diagnostic);
-    } catch {
-      const textarea = document.createElement('textarea');
-      textarea.value = diagnostic;
-      textarea.style.position = 'fixed';
-      textarea.style.left = '-10000px';
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      textarea.remove();
-    }
-    setDiagnosticCopied(true);
-    window.setTimeout(() => setDiagnosticCopied(false), 2000);
-  };
-
-  const latestEntry = debugEntries[debugEntries.length - 1];
-  const exportHint = typeof exportError?.details?.hint === 'string' ? exportError.details.hint : null;
 
   return (
     <div className="fixed inset-0 z-[9999] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4" onMouseDown={onClose}>
@@ -481,45 +444,18 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-bold text-slate-800">
                     {exportError
-                      ? `${exportError.code}: ${exportError.message}`
+                      ? 'Não foi possível gerar o PDF. Tente novamente.'
                       : exportResult
                         ? `PDF baixado: ${exportResult.filename}`
-                        : latestEntry?.message || 'Preparando PDF...'}
+                        : 'Preparando PDF...'}
                   </div>
                   {exportResult && (
                     <div className="text-xs text-emerald-700 mt-1">
                       {exportResult.pageCount} página(s), {(exportResult.sizeBytes / 1024 / 1024).toFixed(2)} MB, {(exportResult.durationMs / 1000).toFixed(1)} s.
                     </div>
                   )}
-                  {exportHint && (
-                    <div className="text-xs text-red-700 mt-1">{exportHint}</div>
-                  )}
                 </div>
               </div>
-
-              <details className="mt-3 rounded-lg border border-black/10 bg-white/70">
-                <summary className="cursor-pointer px-3 py-2 text-xs font-bold text-slate-700 flex items-center gap-2">
-                  <Bug size={14} /> Diagnostico tecnico ({debugEntries.length} eventos)
-                </summary>
-                <div className="border-t border-black/10 p-3">
-                  <div className="max-h-44 overflow-auto rounded bg-slate-950 p-2 font-mono text-[10px] leading-relaxed text-slate-200">
-                    {debugEntries.map((entry, index) => (
-                      <div key={`${entry.timestamp}-${index}`} className={entry.level === 'error' ? 'text-red-300' : entry.level === 'warning' ? 'text-amber-300' : entry.level === 'success' ? 'text-emerald-300' : ''}>
-                        [{entry.stage}] [{entry.code}] {entry.message}
-                        {entry.details ? ` ${JSON.stringify(entry.details)}` : ''}
-                      </div>
-                    ))}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={copyDiagnostic}
-                    className="mt-2 h-8 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50 inline-flex items-center gap-2"
-                  >
-                    {diagnosticCopied ? <CheckCircle2 size={13} /> : <Copy size={13} />}
-                    {diagnosticCopied ? 'Diagnóstico copiado' : 'Copiar diagnóstico'}
-                  </button>
-                </div>
-              </details>
             </section>
           )}
         </div>

@@ -17,7 +17,7 @@ async function startServer() {
 
       const { base64Data, mimeType, prompt, responseSchema } = req.body;
       if (!base64Data || !mimeType || !prompt) {
-        return res.status(400).json({ error: "Missing required fields" });
+        return res.status(400).json({ error: "Não foi possível processar a solicitação." });
       }
 
       const ai = new GoogleGenAI({ 
@@ -50,7 +50,7 @@ async function startServer() {
       res.json({ text: response.text });
     } catch (error: any) {
       console.error("Gemini server error:", error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: "Não foi possível analisar o cardápio. Tente novamente." });
     }
   });
 

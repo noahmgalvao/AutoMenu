@@ -14,11 +14,16 @@ import { resolveMenuMargins } from '../utils/styleRules';
 import { canIncreaseCanvasFontSize } from '../utils/textFit';
 import { resolveMenuPageDimensions } from '../utils/pageSetup';
 import { roundPrice } from '../utils/price';
+import { PricePropagationPrompt } from './PricePropagationPrompt';
+import { MobileProductEditorModal } from './MobileProductEditorModal';
 import {
-    PricePropagationPrompt,
+    applyPriceOperations,
+    createPricePropagationRequest,
+    getPricePropagationSourceIds,
+    mergePricePropagationRequest,
     type PriceAdjustmentMode,
     type PricePropagationRequest,
-} from './PricePropagationPrompt';
+} from '../utils/pricePropagation';
 
 interface MenuPreviewProps {
     products: Product[];
@@ -51,6 +56,8 @@ interface MenuPreviewProps {
     readOnly?: boolean;
     visiblePageIndex?: number;
     onPageCountChange?: (pageCount: number) => void;
+    mobileProductEditorEnabled?: boolean;
+    onUploadProductImage?: (productId: string, file: File) => Promise<{ url: string; assetId: string }>;
 }
 
 type ObjectSelectionItem = SelectionItem & { type: 'product' | 'category' | 'freeText' | 'addedImage' };
@@ -146,6 +153,9 @@ const DynamicFontLoader: React.FC<{ fonts: string[] }> = ({ fonts }) => {
 export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     // 1. Hook for all interactions and state
     const [pendingPricePropagation, setPendingPricePropagation] = useState<PricePropagationRequest | null>(null);
+    const [mobileEditorProductIds, setMobileEditorProductIds] = useState<string[]>([]);
+    const productImageInputRef = useRef<HTMLInputElement | null>(null);
+    const pendingProductImageIdRef = useRef<string | null>(null);
     const handleProductUpdateWithPricePrompt = useCallback((id: string, field: keyof Product, value: any) => {
         if (field !== 'price') {
             props.onUpdateProduct?.(id, field, value);
@@ -157,14 +167,13 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         props.onUpdateProduct?.(id, field, nextPrice);
         if (!product || product.isFreeText || product.price === nextPrice) return;
 
-        setPendingPricePropagation({
+        const request = createPricePropagationRequest({
             productId: id,
             productName: product.name,
             previousPrice: product.price,
             nextPrice,
-            mode: 'integer',
-            signedAmount: Math.round((nextPrice - product.price) * 100) / 100,
         });
+        setPendingPricePropagation((current) => mergePricePropagationRequest(current, request));
     }, [props.onUpdateProduct, props.products]);
     const handlers = useMenuInteractions({ ...props, onUpdateProduct: handleProductUpdateWithPricePrompt });
     const clipboardRef = useRef<CanvasClipboard | null>(null);
@@ -195,6 +204,34 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     } = props;
     const pageDimensions = resolveMenuPageDimensions(style);
 
+    const startInlineEditing = handlers.startEditing;
+    (handlers as any).startEditing = (
+        event: React.MouseEvent,
+        id: string,
+        elementIdToFocus?: string,
+        field?: any,
+    ) => {
+        const product = products.find((candidate) => candidate.id === id && !candidate.isFreeText);
+        const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
+        if (!readOnly && props.mobileProductEditorEnabled && isMobile && product) {
+            event.preventDefault();
+            event.stopPropagation();
+            const selectedProductIds = (handlers.selectedItems || [])
+                .filter((item: SelectionItem) => item.type === 'product')
+                .map((item: SelectionItem) => item.id)
+                .filter((productId: string) => products.some((candidate) => candidate.id === productId && !candidate.isFreeText));
+            setMobileEditorProductIds(
+                selectedProductIds.length > 1 && selectedProductIds.includes(id)
+                    ? selectedProductIds
+                    : [id],
+            );
+            handlers.setEditingId(null);
+            handlers.setFormattingTarget(null);
+            return;
+        }
+        startInlineEditing(event, id, elementIdToFocus, field);
+    };
+
     const adjustProductPrice = useCallback((
         productId: string,
         direction: 1 | -1,
@@ -211,28 +248,25 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         );
         if (nextPrice === product.price) return;
         props.onUpdateProduct?.(productId, 'price', nextPrice);
-        setPendingPricePropagation({
+        const request = createPricePropagationRequest({
             productId,
             productName: product.name,
             previousPrice: product.price,
             nextPrice,
-            mode,
-            signedAmount,
+            operation: { mode, signedAmount },
         });
+        setPendingPricePropagation((current) => mergePricePropagationRequest(current, request));
     }, [products, props.onUpdateProduct]);
 
     const applyPricePropagation = useCallback(() => {
         if (!pendingPricePropagation) return;
+        const sourceIds = getPricePropagationSourceIds(pendingPricePropagation);
         const updates = products
-            .filter((product) => !product.isFreeText && product.id !== pendingPricePropagation.productId)
+            .filter((product) => !product.isFreeText && !sourceIds.has(product.id))
             .map((product) => ({
                 id: product.id,
                 field: 'price' as keyof Product,
-                value: roundPrice(
-                    pendingPricePropagation.mode === 'percentage'
-                        ? product.price * (1 + (pendingPricePropagation.signedAmount / 100))
-                        : product.price + pendingPricePropagation.signedAmount,
-                ),
+                value: applyPriceOperations(product.price, pendingPricePropagation.operations),
             }));
 
         if (updates.length > 0) {
@@ -243,6 +277,42 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     }, [pendingPricePropagation, products, props.onUpdateProduct, props.onUpdateProducts]);
 
     (handlers as any).adjustProductPrice = adjustProductPrice;
+    (handlers as any).mobileProductEditorEnabled = Boolean(props.mobileProductEditorEnabled);
+    (handlers as any).editProductImage = (productId: string) => {
+        if (!props.onUploadProductImage) return;
+        pendingProductImageIdRef.current = productId;
+        productImageInputRef.current?.click();
+    };
+    (handlers as any).removeProductImage = (productId: string) => {
+        const updates = [
+            { id: productId, field: 'image' as keyof Product, value: '' },
+            { id: productId, field: 'imageAssetId' as keyof Product, value: null },
+        ];
+        if (props.onUpdateProducts) props.onUpdateProducts(updates);
+        else updates.forEach(update => props.onUpdateProduct?.(update.id, update.field, update.value));
+    };
+    (handlers as any).setProductImageAlignment = (productId: string, alignment: NonNullable<Product['imageAlignment']>) => {
+        props.onUpdateProduct?.(productId, 'imageAlignment', alignment);
+    };
+
+    const handleProductImageInput = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const productId = pendingProductImageIdRef.current;
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        pendingProductImageIdRef.current = null;
+        if (!productId || !file || !props.onUploadProductImage) return;
+        try {
+            const uploaded = await props.onUploadProductImage(productId, file);
+            const updates = [
+                { id: productId, field: 'image' as keyof Product, value: uploaded.url },
+                { id: productId, field: 'imageAssetId' as keyof Product, value: uploaded.assetId },
+            ];
+            if (props.onUpdateProducts) props.onUpdateProducts(updates);
+            else updates.forEach(update => props.onUpdateProduct?.(update.id, update.field, update.value));
+        } catch {
+            window.alert('Não foi possível alterar a imagem. Tente novamente.');
+        }
+    };
 
     useEffect(() => () => {
         if (backgroundPressRef.current) {
@@ -2067,12 +2137,43 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             }}
         >
             <DynamicFontLoader fonts={usedFonts} />
+            {!readOnly && <input ref={productImageInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => void handleProductImageInput(event)} />}
             {!readOnly && (
                 <PricePropagationPrompt
                     request={pendingPricePropagation}
                     style={style}
                     onApply={applyPricePropagation}
                     onDismiss={() => setPendingPricePropagation(null)}
+                />
+            )}
+
+            {!readOnly && mobileEditorProductIds.length > 0 && (
+                <MobileProductEditorModal
+                    productIds={mobileEditorProductIds}
+                    products={products}
+                    style={style}
+                    onClose={() => setMobileEditorProductIds([])}
+                    onSave={(updates, propagation) => {
+                        if (updates.length > 0) {
+                            if (props.onUpdateProducts) props.onUpdateProducts(updates);
+                            else updates.forEach((update) => props.onUpdateProduct?.(update.id, update.field, update.value));
+                        }
+                        if (propagation) {
+                            setPendingPricePropagation((current) => mergePricePropagationRequest(current, propagation));
+                        }
+                        setMobileEditorProductIds([]);
+                    }}
+                    onStyleChange={(field, value, productId) => (handlers as any).handleInlineStyleChange?.({
+                        type: 'product',
+                        id: productId,
+                        field,
+                        elementId: field === 'price'
+                            ? `product-price-${productId}`
+                            : field === 'description'
+                                ? `product-description-${productId}`
+                                : `product-name-${productId}`,
+                    }, value)}
+                    onUploadImage={props.onUploadProductImage}
                 />
             )}
 

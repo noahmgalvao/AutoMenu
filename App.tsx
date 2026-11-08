@@ -128,6 +128,7 @@ interface PersistPayload {
   style: MenuStyle;
   templates: MenuStyle[];
   sortOption: SortOption;
+  actionLabel?: string;
 }
 
 interface LocalPendingSnapshot {
@@ -287,6 +288,7 @@ const saveWorkspaceStateWithRetry = async (payload: PersistPayload) => {
         style: payload.style,
         templates: payload.templates,
         sortOption: payload.sortOption,
+        actionLabel: payload.actionLabel,
       });
     } catch (error) {
       lastError = error;
@@ -350,6 +352,7 @@ const App: React.FC = () => {
   const cachedPdfExportRef = useRef<CachedPdfExport | null>(null);
   const pendingPrintContentSignatureRef = useRef<string | null>(null);
   const currentContentSignatureRef = useRef('');
+  const pendingPersistActionLabelRef = useRef<string | null>(null);
 
   useEffect(() => {
     const resetPublishingState = () => {
@@ -384,6 +387,13 @@ const App: React.FC = () => {
   const setStyle = useCallback((value: React.SetStateAction<MenuStyle>) => {
     saveCheckpoint();
     setStyleRaw(value);
+  }, [saveCheckpoint]);
+
+  const setProductsAndStyle = useCallback((nextProducts: Product[], nextStyle: MenuStyle, actionLabel?: string) => {
+    saveCheckpoint();
+    pendingPersistActionLabelRef.current = actionLabel || null;
+    setProductsRaw(nextProducts);
+    setStyleRaw(nextStyle);
   }, [saveCheckpoint]);
 
   const setTemplates = useCallback((value: React.SetStateAction<MenuStyle[]>) => {
@@ -479,6 +489,9 @@ const App: React.FC = () => {
 
         setSaveState('saved');
         setLoadError(null);
+        if (pendingPersistActionLabelRef.current === payload.actionLabel) {
+          pendingPersistActionLabelRef.current = null;
+        }
       } else {
         queuedSaveRef.current = true;
         setSaveState('dirty');
@@ -791,6 +804,7 @@ const App: React.FC = () => {
       style,
       templates,
       sortOption,
+      actionLabel: pendingPersistActionLabelRef.current || undefined,
     };
     latestPersistPayloadRef.current = payload;
     const signature = getPersistSignature(payload);
@@ -1909,6 +1923,7 @@ const App: React.FC = () => {
             style={style}
             setStyle={setStyle}
             setProducts={setProducts}
+            setProductsAndStyle={setProductsAndStyle}
             templates={templates}
             sortOption={sortOption}
             setSortOption={setSortOption}

@@ -3,17 +3,9 @@ import { createPortal } from 'react-dom';
 import { BadgeDollarSign, X } from 'lucide-react';
 import type { MenuStyle } from '../types';
 import { formatMenuPriceValue } from '../utils/price';
+import type { PriceAdjustmentOperation, PricePropagationRequest } from '../utils/pricePropagation';
 
-export type PriceAdjustmentMode = 'percentage' | 'integer';
-
-export interface PricePropagationRequest {
-  productId: string;
-  productName: string;
-  previousPrice: number;
-  nextPrice: number;
-  mode: PriceAdjustmentMode;
-  signedAmount: number;
-}
+export type { PriceAdjustmentMode, PricePropagationRequest } from '../utils/pricePropagation';
 
 interface PricePropagationPromptProps {
   request: PricePropagationRequest | null;
@@ -29,6 +21,18 @@ export const PricePropagationPrompt: React.FC<PricePropagationPromptProps> = ({
   onDismiss,
 }) => {
   if (!request) return null;
+
+  const priceDifference = request.nextPrice - request.previousPrice;
+  const percentageDifference = request.previousPrice !== 0
+    ? (priceDifference / request.previousPrice) * 100
+    : null;
+  const formatSignedNumber = (value: number, suffix = '') => `${value >= 0 ? '+' : '−'}${Math.abs(value).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}${suffix}`;
+  const formatOperation = (operation: PriceAdjustmentOperation) => (
+    operation.mode === 'percentage'
+      ? formatSignedNumber(operation.signedAmount, '%')
+      : `${operation.signedAmount >= 0 ? '+' : '−'}R$ ${formatMenuPriceValue(Math.abs(operation.signedAmount), style)}`
+  );
+  const operationSummary = request.operations.map(formatOperation).join('  →  ');
 
   return createPortal(
     <div className="pointer-events-none fixed inset-x-0 bottom-4 z-[2147483600] flex justify-center px-4 sm:bottom-6">
@@ -62,6 +66,15 @@ export const PricePropagationPrompt: React.FC<PricePropagationPromptProps> = ({
             <p className="mt-2 truncate text-xs text-slate-500" title={request.productName}>
               {request.productName}: R$ {formatMenuPriceValue(request.previousPrice, style)} → R$ {formatMenuPriceValue(request.nextPrice, style)}
             </p>
+            <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-700">
+              <p className="font-semibold">
+                Diferença: {priceDifference >= 0 ? '+' : '−'}R$ {formatMenuPriceValue(Math.abs(priceDifference), style)}
+                {percentageDifference !== null && ` (${formatSignedNumber(percentageDifference, '%')})`}
+              </p>
+              <p className="mt-1 text-slate-500">
+                {request.operations.length > 1 ? 'Sequência que será repetida' : 'Reajuste que será repetido'}: <strong className="text-slate-700">{operationSummary}</strong>
+              </p>
+            </div>
           </div>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-2">

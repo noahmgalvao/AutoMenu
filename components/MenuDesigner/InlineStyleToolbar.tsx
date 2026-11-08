@@ -4,7 +4,7 @@ import { AlignCenter, AlignLeft, AlignRight, Bold, ChevronDown, Italic, Minus, P
 import { ElementStyle } from '../../types';
 import { FontSelect } from './SearchableSelects';
 import { FontSizeInput } from './FontSizeInput';
-import type { PriceAdjustmentMode } from '../PricePropagationPrompt';
+import type { PriceAdjustmentMode } from '../../utils/pricePropagation';
 
 interface InlineStyleToolbarProps {
     targetElementId: string;

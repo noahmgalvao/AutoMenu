@@ -318,6 +318,10 @@ export const ProductList: React.FC<ProductListProps> = ({
                         setFormData={setFormData} 
                         saveEdit={saveEdit} 
                         cancelEdit={cancelEdit} 
+                        imageSource={productImageUpload?.id === product.id ? productImageUpload.previewUrl : formData.image || product.image}
+                        imageUploading={productImageUpload?.id === product.id}
+                        onImageClick={() => onProductImageClick(product.id)}
+                        onRemoveImage={() => onRemoveProductImage(product.id)}
                       />
                     ) : (
                       <div 

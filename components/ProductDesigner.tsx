@@ -1,6 +1,6 @@
 import React from 'react';
 import { Product, MenuStyle, SortOption } from '../types';
-import { ShoppingCart, PanelLeftClose, CopyPlus, FileText } from 'lucide-react';
+import { ShoppingCart, PanelLeftClose, CopyPlus, FileText, Maximize2 } from 'lucide-react';
 import { useProductDesignerLogic } from '../hooks/useProductDesignerLogic';
 import { ImportTools } from './ProductDesigner/ImportTools';
 import { ProductList } from './ProductDesigner/ProductList';
@@ -104,7 +104,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
         productsCanChangeCategory
     });
 
-    const { height, isDragging, isMobile, dragHandlers } = useBottomSheetDrag(isOpen, onClose);
+    const { height, isDragging, isMobile, isExpanded, expand, dragHandlers } = useBottomSheetDrag(isOpen, onClose);
     const importFlowRef = React.useRef<MenuImportFlowHandle>(null);
     const [isProductTransferOpen, setIsProductTransferOpen] = React.useState(false);
 
@@ -202,13 +202,14 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                     className="p-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center flex-shrink-0 min-w-0 touch-none cursor-grab active:cursor-grabbing"
                     {...dragHandlers}
                 >
-                    <h2 className="font-bold text-slate-800 flex items-center gap-2 text-sm pointer-events-none">
+                    <h2 className="font-bold text-slate-800 flex items-center gap-2 text-sm pointer-events-none min-w-0 truncate">
                         <ShoppingCart size={16} /> Designer de produtos
                     </h2>
-                    <div className="flex gap-2">
+                    <div className="flex shrink-0 gap-1.5">
                         <button type="button" onClick={onPdfClick} className="text-xs border border-slate-200 bg-white text-slate-700 px-2.5 py-1.5 rounded hover:bg-slate-100 flex items-center gap-1 pointer-events-auto" onPointerDown={e => e.stopPropagation()} title="Exportar PDF"><FileText size={12} /> PDF</button>
-                        <button onClick={() => setIsProductTransferOpen(true)} className="text-xs border border-slate-200 bg-white text-slate-700 px-2.5 py-1.5 rounded hover:bg-slate-100 flex items-center gap-1 pointer-events-auto" onPointerDown={e => e.stopPropagation()} title="Trazer produtos ou gerenciar sincronização"><CopyPlus size={12} /><span className="hidden sm:inline">Trazer</span></button>
-                        <button onClick={onClose} className="md:hidden text-slate-500 hover:text-slate-800 pointer-events-auto" onPointerDown={e => e.stopPropagation()}><PanelLeftClose size={18} /></button>
+                        <button type="button" onClick={() => setIsProductTransferOpen(true)} className="text-xs border border-slate-200 bg-white text-slate-700 px-2.5 py-1.5 rounded hover:bg-slate-100 flex items-center gap-1 pointer-events-auto" onPointerDown={e => e.stopPropagation()} title="Importar produtos de outro cardápio" aria-label="Importar produtos de outro cardápio"><CopyPlus size={12} /><span>Importar</span></button>
+                        <button type="button" onClick={expand} disabled={isExpanded} className="md:hidden h-8 w-8 rounded-lg text-slate-500 hover:bg-white hover:text-slate-800 disabled:opacity-35 pointer-events-auto flex items-center justify-center" onPointerDown={e => e.stopPropagation()} title="Expandir painel" aria-label="Expandir painel"><Maximize2 size={18} /></button>
+                        <button type="button" onClick={onClose} className="md:hidden h-8 w-8 rounded-lg text-slate-500 hover:bg-white hover:text-slate-800 pointer-events-auto flex items-center justify-center" onPointerDown={e => e.stopPropagation()} title="Recolher painel" aria-label="Recolher painel"><PanelLeftClose size={18} /></button>
                     </div>
                 </div>
 

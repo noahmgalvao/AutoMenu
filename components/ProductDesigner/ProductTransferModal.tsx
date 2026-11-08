@@ -44,16 +44,19 @@ export const ProductTransferModal: React.FC<ProductTransferModalProps> = ({ open
     if (!open) return;
     const preferences = loadUserPreferences(preferenceKey, DEFAULT_PREFERENCES);
     setLoading(true); setError(null); setSources([]); setSyncs([]); setSelectedId(''); setReplace(preferences.replace); setSync(preferences.sync);
-    void Promise.all([
+    void Promise.allSettled([
       listMenuProductSources({ workspaceId, currentMenuId, currentProducts: products }),
       listMenuProductSyncs({ workspaceId, currentMenuId }),
     ])
-      .then(([items, linkedMenus]) => {
-        setSources(items);
-        setSyncs(linkedMenus);
-        setSelectedId(items[0]?.menu.id || '');
+      .then(([sourcesResult, syncsResult]) => {
+        if (sourcesResult.status === 'fulfilled') {
+          setSources(sourcesResult.value);
+          setSelectedId(sourcesResult.value[0]?.menu.id || '');
+        } else {
+          setError(getErrorMessage(sourcesResult.reason, 'Não foi possível carregar os cardápios. Tente novamente.'));
+        }
+        setSyncs(syncsResult.status === 'fulfilled' ? syncsResult.value : []);
       })
-      .catch((reason) => setError(getErrorMessage(reason, 'Falha ao carregar cardápios.')))
       .finally(() => setLoading(false));
   }, [open, workspaceId, currentMenuId, preferenceKey]);
 
@@ -69,7 +72,7 @@ export const ProductTransferModal: React.FC<ProductTransferModalProps> = ({ open
     if (!selected) return;
     setLoading(true); setError(null);
     try { await onApply(selected, replace, sync); onClose(); }
-    catch (reason) { setError(getErrorMessage(reason, 'Falha ao trazer produtos.')); }
+    catch (reason) { setError(getErrorMessage(reason, 'Não foi possível importar os produtos. Tente novamente.')); }
     finally { setLoading(false); }
   };
 
@@ -80,7 +83,7 @@ export const ProductTransferModal: React.FC<ProductTransferModalProps> = ({ open
       await unlinkSyncedMenuProducts({ workspaceId, sourceMenuId: currentMenuId, targetMenuId: linkedMenu.menu.id });
       setSyncs((current) => current.filter((item) => item.menu.id !== linkedMenu.menu.id));
     } catch (reason) {
-      setError(getErrorMessage(reason, 'Falha ao desvincular produtos.'));
+      setError(getErrorMessage(reason, 'Não foi possível desvincular os produtos. Tente novamente.'));
     } finally {
       setUnlinkingMenuId(null);
     }
@@ -89,7 +92,7 @@ export const ProductTransferModal: React.FC<ProductTransferModalProps> = ({ open
   return (
     <div className="fixed inset-0 z-[1300] bg-slate-950/45 flex items-center justify-center p-4" onMouseDown={(event) => event.target === event.currentTarget && !loading && onClose()}>
       <div className="w-full max-w-md max-h-[calc(100dvh-2rem)] rounded-3xl bg-white shadow-2xl overflow-hidden flex flex-col">
-        <div className="p-5 border-b border-slate-100 flex justify-between"><div><h2 className="font-bold flex items-center gap-2"><CopyPlus size={18} className="text-indigo-600" /> Trazer produtos</h2><p className="text-xs text-slate-500 mt-1">Importe produtos de outro cardápio.</p></div><button onClick={onClose} className="p-2 text-slate-400"><X size={18} /></button></div>
+        <div className="p-5 border-b border-slate-100 flex justify-between"><div><h2 className="font-bold flex items-center gap-2"><CopyPlus size={18} className="text-indigo-600" /> Importar produtos</h2><p className="text-xs text-slate-500 mt-1">Copie produtos de outro cardápio e escolha se deseja mantê-los sincronizados.</p></div><button onClick={onClose} className="p-2 text-slate-400"><X size={18} /></button></div>
         <div className="p-5 space-y-3 overflow-y-auto">
           {loading && sources.length === 0 ? <div className="h-28 flex items-center justify-center"><Loader2 className="animate-spin text-indigo-600" /></div> : sources.length === 0 ? <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">Nenhum outro cardápio possui produtos diferentes.</div> : (
             <>
@@ -120,7 +123,7 @@ export const ProductTransferModal: React.FC<ProductTransferModalProps> = ({ open
           )}
           {error && <p className="text-xs text-red-600">{error}</p>}
         </div>
-        <div className="px-5 py-4 bg-slate-50 border-t flex justify-end gap-2"><button onClick={onClose} className="px-4 py-2 rounded-xl border bg-white text-sm font-semibold">Cancelar</button><button onClick={() => void apply()} disabled={!selected || loading} className="px-5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold disabled:opacity-50 flex items-center gap-2">{loading && <Loader2 size={14} className="animate-spin" />} Trazer</button></div>
+        <div className="px-5 py-4 bg-slate-50 border-t flex justify-end gap-2"><button onClick={onClose} className="px-4 py-2 rounded-xl border bg-white text-sm font-semibold">Cancelar</button><button onClick={() => void apply()} disabled={!selected || loading} className="px-5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold disabled:opacity-50 flex items-center gap-2">{loading && <Loader2 size={14} className="animate-spin" />} Importar produtos</button></div>
       </div>
     </div>
   );

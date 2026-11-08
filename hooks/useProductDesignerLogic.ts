@@ -29,7 +29,13 @@ import { roundPrice } from '../utils/price';
 import { roundFontSize } from '../utils/styleRules';
 import { optimizeImageForUpload, preloadImage } from '../utils/imageUpload';
 import { resolveMenuPageDimensions } from '../utils/pageSetup';
-import type { PricePropagationRequest } from '../components/PricePropagationPrompt';
+import {
+    applyPriceOperations,
+    createPricePropagationRequest,
+    getPricePropagationSourceIds,
+    mergePricePropagationRequest,
+    type PricePropagationRequest,
+} from '../utils/pricePropagation';
 
 interface UseProductDesignerLogicProps {
     products: Product[];
@@ -209,6 +215,9 @@ export const useProductDesignerLogic = ({
                 metadata: { product_id: targetId }
             });
             setProducts(prev => prev.map(p => p.id === targetId ? { ...p, image: url, imageAssetId: asset.id } : p));
+            if (editModeId === targetId) {
+                setFormData(previous => ({ ...previous, image: url, imageAssetId: asset.id }));
+            }
             await preloadImage(url);
         } catch (err) {
             console.error(err);
@@ -227,6 +236,9 @@ export const useProductDesignerLogic = ({
 
     const onRemoveProductImage = (id: string) => {
         setProducts(prev => prev.map(p => p.id === id ? { ...p, image: '', imageAssetId: null } : p));
+        if (editModeId === id) {
+            setFormData(previous => ({ ...previous, image: '', imageAssetId: null }));
+        }
     };
 
     const handleCategoryImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -376,14 +388,13 @@ export const useProductDesignerLogic = ({
                 return p;
             }));
             if (editedProduct && editedProduct.price !== nextEditedPrice) {
-                setPendingPricePropagation({
+                const request = createPricePropagationRequest({
                     productId: editedProduct.id,
                     productName: editedProduct.name,
                     previousPrice: editedProduct.price,
                     nextPrice: nextEditedPrice,
-                    mode: 'integer',
-                    signedAmount: Math.round((nextEditedPrice - editedProduct.price) * 100) / 100,
                 });
+                setPendingPricePropagation((current) => mergePricePropagationRequest(current, request));
             }
             if (handlers.sortedCategories.includes(editModeId)) {
                 const oldName = editModeId;
@@ -419,12 +430,10 @@ export const useProductDesignerLogic = ({
 
     const applyPricePropagation = () => {
         if (!pendingPricePropagation) return;
+        const sourceIds = getPricePropagationSourceIds(pendingPricePropagation);
         setProducts(previous => previous.map(product => {
-            if (product.isFreeText || product.id === pendingPricePropagation.productId) return product;
-            const nextPrice = pendingPricePropagation.mode === 'percentage'
-                ? product.price * (1 + (pendingPricePropagation.signedAmount / 100))
-                : product.price + pendingPricePropagation.signedAmount;
-            return { ...product, price: roundPrice(nextPrice) };
+            if (product.isFreeText || sourceIds.has(product.id)) return product;
+            return { ...product, price: applyPriceOperations(product.price, pendingPricePropagation.operations) };
         }));
         setPendingPricePropagation(null);
     };

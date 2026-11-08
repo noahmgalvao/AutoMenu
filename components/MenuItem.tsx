@@ -1,12 +1,12 @@
 import React from 'react';
 import { Product, MenuStyle } from '../types';
-import { MoreHorizontal, Plus, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Edit3, CopyCheck } from 'lucide-react';
+import { AlignCenter, AlignLeft, AlignRight, MoreHorizontal, Plus, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Edit3, CopyCheck, X } from 'lucide-react';
 import { FREE_TEXT_PREFIX } from '../utils/menuPagination';
 import { selectionLayerClasses } from './selectionLayers';
 import { getDirectionLabel, getEdgeControlClass, type FlowDirection } from '../utils/flowControls';
 import { InlineStyleToolbar } from './MenuDesigner/InlineStyleToolbar';
 import type { MoveDirection } from '../hooks/interactions/types';
-import type { PriceAdjustmentMode } from './PricePropagationPrompt';
+import type { PriceAdjustmentMode } from '../utils/pricePropagation';
 import { clampFontSize, resolveFontSizeLimits, resolveMenuContentSpacing, resolveMinimumFontSize } from '../utils/styleRules';
 import { ColumnResizeHandles } from './ColumnResizeHandles';
 import { AutoFitText } from './AutoFitText';
@@ -327,7 +327,7 @@ export const ResponsiveMoveButton: React.FC<
     );
 };
 
-const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMoveDown, canMoveLeft, canMoveRight, hideGeneralControls, isFreeText, handlers, onEdit, isDragging = false, showSelectionOutline = true, showAddControls = true, showTopAddControl = true, showBottomAddControl = true, compactControls = false, mobileExpandedControls = false, denseControls = false, containMobileControls = false, showGridMoveControls = false }: any) => {
+const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMoveDown, canMoveLeft, canMoveRight, hideGeneralControls, isFreeText, handlers, onEdit, mobileOnlyEdit = false, isDragging = false, showSelectionOutline = true, showAddControls = true, showTopAddControl = true, showBottomAddControl = true, compactControls = false, mobileExpandedControls = false, denseControls = false, containMobileControls = false, showGridMoveControls = false }: any) => {
     const selectionType = type === 'category' ? 'category' : isFreeText ? 'freeText' : 'product';
     const selectionId = type === 'category' ? catName : id;
     const isSelected = handlers.isSelected?.(selectionType, selectionId) ?? handlers.selectedId === selectionId;
@@ -445,7 +445,7 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
                     {onEdit && (
                         <button
                             onClick={onEdit}
-                            className={`${controlPadding} bg-white border border-slate-200 shadow-md rounded-full text-slate-500 hover:text-indigo-600 hover:bg-slate-50 hover:scale-110 transition-transform cursor-pointer`}
+                            className={`${mobileOnlyEdit ? 'md:hidden' : ''} ${controlPadding} bg-white border border-slate-200 shadow-md rounded-full text-slate-500 hover:text-indigo-600 hover:bg-slate-50 hover:scale-110 transition-transform cursor-pointer`}
                             title="Editar produto"
                             onPointerDown={(e) => e.stopPropagation()}
                         >
@@ -623,6 +623,36 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     : undefined}
               />
             : null
+    );
+    const renderProductImageControls = (product: Product, isEditing: boolean) => (
+        isEditing ? (
+            <>
+                <button
+                    type="button"
+                    className="absolute right-1 top-1 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-white/95 text-red-600 shadow-md hover:bg-red-50"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => { event.stopPropagation(); handlers.removeProductImage?.(product.id); }}
+                    aria-label="Remover imagem"
+                    title="Remover imagem"
+                >
+                    <X size={14} />
+                </button>
+                <div className="absolute bottom-1 left-1/2 z-20 flex -translate-x-1/2 gap-0.5 rounded-lg bg-white/95 p-0.5 shadow-md">
+                    {(['left', 'center', 'right'] as const).map((alignment) => (
+                        <button
+                            key={alignment}
+                            type="button"
+                            className={`flex h-6 w-6 items-center justify-center rounded-md ${product.imageAlignment === alignment || (!product.imageAlignment && alignment === 'center') ? 'bg-indigo-100 text-indigo-700' : 'text-slate-500 hover:bg-slate-100'}`}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={(event) => { event.stopPropagation(); handlers.setProductImageAlignment?.(product.id, alignment); }}
+                            aria-label={`Alinhar imagem à ${alignment === 'left' ? 'esquerda' : alignment === 'right' ? 'direita' : 'centro'}`}
+                        >
+                            {alignment === 'left' ? <AlignLeft size={14} /> : alignment === 'center' ? <AlignCenter size={14} /> : <AlignRight size={14} />}
+                        </button>
+                    ))}
+                </div>
+            </>
+        ) : null
     );
     
     if (item.type === 'main-header') {
@@ -867,7 +897,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     ? renderFormattingToolbar('freeText', product.id, product.styles || {})
                     : renderFormattingToolbar('product', product.id,
                         formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle)}
-                        <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={false} canMoveRight={false} isFreeText={product.isFreeText} handlers={handlers} onEdit={compactControls && !product.isFreeText ? (e: React.MouseEvent) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name') : undefined} isDragging={isBeingDragged} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>
+                        <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={false} canMoveRight={false} isFreeText={product.isFreeText} handlers={handlers} onEdit={(compactControls || handlers.mobileProductEditorEnabled) && !product.isFreeText ? (e: React.MouseEvent) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name') : undefined} mobileOnlyEdit={!compactControls} isDragging={isBeingDragged} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>
                 
                 <div className={`transition-opacity duration-150 ${isBeingDragged && !product.isFreeText ? 'opacity-40' : ''}`}>
                 {product.isFreeText ? (
@@ -910,8 +940,15 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 ) : (
                 <div className={`flex items-start justify-between ${stackImage ? 'flex-col gap-2' : compactControls ? 'gap-2' : 'gap-4'}`}>
                     {style.showImages && product.image && ( 
-                        <div style={{ width: stackImage ? '100%' : `${imageSizePx}px`, height: `${imageSizePx}px` }} className="rounded-md overflow-hidden flex-shrink-0 bg-gray-100 shadow-inner select-none transition-all duration-300">
-                            <img src={product.image} alt={product.name} className="w-full h-full object-cover" draggable={false} />
+                        <div
+                            style={{ width: stackImage ? '100%' : `${imageSizePx}px`, height: `${imageSizePx}px` }}
+                            className={`relative rounded-md overflow-hidden flex-shrink-0 bg-gray-100 shadow-inner select-none transition-all duration-300 ${isEditing ? 'cursor-pointer ring-2 ring-indigo-400' : ''}`}
+                            onPointerDown={(event) => { if (isEditing) event.stopPropagation(); }}
+                            onClick={(event) => { if (!isEditing) return; event.stopPropagation(); handlers.editProductImage?.(product.id); }}
+                            title={isEditing ? 'Clique para alterar a imagem' : undefined}
+                        >
+                            <img src={product.image} alt={product.name} className="w-full h-full object-cover" style={{ objectPosition: `${product.imageAlignment || 'center'} center` }} draggable={false} />
+                            {renderProductImageControls(product, isEditing)}
                         </div> 
                     )}
                     <div className={`flex-grow min-w-0 ${isNameCentered ? 'text-center' : isNameRight ? 'text-right' : 'text-left'}`}>
@@ -1096,7 +1133,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             >
                                 {renderFormattingToolbar('product', product.id,
                                     formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle)}
-                        <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={canMoveLeft} canMoveRight={canMoveRight} isFreeText={product.isFreeText} handlers={handlers} onEdit={compactControls ? (e: React.MouseEvent) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name') : undefined} isDragging={isBeingDragged} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} mobileExpandedControls={mobileExpandedControls} denseControls={denseControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>
+                        <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={canMoveLeft} canMoveRight={canMoveRight} isFreeText={product.isFreeText} handlers={handlers} onEdit={compactControls || handlers.mobileProductEditorEnabled ? (e: React.MouseEvent) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name') : undefined} mobileOnlyEdit={!compactControls} isDragging={isBeingDragged} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} mobileExpandedControls={mobileExpandedControls} denseControls={denseControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>
                                 
                                 <div
                                     className={`h-full transition-all duration-150 ${isCardLayout ? 'rounded-xl overflow-hidden border border-slate-200 shadow-sm' : 'bg-transparent'} ${isBeingDragged ? 'opacity-40' : isCardLayout ? 'group-hover:shadow-md' : ''}`}
@@ -1104,8 +1141,15 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 >
                                     <div className="h-full flex flex-col">
                                         {style.showImages && product.image && (
-                                            <div style={{ height: `${cardImageHeight}px` }} className={`w-full bg-gray-100 overflow-hidden transition-all duration-300 ${isCardLayout ? '' : 'rounded-md'}`}>
-                                                <img src={product.image} className="w-full h-full object-cover" alt={product.name} draggable={false} />
+                                            <div
+                                                style={{ height: `${cardImageHeight}px` }}
+                                                className={`relative w-full bg-gray-100 overflow-hidden transition-all duration-300 ${isCardLayout ? '' : 'rounded-md'} ${isEditing ? 'cursor-pointer ring-2 ring-inset ring-indigo-400' : ''}`}
+                                                onPointerDown={(event) => { if (isEditing) event.stopPropagation(); }}
+                                                onClick={(event) => { if (!isEditing) return; event.stopPropagation(); handlers.editProductImage?.(product.id); }}
+                                                title={isEditing ? 'Clique para alterar a imagem' : undefined}
+                                            >
+                                                <img src={product.image} className="w-full h-full object-cover" style={{ objectPosition: `${product.imageAlignment || 'center'} center` }} alt={product.name} draggable={false} />
+                                                {renderProductImageControls(product, isEditing)}
                                             </div>
                                         )}
                                         <div className={`${isCardLayout ? (categoryColumnCount > 1 || productColumnCount > 2 ? 'p-1.5' : productColumnCount > 1 ? 'p-2' : 'p-4') : 'py-2'} flex min-w-0 flex-col flex-grow ${textAlignClass}`}>

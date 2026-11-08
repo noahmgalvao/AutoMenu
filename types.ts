@@ -92,6 +92,7 @@ export interface Product {
   categoryId?: string | null;
   image?: string;
   imageAssetId?: string | null;
+  imageAlignment?: 'left' | 'center' | 'right';
   isFreeText?: boolean;
   customMarginTop?: number;
   styles?: ElementStyle;

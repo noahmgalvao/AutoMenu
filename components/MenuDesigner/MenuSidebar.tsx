@@ -1,6 +1,6 @@
 import React from 'react';
 import { MenuStyle, Product, ElementStyle, SortOption, AddedImage } from '../../types';
-import { FileText, Layout, PanelLeftClose, RotateCcw } from 'lucide-react';
+import { FileText, Layout, Maximize2, PanelLeftClose, RotateCcw } from 'lucide-react';
 import { useBottomSheetDrag } from '../../hooks/useBottomSheetDrag';
 import { 
   ElementsSection, 
@@ -51,7 +51,7 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
     resizeSelectedAddedImages, removeSelectedAddedImages, layerSelectedAddedImages
 }) => {
     
-    const { height, isDragging, isMobile, dragHandlers } = useBottomSheetDrag(isOpen, onClose);
+    const { height, isDragging, isMobile, isExpanded, expand, dragHandlers } = useBottomSheetDrag(isOpen, onClose);
 
     // Safe accessors with defaults
     const safeStyles = style.elementStyles || {
@@ -91,9 +91,10 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
           <h2 className="font-bold text-slate-800 flex items-center gap-2 text-sm pointer-events-none">
             <Layout size={16} /> Controles de design
           </h2>
-          <div className="flex gap-2">
+          <div className="flex shrink-0 gap-1.5">
             <button type="button" onClick={onPdfClick} className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-100 flex items-center gap-1.5 pointer-events-auto" onPointerDown={e => e.stopPropagation()} title="Exportar PDF"><FileText size={14} /> PDF</button>
-            <button onClick={onClose} className="md:hidden text-slate-500 hover:text-slate-800 pointer-events-auto" onPointerDown={e => e.stopPropagation()}> <PanelLeftClose size={18} /> </button>
+            <button type="button" onClick={expand} disabled={isExpanded} className="md:hidden h-8 w-8 rounded-lg text-slate-500 hover:bg-white hover:text-slate-800 disabled:opacity-35 pointer-events-auto flex items-center justify-center" onPointerDown={e => e.stopPropagation()} title="Expandir painel" aria-label="Expandir painel"><Maximize2 size={18} /></button>
+            <button type="button" onClick={onClose} className="md:hidden h-8 w-8 rounded-lg text-slate-500 hover:bg-white hover:text-slate-800 pointer-events-auto flex items-center justify-center" onPointerDown={e => e.stopPropagation()} title="Recolher painel" aria-label="Recolher painel"><PanelLeftClose size={18} /></button>
           </div>
         </div>
 

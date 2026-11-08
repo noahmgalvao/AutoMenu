@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Product, MenuStyle, SortOption, ElementStyle, AddedImage } from '../types';
 import { PRESET_TEMPLATES } from '../constants';
 import { MenuPreview } from './MenuPreview';
-import { Undo, Redo, Check, X } from 'lucide-react';
+import { Undo, Redo, Check, SquarePen, X } from 'lucide-react';
 import { ZoomControls } from './MenuDesigner/ZoomControls';
 import { MenuSidebar } from './MenuDesigner/MenuSidebar';
 import type { PrintCanvasOptions, PrintPreviewPage } from './MenuDesigner/PrintCanvasModal';
@@ -17,6 +17,7 @@ import {
 } from '../utils/textFit';
 import { roundPrice } from '../utils/price';
 import { resolveMenuPageDimensions } from '../utils/pageSetup';
+import { optimizeImageForUpload, preloadImage } from '../utils/imageUpload';
 
 const PrintCanvasModal = React.lazy(() => import('./MenuDesigner/PrintCanvasModal').then((module) => ({
     default: module.PrintCanvasModal,
@@ -27,6 +28,7 @@ interface MenuDesignerProps {
     style: MenuStyle;
     setStyle: React.Dispatch<React.SetStateAction<MenuStyle>>;
     setProducts?: React.Dispatch<React.SetStateAction<Product[]>>;
+    setProductsAndStyle?: (products: Product[], style: MenuStyle, actionLabel?: string) => void;
     templates?: MenuStyle[];
     sortOption: SortOption;
     setSortOption: React.Dispatch<React.SetStateAction<SortOption>>;
@@ -162,7 +164,7 @@ const WORD_FIT_SCOPE_LABELS: Record<WordFitScope, string> = {
     freeText: 'textos livres',
 };
 
-const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, templates = [], sortOption, setSortOption, undo, redo, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions, onClose, onScrollActivity, workspaceId, currentUserId, splitCategoryAcrossPages = false, productsCanChangeCategory = false }) => {
+const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions, onClose, onScrollActivity, workspaceId, currentUserId, splitCategoryAcrossPages = false, productsCanChangeCategory = false }) => {
     const [scale, setScale] = useState(DEFAULT_PREVIEW_ZOOM);
     const [isDesktopViewport, setIsDesktopViewport] = useState(() => window.matchMedia('(min-width: 768px)').matches);
     const renderScale = scale * (isDesktopViewport ? DESKTOP_PREVIEW_ZOOM_RENDER_MULTIPLIER : MOBILE_PREVIEW_ZOOM_RENDER_MULTIPLIER);
@@ -175,6 +177,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const [isPrintPreviewLoading, setIsPrintPreviewLoading] = useState(false);
     const [printPreviewError, setPrintPreviewError] = useState<string | null>(null);
     const [tipsOpen, setTipsOpen] = useState(false);
+    const [mobileProductEditorEnabled, setMobileProductEditorEnabled] = useState(true);
     const [fontTips, setFontTips] = useState<FontTip[]>([]);
     const [layoutDiagnostics, setLayoutDiagnostics] = useState<LayoutDiagnostics>(EMPTY_LAYOUT_DIAGNOSTICS);
     const [dismissedTips, setDismissedTips] = useState<Set<string>>(() => new Set());
@@ -213,6 +216,18 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     } | null>(null);
     const suppressNextCanvasClickRef = useRef(false);
     const knownProductIdsRef = useRef(new Set(products.map(product => product.id)));
+
+    useEffect(() => {
+        if (!tipsOpen) return;
+        const closeTipsOutside = (event: PointerEvent) => {
+            const target = event.target as Node | null;
+            if (target && tipsAnchorRef.current?.contains(target)) return;
+            setTipsOpen(false);
+            setHoveredFontScope(null);
+        };
+        document.addEventListener('pointerdown', closeTipsOutside, true);
+        return () => document.removeEventListener('pointerdown', closeTipsOutside, true);
+    }, [tipsOpen]);
 
     // State for selection context (What element is user clicking?)
     const [selection, setSelection] = useState<{ type: 'product' | 'category' | 'freeText' | 'addedImage' | 'page' | 'menuTitle' | 'menuSubtitle' | null, id: string | null }>({ type: null, id: null });
@@ -507,7 +522,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     }, [hasVisibleTips]);
 
     React.useLayoutEffect(() => {
-        if (!hasVisibleTips) return;
         const container = containerRef.current;
         const anchor = tipsAnchorRef.current;
         const canvas = container?.querySelector<HTMLElement>('[data-automenu-editor-canvas="true"]');
@@ -551,7 +565,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             canvas.removeEventListener('scroll', schedulePosition);
             window.removeEventListener('resize', schedulePosition);
         };
-    }, [hasVisibleTips, renderScale]);
+    }, [renderScale]);
 
     const updateZoom = (delta: number) => {
         const newScale = Math.min(2.5, Math.max(0.3, scale + delta));
@@ -728,7 +742,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             .catch((error) => {
                 console.warn('[PDF Preview] Falha ao gerar preview', error);
                 if (!cancelled) {
-                    setPrintPreviewError('Não foi possível gerar o preview. O diagnóstico do download mostrará o motivo técnico.');
+                    setPrintPreviewError('Não foi possível gerar a visualização. Tente novamente.');
                 }
             })
             .finally(() => {
@@ -1160,6 +1174,21 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 name: 'Custom',
             };
         });
+    };
+
+    const handleProductImageUpload = async (productId: string, file: File) => {
+        if (!setProducts) throw new Error('Não foi possível alterar a imagem.');
+        const optimizedFile = await optimizeImageForUpload(file, 1400);
+        const uploaded = await uploadFileAsset({
+            workspaceId,
+            userId: currentUserId,
+            bucket: 'product-images',
+            assetType: 'product_image',
+            file: optimizedFile,
+            metadata: { product_id: productId },
+        });
+        await preloadImage(uploaded.url);
+        return { url: uploaded.url, assetId: uploaded.asset.id };
     };
 
     const getVisibleMoveNeighborId = (
@@ -1736,10 +1765,105 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     };
 
     const applyAllSuggestions = () => {
-        visibleFontTips.forEach(tip => applyFontSuggestion(tip.scope));
-        if (showOverlapTip) applyLayoutIssueSuggestion('overlap');
-        if (showOffCanvasTip) applyLayoutIssueSuggestion('offCanvas');
-        if (showPositionedCategoryTip) applyPositionedCategorySuggestion();
+        let nextProducts = products;
+        let nextStyle = style;
+        const appliedFontScopes = new Set<WordFitScope>();
+
+        visibleFontTips.forEach((tip) => {
+            const root = containerRef.current;
+            if (!root) return;
+            const elements = Array.from(root.querySelectorAll<HTMLElement>('[data-word-fit="true"]'))
+                .filter(element => (
+                    element.dataset.wordFitScope === tip.scope
+                    && element.dataset.wordOverflow !== 'true'
+                    && element.isConnected
+                    && element.getClientRects().length > 0
+                ));
+            if (elements.length === 0) return;
+            const maximumFontSize = Math.max(...elements.map(element => Number(element.dataset.wordFitBaseSize) || 10));
+            const minimumFontSize = Math.max(...elements.map(element => Number(element.dataset.wordFitMinimum) || 10));
+            const safeFontSize = getLargestSafeFontSizeForElements(elements, maximumFontSize, minimumFontSize);
+
+            if (tip.scope === 'freeText') {
+                nextProducts = nextProducts.map(product => (
+                    product.isFreeText
+                        ? { ...product, styles: { ...(product.styles || {}), fontSize: safeFontSize } }
+                        : product
+                ));
+            } else {
+                const elementType = tip.scope as keyof MenuStyle['elementStyles'];
+                nextStyle = {
+                    ...nextStyle,
+                    elementStyles: {
+                        ...nextStyle.elementStyles,
+                        [elementType]: {
+                            ...(nextStyle.elementStyles[elementType] || {}),
+                            fontSize: safeFontSize,
+                        },
+                    },
+                    pageBreaks: [],
+                    name: 'Custom',
+                };
+            }
+            appliedFontScopes.add(tip.scope);
+        });
+
+        const affectedProductIds = new Set<string>();
+        const affectedCategories = new Set<string>();
+        const collectLayoutIssue = (issue: 'overlap' | 'offCanvas') => {
+            const categoryIds = issue === 'overlap'
+                ? layoutDiagnostics.overlappingCategoryIds
+                : layoutDiagnostics.offCanvasCategoryIds;
+            const productIds = issue === 'overlap'
+                ? layoutDiagnostics.overlappingProductIds
+                : layoutDiagnostics.offCanvasProductIds;
+            const freeTextIds = issue === 'overlap'
+                ? layoutDiagnostics.overlappingFreeTextIds
+                : layoutDiagnostics.offCanvasFreeTextIds;
+            categoryIds.forEach(id => affectedCategories.add(id));
+            [...productIds, ...freeTextIds].forEach(id => affectedProductIds.add(id));
+        };
+        if (showOverlapTip) collectLayoutIssue('overlap');
+        if (showOffCanvasTip) collectLayoutIssue('offCanvas');
+        if (showPositionedCategoryTip) realCategoryIds.forEach(id => affectedCategories.add(id));
+        nextProducts.forEach(product => {
+            if (affectedProductIds.has(product.id)) affectedCategories.add(product.category);
+        });
+        if (affectedProductIds.size > 0) {
+            nextProducts = nextProducts.map(product => (
+                affectedProductIds.has(product.id) && product.customMarginTop
+                    ? { ...product, customMarginTop: 0 }
+                    : product
+            ));
+        }
+        if (affectedCategories.size > 0) {
+            const nextPositions = { ...(nextStyle.categoryPositions || {}) };
+            const nextPlacements = { ...(nextStyle.categoryPlacements || {}) };
+            affectedCategories.forEach(category => {
+                delete nextPositions[category];
+                delete nextPlacements[category];
+            });
+            nextStyle = {
+                ...nextStyle,
+                categoryPositions: nextPositions,
+                categoryPlacements: nextPlacements,
+                pageBreaks: (nextStyle.pageBreaks || []).filter(category => !affectedCategories.has(category)),
+                name: 'Custom',
+            };
+        }
+
+        if (nextProducts !== products || nextStyle !== style) {
+            if (setProductsAndStyle) {
+                setProductsAndStyle(nextProducts, nextStyle, 'Ajustes sugeridos aplicados');
+            } else {
+                if (nextProducts !== products) setProducts?.(nextProducts);
+                if (nextStyle !== style) setStyle(nextStyle);
+            }
+        }
+        setFontTips(current => current.filter(tip => !appliedFontScopes.has(tip.scope)));
+        setLayoutDiagnostics(EMPTY_LAYOUT_DIAGNOSTICS);
+        setHoveredFontScope(null);
+        setTipsOpen(false);
     };
 
     return (
@@ -1756,8 +1880,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                     showZoomInfo={showZoomInfo}
                 />
 
-                {hasVisibleTips && (
-                    <div ref={tipsAnchorRef} className="absolute z-[80]" style={{ visibility: 'hidden' }}>
+                <div ref={tipsAnchorRef} className="absolute z-[80] flex items-start gap-2" style={{ visibility: 'hidden' }}>
+                    {hasVisibleTips && (
                         <button
                             type="button"
                             onClick={() => setTipsOpen(current => !current)}
@@ -1768,8 +1892,19 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                         >
                             <span aria-hidden="true">?</span>
                         </button>
+                    )}
 
-                        {tipsOpen && (
+                    <button
+                        type="button"
+                        onClick={() => setMobileProductEditorEnabled((current) => !current)}
+                        className={`md:hidden flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-bold shadow-md transition ${mobileProductEditorEnabled ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'border border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}
+                        title={mobileProductEditorEnabled ? 'Edição em janela ativa' : 'Edição em janela inativa'}
+                        aria-pressed={mobileProductEditorEnabled}
+                    >
+                        <SquarePen size={14} /> Janela
+                    </button>
+
+                    {hasVisibleTips && tipsOpen && (
                             <div className="absolute left-0 top-10 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl">
                                 <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
                                     <div>
@@ -1890,9 +2025,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                     )}
                                 </div>
                             </div>
-                        )}
-                    </div>
-                )}
+                    )}
+                </div>
 
                 {/* Undo/Redo Controls - Dynamic Positioning for Bottom Sheet */}
                 <div className={`fixed right-4 z-[70] flex gap-2 transition-all duration-300 md:absolute md:z-10 ${(isOpen || isProductDesignerOpen) ? 'bottom-[calc(var(--automenu-bottom-sheet-height,45vh)+1rem)] md:bottom-24' : 'bottom-[5.25rem] md:bottom-24'}`}>
@@ -1963,6 +2097,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                             canRedo={canRedo}
                             scale={renderScale}
                             splitCategoryAcrossPages={splitCategoryAcrossPages}
+                            mobileProductEditorEnabled={mobileProductEditorEnabled}
+                            onUploadProductImage={handleProductImageUpload}
                         />
                     </div>
                     <div style={{ height: '100px', width: '1px' }} />
