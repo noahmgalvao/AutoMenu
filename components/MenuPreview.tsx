@@ -155,6 +155,8 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         timeoutId: number;
     } | null>(null);
     const lastPreviewPointerTypeRef = useRef<string | null>(null);
+    const suppressTouchObjectMenuUntilRef = useRef(0);
+    const touchStartedOnObjectMenuButtonRef = useRef(false);
     const [clipboardVersion, setClipboardVersion] = useState(0);
     const [nativeClipboardAvailable, setNativeClipboardAvailable] = useState(false);
     const [objectMenu, setObjectMenu] = useState<ObjectMenuState | null>(null);
@@ -753,6 +755,9 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     document.body.dataset.automenuDeleteContext = 'canvas';
     lastPreviewPointerTypeRef.current = event.pointerType;
     if (event.pointerType === 'touch') {
+      const startedOnObjectMenuButton = Boolean(target?.closest('[data-open-object-menu="true"]'));
+      touchStartedOnObjectMenuButtonRef.current = startedOnObjectMenuButton;
+      suppressTouchObjectMenuUntilRef.current = startedOnObjectMenuButton ? 0 : Date.now() + 1400;
       setObjectMenu(null);
     }
         const pageElement = target?.closest<HTMLElement>('[data-menu-print-page="true"][data-page-index]');
@@ -1791,7 +1796,10 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const openObjectMenu = useCallback((event: React.MouseEvent, item: CanvasContextMenuItem) => {
         event.preventDefault();
         event.stopPropagation();
-        if (event.type === 'contextmenu' && lastPreviewPointerTypeRef.current === 'touch') {
+        const shouldSuppressTouchMenu = lastPreviewPointerTypeRef.current === 'touch'
+            && !touchStartedOnObjectMenuButtonRef.current
+            && Date.now() < suppressTouchObjectMenuUntilRef.current;
+        if ((event.type === 'contextmenu' && lastPreviewPointerTypeRef.current === 'touch') || shouldSuppressTouchMenu) {
             setObjectMenu(null);
             return;
         }

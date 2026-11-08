@@ -38,6 +38,8 @@ interface PendingDrag {
     startX: number;
     startY: number;
     activationTimeoutId: number | null;
+    scrolling?: boolean;
+    lastY?: number;
 }
 
 interface CategoryLane {
@@ -111,6 +113,7 @@ interface ScrollContainerSnapshot {
 
 const POINTER_MOVE_THRESHOLD_PX = 8;
 const TOUCH_MOVE_CANCEL_THRESHOLD_PX = 10;
+const TWO_COLUMN_CATEGORY_TOUCH_MOVE_CANCEL_THRESHOLD_PX = 18;
 const TOUCH_LONG_PRESS_MS = 320;
 const CATEGORY_COLUMN_SWITCH_INSET_PX = 32;
 const CATEGORY_PAGE_SWITCH_INSET_PX = 72;
@@ -391,13 +394,16 @@ export const useDraggableInteractions = (
 
     const scheduleTouchCancelCommit = useCallback(() => {
         clearTouchCancelCommit();
+        const keepTwoColumnCategoryDragAlive = draggedItemRef.current?.type === 'category'
+            && dragSourceContextRef.current === 'product-designer'
+            && (style.categoryColumnCount || 1) === 2;
         touchCancelCommitTimeoutRef.current = window.setTimeout(() => {
             touchCancelCommitTimeoutRef.current = null;
             if (isDraggingRef.current && draggedItemRef.current) {
                 performCommitAndCleanupRef.current();
             }
-        }, TOUCH_CANCEL_COMMIT_DELAY_MS);
-    }, [clearTouchCancelCommit]);
+        }, keepTwoColumnCategoryDragAlive ? 2400 : TOUCH_CANCEL_COMMIT_DELAY_MS);
+    }, [clearTouchCancelCommit, style.categoryColumnCount]);
 
     const restoreBodyDragStyles = useCallback(() => {
         if (!bodyStyleRef.current || typeof document === 'undefined') return;
@@ -639,6 +645,14 @@ export const useDraggableInteractions = (
     }, []);
 
     const resetDragState = useCallback(() => {
+        if (
+            draggedItemRef.current?.type === 'category'
+            && activePointerRef.current?.pointerType === 'touch'
+            && dragSourceContextRef.current === 'product-designer'
+            && typeof document !== 'undefined'
+        ) {
+            document.body.dataset.automenuSuppressProductOptionsUntil = String(Date.now() + 800);
+        }
         releasePointerCapture();
 
         setDraggedItem(null);
@@ -734,16 +748,24 @@ export const useDraggableInteractions = (
                     return breaks;
                 }, []);
 
-                onStyleUpdate((prev) => ({
-                    ...prev,
-                    pageBreaks: nextPageBreaks,
-                    categoryPlacements: {
-                        ...(prev.categoryPlacements || {}),
-                        ...categoryAssignmentsSnapshot,
-                    },
-                    categoryPositions: { ...(categoryPositionsSnapshot || prev.categoryPositions || {}) },
-                    name: 'Custom',
-                }));
+                onStyleUpdate((prev) => {
+                    const categoryPositions = { ...(categoryPositionsSnapshot || prev.categoryPositions || {}) };
+                    const positionedCategories = new Set(Object.keys(categoryPositions));
+                    const mergedPlacements = { ...(prev.categoryPlacements || {}), ...categoryAssignmentsSnapshot };
+                    const categoryPlacements = (prev.categoryColumnCount || 1) > 1
+                        ? Object.fromEntries(
+                            Object.entries(mergedPlacements)
+                                .filter(([category]) => positionedCategories.has(category))
+                        )
+                        : mergedPlacements;
+                    return {
+                        ...prev,
+                        pageBreaks: nextPageBreaks,
+                        categoryPlacements,
+                        categoryPositions,
+                        name: 'Custom',
+                    };
+                });
             }
 
             const draggedProduct = currentDraggedItem?.type === 'product'
@@ -2531,6 +2553,14 @@ export const useDraggableInteractions = (
                 }
 
                 const newItem = { type: pending.type, id: pending.id, group: pending.group };
+                if (
+                    pending.pointerType === 'touch'
+                    && pending.type === 'category'
+                    && pending.element.dataset.dragContext === 'product-designer'
+                    && typeof document !== 'undefined'
+                ) {
+                    document.body.dataset.automenuSuppressProductOptionsUntil = String(Date.now() + 10000);
+                }
                 isDraggingRef.current = true;
                 hasDragMutationRef.current = false;
                 setDraggedItem(newItem);
@@ -3042,12 +3072,34 @@ export const useDraggableInteractions = (
             if (!pending || event.pointerId !== pending.pointerId) return;
 
             const traveledDistance = Math.hypot(event.clientX - pending.startX, event.clientY - pending.startY);
+            const isTwoColumnProductDesignerCategory = pending.pointerType === 'touch'
+                && pending.type === 'category'
+                && pending.element.dataset.dragContext === 'product-designer'
+                && (style.categoryColumnCount || 1) === 2;
             const activationThreshold = pending.pointerType === 'touch'
-                ? TOUCH_MOVE_CANCEL_THRESHOLD_PX
+                ? isTwoColumnProductDesignerCategory
+                    ? TWO_COLUMN_CATEGORY_TOUCH_MOVE_CANCEL_THRESHOLD_PX
+                    : TOUCH_MOVE_CANCEL_THRESHOLD_PX
                 : POINTER_MOVE_THRESHOLD_PX;
             if (traveledDistance < activationThreshold) return;
 
             if (pending.pointerType === 'touch') {
+                if (isTwoColumnProductDesignerCategory) {
+                    if (event.cancelable) event.preventDefault();
+                    event.stopPropagation();
+                    if (pending.activationTimeoutId !== null) {
+                        window.clearTimeout(pending.activationTimeoutId);
+                        pending.activationTimeoutId = null;
+                    }
+                    pending.scrolling = true;
+                    const scrollContainer = pending.element.closest<HTMLElement>('[data-product-designer-scroll-container="true"]');
+                    if (scrollContainer) {
+                        const previousY = pending.lastY ?? pending.startY;
+                        scrollContainer.scrollTop -= event.clientY - previousY;
+                    }
+                    pending.lastY = event.clientY;
+                    return;
+                }
                 cancelAndCleanup();
                 return;
             }
@@ -3055,7 +3107,7 @@ export const useDraggableInteractions = (
             activateDrag(pending, { x: pending.startX, y: pending.startY });
             handlePointerReorder({ x: event.clientX, y: event.clientY });
         },
-        [activateDrag, cancelAndCleanup, clearTouchCancelCommit, handlePointerReorder, keepScrollLocked]
+        [activateDrag, cancelAndCleanup, clearTouchCancelCommit, handlePointerReorder, keepScrollLocked, style.categoryColumnCount]
     );
 
     const updateDragAtReleasePointer = useCallback((pointer: { x: number; y: number }) => {

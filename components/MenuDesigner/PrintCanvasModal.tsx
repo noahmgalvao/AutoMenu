@@ -363,8 +363,8 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
               <Field label="Papel">
                 <select value={options.paperSize} onChange={(e) => update('paperSize', e.target.value as PrintCanvasOptions['paperSize'])} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm bg-white text-ellipsis overflow-hidden whitespace-nowrap">
                   <option value="A4">A4</option>
-                  <option value="Letter">Carta</option>
-                  <option value="Legal">Oficio</option>
+                  <option value="A5">A5</option>
+                  <option value="Square">Quadrado</option>
                   <option value="custom">Personalizado</option>
                 </select>
               </Field>
@@ -375,8 +375,9 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
                 </select>
               </Field>
             </div>
-            {options.paperSize === 'custom' && (() => {
+            {(() => {
               const dimensions = getPaperDimensionsMm(options);
+              const editable = options.paperSize === 'custom';
               return (
                 <div className="mt-3 grid grid-cols-2 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
                   {([
@@ -395,7 +396,8 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
                         onKeyDown={(event) => {
                           if (event.key === 'Enter') event.currentTarget.blur();
                         }}
-                        className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                        disabled={!editable}
+                        className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-100 disabled:text-slate-500"
                         aria-label={`${label} personalizada do papel em milímetros`}
                       />
                     </Field>

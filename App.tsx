@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import QRCode from 'qrcode';
-import { AlertCircle, ChefHat, History, Loader2, Paintbrush, Plus, Save, Send, ShoppingCart } from 'lucide-react';
+import { AlertCircle, ChefHat, History, Loader2, Paintbrush, Plus, Save, Share2, ShoppingCart, X } from 'lucide-react';
 import MenuDesigner from './components/MenuDesigner';
 import { AuthScreen } from './components/AuthScreen';
 import { ProfileMenu } from './components/ProfileMenu';
@@ -73,6 +73,7 @@ type CachedPdfExport = {
   result: PdfExportResult;
 };
 
+const SAVE_ERROR_MESSAGE = 'Não foi possível salvar as alterações. Entre em contato com o suporte.';
 const DEFAULT_SORT_OPTION: SortOption = { field: 'name', direction: 'asc' };
 const SAVE_DEBOUNCE_MS = 2000;
 const SAVE_RETRY_DELAYS_MS = [600, 1600, 3200];
@@ -247,7 +248,7 @@ const readLocalPendingSnapshot = (workspaceId: string, menuId: string): LocalPen
 };
 
 const writeLocalPendingSnapshot = (payload: PersistPayload) => {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined') return false;
 
   const snapshot: LocalPendingSnapshot = {
     products: payload.products,
@@ -257,7 +258,12 @@ const writeLocalPendingSnapshot = (payload: PersistPayload) => {
     updatedAt: new Date().toISOString(),
   };
 
-  window.localStorage.setItem(getPendingStorageKey(payload.workspaceId, payload.menuId), JSON.stringify(snapshot));
+  try {
+    window.localStorage.setItem(getPendingStorageKey(payload.workspaceId, payload.menuId), JSON.stringify(snapshot));
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 const clearLocalPendingSnapshot = (workspaceId: string, menuId: string) => {
@@ -477,12 +483,12 @@ const App: React.FC = () => {
         queuedSaveRef.current = true;
         setSaveState('dirty');
       }
-    } catch (error) {
+    } catch {
       writeLocalPendingSnapshot(payload);
       const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
       setSaveState(isOffline ? 'local' : 'error');
       if (!isOffline) {
-        setLoadError(getErrorMessage(error, 'Falha ao salvar os dados.'));
+        setLoadError(SAVE_ERROR_MESSAGE);
       }
     } finally {
       isSavingRef.current = false;
@@ -907,11 +913,11 @@ const App: React.FC = () => {
           setLoadError(null);
         }
       })
-      .catch((error) => {
+      .catch(() => {
         const latestPayload = latestPersistPayloadRef.current;
         if (latestPayload?.menuId === payload.menuId) {
           setSaveState('error');
-          setLoadError(getErrorMessage(error, 'Falha ao salvar os dados.'));
+          setLoadError(SAVE_ERROR_MESSAGE);
         }
       })
       .finally(() => {
@@ -1650,7 +1656,7 @@ const App: React.FC = () => {
     }
 
     if (saveState === 'error') {
-      return { label: 'Erro - salvo localmente', className: 'text-red-600 bg-red-50' };
+      return { label: 'Não foi possível salvar', className: 'text-red-600 bg-red-50' };
     }
 
     return null;
@@ -1731,7 +1737,7 @@ const App: React.FC = () => {
                 AutoMenu AI
               </div>
               <div className="text-xs text-slate-500 flex items-center gap-1 min-w-0">
-                <span className="truncate">{workspaceData.menu.name} · {workspaceData.workspace.name}</span>
+                <span className="truncate">{workspaceData.menu.name}</span>
               </div>
             </div>
           </div>
@@ -1749,13 +1755,13 @@ const App: React.FC = () => {
               onClick={() => setIsPublishOpen(true)}
               disabled={isPublishing}
               className={`h-10 px-3 sm:px-4 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors disabled:opacity-60 ${publication && hasPublishedChanges
-                ? 'border border-red-500 bg-red-50 text-red-700 shadow-sm shadow-red-100 hover:bg-red-100'
-                : !publication
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200 hover:bg-indigo-700'
+                ? 'border border-amber-400 bg-amber-50 text-amber-800 shadow-sm shadow-amber-100 hover:bg-amber-100'
+                : publication
+                  ? 'border border-emerald-400 bg-emerald-50 text-emerald-700 shadow-sm shadow-emerald-100 hover:bg-emerald-100'
                   : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
               }`}
             >
-              {isPublishing ? <Loader2 size={16} className="animate-spin" /> : publication && hasPublishedChanges ? <AlertCircle size={17} /> : <Send size={16} />}
+              {isPublishing ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={17} />}
               <span className="hidden sm:inline">Publicar</span>
             </button>
             <ProfileMenu
@@ -1839,8 +1845,11 @@ const App: React.FC = () => {
       )}
 
       {loadError && (
-        <div className="absolute top-20 right-4 z-40 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-2xl shadow-lg max-w-md">
-          {loadError}
+        <div className="absolute top-20 right-4 z-40 flex max-w-md items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-lg">
+          <span className="min-w-0 flex-1">{loadError}</span>
+          <button type="button" onClick={() => setLoadError(null)} className="-mr-1 -mt-1 rounded-lg p-1 text-red-500 hover:bg-red-100 hover:text-red-700" title="Fechar mensagem" aria-label="Fechar mensagem">
+            <X size={16} />
+          </button>
         </div>
       )}
 

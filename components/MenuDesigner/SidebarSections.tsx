@@ -244,8 +244,8 @@ interface PageSectionProps {
 
 const PAGE_PRESET_OPTIONS = [
   { value: 'A4', label: 'A4' },
-  { value: 'Letter', label: 'Carta' },
-  { value: 'Legal', label: 'Legal' },
+  { value: 'A5', label: 'A5' },
+  { value: 'Square', label: 'Quadrado' },
   { value: 'custom', label: 'Personalizado' },
 ] as const;
 

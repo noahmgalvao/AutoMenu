@@ -41,7 +41,7 @@ export interface MenuContentSpacing {
 export type FontSizeLimitKey = keyof FontSizeLimits;
 export type PriceDecimalPlaces = 0 | 1 | 2;
 export type PriceDecimalSeparator = ',' | '.';
-export type MenuPagePreset = 'A4' | 'Letter' | 'Legal' | 'custom';
+export type MenuPagePreset = 'A4' | 'A5' | 'Square' | 'custom';
 export type MenuPageOrientation = 'portrait' | 'landscape';
 
 export interface MenuPageSetup {

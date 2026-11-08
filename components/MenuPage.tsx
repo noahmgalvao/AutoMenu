@@ -739,7 +739,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                     <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => handlers.handleLayerImage(e, img.id, 'front')} className="p-2.5 hover:bg-slate-100 rounded text-slate-600" title="Trazer frente"><BringToFront size={24} /></button>
                     <div className="w-px bg-slate-200 mx-1"></div>
                     <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => handlers.handleRemoveImage(e, img.id)} className="p-2.5 hover:bg-red-50 rounded text-red-500"><Trash2 size={24} /></button>
-                    <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => handlers.openObjectMenu?.(e, { type: 'addedImage', id: img.id })} className="p-2.5 hover:bg-slate-100 rounded-l rounded-r-full text-slate-600" title="Mais opções"><MoreHorizontal size={24} /></button>
+                    <button data-open-object-menu="true" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => handlers.openObjectMenu?.(e, { type: 'addedImage', id: img.id })} className="p-2.5 hover:bg-slate-100 rounded-l rounded-r-full text-slate-600" title="Mais opções"><MoreHorizontal size={24} /></button>
                 </div>
             ))}
             {isPageSelected && (

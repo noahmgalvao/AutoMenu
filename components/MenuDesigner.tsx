@@ -97,6 +97,33 @@ interface FontTip {
     safeFontSize: number;
 }
 
+interface LayoutDiagnostics {
+    overlappingCategoryIds: string[];
+    overlappingProductIds: string[];
+    overlappingFreeTextIds: string[];
+    offCanvasCategoryIds: string[];
+    offCanvasProductIds: string[];
+    offCanvasFreeTextIds: string[];
+    hasColumnGap: boolean;
+}
+
+interface LayoutElementEntry {
+    element: HTMLElement;
+    id: string;
+    type: 'category' | 'product' | 'freeText';
+    rect: DOMRect;
+}
+
+const EMPTY_LAYOUT_DIAGNOSTICS: LayoutDiagnostics = {
+    overlappingCategoryIds: [],
+    overlappingProductIds: [],
+    overlappingFreeTextIds: [],
+    offCanvasCategoryIds: [],
+    offCanvasProductIds: [],
+    offCanvasFreeTextIds: [],
+    hasColumnGap: false,
+};
+
 interface RenderedMoveEntry {
     id: string;
     pageIndex: number;
@@ -149,6 +176,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const [printPreviewError, setPrintPreviewError] = useState<string | null>(null);
     const [tipsOpen, setTipsOpen] = useState(false);
     const [fontTips, setFontTips] = useState<FontTip[]>([]);
+    const [layoutDiagnostics, setLayoutDiagnostics] = useState<LayoutDiagnostics>(EMPTY_LAYOUT_DIAGNOSTICS);
     const [dismissedTips, setDismissedTips] = useState<Set<string>>(() => new Set());
     const [hoveredFontScope, setHoveredFontScope] = useState<WordFitScope | null>(null);
     const canvasPrintPaperDefaults = getCanvasPrintPaperDefaults(style);
@@ -184,6 +212,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         isPanning: boolean;
     } | null>(null);
     const suppressNextCanvasClickRef = useRef(false);
+    const knownProductIdsRef = useRef(new Set(products.map(product => product.id)));
 
     // State for selection context (What element is user clicking?)
     const [selection, setSelection] = useState<{ type: 'product' | 'category' | 'freeText' | 'addedImage' | 'page' | 'menuTitle' | 'menuSubtitle' | null, id: string | null }>({ type: null, id: null });
@@ -201,8 +230,17 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const positionedCategoryIds = Object.keys(style.categoryPositions || {}).filter(category => realCategoryIds.has(category));
     const positionedCategorySignature = positionedCategoryIds.slice().sort().join('\u0000');
     const visibleFontTips = fontTips.filter(tip => !dismissedTips.has(`font:${tip.scope}`));
-    const showPositionedCategoryTip = positionedCategoryIds.length > 0 && !dismissedTips.has('free-categories');
-    const hasVisibleTips = visibleFontTips.length > 0 || showPositionedCategoryTip;
+    const overlapIssueCount = layoutDiagnostics.overlappingCategoryIds.length
+        + layoutDiagnostics.overlappingProductIds.length
+        + layoutDiagnostics.overlappingFreeTextIds.length;
+    const offCanvasIssueCount = layoutDiagnostics.offCanvasCategoryIds.length
+        + layoutDiagnostics.offCanvasProductIds.length
+        + layoutDiagnostics.offCanvasFreeTextIds.length;
+    const showOverlapTip = overlapIssueCount > 0 && !dismissedTips.has('overlapping-elements');
+    const showOffCanvasTip = offCanvasIssueCount > 0 && !dismissedTips.has('off-canvas-elements');
+    const showPositionedCategoryTip = (positionedCategoryIds.length > 0 || layoutDiagnostics.hasColumnGap)
+        && !dismissedTips.has('free-categories');
+    const hasVisibleTips = visibleFontTips.length > 0 || showOverlapTip || showOffCanvasTip || showPositionedCategoryTip;
 
     useEffect(() => {
         const mediaQuery = window.matchMedia('(min-width: 768px)');
@@ -211,6 +249,23 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         mediaQuery.addEventListener('change', syncViewport);
         return () => mediaQuery.removeEventListener('change', syncViewport);
     }, []);
+
+    useEffect(() => {
+        const previousIds = knownProductIdsRef.current;
+        const hasNewProduct = products.some(product => !product.isFreeText && !previousIds.has(product.id));
+        knownProductIdsRef.current = new Set(products.map(product => product.id));
+        if (!hasNewProduct || (style.categoryColumnCount || 1) <= 1) return;
+
+        setStyle(current => {
+            const positionedCategories = new Set(Object.keys(current.categoryPositions || {}));
+            const currentPlacements = Object.entries(current.categoryPlacements || {});
+            const nextPlacements = Object.fromEntries(
+                currentPlacements.filter(([category]) => positionedCategories.has(category))
+            );
+            if (Object.keys(nextPlacements).length === currentPlacements.length) return current;
+            return { ...current, categoryPlacements: nextPlacements, name: 'Custom' };
+        });
+    }, [products, setStyle, style.categoryColumnCount]);
 
     useEffect(() => {
         const root = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas="true"]');
@@ -273,13 +328,163 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     }, [products, renderScale, style]);
 
     useEffect(() => {
+        const root = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas="true"]');
+        if (!root) return;
+
+        let frameId: number | null = null;
+        let settleFrameId: number | null = null;
+        const productById = new Map(products.map(product => [product.id, product]));
+        const realCategories = new Set(products.filter(product => !product.isFreeText).map(product => product.category));
+
+        const scanLayout = () => {
+            const overlappingCategories = new Set<string>();
+            const overlappingProducts = new Set<string>();
+            const overlappingFreeTexts = new Set<string>();
+            const offCanvasCategories = new Set<string>();
+            const offCanvasProducts = new Set<string>();
+            const offCanvasFreeTexts = new Set<string>();
+            let hasColumnGap = false;
+
+            const addIssue = (
+                entry: { type: 'category' | 'product' | 'freeText'; id: string },
+                categorySet: Set<string>,
+                productSet: Set<string>,
+                freeTextSet: Set<string>,
+            ) => {
+                if (entry.type === 'category') categorySet.add(entry.id);
+                else if (entry.type === 'freeText') freeTextSet.add(entry.id);
+                else productSet.add(entry.id);
+            };
+
+            root.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]').forEach(page => {
+                const pageRect = page.getBoundingClientRect();
+                const entries = Array.from(page.querySelectorAll<HTMLElement>(
+                    '[data-drag-type="category"][data-drag-id], [data-drag-type="product"][data-drag-id]'
+                )).reduce<LayoutElementEntry[]>((result, element) => {
+                    if (!element.isConnected || element.getClientRects().length === 0) return result;
+                    const id = element.dataset.dragId;
+                    const dragType = element.dataset.dragType;
+                    if (!id) return result;
+                    if (dragType === 'category') {
+                        if (realCategories.has(id)) {
+                            result.push({ element, id, type: 'category', rect: element.getBoundingClientRect() });
+                        }
+                        return result;
+                    }
+                    const product = productById.get(id);
+                    if (product) {
+                        result.push({
+                            element,
+                            id,
+                            type: product.isFreeText ? 'freeText' : 'product',
+                            rect: element.getBoundingClientRect(),
+                        });
+                    }
+                    return result;
+                }, []);
+
+                entries.forEach(entry => {
+                    const tolerance = 3;
+                    if (
+                        entry.rect.left < pageRect.left - tolerance
+                        || entry.rect.right > pageRect.right + tolerance
+                        || entry.rect.top < pageRect.top - tolerance
+                        || entry.rect.bottom > pageRect.bottom + tolerance
+                    ) {
+                        addIssue(entry, offCanvasCategories, offCanvasProducts, offCanvasFreeTexts);
+                    }
+                });
+
+                for (let firstIndex = 0; firstIndex < entries.length; firstIndex += 1) {
+                    const first = entries[firstIndex];
+                    for (let secondIndex = firstIndex + 1; secondIndex < entries.length; secondIndex += 1) {
+                        const second = entries[secondIndex];
+                        if (first.element.contains(second.element) || second.element.contains(first.element)) continue;
+                        const overlapWidth = Math.min(first.rect.right, second.rect.right) - Math.max(first.rect.left, second.rect.left);
+                        const overlapHeight = Math.min(first.rect.bottom, second.rect.bottom) - Math.max(first.rect.top, second.rect.top);
+                        if (overlapWidth <= 3 || overlapHeight <= 3) continue;
+                        addIssue(first, overlappingCategories, overlappingProducts, overlappingFreeTexts);
+                        addIssue(second, overlappingCategories, overlappingProducts, overlappingFreeTexts);
+                    }
+                }
+
+                const columns = Array.from(page.querySelectorAll<HTMLElement>(
+                    '[data-drag-column-container="category"][data-drag-column-index]'
+                )).sort((left, right) => Number(left.dataset.dragColumnIndex) - Number(right.dataset.dragColumnIndex));
+                for (let columnIndex = 1; columnIndex < columns.length; columnIndex += 1) {
+                    const previousColumn = columns[columnIndex - 1];
+                    const currentColumn = columns[columnIndex];
+                    const previousChunks = Array.from(previousColumn.children).filter((child): child is HTMLElement => (
+                        child instanceof HTMLElement && Boolean(child.dataset.categoryChunk)
+                    ));
+                    const currentChunks = Array.from(currentColumn.children).filter((child): child is HTMLElement => (
+                        child instanceof HTMLElement && Boolean(child.dataset.categoryChunk)
+                    ));
+                    const firstCurrentChunk = currentChunks[0];
+                    if (!firstCurrentChunk) continue;
+                    const previousRect = previousColumn.getBoundingClientRect();
+                    const lastPreviousBottom = previousChunks.length > 0
+                        ? Math.max(...previousChunks.map(chunk => chunk.getBoundingClientRect().bottom))
+                        : previousRect.top;
+                    const availableHeight = previousRect.bottom - lastPreviousBottom;
+                    const requiredHeight = firstCurrentChunk.getBoundingClientRect().height + Math.max(4, 12 * renderScale);
+                    if (availableHeight >= requiredHeight) {
+                        hasColumnGap = true;
+                        break;
+                    }
+                }
+            });
+
+            const nextDiagnostics: LayoutDiagnostics = {
+                overlappingCategoryIds: Array.from(overlappingCategories).sort(),
+                overlappingProductIds: Array.from(overlappingProducts).sort(),
+                overlappingFreeTextIds: Array.from(overlappingFreeTexts).sort(),
+                offCanvasCategoryIds: Array.from(offCanvasCategories).sort(),
+                offCanvasProductIds: Array.from(offCanvasProducts).sort(),
+                offCanvasFreeTextIds: Array.from(offCanvasFreeTexts).sort(),
+                hasColumnGap,
+            };
+            setLayoutDiagnostics(current => (
+                JSON.stringify(current) === JSON.stringify(nextDiagnostics) ? current : nextDiagnostics
+            ));
+        };
+
+        const scheduleScan = () => {
+            if (frameId !== null) window.cancelAnimationFrame(frameId);
+            if (settleFrameId !== null) window.cancelAnimationFrame(settleFrameId);
+            frameId = window.requestAnimationFrame(() => {
+                frameId = null;
+                scanLayout();
+                settleFrameId = window.requestAnimationFrame(() => {
+                    settleFrameId = null;
+                    scanLayout();
+                });
+            });
+        };
+        const observer = new MutationObserver(scheduleScan);
+        observer.observe(root, { childList: true, subtree: true });
+        window.addEventListener('resize', scheduleScan);
+        scheduleScan();
+
+        return () => {
+            observer.disconnect();
+            window.removeEventListener('resize', scheduleScan);
+            if (frameId !== null) window.cancelAnimationFrame(frameId);
+            if (settleFrameId !== null) window.cancelAnimationFrame(settleFrameId);
+        };
+    }, [products, renderScale, style]);
+
+    useEffect(() => {
         const activeKeys = new Set(fontTips.map(tip => `font:${tip.scope}`));
         if (positionedCategoryIds.length > 0) activeKeys.add('free-categories');
+        if (layoutDiagnostics.hasColumnGap) activeKeys.add('free-categories');
+        if (overlapIssueCount > 0) activeKeys.add('overlapping-elements');
+        if (offCanvasIssueCount > 0) activeKeys.add('off-canvas-elements');
         setDismissedTips(current => {
             const next = new Set(Array.from(current).filter(key => activeKeys.has(key)));
             return next.size === current.size ? current : next;
         });
-    }, [fontTips, positionedCategorySignature]);
+    }, [fontTips, layoutDiagnostics.hasColumnGap, offCanvasIssueCount, overlapIssueCount, positionedCategorySignature]);
 
     useEffect(() => {
         const root = containerRef.current;
@@ -468,27 +673,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     useEffect(() => {
         printPreviewRevisionRef.current += 1;
         printPreviewCachesRef.current.clear();
-        const revision = printPreviewRevisionRef.current;
-        const idleWindow = window as Window & {
-            requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
-            cancelIdleCallback?: (id: number) => void;
-        };
-        let idleId: number | null = null;
-
-        const timeoutId = window.setTimeout(() => {
-            const prewarm = () => {
-                if (printPreviewRevisionRef.current !== revision) return;
-                void ensurePrintPreviewPages({ printBackgrounds: true }).catch(() => undefined);
-            };
-            idleId = idleWindow.requestIdleCallback?.(prewarm, { timeout: 1500 }) ?? null;
-            if (idleId === null) prewarm();
-        }, 450);
-
-        return () => {
-            window.clearTimeout(timeoutId);
-            if (idleId !== null) idleWindow.cancelIdleCallback?.(idleId);
-        };
-    }, [ensurePrintPreviewPages, products, sortOption, splitCategoryAcrossPages, style]);
+    }, [products, sortOption, splitCategoryAcrossPages, style]);
 
     const handlePrint = (mode: 'download' | 'publish' = 'download') => {
         setActivePrintMode(mode);
@@ -959,13 +1144,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         const newCategoryName = `Nova categoria ${Math.floor(Math.random() * 1000)}`;
         const newId = crypto.randomUUID();
         const categoryId = crypto.randomUUID();
-        const nearCategoryElement = Array.from(
-            containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"] [data-drag-type="category"][data-drag-id]') || []
-        ).find((element) => element.dataset.dragId === nearCategory);
-        const nearCategoryPlacement = nearCategoryElement && (style.categoryColumnCount || 1) > 1 ? {
-            pageIndex: Number(nearCategoryElement.dataset.dragPageIndex ?? 0),
-            columnIndex: Number(nearCategoryElement.dataset.dragColumnIndex ?? 0),
-        } : null;
         setProducts(prev => [...prev, { id: newId, name: 'Novo item', price: 0, description: 'Descrição', category: newCategoryName, categoryId, image: '' }]);
         setStyle(prev => {
             const distinctCategories = Array.from(new Set(displayProducts.map(p => p.category))).sort();
@@ -979,9 +1157,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             return {
                 ...prev,
                 customCategoryOrder: currentOrder,
-                categoryPlacements: nearCategoryPlacement
-                    ? { ...(prev.categoryPlacements || {}), [newCategoryName]: nearCategoryPlacement }
-                    : prev.categoryPlacements,
                 name: 'Custom',
             };
         });
@@ -1520,8 +1695,50 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         });
     };
 
+    const applyLayoutIssueSuggestion = (issue: 'overlap' | 'offCanvas') => {
+        const categoryIds = issue === 'overlap'
+            ? layoutDiagnostics.overlappingCategoryIds
+            : layoutDiagnostics.offCanvasCategoryIds;
+        const productIds = issue === 'overlap'
+            ? layoutDiagnostics.overlappingProductIds
+            : layoutDiagnostics.offCanvasProductIds;
+        const freeTextIds = issue === 'overlap'
+            ? layoutDiagnostics.overlappingFreeTextIds
+            : layoutDiagnostics.offCanvasFreeTextIds;
+        const affectedProductIds = new Set([...productIds, ...freeTextIds]);
+        const affectedCategories = new Set(categoryIds);
+        products.forEach(product => {
+            if (affectedProductIds.has(product.id)) affectedCategories.add(product.category);
+        });
+
+        if (affectedProductIds.size > 0) {
+            setProducts?.(current => current.map(product => (
+                affectedProductIds.has(product.id) && product.customMarginTop
+                    ? { ...product, customMarginTop: 0 }
+                    : product
+            )));
+        }
+        setStyle(current => {
+            const nextPositions = { ...(current.categoryPositions || {}) };
+            const nextPlacements = { ...(current.categoryPlacements || {}) };
+            affectedCategories.forEach(category => {
+                delete nextPositions[category];
+                delete nextPlacements[category];
+            });
+            return {
+                ...current,
+                categoryPositions: nextPositions,
+                categoryPlacements: nextPlacements,
+                pageBreaks: (current.pageBreaks || []).filter(category => !affectedCategories.has(category)),
+                name: 'Custom',
+            };
+        });
+    };
+
     const applyAllSuggestions = () => {
         visibleFontTips.forEach(tip => applyFontSuggestion(tip.scope));
+        if (showOverlapTip) applyLayoutIssueSuggestion('overlap');
+        if (showOffCanvasTip) applyLayoutIssueSuggestion('offCanvas');
         if (showPositionedCategoryTip) applyPositionedCategorySuggestion();
     };
 
@@ -1611,12 +1828,42 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                         </section>
                                     )}
 
+                                    {showOverlapTip && (
+                                        <section>
+                                            <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Elementos sobrepostos</h3>
+                                            <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                                                <p className="min-w-0 flex-1 text-xs leading-relaxed text-slate-700">
+                                                    {overlapIssueCount} {overlapIssueCount === 1 ? 'elemento está sobreposto' : 'elementos estão sobrepostos'} ({layoutDiagnostics.overlappingCategoryIds.length} categorias, {layoutDiagnostics.overlappingProductIds.length} produtos e {layoutDiagnostics.overlappingFreeTextIds.length} textos livres). Corrigir reorganiza somente os itens envolvidos.
+                                                </p>
+                                                <div className="flex shrink-0 gap-1">
+                                                    <button type="button" onClick={() => applyLayoutIssueSuggestion('overlap')} className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700" title="Corrigir sobreposições" aria-label="Corrigir sobreposições"><Check size={16} /></button>
+                                                    <button type="button" onClick={() => dismissTip('overlapping-elements')} className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm transition hover:bg-slate-100 hover:text-slate-700" title="Remover esta dica" aria-label="Remover dica de elementos sobrepostos"><X size={16} /></button>
+                                                </div>
+                                            </div>
+                                        </section>
+                                    )}
+
+                                    {showOffCanvasTip && (
+                                        <section>
+                                            <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Elementos fora da página</h3>
+                                            <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3">
+                                                <p className="min-w-0 flex-1 text-xs leading-relaxed text-slate-700">
+                                                    {offCanvasIssueCount} {offCanvasIssueCount === 1 ? 'elemento está oculto' : 'elementos estão ocultos'} fora da área visível ({layoutDiagnostics.offCanvasCategoryIds.length} categorias, {layoutDiagnostics.offCanvasProductIds.length} produtos e {layoutDiagnostics.offCanvasFreeTextIds.length} textos livres). Corrigir traz esses itens de volta ao fluxo da página.
+                                                </p>
+                                                <div className="flex shrink-0 gap-1">
+                                                    <button type="button" onClick={() => applyLayoutIssueSuggestion('offCanvas')} className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700" title="Trazer elementos para a página" aria-label="Trazer elementos para a página"><Check size={16} /></button>
+                                                    <button type="button" onClick={() => dismissTip('off-canvas-elements')} className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm transition hover:bg-slate-100 hover:text-slate-700" title="Remover esta dica" aria-label="Remover dica de elementos fora da página"><X size={16} /></button>
+                                                </div>
+                                            </div>
+                                        </section>
+                                    )}
+
                                     {showPositionedCategoryTip && (
                                         <section>
-                                            <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Categorias em posição livre</h3>
+                                            <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Espaços vazios no fluxo</h3>
                                             <div className="flex items-start gap-3 rounded-xl border border-indigo-200 bg-indigo-50 p-3">
                                                 <p className="min-w-0 flex-1 text-xs leading-relaxed text-slate-700">
-                                                    {positionedCategoryIds.length} {positionedCategoryIds.length === 1 ? 'categoria está' : 'categorias estão'} fora das posições normais. Confirmar mantém a ordem atual e remove os espaços livres entre elas.
+                                                    Há categorias fora do fluxo normal ou iniciando outra coluna antes da hora. Confirmar mantém a ordem atual e preenche os espaços disponíveis primeiro.
                                                 </p>
                                                 <div className="flex shrink-0 gap-1">
                                                     <button

@@ -463,6 +463,7 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
                         <Trash2 size={iconSize} className={iconClass} />
                     </button>
                     <button
+                        data-open-object-menu="true"
                         onClick={(e) => handlers.openObjectMenu?.(e, { type: selectionType, id: selectionId })}
                         className={`${controlPadding} bg-white border border-slate-200 shadow-md rounded-full text-slate-500 hover:text-indigo-600 hover:bg-slate-50 hover:scale-110 transition-transform cursor-pointer`}
                         title="Mais opções"

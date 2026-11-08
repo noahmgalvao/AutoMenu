@@ -115,6 +115,7 @@ export const ProductList: React.FC<ProductListProps> = ({
   categoryImageUpload,
 }) => {
   const [shakingCategory, setShakingCategory] = React.useState<string | null>(null);
+  const categoryOptionsPointerDownRef = React.useRef<{ category: string; startedAt: number } | null>(null);
 
   React.useEffect(() => {
     const handleLimitReached = (e: Event) => {
@@ -195,7 +196,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                     onPointerDown={(e) => handlers.handleDragStart(e, 'category', cat)}
                     onDragStart={(e) => e.preventDefault()}
                     onContextMenu={(e) => e.preventDefault()}
-                    className={`automenu-drag-item select-none touch-pan-y cursor-grab flex items-center justify-between p-2 bg-slate-100 border rounded-lg transition-all active:cursor-grabbing ${isCatHidden ? 'bg-slate-200 text-slate-400' : ''} ${isSelected ? 'border-indigo-500 ring-1 ring-indigo-500' : 'border-slate-200 group-hover:border-indigo-300'} ${isBeingDragged ? 'opacity-40' : ''}`}
+                    className={`automenu-drag-item select-none ${(style.categoryColumnCount || 1) === 2 ? 'touch-none md:touch-pan-y' : 'touch-pan-y'} cursor-grab flex items-center justify-between p-2 bg-slate-100 border rounded-lg transition-all active:cursor-grabbing ${isCatHidden ? 'bg-slate-200 text-slate-400' : ''} ${isSelected ? 'border-indigo-500 ring-1 ring-indigo-500' : 'border-slate-200 group-hover:border-indigo-300'} ${isBeingDragged ? 'opacity-40' : ''}`}
                     onClick={(e) => { e.stopPropagation(); handlers.handleSelection('category', cat, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey || handlers.multiSelectMode }); }}
                   >
                     <div className="flex items-center gap-2 font-bold text-slate-700 text-sm min-w-0">
@@ -230,10 +231,24 @@ export const ProductList: React.FC<ProductListProps> = ({
                       <span className="truncate">{cat}</span>
                     </div>
                     <div className="relative">
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === cat ? null : cat); }}
+                      <button
+                        data-product-options-trigger="true"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const press = categoryOptionsPointerDownRef.current;
+                          categoryOptionsPointerDownRef.current = null;
+                          const suppressUntil = Number(document.body.dataset.automenuSuppressProductOptionsUntil || 0);
+                          const wasLongTouch = press?.category === cat && Date.now() - press.startedAt >= 300;
+                          if (wasLongTouch || Date.now() < suppressUntil) return;
+                          setMenuOpenId(menuOpenId === cat ? null : cat);
+                        }}
                         className="p-1 hover:bg-slate-200 rounded text-slate-500"
-                        onPointerDown={e => e.stopPropagation()}
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          categoryOptionsPointerDownRef.current = e.pointerType === 'touch'
+                            ? { category: cat, startedAt: Date.now() }
+                            : null;
+                        }}
                       >
                         <MoreVertical size={16} />
                       </button>
