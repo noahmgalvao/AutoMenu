@@ -23,6 +23,12 @@ const selectStyles: StylesConfig<any, false> = {
     fontSize: 12,
   }),
   menu: (base) => ({ ...base, zIndex: 80, fontSize: 12 }),
+  menuList: (base) => ({
+    ...base,
+    WebkitOverflowScrolling: 'touch',
+    touchAction: 'pan-y',
+    overscrollBehavior: 'contain',
+  }),
   option: (base, state) => ({
     ...base,
     backgroundColor: state.isSelected ? '#eef2ff' : state.isFocused ? '#f8fafc' : '#fff',
@@ -108,6 +114,7 @@ export const FontSelect: React.FC<{
   const [menuIsOpen, setMenuIsOpen] = useState(false);
   const selectRef = useRef<any>(null);
   const keepMenuOpenRef = useRef(false);
+  const keyboardDismissedForGestureRef = useRef(false);
   const lastTouchToggleRef = useRef(0);
   const resolvedValue = value || fallbackFontFamily || FONTS[0];
 
@@ -155,13 +162,24 @@ export const FontSelect: React.FC<{
   };
 
   const MenuList = (menuProps: any) => {
-    const hideKeyboard = () => {
+    const hideKeyboard = (event: React.TouchEvent<HTMLDivElement>) => {
+      if (keyboardDismissedForGestureRef.current) return;
+      keyboardDismissedForGestureRef.current = true;
       keepMenuOpenRef.current = true;
-      dismissKeyboard();
-      window.setTimeout(() => { keepMenuOpenRef.current = false; }, 120);
+      const list = event.currentTarget.querySelector<HTMLElement>('[role="listbox"]');
+      const scrollTop = list?.scrollTop || 0;
+      selectRef.current?.blur?.();
+      window.requestAnimationFrame(() => {
+        if (list) list.scrollTop = scrollTop;
+        keepMenuOpenRef.current = false;
+      });
     };
     return (
-      <div className="touch-pan-y" onTouchStartCapture={hideKeyboard}>
+      <div
+        className="touch-pan-y"
+        onTouchStartCapture={() => { keyboardDismissedForGestureRef.current = false; }}
+        onTouchMoveCapture={hideKeyboard}
+      >
         <components.MenuList {...menuProps} />
       </div>
     );
@@ -176,6 +194,8 @@ export const FontSelect: React.FC<{
       options={fontOptions}
       placeholder={placeholder}
       styles={selectStyles}
+      captureMenuScroll={false}
+      menuShouldScrollIntoView={false}
       isSearchable
       menuIsOpen={menuIsOpen}
       onMenuOpen={() => setMenuIsOpen(true)}

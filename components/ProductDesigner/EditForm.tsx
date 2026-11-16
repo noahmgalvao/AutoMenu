@@ -1,8 +1,9 @@
 
 import React from 'react';
-import { MenuStyle, Product } from '../../types';
+import { MenuStyle, Product, type CategoryDividerStyle } from '../../types';
 import { AlignCenter, AlignLeft, AlignRight, Check, ImagePlus, Loader2, X } from 'lucide-react';
 import { formatMenuPriceValue, parseAndRoundPrice } from '../../utils/price';
+import { CategoryDividerPicker } from '../MenuDesigner/CategoryDividerPicker';
 
 interface EditFormProps {
   type: 'product' | 'category';
@@ -15,6 +16,8 @@ interface EditFormProps {
   imageUploading?: boolean;
   onImageClick?: () => void;
   onRemoveImage?: () => void;
+  productDividerStyle?: CategoryDividerStyle;
+  onProductDividerStyleChange?: (preset: CategoryDividerStyle) => void;
 }
 
 export const EditForm: React.FC<EditFormProps> = ({
@@ -28,6 +31,8 @@ export const EditForm: React.FC<EditFormProps> = ({
   imageUploading = false,
   onImageClick,
   onRemoveImage,
+  productDividerStyle,
+  onProductDividerStyleChange,
 }) => {
   const priceInputFocusedRef = React.useRef(false);
   const priceAtFocusRef = React.useRef<number | undefined>(undefined);
@@ -157,6 +162,14 @@ export const EditForm: React.FC<EditFormProps> = ({
               }}
             />
           </div>
+          {productDividerStyle && onProductDividerStyleChange && (
+            <CategoryDividerPicker
+              label="Linha do produto"
+              value={productDividerStyle}
+              color={style.textColor}
+              onChange={onProductDividerStyleChange}
+            />
+          )}
         </>
       )}
       <div className="flex justify-end gap-2 mt-1">

@@ -24,9 +24,10 @@ interface InlineStyleToolbarProps {
     categoryDividerPreset?: CategoryDividerStyle;
     categoryDividerColor?: string;
     onCategoryDividerChange?: (preset: CategoryDividerStyle) => void;
+    dividerLabel?: string;
 }
 
-export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, positionTargetElementId, value, onChange, onDismiss, controls = 'all', maxFontSize, minFontSize, header, compact = false, onAdjustPrice, fallbackFontFamily, categoryDividerPreset, categoryDividerColor = '#000000', onCategoryDividerChange }) => {
+export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, positionTargetElementId, value, onChange, onDismiss, controls = 'all', maxFontSize, minFontSize, header, compact = false, onAdjustPrice, fallbackFontFamily, categoryDividerPreset, categoryDividerColor = '#000000', onCategoryDividerChange, dividerLabel }) => {
     const toolbarRef = useRef<HTMLDivElement>(null);
     const [position, setPosition] = useState({ left: 8, top: 8, width: 270 });
     const [priceAdjustment, setPriceAdjustment] = useState('10');
@@ -174,6 +175,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                         value={categoryDividerPreset}
                         color={categoryDividerColor}
                         onChange={onCategoryDividerChange}
+                        label={dividerLabel}
                     />
                 </div>
             )}

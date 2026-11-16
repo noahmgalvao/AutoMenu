@@ -490,7 +490,8 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                     style={{
                         top: `${handlers.draftItem.top}px`,
                         left: `${draftLeft}px`,
-                        width: `${columnWidth}px`,
+                        width: 'fit-content',
+                        maxWidth: `${columnWidth}px`,
                     }}
                 >
                     <div
@@ -504,7 +505,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                                 handlers.handleDraftCommit();
                             }
                         }}
-                        className="bg-indigo-500/15 ring-2 ring-blue-500 rounded p-1 font-normal text-xl leading-snug outline-none shadow-xl min-h-[30px] border border-blue-200 select-text"
+                        className="w-fit max-w-full whitespace-pre-wrap break-words bg-indigo-500/15 ring-2 ring-blue-500 rounded p-1 font-normal text-xl leading-snug outline-none shadow-xl min-h-[30px] border border-blue-200 select-text"
                         style={{
                             color: style.textColor,
                             WebkitTextFillColor: style.textColor,

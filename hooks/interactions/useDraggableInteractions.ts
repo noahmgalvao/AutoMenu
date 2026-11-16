@@ -3475,7 +3475,11 @@ export const useDraggableInteractions = (
         listenersAttachedRef.current = true;
     }, [stableBlurListener, stablePointerCancelListener, stablePointerMoveListener, stablePointerUpListener]);
 
-    useEffect(() => cancelAndCleanup, [cancelAndCleanup]);
+    const cancelAndCleanupRef = useRef(cancelAndCleanup);
+    useEffect(() => {
+        cancelAndCleanupRef.current = cancelAndCleanup;
+    }, [cancelAndCleanup]);
+    useEffect(() => () => cancelAndCleanupRef.current(), []);
 
     const sortedCategories = useMemo(() => {
         const draggedProduct = draggedItem?.type === 'product'

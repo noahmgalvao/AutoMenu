@@ -322,6 +322,12 @@ export const ProductList: React.FC<ProductListProps> = ({
                         imageUploading={productImageUpload?.id === product.id}
                         onImageClick={() => onProductImageClick(product.id)}
                         onRemoveImage={() => onRemoveProductImage(product.id)}
+                        productDividerStyle={style.productDividerStyles?.[product.id] || 'none'}
+                        onProductDividerStyleChange={(preset) => handlers.updateStyle?.((previous: MenuStyle) => ({
+                          ...previous,
+                          productDividerStyles: { ...(previous.productDividerStyles || {}), [product.id]: preset },
+                          name: 'Custom',
+                        }))}
                       />
                     ) : (
                       <div 

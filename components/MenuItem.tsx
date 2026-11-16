@@ -166,6 +166,7 @@ const FreeTextResizeHandles = ({ product, style, handlers }: { product: Product;
     const startResize = (event: React.PointerEvent<HTMLButtonElement>, horizontalDirection: -1 | 1, verticalDirection: -1 | 1) => {
         event.preventDefault();
         event.stopPropagation();
+        event.currentTarget.setPointerCapture(event.pointerId);
         const container = document.getElementById(`product-container-${product.id}`);
         const text = document.getElementById(`product-name-${product.id}`);
         const column = container?.closest<HTMLElement>('[data-drag-column-container="category"]');
@@ -183,10 +184,12 @@ const FreeTextResizeHandles = ({ product, style, handlers }: { product: Product;
 
         const handleMove = (moveEvent: PointerEvent) => {
             if (moveEvent.cancelable) moveEvent.preventDefault();
+            moveEvent.stopPropagation();
             const horizontalDelta = ((moveEvent.clientX - startX) * horizontalDirection) / scale;
             const verticalDelta = ((moveEvent.clientY - startY) * verticalDirection) / scale;
-            const factor = Math.max(0.35, 1 + ((horizontalDelta + verticalDelta) / Math.max(48, startWidth * 2)));
-            nextWidth = Math.max(36, Math.min(maxWidth, Math.round(startWidth * factor)));
+            const resizeDelta = Math.abs(horizontalDelta) >= Math.abs(verticalDelta) ? horizontalDelta : verticalDelta;
+            nextWidth = Math.max(36, Math.min(maxWidth, Math.round(startWidth + resizeDelta)));
+            const factor = nextWidth / Math.max(1, startWidth);
             nextFontSize = Math.max(minimumFontSize, Math.min(maximumFontSize, Math.round(startFontSize * factor * 10) / 10));
             container.style.width = `${nextWidth}px`;
             text.style.fontSize = `${nextFontSize}px`;
@@ -215,7 +218,7 @@ const FreeTextResizeHandles = ({ product, style, handlers }: { product: Product;
                 data-drag-ignore="true"
                 aria-label="Redimensionar texto"
                 title="Arraste para redimensionar"
-                className={`absolute z-[75] h-3 w-3 rounded-[3px] border border-white bg-indigo-500 shadow-sm ${position}`}
+                className={`absolute z-[75] h-3 w-3 touch-none rounded-[3px] border border-white bg-indigo-500 shadow-sm ${position}`}
                 onPointerDown={(event) => startResize(event, x, y)}
             />
         ))}
@@ -767,12 +770,21 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 fallbackFontFamily={style.fontFamily}
                 onChange={(newStyle) => handlers.handleInlineStyleChange?.(formattingTarget, newStyle)}
                 onDismiss={() => handlers.setFormattingTarget?.(null)}
-                categoryDividerPreset={type === 'category' ? (style.categoryDividerStyles?.[id] || 'solid') : undefined}
-                categoryDividerColor={style.primaryColor}
-                onCategoryDividerChange={type === 'category'
-                    ? (preset) => handlers.updateStyle?.((previous: MenuStyle) => ({
+                categoryDividerPreset={type === 'category'
+                    ? (style.categoryDividerStyles?.[id] || 'solid')
+                    : type === 'product'
+                        ? (style.productDividerStyles?.[id] || 'none')
+                        : undefined}
+                categoryDividerColor={type === 'category' ? style.primaryColor : style.textColor}
+                dividerLabel={type === 'product' ? 'Linha do produto' : 'Linha da categoria'}
+                onCategoryDividerChange={type === 'category' || type === 'product'
+                    ? (preset) => handlers.updateStyle?.((previous: MenuStyle) => type === 'category' ? ({
                         ...previous,
                         categoryDividerStyles: { ...(previous.categoryDividerStyles || {}), [id]: preset },
+                        name: 'Custom',
+                    }) : ({
+                        ...previous,
+                        productDividerStyles: { ...(previous.productDividerStyles || {}), [id]: preset },
                         name: 'Custom',
                     }))
                     : undefined}
@@ -982,6 +994,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const nameStyle = product.isFreeText && product.styles ? product.styles : (style.elementStyles?.productName || {});
         const priceStyle = style.elementStyles?.productPrice || {};
         const descStyle = style.elementStyles?.productDescription || {};
+        const productDividerPreset = style.productDividerStyles?.[product.id] || 'none';
+        const showProductDivider = style.showPrices !== false && productDividerPreset !== 'none';
         const isNameCentered = nameStyle.textAlign === 'center';
         const isNameRight = nameStyle.textAlign === 'right';
         const descriptionAlign = descStyle.textAlign || nameStyle.textAlign || 'left';
@@ -1119,11 +1133,11 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             className={`flex min-w-0 flex-wrap ${isNameCentered ? 'items-center' : 'items-start'}`}
                             style={{
                                 marginBottom: contentSpacing.productNameToDescription,
-                                columnGap: contentSpacing.productNameToPrice,
+                                columnGap: showProductDivider ? 2 : contentSpacing.productNameToPrice,
                                 rowGap: 2,
                             }}
                          >
-                            <div className={`flex items-center gap-2 ${isNameCentered ? 'justify-center' : isNameRight ? 'justify-end' : ''}`} style={{ flex: '1 1 min-content', minWidth: 'min-content' }}>
+                            <div className={`flex items-center gap-2 ${isNameCentered ? 'justify-center' : isNameRight ? 'justify-end' : ''}`} style={{ flex: showProductDivider ? '0 1 auto' : '1 1 min-content', minWidth: 'min-content' }}>
                                 <AutoFitText
                                     as="h3"
                                     text={product.name}
@@ -1149,6 +1163,13 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 />
                                 <button data-product-edit-id={product.id} onClick={(e) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name')} className={`relative ${selectionLayerClasses.controls} hidden md:inline-flex ${compactControls ? 'md:hidden' : ''} p-2.5 bg-white border border-slate-200 shadow-sm rounded-md text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all flex-shrink-0 ${isSelected || handlers.editingId === product.id ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'}`} onPointerDown={(e) => e.stopPropagation()}><Edit3 size={24} /></button>
                             </div>
+                            {showProductDivider && (
+                                <span
+                                    aria-hidden="true"
+                                    className="min-w-2 self-center"
+                                    style={getCategoryDividerStyle(productDividerPreset, style.textColor, 'right')}
+                                />
+                            )}
                             {style.showPrices !== false && <div
                               className="ml-auto flex min-w-0 shrink-0 items-center gap-1 whitespace-nowrap"
                               style={{ 
@@ -1282,6 +1303,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                      const nameStyle = style.elementStyles?.productName || {};
                      const priceStyle = style.elementStyles?.productPrice || {};
                      const descStyle = style.elementStyles?.productDescription || {};
+                     const productDividerPreset = style.productDividerStyles?.[product.id] || 'none';
+                     const showProductDivider = style.showPrices !== false && productDividerPreset !== 'none';
                      const textAlignClass = nameStyle.textAlign === 'left'
                         ? 'text-left'
                         : nameStyle.textAlign === 'right'
@@ -1341,11 +1364,11 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                 className="flex min-w-0 flex-wrap items-start"
                                                 style={{
                                                     marginBottom: contentSpacing.productNameToDescription,
-                                                    columnGap: contentSpacing.productNameToPrice,
+                                                    columnGap: showProductDivider ? 2 : contentSpacing.productNameToPrice,
                                                     rowGap: 2,
                                                 }}
                                             >
-                                                <div className={`flex items-center gap-1 ${nameStyle.textAlign === 'center' ? 'justify-center' : nameStyle.textAlign === 'right' ? 'justify-end' : 'justify-start'}`} style={{ flex: '1 1 min-content', minWidth: 'min-content' }}>
+                                                <div className={`flex items-center gap-1 ${nameStyle.textAlign === 'center' ? 'justify-center' : nameStyle.textAlign === 'right' ? 'justify-end' : 'justify-start'}`} style={{ flex: showProductDivider ? '0 1 auto' : '1 1 min-content', minWidth: 'min-content' }}>
                                                     <AutoFitText
                                                         as="h3"
                                                         text={product.name}
@@ -1378,6 +1401,13 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         <Edit3 size={20} className="h-6 w-6 md:h-5 md:w-5" />
                                                     </button>
                                                 </div>
+                                                {showProductDivider && (
+                                                    <span
+                                                        aria-hidden="true"
+                                                        className="min-w-2 self-center"
+                                                        style={getCategoryDividerStyle(productDividerPreset, style.textColor, 'right')}
+                                                    />
+                                                )}
                                                 {style.showPrices !== false && <div
                                                     className={`ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap ${isCardLayout ? `rounded-full bg-white/90 border border-black/5 shadow-sm ${compactControls ? 'px-1.5 py-0.5' : 'px-2.5 py-1'}` : ''}`}
                                                     style={{ color: priceStyle.color || style.textColor, fontFamily: priceStyle.fontFamily, fontSize: clampFontSize(style, 'productPrice', priceStyle.fontSize, 18), fontWeight: priceStyle.fontWeight, fontStyle: priceStyle.italic ? 'italic' : 'normal', textDecoration: priceStyle.underline ? 'underline' : 'none', textTransform: priceStyle.textTransform, letterSpacing: priceStyle.letterSpacing ? `${priceStyle.letterSpacing}px` : undefined }}

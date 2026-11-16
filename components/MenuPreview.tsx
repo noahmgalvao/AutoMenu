@@ -23,9 +23,9 @@ import {
     type PriceAdjustmentMode,
     type PricePropagationRequest,
 } from '../utils/pricePropagation';
-import { CATEGORY_DIVIDER_PRESETS, getCategoryDividerStyle } from '../utils/categoryDividers';
 import { FontPropagationPrompt, type FontPropagationRequest } from './FontPropagationPrompt';
 import { applyFontToMenuStyle } from '../utils/fontPropagation';
+import { CategoryDividerPicker } from './MenuDesigner/CategoryDividerPicker';
 
 interface MenuPreviewProps {
     products: Product[];
@@ -2116,12 +2116,22 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         : null;
     const objectMenuItems = contextObjectItem ? getActiveObjectItems(contextObjectItem) : [];
     const categoryMenuItems = objectMenuItems.filter((item): item is SelectionItem & { type: 'category' } => item.type === 'category');
+    const productMenuItems = objectMenuItems.filter((item): item is SelectionItem & { type: 'product' } => item.type === 'product');
     const setCategoryDividerPreset = (preset: CategoryDividerStyle) => {
         if (categoryMenuItems.length === 0) return;
         onStyleUpdate?.((previous) => {
             const nextDividers = { ...(previous.categoryDividerStyles || {}) };
             categoryMenuItems.forEach((item) => { nextDividers[item.id] = preset; });
             return { ...previous, categoryDividerStyles: nextDividers, name: 'Custom' };
+        });
+        setObjectMenu(null);
+    };
+    const setProductDividerPreset = (preset: CategoryDividerStyle) => {
+        if (productMenuItems.length === 0) return;
+        onStyleUpdate?.((previous) => {
+            const nextDividers = { ...(previous.productDividerStyles || {}) };
+            productMenuItems.forEach((item) => { nextDividers[item.id] = preset; });
+            return { ...previous, productDividerStyles: nextDividers, name: 'Custom' };
         });
         setObjectMenu(null);
     };
@@ -2267,28 +2277,21 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     <button onClick={() => { handlers.setMultiSelectMode?.(!handlers.multiSelectMode); setObjectMenu(null); }} className={`w-full px-3 py-2 text-left flex items-center gap-2 ${handlers.multiSelectMode ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-slate-50'}`}><CopyCheck size={15} /> Seleção múltipla</button>
                     {categoryMenuItems.length > 0 && (
                         <div className="border-y border-slate-100 px-3 py-2.5">
-                            <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">Linha da categoria</p>
-                            <div className="grid grid-cols-2 gap-1.5">
-                                {CATEGORY_DIVIDER_PRESETS.map((preset) => {
-                                    const active = categoryMenuItems.every((item) => (style.categoryDividerStyles?.[item.id] || 'solid') === preset.value);
-                                    return (
-                                        <button
-                                            key={preset.value}
-                                            type="button"
-                                            onClick={() => setCategoryDividerPreset(preset.value)}
-                                            className={`rounded-lg border px-2 py-1.5 text-left transition ${active ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-slate-200 hover:border-indigo-200 hover:bg-slate-50'}`}
-                                            title={preset.label}
-                                        >
-                                            <span className="flex h-4 items-center">
-                                                {preset.value === 'none'
-                                                    ? <span className="w-full text-center text-[10px] text-slate-400">sem linha</span>
-                                                    : <span className="block w-full" style={getCategoryDividerStyle(preset.value, style.primaryColor)} />}
-                                            </span>
-                                            <span className="block truncate text-[10px] font-medium">{preset.label}</span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
+                            <CategoryDividerPicker
+                                value={style.categoryDividerStyles?.[categoryMenuItems[0].id] || 'solid'}
+                                color={style.primaryColor}
+                                onChange={setCategoryDividerPreset}
+                            />
+                        </div>
+                    )}
+                    {productMenuItems.length > 0 && (
+                        <div className="border-y border-slate-100 px-3 py-2.5">
+                            <CategoryDividerPicker
+                                label="Linha do produto"
+                                value={style.productDividerStyles?.[productMenuItems[0].id] || 'none'}
+                                color={style.textColor}
+                                onChange={setProductDividerPreset}
+                            />
                         </div>
                     )}
                     <button disabled={isBackgroundMenu} onClick={() => runObjectAction('copy', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Copy size={15} /> Copiar</button>

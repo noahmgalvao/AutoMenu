@@ -190,6 +190,18 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                 
                 {(selection.type === 'product' || !selection.type) && (
                     <>
+                    {selection.type === 'product' && selection.id && (
+                        <CategoryDividerPicker
+                            label="Linha do produto"
+                            value={style.productDividerStyles?.[selection.id] || 'none'}
+                            color={style.textColor}
+                            onChange={(preset) => setStyle((previous) => ({
+                                ...previous,
+                                productDividerStyles: { ...(previous.productDividerStyles || {}), [selection.id!]: preset },
+                                name: 'Custom',
+                            }))}
+                        />
+                    )}
                     {safeStyles.productName && <StyleControls 
                         label="Nomes dos produtos"
                         value={safeStyles.productName}

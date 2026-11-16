@@ -210,6 +210,7 @@ export interface MenuStyle {
   categoryColumnCount?: 1 | 2 | 3;
   categoryColumnWidths?: number[];
   categoryDividerStyles?: Record<string, CategoryDividerStyle>;
+  productDividerStyles?: Record<string, CategoryDividerStyle>;
   categoryPlacements?: Record<string, { pageIndex: number; columnIndex: number }>;
   categoryPositions?: Record<string, CategoryPosition>;
   customCategoryOrder?: string[];
