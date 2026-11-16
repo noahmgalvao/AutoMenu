@@ -1,6 +1,6 @@
 import React from 'react';
 import { Product, MenuStyle } from '../types';
-import { AlignCenter, AlignLeft, AlignRight, MoreHorizontal, Plus, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Edit3, CopyCheck, X } from 'lucide-react';
+import { ImagePlus, Minus, MoreHorizontal, Plus, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Edit3, CopyCheck } from 'lucide-react';
 import { FREE_TEXT_PREFIX } from '../utils/menuPagination';
 import { selectionLayerClasses } from './selectionLayers';
 import { getDirectionLabel, getEdgeControlClass, type FlowDirection } from '../utils/flowControls';
@@ -540,6 +540,22 @@ export const MenuItem: React.FC<MenuItemProps> = ({
     const allowSameWordBreak = style.allowSameWordBreak === true;
     const contentSpacing = resolveMenuContentSpacing(style);
     const replacePriceOnNextInputRef = React.useRef<Set<string>>(new Set());
+    const [imageMenuProductId, setImageMenuProductId] = React.useState<string | null>(null);
+    React.useEffect(() => {
+        if (imageMenuProductId && handlers.editingId !== imageMenuProductId) {
+            setImageMenuProductId(null);
+        }
+    }, [handlers.editingId, imageMenuProductId]);
+    React.useEffect(() => {
+        if (!imageMenuProductId) return;
+        const closeImageMenuOutside = (event: PointerEvent) => {
+            const target = event.target as HTMLElement | null;
+            if (target?.closest<HTMLElement>('[data-product-image-surface]')?.dataset.productImageSurface === imageMenuProductId) return;
+            setImageMenuProductId(null);
+        };
+        document.addEventListener('pointerdown', closeImageMenuOutside, true);
+        return () => document.removeEventListener('pointerdown', closeImageMenuOutside, true);
+    }, [imageMenuProductId]);
     const replacePriceText = (element: HTMLElement, productId: string, text: string) => {
         const nextText = text.replace(/[^0-9.,]/g, '');
         if (!nextText) return;
@@ -625,33 +641,18 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             : null
     );
     const renderProductImageControls = (product: Product, isEditing: boolean) => (
-        isEditing ? (
-            <>
-                <button
-                    type="button"
-                    className="absolute right-1 top-1 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-white/95 text-red-600 shadow-md hover:bg-red-50"
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => { event.stopPropagation(); handlers.removeProductImage?.(product.id); }}
-                    aria-label="Remover imagem"
-                    title="Remover imagem"
-                >
-                    <X size={14} />
-                </button>
-                <div className="absolute bottom-1 left-1/2 z-20 flex -translate-x-1/2 gap-0.5 rounded-lg bg-white/95 p-0.5 shadow-md">
-                    {(['left', 'center', 'right'] as const).map((alignment) => (
-                        <button
-                            key={alignment}
-                            type="button"
-                            className={`flex h-6 w-6 items-center justify-center rounded-md ${product.imageAlignment === alignment || (!product.imageAlignment && alignment === 'center') ? 'bg-indigo-100 text-indigo-700' : 'text-slate-500 hover:bg-slate-100'}`}
-                            onPointerDown={(event) => event.stopPropagation()}
-                            onClick={(event) => { event.stopPropagation(); handlers.setProductImageAlignment?.(product.id, alignment); }}
-                            aria-label={`Alinhar imagem à ${alignment === 'left' ? 'esquerda' : alignment === 'right' ? 'direita' : 'centro'}`}
-                        >
-                            {alignment === 'left' ? <AlignLeft size={14} /> : alignment === 'center' ? <AlignCenter size={14} /> : <AlignRight size={14} />}
-                        </button>
-                    ))}
-                </div>
-            </>
+        isEditing && imageMenuProductId === product.id ? (
+            <div
+                data-product-image-surface={product.id}
+                className="absolute left-1/2 top-1/2 z-30 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-xl border border-slate-200 bg-white/95 p-1 shadow-xl backdrop-blur-sm"
+                onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); }}
+                onClick={(event) => event.stopPropagation()}
+            >
+                <button type="button" onClick={() => handlers.editProductImage?.(product.id)} className="flex h-8 w-8 items-center justify-center rounded-lg text-indigo-600 hover:bg-indigo-50" title="Substituir imagem" aria-label="Substituir imagem"><ImagePlus size={16} /></button>
+                <button type="button" onClick={() => handlers.adjustProductImageScale?.(-0.1)} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100" title="Diminuir imagem" aria-label="Diminuir imagem"><Minus size={16} /></button>
+                <button type="button" onClick={() => handlers.adjustProductImageScale?.(0.1)} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100" title="Aumentar imagem" aria-label="Aumentar imagem"><Plus size={16} /></button>
+                <button type="button" onClick={() => handlers.removeProductImage?.(product.id)} className="flex h-8 w-8 items-center justify-center rounded-lg text-red-600 hover:bg-red-50" title="Remover imagem" aria-label="Remover imagem"><Trash2 size={16} /></button>
+            </div>
         ) : null
     );
     
@@ -897,7 +898,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     ? renderFormattingToolbar('freeText', product.id, product.styles || {})
                     : renderFormattingToolbar('product', product.id,
                         formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle)}
-                        <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={false} canMoveRight={false} isFreeText={product.isFreeText} handlers={handlers} onEdit={(compactControls || handlers.mobileProductEditorEnabled) && !product.isFreeText ? (e: React.MouseEvent) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name') : undefined} mobileOnlyEdit={!compactControls} isDragging={isBeingDragged} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>
+                        <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={false} canMoveRight={false} isFreeText={product.isFreeText} handlers={handlers} onEdit={!product.isFreeText ? (e: React.MouseEvent) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name') : undefined} mobileOnlyEdit={!compactControls} isDragging={isBeingDragged} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>
                 
                 <div className={`transition-opacity duration-150 ${isBeingDragged && !product.isFreeText ? 'opacity-40' : ''}`}>
                 {product.isFreeText ? (
@@ -941,13 +942,14 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 <div className={`flex items-start justify-between ${stackImage ? 'flex-col gap-2' : compactControls ? 'gap-2' : 'gap-4'}`}>
                     {style.showImages && product.image && ( 
                         <div
+                            data-product-image-surface={product.id}
                             style={{ width: stackImage ? '100%' : `${imageSizePx}px`, height: `${imageSizePx}px` }}
-                            className={`relative rounded-md overflow-hidden flex-shrink-0 bg-gray-100 shadow-inner select-none transition-all duration-300 ${isEditing ? 'cursor-pointer ring-2 ring-indigo-400' : ''}`}
+                            className={`relative rounded-md flex-shrink-0 bg-gray-100 shadow-inner select-none transition-all duration-300 ${isEditing ? 'cursor-pointer ring-2 ring-indigo-400' : 'overflow-hidden'}`}
                             onPointerDown={(event) => { if (isEditing) event.stopPropagation(); }}
-                            onClick={(event) => { if (!isEditing) return; event.stopPropagation(); handlers.editProductImage?.(product.id); }}
-                            title={isEditing ? 'Clique para alterar a imagem' : undefined}
+                            onClick={(event) => { if (!isEditing) return; event.stopPropagation(); setImageMenuProductId((current) => current === product.id ? null : product.id); }}
+                            title={isEditing ? 'Opções da imagem' : undefined}
                         >
-                            <img src={product.image} alt={product.name} className="w-full h-full object-cover" style={{ objectPosition: `${product.imageAlignment || 'center'} center` }} draggable={false} />
+                            <img src={product.image} alt={product.name} className="w-full h-full rounded-md object-cover" style={{ objectPosition: `${product.imageAlignment || 'center'} center` }} draggable={false} />
                             {renderProductImageControls(product, isEditing)}
                         </div> 
                     )}
@@ -984,7 +986,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                     }}
                                     contentEditable={isEditing} tabIndex={isEditing ? 0 : undefined} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'name')} onKeyDown={handlers.handleKeyDown} onFocus={(e) => { if (!isEditing) return; handlers.setProductEditingField?.(product.id, 'name', `product-name-${product.id}`); handleMobileFocusScroll(e.currentTarget); }} onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }} onClick={(e) => { if (isEditing) e.stopPropagation(); }}
                                 />
-                                <button data-product-edit-id={product.id} onClick={(e) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name')} className={`relative ${selectionLayerClasses.controls} ${compactControls ? 'hidden' : ''} p-2.5 bg-white border border-slate-200 shadow-sm rounded-md text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all flex-shrink-0 ${isSelected || handlers.editingId === product.id ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'}`} onPointerDown={(e) => e.stopPropagation()}><Edit3 size={24} /></button>
+                                <button data-product-edit-id={product.id} onClick={(e) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name')} className={`relative ${selectionLayerClasses.controls} hidden md:inline-flex ${compactControls ? 'md:hidden' : ''} p-2.5 bg-white border border-slate-200 shadow-sm rounded-md text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all flex-shrink-0 ${isSelected || handlers.editingId === product.id ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'}`} onPointerDown={(e) => e.stopPropagation()}><Edit3 size={24} /></button>
                             </div>
                             {style.showPrices !== false && <div
                               className="ml-auto flex min-w-0 shrink-0 items-center gap-1 whitespace-nowrap"
@@ -1133,22 +1135,23 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             >
                                 {renderFormattingToolbar('product', product.id,
                                     formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle)}
-                        <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={canMoveLeft} canMoveRight={canMoveRight} isFreeText={product.isFreeText} handlers={handlers} onEdit={compactControls || handlers.mobileProductEditorEnabled ? (e: React.MouseEvent) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name') : undefined} mobileOnlyEdit={!compactControls} isDragging={isBeingDragged} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} mobileExpandedControls={mobileExpandedControls} denseControls={denseControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>
+                            <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={canMoveLeft} canMoveRight={canMoveRight} isFreeText={product.isFreeText} handlers={handlers} onEdit={(e: React.MouseEvent) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name')} mobileOnlyEdit={!compactControls} isDragging={isBeingDragged} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} mobileExpandedControls={mobileExpandedControls} denseControls={denseControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>
                                 
                                 <div
-                                    className={`h-full transition-all duration-150 ${isCardLayout ? 'rounded-xl overflow-hidden border border-slate-200 shadow-sm' : 'bg-transparent'} ${isBeingDragged ? 'opacity-40' : isCardLayout ? 'group-hover:shadow-md' : ''}`}
+                                    className={`h-full transition-all duration-150 ${isCardLayout ? `rounded-xl border border-slate-200 shadow-sm ${isEditing ? 'overflow-visible' : 'overflow-hidden'}` : 'bg-transparent'} ${isBeingDragged ? 'opacity-40' : isCardLayout ? 'group-hover:shadow-md' : ''}`}
                                     style={isCardLayout ? { backgroundColor: cardBackgroundColor } : undefined}
                                 >
                                     <div className="h-full flex flex-col">
                                         {style.showImages && product.image && (
                                             <div
+                                                data-product-image-surface={product.id}
                                                 style={{ height: `${cardImageHeight}px` }}
-                                                className={`relative w-full bg-gray-100 overflow-hidden transition-all duration-300 ${isCardLayout ? '' : 'rounded-md'} ${isEditing ? 'cursor-pointer ring-2 ring-inset ring-indigo-400' : ''}`}
+                                                className={`relative w-full bg-gray-100 transition-all duration-300 ${isCardLayout ? '' : 'rounded-md'} ${isEditing ? 'cursor-pointer ring-2 ring-inset ring-indigo-400' : 'overflow-hidden'}`}
                                                 onPointerDown={(event) => { if (isEditing) event.stopPropagation(); }}
-                                                onClick={(event) => { if (!isEditing) return; event.stopPropagation(); handlers.editProductImage?.(product.id); }}
-                                                title={isEditing ? 'Clique para alterar a imagem' : undefined}
+                                                onClick={(event) => { if (!isEditing) return; event.stopPropagation(); setImageMenuProductId((current) => current === product.id ? null : product.id); }}
+                                                title={isEditing ? 'Opções da imagem' : undefined}
                                             >
-                                                <img src={product.image} className="w-full h-full object-cover" style={{ objectPosition: `${product.imageAlignment || 'center'} center` }} alt={product.name} draggable={false} />
+                                                <img src={product.image} className={`w-full h-full object-cover ${isCardLayout ? 'rounded-t-xl' : 'rounded-md'}`} style={{ objectPosition: `${product.imageAlignment || 'center'} center` }} alt={product.name} draggable={false} />
                                                 {renderProductImageControls(product, isEditing)}
                                             </div>
                                         )}
@@ -1187,7 +1190,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                     <button
                                                         data-product-edit-id={product.id}
                                                         onClick={(e) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name')}
-                                                        className={`relative flex-shrink-0 ${selectionLayerClasses.controls} ${compactControls ? 'hidden' : 'p-2.5 md:p-2'} bg-white border border-slate-200 shadow-sm rounded-md text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all ${isSelected || isEditing ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'}`}
+                                                        className={`relative flex-shrink-0 ${selectionLayerClasses.controls} hidden md:inline-flex ${compactControls ? 'md:hidden' : 'md:p-2'} bg-white border border-slate-200 shadow-sm rounded-md text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all ${isSelected || isEditing ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'}`}
                                                         onPointerDown={(e) => e.stopPropagation()}
                                                         title="Editar produto"
                                                     >

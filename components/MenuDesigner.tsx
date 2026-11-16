@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Product, MenuStyle, SortOption, ElementStyle, AddedImage } from '../types';
 import { PRESET_TEMPLATES } from '../constants';
 import { MenuPreview } from './MenuPreview';
-import { Undo, Redo, Check, SquarePen, X } from 'lucide-react';
+import { Undo, Redo, Check, X } from 'lucide-react';
 import { ZoomControls } from './MenuDesigner/ZoomControls';
 import { MenuSidebar } from './MenuDesigner/MenuSidebar';
 import type { PrintCanvasOptions, PrintPreviewPage } from './MenuDesigner/PrintCanvasModal';
@@ -164,6 +164,16 @@ const WORD_FIT_SCOPE_LABELS: Record<WordFitScope, string> = {
     freeText: 'textos livres',
 };
 
+const formatLayoutIssueBreakdown = (categories: number, products: number, freeTexts: number) => {
+    const parts = [
+        categories > 0 ? `${categories} ${categories === 1 ? 'categoria' : 'categorias'}` : null,
+        products > 0 ? `${products} ${products === 1 ? 'produto' : 'produtos'}` : null,
+        freeTexts > 0 ? `${freeTexts} ${freeTexts === 1 ? 'texto livre' : 'textos livres'}` : null,
+    ].filter(Boolean) as string[];
+    if (parts.length <= 1) return parts[0] || '';
+    return `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`;
+};
+
 const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions, onClose, onScrollActivity, workspaceId, currentUserId, splitCategoryAcrossPages = false, productsCanChangeCategory = false }) => {
     const [scale, setScale] = useState(DEFAULT_PREVIEW_ZOOM);
     const [isDesktopViewport, setIsDesktopViewport] = useState(() => window.matchMedia('(min-width: 768px)').matches);
@@ -177,7 +187,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const [isPrintPreviewLoading, setIsPrintPreviewLoading] = useState(false);
     const [printPreviewError, setPrintPreviewError] = useState<string | null>(null);
     const [tipsOpen, setTipsOpen] = useState(false);
-    const [mobileProductEditorEnabled, setMobileProductEditorEnabled] = useState(true);
     const [fontTips, setFontTips] = useState<FontTip[]>([]);
     const [layoutDiagnostics, setLayoutDiagnostics] = useState<LayoutDiagnostics>(EMPTY_LAYOUT_DIAGNOSTICS);
     const [dismissedTips, setDismissedTips] = useState<Set<string>>(() => new Set());
@@ -216,6 +225,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     } | null>(null);
     const suppressNextCanvasClickRef = useRef(false);
     const knownProductIdsRef = useRef(new Set(products.map(product => product.id)));
+    const mobileEditViewRef = useRef<{ scale: number; scrollLeft: number; scrollTop: number } | null>(null);
 
     useEffect(() => {
         if (!tipsOpen) return;
@@ -540,8 +550,13 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
             const containerRect = container.getBoundingClientRect();
             const pageRect = firstPage.getBoundingClientRect();
-            anchor.style.left = `${pageRect.left - containerRect.left}px`;
-            anchor.style.top = `${pageRect.top - containerRect.top - anchor.offsetHeight - 4}px`;
+            const isDesktop = window.matchMedia('(min-width: 768px)').matches;
+            anchor.style.left = `${isDesktop
+                ? pageRect.right - containerRect.left + 12
+                : pageRect.left - containerRect.left}px`;
+            anchor.style.top = `${isDesktop
+                ? pageRect.top - containerRect.top
+                : pageRect.top - containerRect.top - anchor.offsetHeight - 4}px`;
             anchor.style.visibility = 'visible';
         };
         const schedulePosition = () => {
@@ -1175,6 +1190,41 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             };
         });
     };
+
+    const handleMobileProductEditStart = useCallback((productId: string) => {
+        if (window.matchMedia('(min-width: 768px)').matches || mobileEditViewRef.current) return;
+        const canvas = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas="true"]');
+        if (!canvas) return;
+        mobileEditViewRef.current = {
+            scale,
+            scrollLeft: canvas.scrollLeft,
+            scrollTop: canvas.scrollTop,
+        };
+        setScale(1.6);
+        window.setTimeout(() => {
+            const target = Array.from(canvas.querySelectorAll<HTMLElement>('[data-drag-type="product"][data-drag-id]'))
+                .find((element) => element.dataset.dragId === productId);
+            if (!target) return;
+            const canvasRect = canvas.getBoundingClientRect();
+            const targetRect = target.getBoundingClientRect();
+            canvas.scrollTo({
+                left: canvas.scrollLeft + targetRect.left + (targetRect.width / 2) - canvasRect.left - (canvasRect.width / 2),
+                top: canvas.scrollTop + targetRect.top + (targetRect.height / 2) - canvasRect.top - (canvasRect.height / 2),
+                behavior: 'smooth',
+            });
+        }, 240);
+    }, [scale]);
+
+    const handleMobileProductEditEnd = useCallback(() => {
+        const snapshot = mobileEditViewRef.current;
+        const canvas = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas="true"]');
+        if (!snapshot || !canvas) return;
+        mobileEditViewRef.current = null;
+        setScale(snapshot.scale);
+        window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+            canvas.scrollTo({ left: snapshot.scrollLeft, top: snapshot.scrollTop });
+        }));
+    }, []);
 
     const handleProductImageUpload = async (productId: string, file: File) => {
         if (!setProducts) throw new Error('Não foi possível alterar a imagem.');
@@ -1894,18 +1944,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                         </button>
                     )}
 
-                    <button
-                        type="button"
-                        onClick={() => setMobileProductEditorEnabled((current) => !current)}
-                        className={`md:hidden flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-bold shadow-md transition ${mobileProductEditorEnabled ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'border border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}
-                        title={mobileProductEditorEnabled ? 'Edição em janela ativa' : 'Edição em janela inativa'}
-                        aria-pressed={mobileProductEditorEnabled}
-                    >
-                        <SquarePen size={14} /> Janela
-                    </button>
-
                     {hasVisibleTips && tipsOpen && (
-                            <div className="absolute left-0 top-10 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl">
+                            <div className="absolute left-0 top-10 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl md:left-auto md:right-0">
                                 <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
                                     <div>
                                         <p className="text-sm font-bold text-slate-800">Dicas do cardápio</p>
@@ -1968,7 +2008,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                             <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Elementos sobrepostos</h3>
                                             <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
                                                 <p className="min-w-0 flex-1 text-xs leading-relaxed text-slate-700">
-                                                    {overlapIssueCount} {overlapIssueCount === 1 ? 'elemento está sobreposto' : 'elementos estão sobrepostos'} ({layoutDiagnostics.overlappingCategoryIds.length} categorias, {layoutDiagnostics.overlappingProductIds.length} produtos e {layoutDiagnostics.overlappingFreeTextIds.length} textos livres). Corrigir reorganiza somente os itens envolvidos.
+                                                    {overlapIssueCount} {overlapIssueCount === 1 ? 'elemento está sobreposto' : 'elementos estão sobrepostos'} ({formatLayoutIssueBreakdown(layoutDiagnostics.overlappingCategoryIds.length, layoutDiagnostics.overlappingProductIds.length, layoutDiagnostics.overlappingFreeTextIds.length)}). Corrigir reorganiza somente os itens envolvidos.
                                                 </p>
                                                 <div className="flex shrink-0 gap-1">
                                                     <button type="button" onClick={() => applyLayoutIssueSuggestion('overlap')} className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700" title="Corrigir sobreposições" aria-label="Corrigir sobreposições"><Check size={16} /></button>
@@ -1983,7 +2023,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                             <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Elementos fora da página</h3>
                                             <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3">
                                                 <p className="min-w-0 flex-1 text-xs leading-relaxed text-slate-700">
-                                                    {offCanvasIssueCount} {offCanvasIssueCount === 1 ? 'elemento está oculto' : 'elementos estão ocultos'} fora da área visível ({layoutDiagnostics.offCanvasCategoryIds.length} categorias, {layoutDiagnostics.offCanvasProductIds.length} produtos e {layoutDiagnostics.offCanvasFreeTextIds.length} textos livres). Corrigir traz esses itens de volta ao fluxo da página.
+                                                    {offCanvasIssueCount} {offCanvasIssueCount === 1 ? 'elemento está oculto' : 'elementos estão ocultos'} fora da área visível ({formatLayoutIssueBreakdown(layoutDiagnostics.offCanvasCategoryIds.length, layoutDiagnostics.offCanvasProductIds.length, layoutDiagnostics.offCanvasFreeTextIds.length)}). Corrigir traz esses itens de volta ao fluxo da página.
                                                 </p>
                                                 <div className="flex shrink-0 gap-1">
                                                     <button type="button" onClick={() => applyLayoutIssueSuggestion('offCanvas')} className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700" title="Trazer elementos para a página" aria-label="Trazer elementos para a página"><Check size={16} /></button>
@@ -2097,8 +2137,9 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                             canRedo={canRedo}
                             scale={renderScale}
                             splitCategoryAcrossPages={splitCategoryAcrossPages}
-                            mobileProductEditorEnabled={mobileProductEditorEnabled}
                             onUploadProductImage={handleProductImageUpload}
+                            onProductEditStart={handleMobileProductEditStart}
+                            onProductEditEnd={handleMobileProductEditEnd}
                         />
                     </div>
                     <div style={{ height: '100px', width: '1px' }} />

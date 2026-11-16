@@ -2573,6 +2573,21 @@ export const useDraggableInteractions = (
                 productDesignerScrollContainerRef.current = pending.element.closest<HTMLElement>('[data-product-designer-scroll-container="true"]');
                 handleSelection(pending.type === 'product' && draggedProduct?.isFreeText ? 'freeText' : pending.type, pending.id);
 
+                if (
+                    pending.pointerType === 'touch'
+                    && pending.element.dataset.dragContext !== 'product-designer'
+                    && typeof window !== 'undefined'
+                ) {
+                    window.dispatchEvent(new CustomEvent('automenu:canvas-drag-ready', {
+                        detail: {
+                            type: pending.type === 'product' && draggedProduct?.isFreeText ? 'freeText' : pending.type,
+                            id: pending.id,
+                            x: pointer.x,
+                            y: pointer.y,
+                        },
+                    }));
+                }
+
                 if (pending.type === 'category') {
                     initializeCategoryDragState(pending.id, pointer);
                 } else {
@@ -2602,6 +2617,17 @@ export const useDraggableInteractions = (
             if (!currentDragItem || !previousPointer) {
                 lastPointerRef.current = pointer;
                 return;
+            }
+
+            const dragStart = dragStartPointerRef.current;
+            if (
+                activePointerRef.current?.pointerType === 'touch'
+                && dragSourceContextRef.current !== 'product-designer'
+                && dragStart
+                && Math.hypot(pointer.x - dragStart.x, pointer.y - dragStart.y) >= 6
+                && typeof window !== 'undefined'
+            ) {
+                window.dispatchEvent(new CustomEvent('automenu:canvas-drag-move'));
             }
 
             scheduleProductDesignerAutoScroll(pointer);

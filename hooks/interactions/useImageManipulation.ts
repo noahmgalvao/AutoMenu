@@ -68,6 +68,13 @@ export const useImageManipulation = (
         }
         const startX = Number(e.clientX);
         const startY = Number(e.clientY);
+        if (e.pointerType === 'touch') {
+            window.dispatchEvent(new CustomEvent('automenu:canvas-drag-ready', {
+                detail: { type: 'addedImage', id: imgId, x: startX, y: startY },
+            }));
+        } else {
+            window.dispatchEvent(new CustomEvent('automenu:canvas-drag-move'));
+        }
         const rect = el.getBoundingClientRect();
         const parentEl = el.parentElement;
         
@@ -86,6 +93,9 @@ export const useImageManipulation = (
             if (moveEvent.cancelable) moveEvent.preventDefault();
             const moveX = Number(moveEvent.clientX);
             const moveY = Number(moveEvent.clientY);
+            if (Math.hypot(moveX - startX, moveY - startY) >= 6) {
+                window.dispatchEvent(new CustomEvent('automenu:canvas-drag-move'));
+            }
 
             if (onStyleUpdate) {
                const pages = getRenderedPages();

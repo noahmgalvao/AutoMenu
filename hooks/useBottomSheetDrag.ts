@@ -92,12 +92,18 @@ export const useBottomSheetDrag = (isOpen: boolean, onClose?: () => void) => {
         setHeight('100dvh');
     }, [isMobile]);
 
+    const toggleExpanded = useCallback(() => {
+        if (!isMobile) return;
+        setHeight((current) => current === '100dvh' ? '45dvh' : '100dvh');
+    }, [isMobile]);
+
     return {
         height,
         isDragging,
         isMobile,
         isExpanded: height === '100dvh',
         expand,
+        toggleExpanded,
         dragHandlers: {
             onPointerDown: handlePointerDown,
             style: {

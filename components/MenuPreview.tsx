@@ -15,7 +15,6 @@ import { canIncreaseCanvasFontSize } from '../utils/textFit';
 import { resolveMenuPageDimensions } from '../utils/pageSetup';
 import { roundPrice } from '../utils/price';
 import { PricePropagationPrompt } from './PricePropagationPrompt';
-import { MobileProductEditorModal } from './MobileProductEditorModal';
 import {
     applyPriceOperations,
     createPricePropagationRequest,
@@ -56,7 +55,8 @@ interface MenuPreviewProps {
     readOnly?: boolean;
     visiblePageIndex?: number;
     onPageCountChange?: (pageCount: number) => void;
-    mobileProductEditorEnabled?: boolean;
+    onProductEditStart?: (productId: string) => void;
+    onProductEditEnd?: () => void;
     onUploadProductImage?: (productId: string, file: File) => Promise<{ url: string; assetId: string }>;
 }
 
@@ -153,7 +153,6 @@ const DynamicFontLoader: React.FC<{ fonts: string[] }> = ({ fonts }) => {
 export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     // 1. Hook for all interactions and state
     const [pendingPricePropagation, setPendingPricePropagation] = useState<PricePropagationRequest | null>(null);
-    const [mobileEditorProductIds, setMobileEditorProductIds] = useState<string[]>([]);
     const productImageInputRef = useRef<HTMLInputElement | null>(null);
     const pendingProductImageIdRef = useRef<string | null>(null);
     const handleProductUpdateWithPricePrompt = useCallback((id: string, field: keyof Product, value: any) => {
@@ -198,39 +197,27 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const [objectMenu, setObjectMenu] = useState<ObjectMenuState | null>(null);
     const [objectMenuPosition, setObjectMenuPosition] = useState<{ left: number; top: number } | null>(null);
     const [marqueeRect, setMarqueeRect] = useState<MarqueeRect | null>(null);
+
+    useEffect(() => {
+        const openTouchMenu = (event: Event) => {
+            const detail = (event as CustomEvent<{ type: ObjectSelectionItem['type']; id: string; x: number; y: number }>).detail;
+            if (!detail || !['product', 'category', 'freeText', 'addedImage'].includes(detail.type)) return;
+            setObjectMenuPosition(null);
+            setObjectMenu({ x: detail.x, y: detail.y, item: { type: detail.type, id: detail.id } });
+        };
+        const closeTouchMenu = () => setObjectMenu(null);
+        window.addEventListener('automenu:canvas-drag-ready', openTouchMenu);
+        window.addEventListener('automenu:canvas-drag-move', closeTouchMenu);
+        return () => {
+            window.removeEventListener('automenu:canvas-drag-ready', openTouchMenu);
+            window.removeEventListener('automenu:canvas-drag-move', closeTouchMenu);
+        };
+    }, []);
     const {
         products, style, onAddProduct, onStyleUpdate, onDeleteProduct, onToggleProductVisibility, onSelectedItemsChange,
         readOnly = false, visiblePageIndex, onPageCountChange,
     } = props;
     const pageDimensions = resolveMenuPageDimensions(style);
-
-    const startInlineEditing = handlers.startEditing;
-    (handlers as any).startEditing = (
-        event: React.MouseEvent,
-        id: string,
-        elementIdToFocus?: string,
-        field?: any,
-    ) => {
-        const product = products.find((candidate) => candidate.id === id && !candidate.isFreeText);
-        const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
-        if (!readOnly && props.mobileProductEditorEnabled && isMobile && product) {
-            event.preventDefault();
-            event.stopPropagation();
-            const selectedProductIds = (handlers.selectedItems || [])
-                .filter((item: SelectionItem) => item.type === 'product')
-                .map((item: SelectionItem) => item.id)
-                .filter((productId: string) => products.some((candidate) => candidate.id === productId && !candidate.isFreeText));
-            setMobileEditorProductIds(
-                selectedProductIds.length > 1 && selectedProductIds.includes(id)
-                    ? selectedProductIds
-                    : [id],
-            );
-            handlers.setEditingId(null);
-            handlers.setFormattingTarget(null);
-            return;
-        }
-        startInlineEditing(event, id, elementIdToFocus, field);
-    };
 
     const adjustProductPrice = useCallback((
         productId: string,
@@ -277,7 +264,6 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     }, [pendingPricePropagation, products, props.onUpdateProduct, props.onUpdateProducts]);
 
     (handlers as any).adjustProductPrice = adjustProductPrice;
-    (handlers as any).mobileProductEditorEnabled = Boolean(props.mobileProductEditorEnabled);
     (handlers as any).editProductImage = (productId: string) => {
         if (!props.onUploadProductImage) return;
         pendingProductImageIdRef.current = productId;
@@ -291,8 +277,12 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         if (props.onUpdateProducts) props.onUpdateProducts(updates);
         else updates.forEach(update => props.onUpdateProduct?.(update.id, update.field, update.value));
     };
-    (handlers as any).setProductImageAlignment = (productId: string, alignment: NonNullable<Product['imageAlignment']>) => {
-        props.onUpdateProduct?.(productId, 'imageAlignment', alignment);
+    (handlers as any).adjustProductImageScale = (delta: number) => {
+        props.onStyleUpdate?.((current) => ({
+            ...current,
+            imageScale: Math.max(0.5, Math.min(2.5, Number(((current.imageScale || 1) + delta).toFixed(1)))),
+            name: 'Custom',
+        }));
     };
 
     const handleProductImageInput = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -330,6 +320,27 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     useEffect(() => {
         onSelectedItemsChange?.(handlers.selectedItems || []);
     }, [handlers.selectedItems, onSelectedItemsChange]);
+
+    const focusedMobileProductRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (readOnly || !window.matchMedia('(max-width: 767px)').matches) return;
+        const editingProductId = handlers.editingId
+            && products.some((product) => product.id === handlers.editingId && !product.isFreeText)
+            ? handlers.editingId
+            : null;
+
+        if (editingProductId && editingProductId !== focusedMobileProductRef.current) {
+            focusedMobileProductRef.current = editingProductId;
+            props.onProductEditStart?.(editingProductId);
+        } else if (!editingProductId && focusedMobileProductRef.current) {
+            focusedMobileProductRef.current = null;
+            props.onProductEditEnd?.();
+        }
+    }, [handlers.editingId, products, props.onProductEditEnd, props.onProductEditStart, readOnly]);
+
+    useEffect(() => () => {
+        if (focusedMobileProductRef.current) props.onProductEditEnd?.();
+    }, [props.onProductEditEnd]);
 
     useEffect(() => {
         if (!objectMenu) return;
@@ -1966,10 +1977,6 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
     (handlers as any).openObjectMenu = openObjectMenu;
 
-    useEffect(() => {
-        if (handlers.draggedItem || handlers.draggedImageId) setObjectMenu(null);
-    }, [handlers.draggedImageId, handlers.draggedItem]);
-
     const openBackgroundMenu = useCallback((event: React.MouseEvent) => {
         const target = event.target as HTMLElement | null;
         if (target?.closest([
@@ -2144,36 +2151,6 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     style={style}
                     onApply={applyPricePropagation}
                     onDismiss={() => setPendingPricePropagation(null)}
-                />
-            )}
-
-            {!readOnly && mobileEditorProductIds.length > 0 && (
-                <MobileProductEditorModal
-                    productIds={mobileEditorProductIds}
-                    products={products}
-                    style={style}
-                    onClose={() => setMobileEditorProductIds([])}
-                    onSave={(updates, propagation) => {
-                        if (updates.length > 0) {
-                            if (props.onUpdateProducts) props.onUpdateProducts(updates);
-                            else updates.forEach((update) => props.onUpdateProduct?.(update.id, update.field, update.value));
-                        }
-                        if (propagation) {
-                            setPendingPricePropagation((current) => mergePricePropagationRequest(current, propagation));
-                        }
-                        setMobileEditorProductIds([]);
-                    }}
-                    onStyleChange={(field, value, productId) => (handlers as any).handleInlineStyleChange?.({
-                        type: 'product',
-                        id: productId,
-                        field,
-                        elementId: field === 'price'
-                            ? `product-price-${productId}`
-                            : field === 'description'
-                                ? `product-description-${productId}`
-                                : `product-name-${productId}`,
-                    }, value)}
-                    onUploadImage={props.onUploadProductImage}
                 />
             )}
 

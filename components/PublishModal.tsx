@@ -43,7 +43,7 @@ const Choice: React.FC<{
   description: string;
   onChange: (checked: boolean) => void;
 }> = ({ checked, icon, title, description, onChange }) => (
-  <label className={`flex items-start gap-3 rounded-2xl border p-4 cursor-pointer transition-colors ${checked ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
+  <label className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer transition-colors ${checked ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
     <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="mt-1 h-4 w-4 accent-indigo-600" />
     <span className={checked ? 'text-indigo-600' : 'text-slate-500'}>{icon}</span>
     <span className="min-w-0">
@@ -65,10 +65,10 @@ const ActionButton: React.FC<{
     type="button"
     onClick={onClick}
     disabled={disabled || loading}
-    className={`h-10 min-w-0 rounded-xl px-3 text-xs font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50 ${primary ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+    className={`h-9 min-w-0 rounded-lg px-1 text-[11px] font-bold flex items-center justify-center gap-1 transition-colors disabled:opacity-50 ${primary ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
   >
     {loading ? <Loader2 size={15} className="animate-spin" /> : icon}
-    <span className="truncate">{label}</span>
+    <span className="min-w-0 whitespace-nowrap overflow-hidden text-ellipsis">{label}</span>
   </button>
 );
 
@@ -186,10 +186,10 @@ export const PublishModal: React.FC<PublishModalProps> = ({
           {!pdf && !virtualLink && <p className="text-xs text-red-600">Selecione pelo menos uma opção.</p>}
         </div>
 
-        <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2 shrink-0">
+        <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-between gap-2 shrink-0">
           <button onClick={onClose} disabled={loading} className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-600 disabled:opacity-50">Fechar</button>
           <button onClick={() => onConfirm({ pdf, virtualLink })} disabled={!canConfirm || actionBusy} className="px-5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
-            {activeAction === 'publish' && <Loader2 size={15} className="animate-spin" />} Publicar selecionados
+            {activeAction === 'publish' && <Loader2 size={15} className="animate-spin" />} Publicar
           </button>
         </div>
       </div>
