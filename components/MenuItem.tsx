@@ -1,3 +1,4 @@
+import { templateProductImageHeight } from '../utils/templateDesign';
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { Product, MenuStyle } from '../types';
@@ -804,16 +805,20 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const titleStyle = style.elementStyles?.menuTitle || {};
         const subStyle = style.elementStyles?.menuSubtitle || {};
         const hasSubtitle = Boolean(style.menuSubtitle?.trim());
+        const heroImage = style.design?.header === 'hero' && style.showImages && style.design.image !== 'none'
+            ? products.find((product) => product.image && !product.isFreeText && !style.hiddenProductIds.includes(product.id))?.image : undefined;
         const isTitleSelected = handlers.isSelected?.('menuTitle', 'menuTitle') ?? handlers.selectedId === 'menuTitle';
         const isSubtitleSelected = handlers.isSelected?.('menuSubtitle', 'menuSubtitle') ?? handlers.selectedId === 'menuSubtitle';
         
         return (
             <header 
                 key={`header-${idx}`} 
-                data-block-id="main-header" 
+                data-block-id="main-header"
+                data-template-header
                 className="text-center group relative pointer-events-auto" 
                 style={{ marginBottom: 0 }}
             >
+            {heroImage && <img src={heroImage} data-template-hero-image alt="" draggable={false} onError={(event) => { event.currentTarget.hidden = true; }} />}
             {formattingTarget?.type === 'menuTitle' && renderFormattingToolbar('menuTitle', 'menuTitle', titleStyle)}
             {formattingTarget?.type === 'menuSubtitle' && renderFormattingToolbar('menuSubtitle', 'menuSubtitle', subStyle)}
             <AutoFitText
@@ -825,7 +830,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 fitScope="menuTitle"
                 widthMode="parent"
                 showOverflowFeedback
-                id="menu-title-text"
+                id={handlers.readOnly ? undefined : "menu-title-text"}
                 data-menu-heading="title"
                 className={`tracking-tight outline-none focus:bg-blue-50/50 rounded cursor-text ${isTitleSelected ? 'ring-2 ring-indigo-500 bg-indigo-50/20' : ''}`}
                 style={{ 
@@ -849,7 +854,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     handlers.handleSelection('menuTitle', 'menuTitle');
                     handlers.startMenuTextEditing?.('menuTitle', 'menu-title-text');
                 }}
-                contentEditable suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'menu', 'header', 'menuTitle')} onKeyDown={handlers.handleKeyDown}
+                contentEditable={handlers.readOnly ? undefined : true} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'menu', 'header', 'menuTitle')} onKeyDown={handlers.handleKeyDown}
             />
             {hasSubtitle && <AutoFitText
                 as="p"
@@ -860,7 +865,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 fitScope="menuSubtitle"
                 widthMode="parent"
                 showOverflowFeedback
-                id="menu-subtitle-text"
+                id={handlers.readOnly ? undefined : "menu-subtitle-text"}
                 data-menu-heading="subtitle"
                 className={`opacity-90 outline-none focus:bg-blue-50/50 rounded cursor-text ${isSubtitleSelected ? 'ring-2 ring-indigo-500 bg-indigo-50/20' : ''}`}
                 style={{
@@ -884,7 +889,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     handlers.handleSelection('menuSubtitle', 'menuSubtitle');
                     handlers.startMenuTextEditing?.('menuSubtitle', 'menu-subtitle-text');
                 }}
-                contentEditable suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'menu', 'subheader', 'menuSubtitle')} onKeyDown={handlers.handleKeyDown}
+                contentEditable={handlers.readOnly ? undefined : true} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'menu', 'subheader', 'menuSubtitle')} onKeyDown={handlers.handleKeyDown}
             />
             }
             </header>
@@ -904,6 +909,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const renderCategoryDivider = (key: 'before' | 'after') => (
             <div
                 key={key}
+                data-template-divider={style.categoryDividerStyles?.[item.data] ? undefined : true}
                 aria-hidden="true"
                 style={getCategoryDividerStyle(categoryDividerPreset, style.primaryColor, key === 'before' ? 'right' : 'left')}
             />
@@ -912,7 +918,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         return (
             <div 
                 key={`cat-header-${item.data}`}
-                id={`category-header-${item.data}`} 
+                id={handlers.readOnly ? undefined : `category-header-${item.data}`}
                 data-category-id={item.data} 
                 onPointerDown={(e) => handlers.handleDragStart(e, 'category', item.data)}
                 onDragStart={(e) => e.preventDefault()}
@@ -931,8 +937,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     }`}
                 />
                 {renderFormattingToolbar('category', item.data, catStyle)}
-            <ProductControls type="category" catName={item.data} isMobileSelected={isSelected} index={idx} total={0} isLastInBlock={false} canMoveUp={false} canMoveDown={false} canMoveLeft={false} canMoveRight={false} hideGeneralControls={false} handlers={handlers} onEdit={(e: React.MouseEvent) => handlers.startEditing(e, item.data, elementId, 'category')} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showSelectionOutline={false} showAddControls={false} compactControls={compactControls} showGridMoveControls={false}/>
-                <div className={`flex w-full max-w-full min-w-0 items-center gap-[2px] ${compactControls ? 'px-1' : 'px-2'} ${categoryAlign === 'center' ? 'justify-center' : categoryAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
+            {!handlers.readOnly && <ProductControls type="category" catName={item.data} isMobileSelected={isSelected} index={idx} total={0} isLastInBlock={false} canMoveUp={false} canMoveDown={false} canMoveLeft={false} canMoveRight={false} hideGeneralControls={false} handlers={handlers} onEdit={(e: React.MouseEvent) => handlers.startEditing(e, item.data, elementId, 'category')} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showSelectionOutline={false} showAddControls={false} compactControls={compactControls} showGridMoveControls={false}/>}
+                <div data-template-category className={`flex w-full max-w-full min-w-0 items-center gap-[2px] ${compactControls ? 'px-1' : 'px-2'} ${categoryAlign === 'center' ? 'justify-center' : categoryAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
+                    {style.design?.category === 'numbered' && <span data-template-category-number aria-hidden="true">{String(Math.max(0, handlers.sortedCategories.indexOf(item.data)) + 1).padStart(2, '0')}</span>}
                     {(categoryAlign === 'center' || categoryAlign === 'right') && renderCategoryDivider('before')}
                     {style.showCategoryImages !== false && categoryImage?.url && (
                         <img
@@ -957,7 +964,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                         widthMode="flex"
                         availableWidthInset={compactControls ? 8 : 16}
                         showOverflowFeedback={handlers.editingId === item.data}
-                        id={elementId}
+                        id={handlers.readOnly ? undefined : elementId}
                         className={`min-w-0 max-w-full shrink whitespace-normal break-words [overflow-wrap:anywhere] [word-break:normal] outline-none rounded ${handlers.editingId === item.data ? 'bg-white ring-2 ring-blue-500 z-10 cursor-text' : ''}`}
                         style={{ 
                             color: catStyle.color || style.primaryColor,
@@ -1016,10 +1023,11 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         return (
                 <div 
                     key={product.id}
-                    id={`product-container-${product.id}`} 
+                    id={handlers.readOnly ? undefined : `product-container-${product.id}`}
                     data-drag-scope={handlers.dragScope}
                     data-drag-type="product"
                     data-drag-id={product.id}
+                    data-template-product={product.isFreeText ? undefined : true}
                     data-drag-group={item.category}
                     onPointerDown={(e) => handlers.handleDragStart(e, 'product', product.id, item.category)}
                     onDragStart={(e) => e.preventDefault()}
@@ -1054,7 +1062,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     ? renderFormattingToolbar('freeText', product.id, product.styles || {})
                     : renderFormattingToolbar('product', product.id,
                         formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle)}
-                        <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={false} canMoveRight={false} isFreeText={product.isFreeText} handlers={handlers} onEdit={!product.isFreeText ? (e: React.MouseEvent) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name') : undefined} mobileOnlyEdit={!compactControls} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>
+                        {!handlers.readOnly && <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={false} canMoveRight={false} isFreeText={product.isFreeText} handlers={handlers} onEdit={!product.isFreeText ? (e: React.MouseEvent) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name') : undefined} mobileOnlyEdit={!compactControls} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>}
                 
                 <div className={`transition-opacity duration-150 ${isBeingDragged && !product.isFreeText ? 'opacity-40' : ''}`}>
                 {product.isFreeText ? (
@@ -1072,7 +1080,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             disableAutoFit
                             containerSelector={`#product-container-${product.id}`}
                             showOverflowFeedback={isEditing}
-                            id={`product-name-${product.id}`} data-product-edit-id={product.id} className={`whitespace-pre-wrap break-words [overflow-wrap:anywhere] outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
+                            id={handlers.readOnly ? undefined : `product-name-${product.id}`} data-product-edit-id={product.id} className={`whitespace-pre-wrap break-words [overflow-wrap:anywhere] outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
                             style={{ 
                                 color: nameStyle.color || style.textColor,
                                 fontFamily: nameStyle.fontFamily,
@@ -1103,28 +1111,29 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 container.dataset.pendingFreeTextWidth = String(nextWidth);
                             }} onFocus={(e) => clearDefaultTextOnFocus(e.currentTarget, ['Novo texto'])} onMouseDown={(e) => { if(!isEditing) e.preventDefault(); }} onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }}
                             />
-                            <button
-                                data-product-edit-id={product.id}
+                            {!handlers.readOnly && <button
+                                data-product-edit-id={product.id} data-template-edit-action
                                 onClick={(e) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'freeText')}
                                 className={`absolute left-full top-1/2 ml-2 -translate-y-1/2 inline-flex align-middle ${selectionLayerClasses.controls} ${compactControls ? 'p-2.5 md:p-1.5' : 'p-3 md:p-2'} bg-white border border-slate-200 shadow-sm rounded-md text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all ${isSelected || handlers.editingId === product.id ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'}`}
                                 onPointerDown={(e) => e.stopPropagation()}
                                 title="Editar texto"
                             >
                                 <Edit3 size={compactControls ? 15 : 20} className="h-6 w-6 md:h-auto md:w-auto" />
-                            </button>
+                            </button>}
                     </div>
                 ) : (
                 <div className={`flex items-start justify-between ${stackImage ? 'flex-col gap-2' : compactControls ? 'gap-2' : 'gap-4'}`}>
                     {style.showImages && product.image && ( 
                         <div
+                            data-template-image
                             data-product-image-surface={product.id}
-                            style={{ width: stackImage ? '100%' : `${imageSizePx}px`, height: `${imageSizePx}px` }}
+                            style={{ width: stackImage ? '100%' : `${imageSizePx}px`, height: `${templateProductImageHeight(style, imageSizePx)}px` }}
                             className={`relative rounded-md flex-shrink-0 bg-gray-100 shadow-inner select-none transition-all duration-300 ${isEditing ? 'cursor-pointer ring-2 ring-indigo-400' : 'overflow-hidden'}`}
                             onPointerDown={(event) => { if (isEditing) event.stopPropagation(); }}
                             onClick={(event) => { if (!isEditing) return; event.stopPropagation(); setImageMenuProductId((current) => current === product.id ? null : product.id); }}
                             title={isEditing ? 'Opções da imagem' : undefined}
                         >
-                            <img src={product.image} alt={product.name} className="w-full h-full rounded-md object-cover" style={{ objectPosition: `${product.imageAlignment || 'center'} center` }} draggable={false} />
+                            <img src={product.image} alt={product.name} className="w-full h-full rounded-md object-cover" style={{ objectPosition: `${product.imageAlignment || 'center'} center` }} onError={(event) => { event.currentTarget.hidden = true; }} draggable={false} />
                             {renderProductImageControls(product, isEditing)}
                         </div> 
                     )}
@@ -1147,7 +1156,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                     fitScope="productName"
                                     widthMode="flex"
                                     showOverflowFeedback={isEditing}
-                                    id={`product-name-${product.id}`} data-product-edit-id={product.id} className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
+                                    id={handlers.readOnly ? undefined : `product-name-${product.id}`} data-product-edit-id={product.id} className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
                                     style={{ 
                                         color: nameStyle.color || style.textColor,
                                         fontFamily: nameStyle.fontFamily,
@@ -1161,7 +1170,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                     }}
                                     contentEditable={isEditing} tabIndex={isEditing ? 0 : undefined} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'name')} onKeyDown={handlers.handleKeyDown} onFocus={(e) => { if (!isEditing) return; handlers.setProductEditingField?.(product.id, 'name', `product-name-${product.id}`); handleMobileFocusScroll(e.currentTarget); }} onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }} onClick={(e) => { if (isEditing) e.stopPropagation(); }}
                                 />
-                                <button data-product-edit-id={product.id} onClick={(e) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name')} className={`relative ${selectionLayerClasses.controls} hidden md:inline-flex ${compactControls ? 'md:hidden' : ''} p-2.5 bg-white border border-slate-200 shadow-sm rounded-md text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all flex-shrink-0 ${isSelected || handlers.editingId === product.id ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'}`} onPointerDown={(e) => e.stopPropagation()}><Edit3 size={24} /></button>
+                                {!handlers.readOnly && <button data-product-edit-id={product.id} data-template-edit-action onClick={(e) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name')} className={`relative ${selectionLayerClasses.controls} hidden md:inline-flex ${compactControls ? 'md:hidden' : ''} p-2.5 bg-white border border-slate-200 shadow-sm rounded-md text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all flex-shrink-0 ${isSelected || handlers.editingId === product.id ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'}`} onPointerDown={(e) => e.stopPropagation()}><Edit3 size={24} /></button>}
                             </div>
                             {showProductDivider && (
                                 <span
@@ -1171,7 +1180,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 />
                             )}
                             {style.showPrices !== false && <div
-                              className="ml-auto flex min-w-0 shrink-0 items-center gap-1 whitespace-nowrap"
+                              data-template-price className="ml-auto flex min-w-0 shrink-0 items-center gap-1 whitespace-nowrap"
                               style={{ 
                                 justifyContent: priceStyle.textAlign === 'left' ? 'flex-start' : (priceStyle.textAlign === 'center' ? 'center' : 'flex-end'), 
                                 display: 'flex',
@@ -1195,7 +1204,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                     fitScope="productPrice"
                                     containerSelector={`#product-container-${product.id}`}
                                     showOverflowFeedback={isEditing}
-                                    id={`product-price-${product.id}`} data-product-edit-id={product.id} className={`whitespace-nowrap outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
+                                    id={handlers.readOnly ? undefined : `product-price-${product.id}`} data-product-edit-id={product.id} className={`whitespace-nowrap outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
                                     style={{ 
                                         color: priceStyle.color || style.textColor,
                                         fontFamily: priceStyle.fontFamily,
@@ -1219,7 +1228,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             fitScope="productDescription"
                             widthMode="parent"
                             showOverflowFeedback={isEditing}
-                            id={`product-description-${product.id}`} data-product-edit-id={product.id} className={`max-w-full opacity-80 break-words [overflow-wrap:anywhere] [word-break:normal] leading-relaxed outline-none rounded ${isEditing ? 'min-h-[1.5em] bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
+                            data-template-description id={handlers.readOnly ? undefined : `product-description-${product.id}`} data-product-edit-id={product.id} className={`max-w-full opacity-80 break-words [overflow-wrap:anywhere] [word-break:normal] leading-relaxed outline-none rounded ${isEditing ? 'min-h-[1.5em] bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
                             style={{ 
                                 color: descStyle.color || style.textColor,
                                 fontFamily: descStyle.fontFamily,
@@ -1263,7 +1272,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const imgScale = style.imageScale || 1;
         const productColumnCount = style.columnCount || 1;
         const categoryColumnCount = style.categoryColumnCount || 1;
-        const isCardLayout = style.layoutMode === 'cards' || style.layoutMode === 'grid';
+        const isCardLayout = style.design ? style.design.card !== 'flat' : style.layoutMode === 'cards' || style.layoutMode === 'grid';
         const cardBackgroundColor = style.cardBackgroundColor || '#ffffff';
         const compactControls = categoryColumnCount > 1 || productColumnCount > 1;
         const denseControls = categoryColumnCount > 1 && productColumnCount > 1;
@@ -1326,10 +1335,11 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                      return (
                             <div 
                                 key={product.id}
-                                id={`product-container-${product.id}`}
+                                id={handlers.readOnly ? undefined : `product-container-${product.id}`}
                                 data-drag-scope={handlers.dragScope}
                                 data-drag-type="product"
                                 data-drag-id={product.id}
+                                data-template-product={product.isFreeText ? undefined : true}
                                 data-drag-group={item.category}
                                 onPointerDown={(e) => handlers.handleDragStart(e, 'product', product.id, item.category)}
                                 onDragStart={(e) => e.preventDefault()}
@@ -1339,27 +1349,29 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             >
                                 {renderFormattingToolbar('product', product.id,
                                     formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle)}
-                            <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={canMoveLeft} canMoveRight={canMoveRight} isFreeText={product.isFreeText} handlers={handlers} onEdit={(e: React.MouseEvent) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name')} mobileOnlyEdit={!compactControls} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} mobileExpandedControls={mobileExpandedControls} denseControls={denseControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>
+                            {!handlers.readOnly && <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={canMoveLeft} canMoveRight={canMoveRight} isFreeText={product.isFreeText} handlers={handlers} onEdit={(e: React.MouseEvent) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name')} mobileOnlyEdit={!compactControls} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} mobileExpandedControls={mobileExpandedControls} denseControls={denseControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>}
                                 
                                 <div
+                                    data-template-card
                                     className={`h-full transition-all duration-150 ${isCardLayout ? `rounded-xl border border-slate-200 shadow-sm ${isEditing ? 'overflow-visible' : 'overflow-hidden'}` : 'bg-transparent'} ${isBeingDragged ? 'opacity-40' : isCardLayout ? 'group-hover:shadow-md' : ''}`}
                                     style={isCardLayout ? { backgroundColor: cardBackgroundColor } : undefined}
                                 >
                                     <div className="h-full flex flex-col">
                                         {style.showImages && product.image && (
                                             <div
+                                                data-template-image
                                                 data-product-image-surface={product.id}
-                                                style={{ height: `${cardImageHeight}px` }}
+                                                style={{ height: `${templateProductImageHeight(style, cardImageHeight)}px` }}
                                                 className={`relative w-full bg-gray-100 transition-all duration-300 ${isCardLayout ? '' : 'rounded-md'} ${isEditing ? 'cursor-pointer ring-2 ring-inset ring-indigo-400' : 'overflow-hidden'}`}
                                                 onPointerDown={(event) => { if (isEditing) event.stopPropagation(); }}
                                                 onClick={(event) => { if (!isEditing) return; event.stopPropagation(); setImageMenuProductId((current) => current === product.id ? null : product.id); }}
                                                 title={isEditing ? 'Opções da imagem' : undefined}
                                             >
-                                                <img src={product.image} className={`w-full h-full object-cover ${isCardLayout ? 'rounded-t-xl' : 'rounded-md'}`} style={{ objectPosition: `${product.imageAlignment || 'center'} center` }} alt={product.name} draggable={false} />
+                                                <img src={product.image} className={`w-full h-full object-cover ${isCardLayout ? 'rounded-t-xl' : 'rounded-md'}`} style={{ objectPosition: `${product.imageAlignment || 'center'} center` }} alt={product.name} onError={(event) => { event.currentTarget.hidden = true; }} draggable={false} />
                                                 {renderProductImageControls(product, isEditing)}
                                             </div>
                                         )}
-                                        <div className={`${isCardLayout ? (categoryColumnCount > 1 || productColumnCount > 2 ? 'p-1.5' : productColumnCount > 1 ? 'p-2' : 'p-4') : 'py-2'} flex min-w-0 flex-col flex-grow ${textAlignClass}`}>
+                                        <div data-template-content className={`${isCardLayout ? (categoryColumnCount > 1 || productColumnCount > 2 ? 'p-1.5' : productColumnCount > 1 ? 'p-2' : 'p-4') : 'py-2'} flex min-w-0 flex-col flex-grow ${textAlignClass}`}>
                                             <div
                                                 className="flex min-w-0 flex-wrap items-start"
                                                 style={{
@@ -1378,7 +1390,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         fitScope="productName"
                                                         widthMode="flex"
                                                         showOverflowFeedback={isEditing}
-                                                        id={`product-name-${product.id}`}
+                                                        id={handlers.readOnly ? undefined : `product-name-${product.id}`}
                                                         data-product-edit-id={product.id}
                                                         className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
                                                         style={{ color: nameStyle.color || style.textColor, fontFamily: nameStyle.fontFamily, fontSize: clampFontSize(style, 'productName', nameStyle.fontSize, 18), fontWeight: nameStyle.fontWeight, fontStyle: nameStyle.italic ? 'italic' : 'normal', textDecoration: nameStyle.underline ? 'underline' : 'none', textAlign: nameStyle.textAlign, textTransform: nameStyle.textTransform }}
@@ -1391,15 +1403,15 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }}
                                                         onClick={(e) => { if (isEditing) e.stopPropagation(); }}
                                                     />
-                                                    <button
-                                                        data-product-edit-id={product.id}
+                                                    {!handlers.readOnly && <button
+                                                        data-product-edit-id={product.id} data-template-edit-action
                                                         onClick={(e) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name')}
                                                         className={`relative flex-shrink-0 ${selectionLayerClasses.controls} hidden md:inline-flex ${compactControls ? 'md:hidden' : 'md:p-2'} bg-white border border-slate-200 shadow-sm rounded-md text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all ${isSelected || isEditing ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'}`}
                                                         onPointerDown={(e) => e.stopPropagation()}
                                                         title="Editar produto"
                                                     >
                                                         <Edit3 size={20} className="h-6 w-6 md:h-5 md:w-5" />
-                                                    </button>
+                                                    </button>}
                                                 </div>
                                                 {showProductDivider && (
                                                     <span
@@ -1409,7 +1421,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                     />
                                                 )}
                                                 {style.showPrices !== false && <div
-                                                    className={`ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap ${isCardLayout ? `rounded-full bg-white/90 border border-black/5 shadow-sm ${compactControls ? 'px-1.5 py-0.5' : 'px-2.5 py-1'}` : ''}`}
+                                                    data-template-price className={`ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap ${isCardLayout ? `rounded-full bg-white/90 border border-black/5 shadow-sm ${compactControls ? 'px-1.5 py-0.5' : 'px-2.5 py-1'}` : ''}`}
                                                     style={{ color: priceStyle.color || style.textColor, fontFamily: priceStyle.fontFamily, fontSize: clampFontSize(style, 'productPrice', priceStyle.fontSize, 18), fontWeight: priceStyle.fontWeight, fontStyle: priceStyle.italic ? 'italic' : 'normal', textDecoration: priceStyle.underline ? 'underline' : 'none', textTransform: priceStyle.textTransform, letterSpacing: priceStyle.letterSpacing ? `${priceStyle.letterSpacing}px` : undefined }}
                                                 >
                                                     {style.showCurrencySymbol !== false && <span className="select-none touch-auto">R$</span>}
@@ -1422,7 +1434,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         fitScope="productPrice"
                                                         containerSelector={`#product-container-${product.id}`}
                                                         showOverflowFeedback={isEditing}
-                                                        id={`product-price-${product.id}`}
+                                                        id={handlers.readOnly ? undefined : `product-price-${product.id}`}
                                                         data-product-edit-id={product.id}
                                                         className={`whitespace-nowrap outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
                                                         style={{ textAlign: priceStyle.textAlign }}
@@ -1450,7 +1462,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                 fitScope="productDescription"
                                                 widthMode="parent"
                                                 showOverflowFeedback={isEditing}
-                                                id={`product-description-${product.id}`}
+                                                data-template-description id={handlers.readOnly ? undefined : `product-description-${product.id}`}
                                                 data-product-edit-id={product.id}
                                                 className={`max-w-full opacity-75 break-words [overflow-wrap:anywhere] [word-break:normal] flex-grow outline-none rounded ${isEditing ? 'min-h-[1.5em] bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : 'line-clamp-4'}`}
                                                 style={{ color: descStyle.color || style.textColor, fontFamily: descStyle.fontFamily, fontSize: clampFontSize(style, 'productDescription', descStyle.fontSize, 14), fontWeight: descStyle.fontWeight, fontStyle: descStyle.italic ? 'italic' : 'normal', textDecoration: descStyle.underline ? 'underline' : 'none', textAlign: descStyle.textAlign }}

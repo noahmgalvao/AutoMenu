@@ -1,3 +1,4 @@
+import { templateCategoryExtra, templateHeaderExtra, templateProductImageHeight } from './templateDesign';
 import { Product, MenuStyle } from '../types';
 import { clampFontSize, resolveMenuContentSpacing, resolveMenuMargins } from './styleRules';
 import { normalizeColumnWidths } from './categoryColumns';
@@ -152,10 +153,10 @@ const getMainHeaderHeight = (style: MenuStyle) => {
     const titleBottom = hasSubtitle
         ? (style.elementStyles?.menuTitle?.marginBottom ?? 10)
         : spacing.headerToContent;
-    if (!hasSubtitle) return (titleSize * 1.22) + titleBottom;
+    if (!hasSubtitle) return (titleSize * 1.22) + titleBottom + templateHeaderExtra(style);
 
     const subtitleSize = clampFontSize(style, 'menuSubtitle', style.elementStyles?.menuSubtitle?.fontSize, 18);
-    return (titleSize * 1.22) + titleBottom + (subtitleSize * 1.35) + spacing.headerToContent;
+    return (titleSize * 1.22) + titleBottom + (subtitleSize * 1.35) + spacing.headerToContent + templateHeaderExtra(style);
 };
 
 // Helper function to estimate item height dynamically
@@ -192,7 +193,7 @@ export const calculateItemHeight = (
 
     if (isRowLayout) {
         if (style.showImages && product.image) {
-            contentHeight += getProductCardImageHeight(style);
+            contentHeight += style.design?.image === 'background' ? 36 : templateProductImageHeight(style, getProductCardImageHeight(style));
         }
 
         const productGridGap = getProductGridGap(style);
@@ -352,7 +353,7 @@ const createPageItemHeightCalculator = (
                 categoryCharWidth
             );
             const imageHeight = categoryImage?.url ? (categoryImage.height || 36) * categoryImageScale : 0;
-            return Math.max(categoryFontSize * 1.25 * lines, imageHeight, 28) + spacing.categoryToProduct + 8;
+            return Math.max(categoryFontSize * 1.25 * lines, imageHeight, 28) + spacing.categoryToProduct + 8 + templateCategoryExtra(style);
         }
         if (item.type === 'product-item') return calculateItemHeight(item.data, style, false, 1, categoryColumnWidth, categoryColumnCount);
         if (item.type === 'free-text-row') {
@@ -691,6 +692,28 @@ const buildLockedPagination = (
     return pages;
 };
 
+/** Keep explicit pages and pages carrying user assets even after the content reflows. */
+export function finalizeMenuPages(basePages: PageLayout[], style: MenuStyle) {
+    const columnCount = style.categoryColumnCount || 1;
+    const emptyPage = (): PageLayout => ({
+        mainHeader: null, columnCount, flatItems: [],
+        columns: Array.from({ length: columnCount }, (_, columnIndex) => ({
+            columnIndex, chunks: [], estimatedHeight: 0,
+        })),
+    });
+    const pages = [...basePages];
+    for (const blankPage of [...(style.blankPages || [])].sort((a, b) => a.index - b.index)) {
+        const hasImage = style.addedImages?.some((image) => (image.pageIndex || 0) === blankPage.index);
+        if (!hasImage && blankPage.index < pages.length) continue;
+        pages.splice(Math.max(0, Math.min(blankPage.index, pages.length)), 0, { ...emptyPage(), blankPageId: blankPage.id });
+    }
+    const assets = [...(style.pageBackgrounds || []), ...(style.addedImages || []), ...(style.floatingText || [])];
+    const minimumPageCount = assets.reduce((count, asset) =>
+        Number.isSafeInteger(asset.pageIndex) && asset.pageIndex >= 0 ? Math.max(count, asset.pageIndex + 1) : count, 1);
+    while (pages.length < minimumPageCount) pages.push(emptyPage());
+    return pages;
+}
+
 export const calculatePagination = (
     products: Product[],
     style: MenuStyle,
@@ -749,7 +772,35 @@ export const calculatePagination = (
         };
 
         finalizedPage.flatItems = buildPageFlatItems(finalizedPage);
-        return finalizedPage;
+        return balanceColumns(finalizedPage);
+    };
+
+    const balanceColumns = (page: PageLayout): PageLayout => {
+        if (!style.design || page.columns.length < 2 || style.categoryColumnWidths?.length
+            || Object.keys(style.categoryPositions || {}).length) return page;
+        const chunks = page.columns.flatMap((column) => column.chunks);
+        const lanes = Math.min(chunks.length, page.columns.length);
+        if (lanes < 2) return page;
+        const columns = page.columns.map((column) => ({ ...column, chunks: [] as CategoryChunkLayout[], estimatedHeight: 0 }));
+        let index = 0;
+        let remainingHeight = chunks.reduce((sum, chunk) => sum + chunk.estimatedHeight + CATEGORY_CHUNK_GAP_PX, 0);
+        let targetHeight = remainingHeight / lanes;
+        chunks.forEach((chunk, position) => {
+            const current = columns[index];
+            const overflow = current.estimatedHeight + chunk.estimatedHeight + CATEGORY_CHUNK_GAP_PX > targetHeight;
+            if (current.chunks.length && index + 1 < lanes && (overflow || chunks.length - position === lanes - index - 1)) {
+                index++;
+                targetHeight = remainingHeight / (lanes - index);
+            }
+            const column = columns[index];
+            column.estimatedHeight += chunk.estimatedHeight + (column.chunks.length ? CATEGORY_CHUNK_GAP_PX : 0);
+            column.chunks.push({ ...chunk, columnIndex: index });
+            remainingHeight -= chunk.estimatedHeight + CATEGORY_CHUNK_GAP_PX;
+        });
+        const limit = baseColumnHeight - (page.mainHeader ? headerHeight : 0);
+        if (columns.some((column) => column.estimatedHeight > limit)) return page;
+        const balanced = { ...page, columns };
+        return { ...balanced, flatItems: buildPageFlatItems(balanced) };
     };
 
     const pages: PageLayout[] = [];

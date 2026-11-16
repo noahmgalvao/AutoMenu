@@ -41,7 +41,7 @@ export interface MenuContentSpacing {
 export type FontSizeLimitKey = keyof FontSizeLimits;
 export type PriceDecimalPlaces = 0 | 1 | 2;
 export type PriceDecimalSeparator = ',' | '.';
-export type MenuPagePreset = 'A4' | 'A5' | 'Square' | 'custom';
+export type MenuPagePreset = 'A4' | 'A5' | 'A3' | 'Letter' | 'Square' | 'screen' | 'custom';
 export type MenuPageOrientation = 'portrait' | 'landscape';
 
 export interface MenuPageSetup {
@@ -182,7 +182,37 @@ export interface BlankPageSlot {
   fixedPosition?: boolean;
 }
 
+export interface TemplateDesign {
+  schemaVersion: 2;
+  header: 'centered' | 'left' | 'split' | 'hero' | 'banner';
+  category: 'plain' | 'underline' | 'filled' | 'pill' | 'ribbon' | 'numbered';
+  product: 'classic' | 'compact' | 'editorial' | 'card' | 'featured';
+  image: 'none' | 'left' | 'top' | 'cover' | 'background';
+  imageRatio: '1:1' | '4:3' | '3:4' | '16:9';
+  price: 'inline' | 'right' | 'badge' | 'pill' | 'highlight';
+  card: 'flat' | 'bordered' | 'soft' | 'elevated' | 'full-bleed';
+  divider: 'none' | 'solid' | 'dotted' | 'ornamental';
+  background: 'solid' | 'texture' | 'split' | 'accent-blocks';
+}
+
+export interface TemplateCatalogMetadata {
+  description: string;
+  category: string;
+  tags: string[];
+  keywords: string[];
+  layoutFamily: TemplateDesign['product'];
+  orientation: MenuPageSetup['orientation'];
+  pagePreset: MenuPagePreset;
+  sortOrder: number;
+  catalogVersion: number;
+}
+
 export interface MenuStyle {
+  design?: TemplateDesign;
+  catalogMetadata?: TemplateCatalogMetadata;
+  appliedTemplateId?: string;
+  appliedTemplateVersionId?: string | null;
+  templateBackgroundFit?: 'cover' | 'fill';
   id: string;
   name: string;
   scope?: TemplateScope;
@@ -392,6 +422,7 @@ export interface MenuProductSync {
 }
 
 export interface Template {
+  catalogMetadata?: TemplateCatalogMetadata;
   id: string;
   workspaceId: string | null;
   scope: TemplateScope;

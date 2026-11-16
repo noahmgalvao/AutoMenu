@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Select, { components } from 'react-select';
 import type { SingleValue, StylesConfig } from 'react-select';
-import type { MenuStyle } from '../../types';
 import {
   FONTS,
   isMiniFoodTexture,
@@ -12,7 +11,6 @@ import {
 
 type SelectOption = { value: string; label: string };
 type TextureOption = SelectOption & { url: string };
-type TemplateOption = SelectOption & { template: MenuStyle };
 
 const selectStyles: StylesConfig<any, false> = {
   control: (base, state) => ({
@@ -267,38 +265,3 @@ export const MiniFoodTextureSelect: React.FC<{
     )}
   />
 );
-
-export const TemplateSelect: React.FC<{
-  templates: MenuStyle[];
-  currentStyleId: string;
-  onChange: (template: MenuStyle) => void;
-}> = ({ templates, currentStyleId, onChange }) => {
-  const options: TemplateOption[] = templates.map((template) => ({
-    value: template.id,
-    label: template.name,
-    template,
-  }));
-
-  return (
-    <Select
-      value={options.find((option) => option.value === currentStyleId) || null}
-      onChange={(option: SingleValue<TemplateOption>) => {
-        if (option?.template) onChange(option.template);
-      }}
-      options={options}
-      placeholder="Buscar modelo..."
-      styles={selectStyles}
-      isSearchable
-      noOptionsMessage={() => 'Nenhum modelo encontrado'}
-      formatOptionLabel={(option) => (
-        <div className="flex items-center gap-2 min-w-0">
-          <span
-            className="h-5 w-5 rounded border border-black/10 shadow-sm shrink-0"
-            style={{ backgroundColor: option.template.primaryColor }}
-          />
-          <span className="truncate">{option.label}</span>
-        </div>
-      )}
-    />
-  );
-};

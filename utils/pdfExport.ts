@@ -4,7 +4,7 @@ import { jsPDF } from 'jspdf';
 export type PdfPrintOptions = {
   pageMode: 'all' | 'current' | 'range';
   pageRange: string;
-  paperSize: 'A4' | 'A5' | 'Square' | 'custom';
+  paperSize: 'A4' | 'A5' | 'A3' | 'Letter' | 'Square' | 'custom';
   customPaperWidthMm: number;
   customPaperHeightMm: number;
   orientation: 'portrait' | 'landscape';
@@ -72,6 +72,8 @@ const previewPageSizes = new Map<string, PdfPageSizePx>();
 export const PAPER_SIZES_MM: Record<Exclude<PdfPrintOptions['paperSize'], 'custom'>, { width: number; height: number }> = {
   A4: A4_PAGE_MM,
   A5: { width: 148, height: 210 },
+  A3: { width: 297, height: 420 },
+  Letter: { width: 215.9, height: 279.4 },
   Square: { width: 210, height: 210 },
 };
 

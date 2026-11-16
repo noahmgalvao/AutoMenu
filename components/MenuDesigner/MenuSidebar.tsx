@@ -1,10 +1,10 @@
+import { TemplatePicker } from './TemplatePicker';
 import React from 'react';
 import { MenuStyle, Product, ElementStyle, SortOption, AddedImage } from '../../types';
 import { FileText, Maximize2, Minimize2, Paintbrush, RotateCcw, X } from 'lucide-react';
 import { useBottomSheetDrag } from '../../hooks/useBottomSheetDrag';
 import { 
   ElementsSection, 
-  TemplatesSection, 
   PageSection,
   LayoutSection, 
   StyleSection, 
@@ -22,6 +22,9 @@ interface MenuSidebarProps {
     style: MenuStyle;
     setStyle: React.Dispatch<React.SetStateAction<MenuStyle>>;
     templates: MenuStyle[];
+    products: Product[];
+    currentUserId: string;
+    splitCategoryAcrossPages?: boolean;
     applyTemplate: (template: MenuStyle) => void;
     sortOption: SortOption;
     setSortOption: React.Dispatch<React.SetStateAction<SortOption>>;
@@ -45,7 +48,7 @@ interface MenuSidebarProps {
 
 export const MenuSidebar: React.FC<MenuSidebarProps> = ({
     isOpen, onClose, onPdfClick, handleResetDesign,
-    style, setStyle, templates, applyTemplate, sortOption, setSortOption,
+    style, setStyle, templates, applyTemplate, sortOption, setSortOption, products, currentUserId, splitCategoryAcrossPages,
     selection, setSelection, selectedFreeText, selectedAddedImage, selectedAddedImageIds,
     updateFreeTextStyle, updateGlobalElementStyle, setPreviewAction, handleAddedImageUpload,
     resizeSelectedAddedImages, removeSelectedAddedImages, layerSelectedAddedImages
@@ -123,11 +126,12 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
 
           <hr className="border-slate-100" />
 
-          <TemplatesSection 
-            templates={templates}
-            currentStyleId={style.id}
-            applyTemplate={applyTemplate}
-          />
+          <section className="space-y-2">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Modelos</h3>
+            <TemplatePicker key={currentUserId} userId={currentUserId} current={style} templates={templates}
+              applyTemplate={applyTemplate} products={products} sortOption={sortOption}
+              splitCategoryAcrossPages={splitCategoryAcrossPages} />
+          </section>
 
           <hr className="border-slate-100" />
 

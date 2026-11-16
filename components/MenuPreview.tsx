@@ -2,7 +2,7 @@ import React, { useMemo, useEffect, useRef, useCallback, useState } from 'react'
 import { createPortal } from 'react-dom';
 import { AddedImage, ElementStyle, Product, MenuStyle, SortOption, type CategoryDividerStyle } from '../types';
 import { AlertTriangle, BringToFront, Copy, CopyCheck, CopyPlus, EyeOff, Paintbrush, Clipboard, Plus, Scissors, SendToBack, Trash2 } from 'lucide-react';
-import { calculatePagination, FREE_TEXT_PREFIX, SAFETY_BUFFER, type PageLayout } from '../utils/menuPagination';
+import { calculatePagination, finalizeMenuPages, FREE_TEXT_PREFIX, SAFETY_BUFFER, type PageLayout } from '../utils/menuPagination';
 import { isPristineNewCategory, isPristineNewProduct } from '../utils/pristineItems';
 import { useMenuInteractions } from '../hooks/useMenuInteractions';
 import { NUDGE_STEP, type DraftItem, type MoveDirection, type SelectionItem } from '../hooks/interactions/types';
@@ -136,7 +136,7 @@ const blobToDataUrl = (blob: Blob) => new Promise<string>((resolve, reject) => {
 });
 
 // --- FONT LOADER COMPONENT ---
-const DynamicFontLoader: React.FC<{ fonts: string[] }> = ({ fonts }) => {
+export const DynamicFontLoader: React.FC<{ fonts: string[] }> = ({ fonts }) => {
     useEffect(() => {
         const uniqueFonts = Array.from(new Set(fonts)).filter(f => f && f !== 'Inherit');
         uniqueFonts.forEach((font: string) => {
@@ -456,48 +456,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         );
     }, [products, props.splitCategoryAcrossPages, style, handlers.groupedProducts, handlers.sortedCategories, handlers.liveCategoryPageAssignments, handlers.liveCategoryPositions]);
 
-    const pages = useMemo(() => {
-        const columnCount = style.categoryColumnCount || 1;
-        const result: PageLayout[] = [...basePages];
-
-        [...(style.blankPages || [])]
-            .sort((left, right) => left.index - right.index)
-            .forEach((blankPage) => {
-                const hasImageOnBlankPage = (style.addedImages || []).some((image) => (image.pageIndex || 0) === blankPage.index);
-                if (!hasImageOnBlankPage && blankPage.index < result.length) return;
-                const insertIndex = Math.max(0, Math.min(blankPage.index, result.length));
-                result.splice(insertIndex, 0, {
-                    blankPageId: blankPage.id,
-                    mainHeader: null,
-                    columns: Array.from({ length: columnCount }, (_, columnIndex) => ({
-                        columnIndex,
-                        chunks: [],
-                        estimatedHeight: 0,
-                    })),
-                    flatItems: [],
-                    columnCount,
-                });
-            });
-
-        const requiredBackgroundPageCount = (style.pageBackgrounds || []).reduce(
-            (pageCount, background) => Math.max(pageCount, background.pageIndex + 1),
-            1,
-        );
-        while (result.length < requiredBackgroundPageCount) {
-            result.push({
-                mainHeader: null,
-                columns: Array.from({ length: columnCount }, (_, columnIndex) => ({
-                    columnIndex,
-                    chunks: [],
-                    estimatedHeight: 0,
-                })),
-                flatItems: [],
-                columnCount,
-            });
-        }
-
-        return result;
-    }, [basePages, style.addedImages, style.blankPages, style.categoryColumnCount, style.pageBackgrounds]);
+    const pages = useMemo(() => finalizeMenuPages(basePages, style), [basePages, style]);
 
     useEffect(() => {
         onPageCountChange?.(pages.length);

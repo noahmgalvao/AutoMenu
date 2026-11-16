@@ -5,7 +5,7 @@ import { DEFAULT_MINIMUM_FONT_SIZE, isMiniFoodTexture, normalizeTextureUrl } fro
 import { resolveFontSizeLimits, resolveMenuContentSpacing, resolveMenuMargins, resolveMinimumFontSize, roundFontSize } from '../../utils/styleRules';
 import { normalizeMenuPageSetup, resolveMenuPageDimensions } from '../../utils/pageSetup';
 import { StyleControls } from './StyleControls';
-import { FontSelect, MiniFoodTextureSelect, TemplateSelect, TextureSelect } from './SearchableSelects';
+import { FontSelect, MiniFoodTextureSelect, TextureSelect } from './SearchableSelects';
 import { CategoryDividerPicker } from './CategoryDividerPicker';
 import { 
   Type, ImagePlus, Minus, Plus, LayoutTemplate, 
@@ -260,19 +260,6 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
 };
 
 // --- TEMPLATES SECTION ---
-interface TemplatesSectionProps {
-  templates: MenuStyle[];
-  currentStyleId: string;
-  applyTemplate: (template: MenuStyle) => void;
-}
-
-export const TemplatesSection: React.FC<TemplatesSectionProps> = ({ templates, currentStyleId, applyTemplate }) => (
-  <section className="space-y-3">
-    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2"> <LayoutTemplate size={14} /> Modelos </h3>
-    <TemplateSelect templates={templates} currentStyleId={currentStyleId} onChange={applyTemplate} />
-  </section>
-);
-
 // --- PAGE SECTION ---
 interface PageSectionProps {
   style: MenuStyle;
@@ -282,6 +269,9 @@ interface PageSectionProps {
 const PAGE_PRESET_OPTIONS = [
   { value: 'A4', label: 'A4' },
   { value: 'A5', label: 'A5' },
+  { value: 'A3', label: 'A3' },
+  { value: 'Letter', label: 'Carta' },
+  { value: 'screen', label: 'Painel 16:9' },
   { value: 'Square', label: 'Quadrado' },
   { value: 'custom', label: 'Personalizado' },
 ] as const;
@@ -527,6 +517,7 @@ export const PageSection: React.FC<PageSectionProps> = ({ style, setStyle }) => 
             onChange={(event) => updatePageSetup({
               ...setup,
               preset: event.target.value as typeof setup.preset,
+              orientation: event.target.value === 'screen' ? 'landscape' : setup.orientation,
             })}
             className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
             aria-label="Tamanho da página"

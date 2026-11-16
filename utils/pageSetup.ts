@@ -7,6 +7,9 @@ const MAX_CUSTOM_DIMENSION_MM = 1000;
 export const MENU_PAGE_PRESETS_MM: Record<Exclude<MenuPagePreset, 'custom'>, { width: number; height: number }> = {
   A4: { width: 210, height: 297 },
   A5: { width: 148, height: 210 },
+  A3: { width: 297, height: 420 },
+  Letter: { width: 215.9, height: 279.4 },
+  screen: { width: 180, height: 320 },
   Square: { width: 210, height: 210 },
 };
 
@@ -31,6 +34,9 @@ const clampDimension = (value: unknown, fallback: number) => {
 export const normalizeMenuPageSetup = (value: unknown): MenuPageSetup => {
   const source = isRecord(value) ? value : {};
   const preset: MenuPagePreset = source.preset === 'A5'
+    || source.preset === 'A3'
+    || source.preset === 'Letter'
+    || source.preset === 'screen'
     || source.preset === 'Square'
     || source.preset === 'custom'
     ? source.preset

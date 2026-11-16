@@ -327,6 +327,8 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
                 <select value={options.paperSize} onChange={(e) => update('paperSize', e.target.value as PrintCanvasOptions['paperSize'])} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm bg-white text-ellipsis overflow-hidden whitespace-nowrap">
                   <option value="A4">A4</option>
                   <option value="A5">A5</option>
+                  <option value="A3">A3</option>
+                  <option value="Letter">Carta</option>
                   <option value="Square">Quadrado</option>
                   <option value="custom">Personalizado</option>
                 </select>

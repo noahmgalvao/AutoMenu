@@ -1,3 +1,5 @@
+import { getTemplateColors, getTemplateDesignAttributes } from '../utils/templateDesign';
+import './MenuDesigner/templateDesign.css';
 import React from 'react';
 import { Product, MenuStyle } from '../types';
 import { BringToFront, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Minus, MoreHorizontal, Plus, SendToBack, Trash2 } from 'lucide-react';
@@ -58,7 +60,7 @@ const PositionedCategoryChunk: React.FC<
         }
 
         const placeholder = placeholderRef.current;
-        const page = element.closest<HTMLElement>(`[data-menu-print-page="true"][data-page-index="${pageIndex}"]`);
+        const page = element.closest<HTMLElement>(`[data-page-index="${pageIndex}"]`);
         const column = element.closest<HTMLElement>('[data-drag-column-container="category"]');
         if (!page || !column || (!detachedFromFlow && !placeholder)) return;
         let animationFrame: number | null = null;
@@ -167,6 +169,7 @@ const PositionedCategoryChunk: React.FC<
 
 interface MenuPageProps {
     pageIndex: number;
+    readOnly?: boolean;
     page: PageLayout;
     style: MenuStyle;
     handlers: any;
@@ -180,6 +183,7 @@ interface MenuPageProps {
 
 export const MenuPage: React.FC<MenuPageProps> = ({
     pageIndex,
+    readOnly = false,
     page,
     style,
     handlers,
@@ -195,8 +199,14 @@ export const MenuPage: React.FC<MenuPageProps> = ({
     const pageBackground = (style.pageBackgrounds || [])
         .find((background) => background.pageIndex === pageIndex);
     const backgroundTexture = normalizeTextureUrl(pageBackground?.url || style.backgroundImage);
-    const isImportedMenu = style.sourceType === 'ai_import';
-    const backgroundSource = backgroundTexture || (!isImportedMenu ? style.sourceImage : '');
+    const isImportedMenu = style.appliedTemplateId ? style.templateBackgroundFit === 'fill' : style.sourceType === 'ai_import';
+    const backgroundSource = backgroundTexture || (!isImportedMenu && !style.appliedTemplateId ? style.sourceImage : '');
+    const decorativeBackground = {
+        texture: 'repeating-linear-gradient(35deg, transparent 0 6px, rgba(140, 110, 80, .046) 6px 7px)',
+        split: 'linear-gradient(90deg, var(--template-tint) 0 34%, transparent 34%)',
+        'accent-blocks': 'linear-gradient(145deg, var(--template-tint) 0 20%, transparent 20% 82%, var(--template-tint) 82%)',
+        solid: 'none',
+    };
     const renderedColumnCount = page.columnCount || page.columns.length || style.categoryColumnCount || 1;
     const renderedStyle = renderedColumnCount === (style.categoryColumnCount || 1)
         ? style
@@ -217,10 +227,11 @@ export const MenuPage: React.FC<MenuPageProps> = ({
     );
 
     const pageStyle: React.CSSProperties = {
-        fontFamily: style.fontFamily,
+        fontFamily: style.fontFamily + (style.design ? ', Georgia, serif' : ''),
+        ...getTemplateColors(style),
         backgroundColor: isImportedMenu ? 'transparent' : style.backgroundColor,
         color: style.textColor,
-        backgroundImage: !isImportedMenu && backgroundSource ? `url(${backgroundSource})` : 'none',
+        backgroundImage: !isImportedMenu && backgroundSource ? `url(${backgroundSource})` : style.design ? decorativeBackground[style.design.background] : 'none',
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         backgroundBlendMode: 'normal',
@@ -525,7 +536,10 @@ export const MenuPage: React.FC<MenuPageProps> = ({
     return (
         <div className="relative flex-shrink-0">
             <div
-                data-menu-print-page="true"
+                {...getTemplateDesignAttributes(style)}
+                data-menu-print-page={readOnly ? undefined : "true"}
+                data-menu-preview-page={readOnly ? "true" : undefined}
+                data-template-readonly={readOnly ? "true" : undefined}
                 data-page-index={pageIndex}
                 data-blank-page-id={page.blankPageId || undefined}
                 data-drag-scope={handlers.dragScope}
@@ -538,14 +552,14 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 style={pageStyle}
                 onDragOver={(e) => handlers.handleDragOverItem?.(e)}
                 className={`shadow-2xl ${isImportedMenu ? '' : 'bg-white'} print:shadow-none print:mb-0 print:break-after-page group/page transition-all md:cursor-default ${isPageSelected ? 'ring-4 ring-blue-500' : ''}`}
-                onClick={(e) => {
+                onClick={readOnly ? undefined : (e) => {
                     e.stopPropagation();
                     handlers.setSelectedPageIndex(pageIndex);
                     handlers.setSelectedId(null);
                     handlers.handleSelection('page', pageIndex.toString(), { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey });
                     handlers.setEditingId(null);
                 }}
-                onDoubleClick={(e) => handlers.handlePageDoubleClick(e, pageIndex)}
+                onDoubleClick={readOnly ? undefined : (e) => handlers.handlePageDoubleClick(e, pageIndex)}
             >
                 {isImportedMenu && backgroundSource && (
                     <img
@@ -561,7 +575,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         style={{ objectFit: 'fill', zIndex: 0 }}
                     />
                 )}
-                {needsOverlay && !isImportedMenu && <div className="absolute inset-0 bg-white/90 pointer-events-none z-0" />}
+                {needsOverlay && !style.appliedTemplateId && !isImportedMenu && <div className="absolute inset-0 bg-white/90 pointer-events-none z-0" />}
                 {handlers.columnResizeGuide?.pageIndex === pageIndex && (
                     <div
                         data-print-control="true"
@@ -574,11 +588,17 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                     </div>
                 )}
 
+                {(style.floatingText || []).filter((text) => text.pageIndex === pageIndex).map((text) => (
+                    <p key={text.id} className="pointer-events-none absolute z-[11] whitespace-pre-wrap break-words"
+                        style={{ left: text.x, top: text.y, maxWidth: Math.max(1, pageDimensions.widthPx - text.x) }}>
+                        {text.text}
+                    </p>
+                ))}
                 {(style.addedImages || []).filter((img) => img && img.id && (img.pageIndex || 0) === pageIndex).map((img, imgIdx) => {
                     return (
                         <div
                             key={img.id || imgIdx}
-                            id={`added-image-${pageIndex}-${img.id}`}
+                            id={readOnly ? undefined : `added-image-${pageIndex}-${img.id}`}
                             data-added-image-drag="true"
                             data-added-image-id={img.id}
                             className="automenu-drag-item absolute group cursor-move"
@@ -737,7 +757,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 )}
                 <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-40 pointer-events-none">
                     <div
-                        id={pageNumberElementId}
+                        id={readOnly ? undefined : pageNumberElementId}
                         data-page-number="true"
                         data-print-control="true"
                         className={`inline-flex min-w-8 h-8 px-2 items-center justify-center pointer-events-auto cursor-pointer select-none touch-none ${showPageNumbers ? 'opacity-40' : 'opacity-0'}`}

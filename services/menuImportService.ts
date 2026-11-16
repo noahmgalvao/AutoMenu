@@ -1225,6 +1225,13 @@ export const processMenuImport = async ({
       name: `Design IA (${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`,
       scope: 'workspace',
       sourceType: 'ai_import',
+      templateVersionId: null,
+      appliedTemplateId: undefined,
+      appliedTemplateVersionId: null,
+      templateBackgroundFit: undefined,
+      catalogMetadata: undefined,
+      design: undefined,
+      isLocked: false,
       menuTitle: typography.mainTitle?.text || '',
       menuSubtitle: (typography.subtitle?.exists && typography.subtitle?.text)
         ? typography.subtitle.text

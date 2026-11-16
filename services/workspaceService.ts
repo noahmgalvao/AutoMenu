@@ -1,3 +1,4 @@
+import { normalizeTemplateDesign } from '../utils/templateDesign';
 import {
   AddedImage,
   Asset,
@@ -374,6 +375,7 @@ const mapTemplateRow = (row: any): Template => ({
   workspaceId: row.workspace_id,
   scope: row.scope,
   name: row.name,
+  catalogMetadata: row.catalog_metadata || undefined,
   sourceType: row.source_type,
   currentVersionId: row.current_version_id,
   isLocked: row.is_locked,
@@ -393,7 +395,7 @@ const mapTemplateVersionRow = (row: any): TemplateVersion => ({
 const withStyleDefaults = (style: MenuStyle | null | undefined): MenuStyle => {
   const base = cloneJson(INITIAL_STYLE);
   const source = isRecord(style) ? style as Partial<MenuStyle> : {};
-  const layoutMode = source.layoutMode === 'grid' ? 'cards' : source.layoutMode || base.layoutMode;
+  const layoutMode = source.layoutMode === 'grid' && !source.design ? 'cards' : source.layoutMode || base.layoutMode;
   const stringArray = (value: unknown) => (
     Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
   );
@@ -413,6 +415,9 @@ const withStyleDefaults = (style: MenuStyle | null | undefined): MenuStyle => {
     ...base,
     ...source,
     layoutMode,
+    design: normalizeTemplateDesign(source.design),
+    catalogMetadata: source.catalogMetadata,
+    templateVersionId: source.templateVersionId,
     cardBackgroundColor: typeof source.cardBackgroundColor === 'string' ? source.cardBackgroundColor : base.cardBackgroundColor,
     hiddenProductIds: stringArray(source.hiddenProductIds),
     customCategoryOrder: stringArray(source.customCategoryOrder),
@@ -464,7 +469,7 @@ const withStyleDefaults = (style: MenuStyle | null | undefined): MenuStyle => {
 
 const assignTemplateMetadata = (templates: MenuStyle[]) =>
   templates.filter(isRecord).map((template) => {
-    const isSystem = PRESET_TEMPLATE_IDS.has(template.id);
+    const isSystem = template.scope ? template.scope === 'system' : PRESET_TEMPLATE_IDS.has(template.id);
     return withStyleDefaults({
       ...template,
       scope: template.scope || (isSystem ? 'system' : 'workspace'),
@@ -530,11 +535,13 @@ const getLocalBootstrapData = (): WorkspaceBootstrapData => {
 
 const mergeTemplates = (workspaceTemplates: MenuStyle[], systemTemplates: MenuStyle[]) => {
   const localSystemTemplates = assignTemplateMetadata(cloneJson(PRESET_TEMPLATES));
-  const localSystemIds = new Set(localSystemTemplates.map((template) => template.id));
-  const resolvedSystemTemplates = [
-    ...localSystemTemplates,
-    ...systemTemplates.filter((template) => !localSystemIds.has(template.id)),
-  ];
+  const remoteById = new Map(systemTemplates.map((template) => [template.id, template]));
+  const resolvedSystemTemplates = localSystemTemplates.map((template) => {
+    const remote = remoteById.get(template.id);
+    return remote && remote.templateVersionId === template.templateVersionId && remote.catalogMetadata
+      ? { ...template, catalogMetadata: remote.catalogMetadata }
+      : template;
+  });
   const workspaceIds = new Set(workspaceTemplates.map((template) => template.id));
 
   return [
@@ -1238,15 +1245,13 @@ const loadTemplatesForWorkspace = async (workspaceId: string) => {
     supabase.from('templates').select('*').eq('workspace_id', workspaceId).order('created_at', { ascending: true }),
   ]);
 
-  if (systemError) {
-    throw systemError;
-  }
-
   if (workspaceError) {
     throw workspaceError;
   }
 
-  const templateRows = [...(systemRows || []), ...(workspaceRows || [])].map(mapTemplateRow);
+  const templateRows = [...(systemError ? [] : (systemRows || [])), ...(workspaceRows || [])]
+    .filter((row) => row.scope !== 'system' || (PRESET_TEMPLATE_IDS.has(row.id) && row.catalog_active !== false))
+    .map(mapTemplateRow);
   const versionIds = templateRows.map((template) => template.currentVersionId).filter(Boolean);
 
   let versionRows: TemplateVersion[] = [];
@@ -1276,6 +1281,7 @@ const loadTemplatesForWorkspace = async (workspaceId: string) => {
           id: template.id,
           name: template.name,
           scope: template.scope,
+          catalogMetadata: template.catalogMetadata,
           sourceType: template.sourceType,
           templateVersionId: version?.id || null,
           isLocked: template.isLocked,
@@ -1295,8 +1301,15 @@ const syncWorkspaceTemplates = async (workspaceId: string, userId: string, templ
   const supabase = getSupabaseClient();
   const workspaceTemplates = assignTemplateMetadata(templates).filter((template) => template.scope === 'workspace');
 
+  if (!workspaceTemplates.length) return mergeTemplates([], []);
+  const { data: existing, error: lookupError } = await supabase.from('templates')
+    .select('id,current_version_id').eq('workspace_id', workspaceId);
+  if (lookupError) throw lookupError;
+  const persisted = new Set((existing || []).filter((template) => template.current_version_id).map((template) => template.id));
+  // The editor stores imports as new template IDs. Never overwrite an already saved version
+  // when autosave hydrates an old copy of the workspace.
   const normalizedTemplates = await Promise.all(
-    workspaceTemplates.map(async (template) => {
+    workspaceTemplates.filter((template) => !persisted.has(template.id)).map(async (template) => {
       const normalizedStyle = await normalizeStyleAssets(workspaceId, userId, template);
       return {
         ...normalizedStyle,
@@ -1317,11 +1330,6 @@ const syncWorkspaceTemplates = async (workspaceId: string, userId: string, templ
     is_locked: false,
   }));
 
-  const templateRowsWithVersion = normalizedTemplates.map((template) => ({
-    ...templateRows.find((row) => row.id === template.id)!,
-    current_version_id: template.templateVersionId,
-  }));
-
   const versionRows = normalizedTemplates.map((template) => ({
     id: template.templateVersionId,
     template_id: template.id,
@@ -1331,47 +1339,30 @@ const syncWorkspaceTemplates = async (workspaceId: string, userId: string, templ
   }));
 
   if (templateRows.length > 0) {
-    const { error: upsertTemplateError } = await supabase.from('templates').upsert(templateRows, { onConflict: 'id' });
+    const { error: upsertTemplateError } = await supabase.from('templates').upsert(templateRows, { onConflict: 'id', ignoreDuplicates: true });
     if (upsertTemplateError) {
       throw upsertTemplateError;
     }
 
     const { error: upsertVersionError } = await supabase
       .from('template_versions')
-      .upsert(versionRows, { onConflict: 'id' });
+      .upsert(versionRows, { onConflict: 'id', ignoreDuplicates: true });
 
     if (upsertVersionError) {
       throw upsertVersionError;
     }
 
-    const { error: updateTemplateVersionError } = await supabase
-      .from('templates')
-      .upsert(templateRowsWithVersion, { onConflict: 'id' });
-
-    if (updateTemplateVersionError) {
-      throw updateTemplateVersionError;
+    for (const template of normalizedTemplates) {
+      const { error } = await supabase.from('templates')
+        .update({ current_version_id: template.templateVersionId })
+        .eq('workspace_id', workspaceId).eq('id', template.id).is('current_version_id', null);
+      if (error) throw error;
     }
   }
 
-  const { data: existingRows, error: existingError } = await supabase
-    .from('templates')
-    .select('id')
-    .eq('workspace_id', workspaceId);
-
-  if (existingError) {
-    throw existingError;
-  }
-
-  const liveIds = new Set(normalizedTemplates.map((template) => template.id));
-  const idsToDelete = (existingRows || []).map((row) => row.id).filter((id) => !liveIds.has(id));
-  if (idsToDelete.length > 0) {
-    const { error: deleteError } = await supabase.from('templates').delete().in('id', idsToDelete);
-    if (deleteError) {
-      throw deleteError;
-    }
-  }
-
-  return mergeTemplates(normalizedTemplates, []);
+  // Autosave can be based on an older menu snapshot. Absence in that snapshot is not a deletion.
+  const normalizedById = new Map(normalizedTemplates.map((template) => [template.id, template]));
+  return mergeTemplates(workspaceTemplates.map((template) => normalizedById.get(template.id) || template), []);
 };
 
 const resolveCategoriesForSave = async (

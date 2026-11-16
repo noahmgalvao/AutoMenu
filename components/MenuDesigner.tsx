@@ -1,3 +1,4 @@
+import { applyTemplateToCurrentStyle, getAppliedTemplateId } from '../utils/templateApplication';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Product, MenuStyle, SortOption, ElementStyle, AddedImage } from '../types';
 import { PRESET_TEMPLATES } from '../constants';
@@ -83,7 +84,7 @@ const getCanvasPrintPaperDefaults = (style: MenuStyle): Pick<
 > => {
     const dimensions = resolveMenuPageDimensions(style);
     return {
-        paperSize: dimensions.setup.preset,
+        paperSize: dimensions.setup.preset === 'screen' ? 'custom' : dimensions.setup.preset,
         orientation: dimensions.setup.orientation,
         customPaperWidthMm: dimensions.setup.widthMm,
         customPaperHeightMm: dimensions.setup.heightMm,
@@ -960,57 +961,14 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         }
     };
 
+    const applyTemplate = (template: MenuStyle) =>
+        setStyle((current) => applyTemplateToCurrentStyle(current, template));
+
     const handleResetDesign = () => {
-        // 1. Find source of truth (Preset or Imported Template)
-        let originalTemplate = PRESET_TEMPLATES.find(t => t.id === style.id);
-        if (!originalTemplate) {
-            originalTemplate = templates.find(t => t.id === style.id);
-        }
-        if (!originalTemplate) originalTemplate = PRESET_TEMPLATES[0];
-
-        // 2. Apply Visual Styles (Preserve Content)
-        setStyle(prev => ({
-            ...prev,
-            fontFamily: originalTemplate!.fontFamily,
-            primaryColor: originalTemplate!.primaryColor,
-            backgroundColor: originalTemplate!.backgroundColor,
-            textColor: originalTemplate!.textColor,
-            backgroundImage: originalTemplate!.backgroundImage,
-            layoutMode: originalTemplate!.layoutMode,
-            showImages: originalTemplate!.showImages,
-            showCategoryImages: originalTemplate!.showCategoryImages !== false,
-            columnCount: originalTemplate!.columnCount,
-            imageScale: originalTemplate!.imageScale ?? 1,
-            categoryImageScale: originalTemplate!.categoryImageScale ?? 1,
-            elementStyles: JSON.parse(JSON.stringify(originalTemplate!.elementStyles || prev.elementStyles)), // Deep copy
-            elementColorOverrides: {},
-
-            // Preserve User Content
-            id: prev.id,
-            menuTitle: prev.menuTitle,
-            menuSubtitle: prev.menuSubtitle,
-            customCategoryOrder: prev.customCategoryOrder,
-            customProductOrder: prev.customProductOrder,
-            hiddenProductIds: prev.hiddenProductIds,
-            floatingText: prev.floatingText,
-            pageBreaks: prev.pageBreaks,
-            addedImages: prev.addedImages, // Preserve custom added images on reset? Usually yes for "content".
-            sourceImage: prev.sourceImage || originalTemplate!.sourceImage
-        }));
-    };
-
-    const applyTemplate = (template: MenuStyle) => {
-        setStyle(prev => ({
-            ...template,
-            customCategoryOrder: prev.customCategoryOrder || [],
-            customProductOrder: prev.customProductOrder || {},
-            hiddenProductIds: prev.hiddenProductIds || [],
-            floatingText: prev.floatingText || [],
-            addedImages: prev.addedImages || [],
-            menuTitle: prev.menuTitle,
-            menuSubtitle: prev.menuSubtitle,
-            pageSetup: prev.pageSetup,
-        }));
+        const id = getAppliedTemplateId(style);
+        applyTemplate(templates.find((template) => template.id === id)
+            || PRESET_TEMPLATES.find((template) => template.id === id)
+            || PRESET_TEMPLATES[0]);
     };
 
     const handleProductUpdate = (id: string, field: keyof Product, value: any) => {
@@ -2213,6 +2171,9 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 style={style}
                 setStyle={setStyle}
                 templates={templates}
+                products={displayProducts}
+                currentUserId={currentUserId}
+                splitCategoryAcrossPages={splitCategoryAcrossPages}
                 applyTemplate={applyTemplate}
                 sortOption={sortOption}
                 setSortOption={setSortOption}
