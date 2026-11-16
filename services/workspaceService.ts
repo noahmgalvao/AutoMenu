@@ -82,6 +82,9 @@ const normalizePersistedProducts = (value: unknown): Product[] => {
         categoryId: isFreeText ? null : product.categoryId,
         image: typeof product.image === 'string' ? product.image : '',
         isFreeText,
+        freeTextWidth: isFreeText && Number.isFinite(Number(product.freeTextWidth))
+          ? Math.max(36, Math.min(2000, Number(product.freeTextWidth)))
+          : undefined,
         styles: isRecord(product.styles) && Number.isFinite(Number(product.styles.fontSize))
           ? { ...product.styles, fontSize: roundFontSize(product.styles.fontSize) }
           : product.styles,

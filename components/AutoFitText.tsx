@@ -13,6 +13,7 @@ interface AutoFitTextProps extends React.HTMLAttributes<HTMLElement> {
   containerSelector?: string;
   availableWidthInset?: number;
   showOverflowFeedback?: boolean;
+  disableAutoFit?: boolean;
 }
 
 export const AutoFitText: React.FC<AutoFitTextProps> = ({
@@ -26,6 +27,7 @@ export const AutoFitText: React.FC<AutoFitTextProps> = ({
   containerSelector,
   availableWidthInset = 0,
   showOverflowFeedback = false,
+  disableAutoFit = false,
   style,
   className = '',
   onInput,
@@ -38,6 +40,13 @@ export const AutoFitText: React.FC<AutoFitTextProps> = ({
   const evaluate = useCallback((textOverride?: string) => {
     const element = elementRef.current;
     if (!element) return;
+    if (disableAutoFit) {
+      element.dataset.wordOverflow = 'false';
+      setFit((current) => current.fontSize === baseFontSize && current.fits
+        ? current
+        : { fontSize: baseFontSize, fits: true });
+      return;
+    }
     const result = measureWordFitElement(element, {
       text: textOverride,
       baseFontSize,
@@ -46,7 +55,7 @@ export const AutoFitText: React.FC<AutoFitTextProps> = ({
     setFit((current) => (
       current.fontSize === result.fontSize && current.fits === result.fits ? current : result
     ));
-  }, [baseFontSize]);
+  }, [baseFontSize, disableAutoFit]);
 
   useLayoutEffect(() => {
     const element = elementRef.current;

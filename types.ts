@@ -107,6 +107,7 @@ export interface Product {
   imageAlignment?: 'left' | 'center' | 'right';
   isFreeText?: boolean;
   customMarginTop?: number;
+  freeTextWidth?: number;
   styles?: ElementStyle;
   boundingBox?: BoundingBox;
   extractedImages?: ExtractedImage[];
@@ -137,6 +138,7 @@ export interface CategoryPosition {
   pageIndex: number;
   columnIndex: number;
   y: number;
+  x?: number;
 }
 
 export interface FloatingTextItem {

@@ -115,6 +115,9 @@ export const useMenuInteractions = (props: InteractionProps) => {
         isResizingCategoryColumns: columnResizeInteractions.isResizingCategoryColumns,
         columnResizeGuide: columnResizeInteractions.columnResizeGuide,
         startCategoryColumnResize: columnResizeInteractions.startCategoryColumnResize,
+        updateProduct: props.onUpdateProduct,
+        updateProducts: props.onUpdateProducts,
+        updateStyle: props.onStyleUpdate,
 
         // ...draggableInteractions
         dragScope: draggableInteractions.dragScope,

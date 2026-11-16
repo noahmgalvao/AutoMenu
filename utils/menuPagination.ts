@@ -21,6 +21,7 @@ export type PageItem =
     | { type: 'main-header' }
     | { type: 'category-header'; data: string; category: string }
     | { type: 'product-item'; data: Product; category: string }
+    | { type: 'free-text-row'; data: Product[]; category: string }
     | { type: 'product-row'; data: Product[]; category: string };
 
 export interface CategoryChunkLayout {
@@ -281,16 +282,9 @@ const buildCategoryProductItems = (
     isRowLayout: boolean,
     productColumnCount: number
 ): PageItem[] => {
-    if (!isRowLayout) {
-        return visibleProducts.map((product) => ({
-            type: 'product-item' as const,
-            data: product,
-            category,
-        }));
-    }
-
     const items: PageItem[] = [];
     let currentRow: Product[] = [];
+    let currentFreeTextRow: Product[] = [];
     const flushRow = () => {
         if (currentRow.length === 0) return;
         items.push({
@@ -300,23 +294,34 @@ const buildCategoryProductItems = (
         });
         currentRow = [];
     };
+    const flushFreeTextRow = () => {
+        if (currentFreeTextRow.length === 0) return;
+        items.push({
+            type: currentFreeTextRow.length === 1 ? 'product-item' : 'free-text-row',
+            data: currentFreeTextRow.length === 1 ? currentFreeTextRow[0] : currentFreeTextRow,
+            category,
+        } as PageItem);
+        currentFreeTextRow = [];
+    };
 
     visibleProducts.forEach((product) => {
         if (product.isFreeText) {
             flushRow();
-            items.push({
-                type: 'product-item',
-                data: product,
-                category,
-            });
+            currentFreeTextRow.push(product);
             return;
         }
 
+        flushFreeTextRow();
+        if (!isRowLayout) {
+            items.push({ type: 'product-item', data: product, category });
+            return;
+        }
         currentRow.push(product);
         if (currentRow.length >= productColumnCount) flushRow();
     });
 
     flushRow();
+    flushFreeTextRow();
     return items;
 };
 
@@ -350,6 +355,26 @@ const createPageItemHeightCalculator = (
             return Math.max(categoryFontSize * 1.25 * lines, imageHeight, 28) + spacing.categoryToProduct + 8;
         }
         if (item.type === 'product-item') return calculateItemHeight(item.data, style, false, 1, categoryColumnWidth, categoryColumnCount);
+        if (item.type === 'free-text-row') {
+            const horizontalGap = 8;
+            let rowWidth = 0;
+            let rowHeight = 0;
+            let totalHeight = 0;
+            (item.data as Product[]).forEach((product) => {
+                const fontSize = clampFontSize(style, 'freeText', product.styles?.fontSize, 18);
+                const estimatedNaturalWidth = Math.max(36, Math.min(categoryColumnWidth, (product.name.length * fontSize * 0.58) + 8));
+                const itemWidth = Math.max(36, Math.min(categoryColumnWidth, Number(product.freeTextWidth) || estimatedNaturalWidth));
+                const itemHeight = calculateItemHeight(product, style, false, 1, itemWidth, categoryColumnCount);
+                if (rowWidth > 0 && rowWidth + horizontalGap + itemWidth > categoryColumnWidth) {
+                    totalHeight += rowHeight + horizontalGap;
+                    rowWidth = 0;
+                    rowHeight = 0;
+                }
+                rowWidth += (rowWidth > 0 ? horizontalGap : 0) + itemWidth;
+                rowHeight = Math.max(rowHeight, itemHeight);
+            });
+            return totalHeight + rowHeight;
+        }
         if (item.type === 'product-row') {
             const rowHeight = Math.max(
                 ...(item.data as Product[]).map((product) => calculateItemHeight(product, style, true, productColumnCount, categoryColumnWidth, categoryColumnCount))

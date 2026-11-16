@@ -111,6 +111,11 @@ export const FontSelect: React.FC<{
   const lastTouchToggleRef = useRef(0);
   const resolvedValue = value || fallbackFontFamily || FONTS[0];
 
+  const dismissKeyboard = () => {
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement) activeElement.blur();
+  };
+
   useEffect(() => {
     const query = window.matchMedia('(hover: none), (pointer: coarse)');
     const sync = () => setIsTouchInput(query.matches);
@@ -123,7 +128,7 @@ export const FontSelect: React.FC<{
     event.preventDefault();
     event.stopPropagation();
     lastTouchToggleRef.current = Date.now();
-    selectRef.current?.blur?.();
+    dismissKeyboard();
     setMenuIsOpen((current) => !current);
   };
 
@@ -152,11 +157,11 @@ export const FontSelect: React.FC<{
   const MenuList = (menuProps: any) => {
     const hideKeyboard = () => {
       keepMenuOpenRef.current = true;
-      selectRef.current?.blur?.();
-      window.requestAnimationFrame(() => { keepMenuOpenRef.current = false; });
+      dismissKeyboard();
+      window.setTimeout(() => { keepMenuOpenRef.current = false; }, 120);
     };
     return (
-      <div onTouchMoveCapture={hideKeyboard} onScrollCapture={hideKeyboard}>
+      <div className="touch-pan-y" onTouchStartCapture={hideKeyboard}>
         <components.MenuList {...menuProps} />
       </div>
     );

@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { Product, MenuStyle } from '../types';
 import { ImagePlus, Minus, MoreHorizontal, Plus, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Edit3, CopyCheck } from 'lucide-react';
 import { FREE_TEXT_PREFIX } from '../utils/menuPagination';
@@ -92,6 +93,133 @@ const getResponsiveControlRenderedScale = (control: HTMLElement, axis: Responsiv
     const renderedSize = axis === 'x' ? rect.width : rect.height;
     const scale = layoutSize > 0 ? renderedSize / layoutSize : 1;
     return Number.isFinite(scale) && scale > 0 ? scale : 1;
+};
+
+const ProductImageToolbar = ({ productId, anchorId, handlers }: { productId: string; anchorId: string; handlers: any }) => {
+    const menuRef = React.useRef<HTMLDivElement>(null);
+    const [position, setPosition] = React.useState({ left: 8, top: 8 });
+
+    React.useLayoutEffect(() => {
+        const anchor = document.getElementById(anchorId);
+        const menu = menuRef.current;
+        if (!anchor || !menu) return;
+        const updatePosition = () => {
+            const anchorRect = anchor.getBoundingClientRect();
+            const menuRect = menu.getBoundingClientRect();
+            const left = Math.max(8, Math.min(window.innerWidth - menuRect.width - 8, anchorRect.left + (anchorRect.width - menuRect.width) / 2));
+            const top = anchorRect.top - menuRect.height - 8 >= 8
+                ? anchorRect.top - menuRect.height - 8
+                : Math.min(window.innerHeight - menuRect.height - 8, anchorRect.bottom + 8);
+            setPosition({ left, top: Math.max(8, top) });
+        };
+        updatePosition();
+        const observer = new ResizeObserver(updatePosition);
+        observer.observe(anchor);
+        observer.observe(menu);
+        window.addEventListener('resize', updatePosition);
+        window.addEventListener('scroll', updatePosition, true);
+        return () => {
+            observer.disconnect();
+            window.removeEventListener('resize', updatePosition);
+            window.removeEventListener('scroll', updatePosition, true);
+        };
+    }, [anchorId]);
+
+    return createPortal(
+        <div
+            ref={menuRef}
+            data-product-image-surface={productId}
+            data-drag-ignore="true"
+            className="fixed z-[10020] flex items-center gap-1 rounded-xl border border-slate-200 bg-white/95 p-1 shadow-xl backdrop-blur-sm"
+            style={position}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+        >
+            <button type="button" onClick={() => handlers.editProductImage?.(productId)} className="flex h-8 w-8 items-center justify-center rounded-lg text-indigo-600 hover:bg-indigo-50" title="Substituir imagem" aria-label="Substituir imagem"><ImagePlus size={16} /></button>
+            <button type="button" onClick={() => handlers.adjustProductImageScale?.(-0.1)} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100" title="Diminuir imagem" aria-label="Diminuir imagem"><Minus size={16} /></button>
+            <button type="button" onClick={() => handlers.adjustProductImageScale?.(0.1)} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100" title="Aumentar imagem" aria-label="Aumentar imagem"><Plus size={16} /></button>
+            <button type="button" onClick={() => handlers.removeProductImage?.(productId)} className="flex h-8 w-8 items-center justify-center rounded-lg text-red-600 hover:bg-red-50" title="Remover imagem" aria-label="Remover imagem"><Trash2 size={16} /></button>
+        </div>,
+        document.body,
+    );
+};
+
+const getRenderedScale = (element: HTMLElement) => {
+    const page = element.closest<HTMLElement>('[data-menu-print-page="true"]');
+    const rect = page?.getBoundingClientRect();
+    return page && rect?.width ? rect.width / Math.max(1, page.offsetWidth) : 1;
+};
+
+const getFreeTextContentWidth = (element: HTMLElement, maximumWidth: number) => {
+    const computed = window.getComputedStyle(element);
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) return Math.min(maximumWidth, Math.max(36, element.scrollWidth + 8));
+    context.font = `${computed.fontStyle} ${computed.fontWeight} ${computed.fontSize} ${computed.fontFamily}`;
+    const letterSpacing = Number.parseFloat(computed.letterSpacing) || 0;
+    const lines = element.innerText.split('\n');
+    const textWidth = Math.max(0, ...lines.map((line) => context.measureText(line || ' ').width + Math.max(0, line.length - 1) * letterSpacing));
+    return Math.min(maximumWidth, Math.max(36, Math.ceil(textWidth + 8)));
+};
+
+const FreeTextResizeHandles = ({ product, style, handlers }: { product: Product; style: MenuStyle; handlers: any }) => {
+    const startResize = (event: React.PointerEvent<HTMLButtonElement>, horizontalDirection: -1 | 1, verticalDirection: -1 | 1) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const container = document.getElementById(`product-container-${product.id}`);
+        const text = document.getElementById(`product-name-${product.id}`);
+        const column = container?.closest<HTMLElement>('[data-drag-column-container="category"]');
+        if (!container || !text || !column) return;
+        const scale = getRenderedScale(container);
+        const startX = event.clientX;
+        const startY = event.clientY;
+        const startWidth = container.getBoundingClientRect().width / scale;
+        const startFontSize = Number(product.styles?.fontSize) || Number.parseFloat(window.getComputedStyle(text).fontSize) / scale || 18;
+        const maxWidth = column.getBoundingClientRect().width / scale;
+        const minimumFontSize = resolveMinimumFontSize(style);
+        const maximumFontSize = resolveFontSizeLimits(style).freeText;
+        let nextWidth = startWidth;
+        let nextFontSize = startFontSize;
+
+        const handleMove = (moveEvent: PointerEvent) => {
+            if (moveEvent.cancelable) moveEvent.preventDefault();
+            const horizontalDelta = ((moveEvent.clientX - startX) * horizontalDirection) / scale;
+            const verticalDelta = ((moveEvent.clientY - startY) * verticalDirection) / scale;
+            const factor = Math.max(0.35, 1 + ((horizontalDelta + verticalDelta) / Math.max(48, startWidth * 2)));
+            nextWidth = Math.max(36, Math.min(maxWidth, Math.round(startWidth * factor)));
+            nextFontSize = Math.max(minimumFontSize, Math.min(maximumFontSize, Math.round(startFontSize * factor * 10) / 10));
+            container.style.width = `${nextWidth}px`;
+            text.style.fontSize = `${nextFontSize}px`;
+        };
+        const handleEnd = () => {
+            window.removeEventListener('pointermove', handleMove, true);
+            window.removeEventListener('pointerup', handleEnd, true);
+            window.removeEventListener('pointercancel', handleEnd, true);
+            const updates = [
+                { id: product.id, field: 'freeTextWidth' as keyof Product, value: nextWidth },
+                { id: product.id, field: 'styles' as keyof Product, value: { ...(product.styles || {}), fontSize: nextFontSize } },
+            ];
+            if (handlers.updateProducts) handlers.updateProducts(updates);
+            else updates.forEach((update) => handlers.updateProduct?.(update.id, update.field, update.value));
+        };
+        window.addEventListener('pointermove', handleMove, { capture: true, passive: false });
+        window.addEventListener('pointerup', handleEnd, true);
+        window.addEventListener('pointercancel', handleEnd, true);
+    };
+
+    return <>
+        {([[-1, -1, '-left-1.5 -top-1.5 cursor-nwse-resize'], [1, -1, '-right-1.5 -top-1.5 cursor-nesw-resize'], [-1, 1, '-bottom-1.5 -left-1.5 cursor-nesw-resize'], [1, 1, '-bottom-1.5 -right-1.5 cursor-nwse-resize']] as const).map(([x, y, position]) => (
+            <button
+                key={`${x}:${y}`}
+                type="button"
+                data-drag-ignore="true"
+                aria-label="Redimensionar texto"
+                title="Arraste para redimensionar"
+                className={`absolute z-[75] h-3 w-3 rounded-[3px] border border-white bg-indigo-500 shadow-sm ${position}`}
+                onPointerDown={(event) => startResize(event, x, y)}
+            />
+        ))}
+    </>;
 };
 
 const getResponsiveControlShift = (control: HTMLElement, axis: ResponsiveControlAxis) => {
@@ -380,6 +508,8 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
         return () => window.removeEventListener('menu-category-limit-reached', handleLimitReached);
     }, []);
 
+    if (isDragging) return null;
+
     const isLimitReached = shakingCategory === catName;
     const addControlClass = isLimitReached ? 'bg-red-500 animate-shake shadow-[0_0_10px_rgba(239,68,68,0.8)]' : 'bg-indigo-600 shadow-md hover:scale-110 hover:bg-indigo-700';
     const renderMoveButton = (direction: MoveDirection, enabled: boolean) => {
@@ -630,12 +760,22 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         formattingTarget?.type === type && formattingTarget?.id === id
             ? <InlineStyleToolbar
                 targetElementId={formattingTarget.elementId}
+                positionTargetElementId={type === 'product' ? `product-name-${id}` : undefined}
                 value={value || {}}
                 maxFontSize={getToolbarFontSizeLimit(type)}
                 minFontSize={minimumFontSize}
                 fallbackFontFamily={style.fontFamily}
                 onChange={(newStyle) => handlers.handleInlineStyleChange?.(formattingTarget, newStyle)}
                 onDismiss={() => handlers.setFormattingTarget?.(null)}
+                categoryDividerPreset={type === 'category' ? (style.categoryDividerStyles?.[id] || 'solid') : undefined}
+                categoryDividerColor={style.primaryColor}
+                onCategoryDividerChange={type === 'category'
+                    ? (preset) => handlers.updateStyle?.((previous: MenuStyle) => ({
+                        ...previous,
+                        categoryDividerStyles: { ...(previous.categoryDividerStyles || {}), [id]: preset },
+                        name: 'Custom',
+                    }))
+                    : undefined}
                 onAdjustPrice={type === 'product' && formattingTarget.field === 'price'
                     ? (direction: 1 | -1, amount: number, mode: PriceAdjustmentMode) => handlers.adjustProductPrice?.(id, direction, amount, mode)
                     : undefined}
@@ -644,17 +784,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
     );
     const renderProductImageControls = (product: Product, isEditing: boolean) => (
         isEditing && imageMenuProductId === product.id ? (
-            <div
-                data-product-image-surface={product.id}
-                className="absolute left-1/2 top-1/2 z-30 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-xl border border-slate-200 bg-white/95 p-1 shadow-xl backdrop-blur-sm"
-                onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); }}
-                onClick={(event) => event.stopPropagation()}
-            >
-                <button type="button" onClick={() => handlers.editProductImage?.(product.id)} className="flex h-8 w-8 items-center justify-center rounded-lg text-indigo-600 hover:bg-indigo-50" title="Substituir imagem" aria-label="Substituir imagem"><ImagePlus size={16} /></button>
-                <button type="button" onClick={() => handlers.adjustProductImageScale?.(-0.1)} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100" title="Diminuir imagem" aria-label="Diminuir imagem"><Minus size={16} /></button>
-                <button type="button" onClick={() => handlers.adjustProductImageScale?.(0.1)} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100" title="Aumentar imagem" aria-label="Aumentar imagem"><Plus size={16} /></button>
-                <button type="button" onClick={() => handlers.removeProductImage?.(product.id)} className="flex h-8 w-8 items-center justify-center rounded-lg text-red-600 hover:bg-red-50" title="Remover imagem" aria-label="Remover imagem"><Trash2 size={16} /></button>
-            </div>
+            <ProductImageToolbar productId={product.id} anchorId={`product-name-${product.id}`} handlers={handlers} />
         ) : null
     );
     
@@ -789,8 +919,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     }`}
                 />
                 {renderFormattingToolbar('category', item.data, catStyle)}
-            <ProductControls type="category" catName={item.data} isMobileSelected={isSelected} index={idx} total={0} isLastInBlock={false} canMoveUp={false} canMoveDown={false} canMoveLeft={false} canMoveRight={false} hideGeneralControls={false} handlers={handlers} onEdit={(e: React.MouseEvent) => handlers.startEditing(e, item.data, elementId, 'category')} isDragging={isBeingDragged} showSelectionOutline={false} showAddControls={false} compactControls={compactControls} showGridMoveControls={false}/>
-                <div className={`flex w-full max-w-full min-w-0 items-center gap-1 ${compactControls ? 'px-1' : 'px-2'} ${categoryAlign === 'center' ? 'justify-center' : categoryAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
+            <ProductControls type="category" catName={item.data} isMobileSelected={isSelected} index={idx} total={0} isLastInBlock={false} canMoveUp={false} canMoveDown={false} canMoveLeft={false} canMoveRight={false} hideGeneralControls={false} handlers={handlers} onEdit={(e: React.MouseEvent) => handlers.startEditing(e, item.data, elementId, 'category')} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showSelectionOutline={false} showAddControls={false} compactControls={compactControls} showGridMoveControls={false}/>
+                <div className={`flex w-full max-w-full min-w-0 items-center gap-[2px] ${compactControls ? 'px-1' : 'px-2'} ${categoryAlign === 'center' ? 'justify-center' : categoryAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
                     {(categoryAlign === 'center' || categoryAlign === 'right') && renderCategoryDivider('before')}
                     {style.showCategoryImages !== false && categoryImage?.url && (
                         <img
@@ -882,8 +1012,10 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     onContextMenu={(e) => handlers.openObjectMenu?.(e, { type: productSelectionType, id: product.id })} 
                     onClick={(e) => { e.stopPropagation(); if (handlers.editingId !== product.id) { handlers.handleSelection(productSelectionType, product.id, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey }); handlers.setSelectedPageIndex(null); } }}
                     onDoubleClick={(e) => e.stopPropagation()} 
-                    className={`automenu-drag-item relative group rounded-lg transition-all duration-200 pointer-events-auto p-2 ${isEditing ? 'select-text touch-auto cursor-text' : 'select-none touch-auto cursor-grab'} ${isSelected || isEditing ? 'z-[60]' : 'z-[1]'} ${inGroup ? 'ml-0 mb-0' : '-ml-2 mb-2 hover:bg-black/5'} ${isSelected && !isEditing ? 'bg-indigo-50/30' : ''} ${product.isFreeText ? 'transition-none' : ''}`}
+                    className={`automenu-drag-item relative group rounded-lg transition-all duration-200 pointer-events-auto ${product.isFreeText ? 'p-1' : 'p-2'} ${isEditing ? 'select-text touch-auto cursor-text' : 'select-none touch-auto cursor-grab'} ${isSelected || isEditing ? 'z-[60]' : 'z-[1]'} ${inGroup ? 'ml-0 mb-0' : '-ml-2 mb-2 hover:bg-black/5'} ${isSelected && !isEditing ? 'bg-indigo-50/30' : ''} ${product.isFreeText ? 'transition-none flex-none' : ''}`}
                     style={{
+                        width: product.isFreeText ? (product.freeTextWidth ? `${product.freeTextWidth}px` : 'fit-content') : undefined,
+                        maxWidth: product.isFreeText ? '100%' : undefined,
                         marginTop: customMarginTop,
                         marginBottom: isFreeTextGhost
                             ? -customMarginTop
@@ -901,6 +1033,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                         onResizeStart={handlers.startCategoryColumnResize}
                     />
                 )}
+                {product.isFreeText && isSelected && !handlers.isResizingCategoryColumns && (
+                    <FreeTextResizeHandles product={product} style={style} handlers={handlers} />
+                )}
                 {product.isFreeText
                     ? renderFormattingToolbar('freeText', product.id, product.styles || {})
                     : renderFormattingToolbar('product', product.id,
@@ -910,7 +1045,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 <div className={`transition-opacity duration-150 ${isBeingDragged && !product.isFreeText ? 'opacity-40' : ''}`}>
                 {product.isFreeText ? (
                     <div
-                        className="min-w-0 max-w-full leading-snug break-words [overflow-wrap:anywhere]"
+                        className="relative w-fit min-w-0 max-w-full leading-snug break-words [overflow-wrap:anywhere]"
                         style={{ textAlign: nameStyle.textAlign || 'left' }}
                     >
                             <AutoFitText
@@ -920,6 +1055,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             minimumFontSize={minimumFontSize}
                             allowSameWordBreak={allowSameWordBreak}
                             fitScope="freeText"
+                            disableAutoFit
                             containerSelector={`#product-container-${product.id}`}
                             showOverflowFeedback={isEditing}
                             id={`product-name-${product.id}`} data-product-edit-id={product.id} className={`whitespace-pre-wrap break-words [overflow-wrap:anywhere] outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
@@ -933,12 +1069,30 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 textTransform: nameStyle.textTransform,
                                 letterSpacing: nameStyle.letterSpacing ? `${nameStyle.letterSpacing}px` : undefined
                             }}
-                            contentEditable={isEditing} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'name')} onKeyDown={handlers.handleKeyDown} onFocus={(e) => clearDefaultTextOnFocus(e.currentTarget, ['Novo texto'])} onMouseDown={(e) => { if(!isEditing) e.preventDefault(); }} onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }}
+                            contentEditable={isEditing} suppressContentEditableWarning onBlur={(e) => {
+                                const container = document.getElementById(`product-container-${product.id}`);
+                                const pendingWidth = Number(container?.dataset.pendingFreeTextWidth);
+                                if (Number.isFinite(pendingWidth) && pendingWidth > 0) {
+                                    handlers.updateProduct?.(product.id, 'freeTextWidth', pendingWidth);
+                                    delete container?.dataset.pendingFreeTextWidth;
+                                }
+                                handlers.handleBlur(e, 'product', product.id, 'name');
+                            }} onKeyDown={handlers.handleKeyDown} onInput={(e) => {
+                                if (!isEditing) return;
+                                const container = document.getElementById(`product-container-${product.id}`);
+                                const column = container?.closest<HTMLElement>('[data-drag-column-container="category"]');
+                                if (!container || !column) return;
+                                const scale = getRenderedScale(container);
+                                const maximumWidth = column.getBoundingClientRect().width / scale;
+                                const nextWidth = getFreeTextContentWidth(e.currentTarget, maximumWidth);
+                                container.style.width = `${nextWidth}px`;
+                                container.dataset.pendingFreeTextWidth = String(nextWidth);
+                            }} onFocus={(e) => clearDefaultTextOnFocus(e.currentTarget, ['Novo texto'])} onMouseDown={(e) => { if(!isEditing) e.preventDefault(); }} onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }}
                             />
                             <button
                                 data-product-edit-id={product.id}
                                 onClick={(e) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'freeText')}
-                                className={`relative ml-2 inline-flex align-middle ${selectionLayerClasses.controls} ${compactControls ? 'p-2.5 md:p-1.5' : 'p-3 md:p-2'} bg-white border border-slate-200 shadow-sm rounded-md text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all ${isSelected || handlers.editingId === product.id ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'}`}
+                                className={`absolute left-full top-1/2 ml-2 -translate-y-1/2 inline-flex align-middle ${selectionLayerClasses.controls} ${compactControls ? 'p-2.5 md:p-1.5' : 'p-3 md:p-2'} bg-white border border-slate-200 shadow-sm rounded-md text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all ${isSelected || handlers.editingId === product.id ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'}`}
                                 onPointerDown={(e) => e.stopPropagation()}
                                 title="Editar texto"
                             >
@@ -1061,6 +1215,26 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 )}
                 </div>
                 </div>
+        );
+    }
+
+    if (item.type === 'free-text-row') {
+        return (
+            <div className="flex min-w-0 max-w-full flex-wrap items-start gap-2 pointer-events-none">
+                {(item.data as Product[]).map((product) => (
+                    <MenuItem
+                        key={product.id}
+                        item={{ type: 'product-item', data: product, category: item.category }}
+                        idx={idx}
+                        style={style}
+                        handlers={handlers}
+                        products={products}
+                        inGroup={true}
+                        columnIndex={columnIndex}
+                        categoryColumnCount={renderedCategoryColumnCount}
+                    />
+                ))}
+            </div>
         );
     }
 

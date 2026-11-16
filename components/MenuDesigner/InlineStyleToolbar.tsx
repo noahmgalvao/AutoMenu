@@ -5,9 +5,12 @@ import { ElementStyle } from '../../types';
 import { FontSelect } from './SearchableSelects';
 import { FontSizeInput } from './FontSizeInput';
 import type { PriceAdjustmentMode } from '../../utils/pricePropagation';
+import type { CategoryDividerStyle } from '../../types';
+import { CategoryDividerPicker } from './CategoryDividerPicker';
 
 interface InlineStyleToolbarProps {
     targetElementId: string;
+    positionTargetElementId?: string;
     value: ElementStyle;
     onChange: (style: ElementStyle) => void | boolean;
     onDismiss: () => void;
@@ -18,9 +21,12 @@ interface InlineStyleToolbarProps {
     compact?: boolean;
     onAdjustPrice?: (direction: 1 | -1, amount: number, mode: PriceAdjustmentMode) => void;
     fallbackFontFamily?: string;
+    categoryDividerPreset?: CategoryDividerStyle;
+    categoryDividerColor?: string;
+    onCategoryDividerChange?: (preset: CategoryDividerStyle) => void;
 }
 
-export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, value, onChange, onDismiss, controls = 'all', maxFontSize, minFontSize, header, compact = false, onAdjustPrice, fallbackFontFamily }) => {
+export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, positionTargetElementId, value, onChange, onDismiss, controls = 'all', maxFontSize, minFontSize, header, compact = false, onAdjustPrice, fallbackFontFamily, categoryDividerPreset, categoryDividerColor = '#000000', onCategoryDividerChange }) => {
     const toolbarRef = useRef<HTMLDivElement>(null);
     const [position, setPosition] = useState({ left: 8, top: 8, width: 270 });
     const [priceAdjustment, setPriceAdjustment] = useState('10');
@@ -49,13 +55,13 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
     }, [onDismiss]);
 
     useLayoutEffect(() => {
-        const target = document.getElementById(targetElementId);
+        const target = document.getElementById(positionTargetElementId || targetElementId);
         if (!target) return;
 
         const updatePosition = () => {
             const targetRect = target.getBoundingClientRect();
             const toolbarHeight = toolbarRef.current?.getBoundingClientRect().height || 76;
-            const preferredWidth = hasHeader ? (compact ? 148 : 210) : isSizeColorOnly ? 120 : hasPriceAdjustment ? 300 : 270;
+            const preferredWidth = hasHeader ? (compact ? 148 : 210) : isSizeColorOnly ? 120 : hasPriceAdjustment || onCategoryDividerChange ? 300 : 270;
             const minimumWidth = hasHeader ? (compact ? 144 : 190) : isSizeColorOnly ? 120 : 210;
             const width = Math.min(preferredWidth, Math.max(minimumWidth, window.innerWidth - 16));
             const left = Math.max(8, Math.min(window.innerWidth - width - 8, targetRect.left + (targetRect.width / 2) - (width / 2)));
@@ -77,7 +83,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
             window.removeEventListener('resize', updatePosition);
             window.removeEventListener('scroll', updatePosition, true);
         };
-    }, [compact, hasHeader, hasPriceAdjustment, isSizeColorOnly, targetElementId]);
+    }, [compact, hasHeader, hasPriceAdjustment, isSizeColorOnly, onCategoryDividerChange, positionTargetElementId, targetElementId]);
 
     const parsedPriceAdjustment = Number(priceAdjustment);
     const canAdjustPrice = Number.isFinite(parsedPriceAdjustment) && parsedPriceAdjustment > 0;
@@ -160,6 +166,15 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                     >
                         <Underline size={14} />
                     </button>
+                </div>
+            )}
+            {onCategoryDividerChange && categoryDividerPreset && (
+                <div className="mt-2 border-t border-slate-100 pt-2">
+                    <CategoryDividerPicker
+                        value={categoryDividerPreset}
+                        color={categoryDividerColor}
+                        onChange={onCategoryDividerChange}
+                    />
                 </div>
             )}
             {onAdjustPrice && (

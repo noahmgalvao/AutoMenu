@@ -350,6 +350,10 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         if (!objectMenu) return;
 
         const closeMenuIfOutside = (event: PointerEvent | MouseEvent) => {
+            if (event.type === 'contextmenu' && lastPreviewPointerTypeRef.current === 'touch') {
+                event.preventDefault();
+                return;
+            }
             const target = event.target as Node | null;
             if (target && objectMenuRef.current?.contains(target)) return;
             setObjectMenu(null);
@@ -1965,7 +1969,6 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             && !touchStartedOnObjectMenuButtonRef.current
             && Date.now() < suppressTouchObjectMenuUntilRef.current;
         if ((event.type === 'contextmenu' && lastPreviewPointerTypeRef.current === 'touch') || shouldSuppressTouchMenu) {
-            setObjectMenu(null);
             return;
         }
         if (handlers.draggedItem || handlers.draggedImageId) {

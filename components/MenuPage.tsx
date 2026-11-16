@@ -28,18 +28,20 @@ const getCategoryMoveDirection = (direction: FlowDirection) => {
 const PositionedCategoryChunk: React.FC<
     React.HTMLAttributes<HTMLDivElement> & {
         desiredPageY?: number;
+        desiredPageX?: number;
         flowOffsetBefore?: number;
         detachedForDrag?: boolean;
         detachedFromFlow?: boolean;
         pageIndex: number;
         layoutKey: string;
     }
-> = ({ desiredPageY, flowOffsetBefore = 0, detachedForDrag = false, detachedFromFlow = false, pageIndex, layoutKey, style, children, ...props }) => {
+> = ({ desiredPageY, desiredPageX, flowOffsetBefore = 0, detachedForDrag = false, detachedFromFlow = false, pageIndex, layoutKey, style, children, ...props }) => {
     const elementRef = React.useRef<HTMLDivElement>(null);
     const placeholderRef = React.useRef<HTMLDivElement>(null);
     const marginTopRef = React.useRef(Math.max(0, flowOffsetBefore));
     const [flowMarginTop, setFlowMarginTop] = React.useState(Math.max(0, flowOffsetBefore));
     const [resolvedTop, setResolvedTop] = React.useState(0);
+    const [resolvedLeft, setResolvedLeft] = React.useState(0);
     const [placeholderHeight, setPlaceholderHeight] = React.useState(0);
 
     React.useLayoutEffect(() => {
@@ -50,6 +52,7 @@ const PositionedCategoryChunk: React.FC<
             marginTopRef.current = 0;
             setFlowMarginTop(0);
             setResolvedTop(0);
+            setResolvedLeft(0);
             setPlaceholderHeight(0);
             return;
         }
@@ -73,6 +76,9 @@ const PositionedCategoryChunk: React.FC<
                 setFlowMarginTop(0);
                 setPlaceholderHeight(0);
                 setResolvedTop(Math.max(0, (requestedTop - columnRect.top) / scale));
+                const requestedLeft = columnRect.left + ((Number(desiredPageX) || 0) * scale);
+                const maximumLeft = Math.max(0, (columnRect.width - elementRect.width) / scale);
+                setResolvedLeft(Math.max(0, Math.min(maximumLeft, (requestedLeft - columnRect.left) / scale)));
                 return;
             }
 
@@ -116,7 +122,7 @@ const PositionedCategoryChunk: React.FC<
             window.removeEventListener('resize', scheduleUpdate);
             if (animationFrame !== null) cancelAnimationFrame(animationFrame);
         };
-    }, [desiredPageY, detachedFromFlow, flowOffsetBefore, layoutKey, pageIndex]);
+    }, [desiredPageX, desiredPageY, detachedFromFlow, flowOffsetBefore, layoutKey, pageIndex]);
 
     const isFreePositioned = Number.isFinite(desiredPageY);
 
@@ -144,9 +150,10 @@ const PositionedCategoryChunk: React.FC<
                         ? {
                             position: 'absolute',
                             top: `${resolvedTop}px`,
-                            left: 0,
-                            right: 0,
-                            width: '100%',
+                            left: detachedFromFlow ? `${resolvedLeft}px` : 0,
+                            right: detachedFromFlow ? 'auto' : 0,
+                            width: detachedFromFlow ? 'max-content' : '100%',
+                            maxWidth: '100%',
                             zIndex: detachedForDrag ? 40 : undefined,
                         }
                         : {}),
@@ -290,6 +297,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
             <PositionedCategoryChunk
                 key={chunk.chunkId}
                 desiredPageY={desiredPageY}
+                desiredPageX={isFreeTextTarget ? categoryPosition?.x : undefined}
                 flowOffsetBefore={chunk.flowOffsetBefore}
                 detachedForDrag={isCategoryDragged}
                 detachedFromFlow={isFreeTextTarget}
@@ -313,7 +321,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         onResizeStart={handlers.startCategoryColumnResize}
                     />
                 )}
-                {isCategorySelected && isCategoryControlAnchor && !isCategoryDragged && (
+                {isCategorySelected && isCategoryControlAnchor && !isCategoryDragged && !handlers.isResizingCategoryColumns && (
                     <>
                         {categoryAddControls.top && (
                             <ResponsiveMoveButton
@@ -367,6 +375,8 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         <MenuItem
                             key={item.type === 'product-item'
                                 ? `product-${item.data.id}`
+                                : item.type === 'free-text-row'
+                                    ? `free-text-row-${chunk.category}-${idx}`
                                 : item.type === 'category-header'
                                     ? `category-${item.data}`
                                     : item.type === 'product-row'
@@ -406,6 +416,33 @@ export const MenuPage: React.FC<MenuPageProps> = ({
 
         const columnCount = renderedColumnCount;
         const columns = page.columns;
+        const renderColumnChunks = (chunks: CategoryChunkLayout[]) => {
+            const rendered: React.ReactNode[] = [];
+            let looseFreeTexts: CategoryChunkLayout[] = [];
+            const flushLooseFreeTexts = () => {
+                if (looseFreeTexts.length === 0) return;
+                const row = looseFreeTexts;
+                looseFreeTexts = [];
+                rendered.push(
+                    <div key={`free-text-flow-${row.map((chunk) => chunk.chunkId).join('-')}`} className="flex min-w-0 flex-wrap items-start gap-2">
+                        {row.map(renderChunk)}
+                    </div>
+                );
+            };
+            chunks.forEach((chunk) => {
+                const effectivePositions = handlers.liveCategoryPositions ?? style.categoryPositions;
+                const isLooseFreeText = chunk.category.startsWith(FREE_TEXT_PREFIX)
+                    && !effectivePositions?.[chunk.category];
+                if (isLooseFreeText) {
+                    looseFreeTexts.push(chunk);
+                    return;
+                }
+                flushLooseFreeTexts();
+                rendered.push(renderChunk(chunk));
+            });
+            flushLooseFreeTexts();
+            return rendered;
+        };
 
         elements.push(
             <div
@@ -429,7 +466,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         onDragOver={(e) => handlers.handleDragOverItem?.(e)}
                         className="relative min-w-0 min-h-full flex flex-col gap-4"
                     >
-                        {column.chunks.map(renderChunk)}
+                        {renderColumnChunks(column.chunks)}
                     </div>
                 ))}
             </div>

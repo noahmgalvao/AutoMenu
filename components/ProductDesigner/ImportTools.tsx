@@ -40,8 +40,8 @@ export const ImportTools: React.FC<ImportToolsProps> = ({
         Importar foto com IA
       </button>
 
-      <div className="grid grid-cols-[minmax(0,1fr)_5.75rem] grid-rows-[2.25rem_2.25rem_2.25rem] gap-2">
-        <div className="row-span-3 flex min-w-0 flex-col rounded-xl bg-white p-2.5 shadow-sm ring-1 ring-slate-200">
+      <div className="grid grid-cols-[minmax(0,1fr)_5.75rem] grid-rows-[2.375rem_2.375rem_2.375rem] gap-2">
+        <div className="row-span-3 flex min-w-0 flex-col rounded-xl bg-white px-2.5 pb-3 pt-2.5 shadow-sm ring-1 ring-slate-200">
           <div className="mb-1 text-[9px] font-bold uppercase tracking-wide text-slate-400">Alterar preços</div>
           <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-1.5 rounded-lg bg-slate-50 px-2">
             <input 
@@ -75,7 +75,7 @@ export const ImportTools: React.FC<ImportToolsProps> = ({
         </div>
         <button
           onClick={() => setShowInsights(true)}
-          className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-semibold text-slate-600 transition hover:border-indigo-200 hover:text-indigo-600 flex items-center justify-center gap-1.5"
+          className="h-full w-full rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-semibold text-slate-600 transition hover:border-indigo-200 hover:text-indigo-600 flex items-center justify-center gap-1.5"
           title="Análises"
         >
           <BarChart size={18} />
@@ -84,7 +84,7 @@ export const ImportTools: React.FC<ImportToolsProps> = ({
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); setMultiSelectMode?.(!multiSelectMode); }}
-          className={`h-9 rounded-lg border flex items-center justify-center gap-1.5 px-2 text-[10px] font-semibold transition-colors ${multiSelectMode ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-100'}`}
+          className={`h-full rounded-lg border flex items-center justify-center gap-1.5 px-2 text-[10px] font-semibold transition-colors ${multiSelectMode ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-100'}`}
           title="Seleção múltipla"
         >
           <CopyCheck size={15} />
@@ -93,7 +93,7 @@ export const ImportTools: React.FC<ImportToolsProps> = ({
         <button
           type="button"
           onClick={onImportProducts}
-          className="h-9 rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 hover:text-indigo-600 flex items-center justify-center gap-1.5 px-2 text-[10px] font-semibold transition-colors"
+          className="h-full rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 hover:text-indigo-600 flex items-center justify-center gap-1.5 px-2 text-[10px] font-semibold transition-colors"
           title="Importar produtos de outro cardápio"
         >
           <CopyPlus size={15} />

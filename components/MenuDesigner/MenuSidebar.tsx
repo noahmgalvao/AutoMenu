@@ -110,6 +110,7 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
             fontSizeLimits={fontSizeLimits}
             minimumFontSize={minimumFontSize}
             fontFamily={style.fontFamily}
+            style={style}
             setStyle={setStyle}
             updateFreeTextStyle={updateFreeTextStyle}
             updateGlobalElementStyle={updateGlobalElementStyle}

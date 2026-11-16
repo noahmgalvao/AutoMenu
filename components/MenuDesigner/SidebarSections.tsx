@@ -6,6 +6,7 @@ import { resolveFontSizeLimits, resolveMenuContentSpacing, resolveMenuMargins, r
 import { normalizeMenuPageSetup, resolveMenuPageDimensions } from '../../utils/pageSetup';
 import { StyleControls } from './StyleControls';
 import { FontSelect, MiniFoodTextureSelect, TemplateSelect, TextureSelect } from './SearchableSelects';
+import { CategoryDividerPicker } from './CategoryDividerPicker';
 import { 
   Type, ImagePlus, Minus, Plus, LayoutTemplate, 
   Layout, List, Maximize, Palette, ArrowUpAZ, SortAsc, SortDesc, BringToFront, SendToBack, SlidersHorizontal,
@@ -22,6 +23,7 @@ interface ElementsSectionProps {
   fontSizeLimits: ReturnType<typeof resolveFontSizeLimits>;
   minimumFontSize: number;
   fontFamily: string;
+  style: MenuStyle;
   setStyle: React.Dispatch<React.SetStateAction<MenuStyle>>;
   updateFreeTextStyle: (id: string, newStyle: ElementStyle) => void | boolean;
   updateGlobalElementStyle: (elementType: keyof MenuStyle['elementStyles'], newStyle: ElementStyle) => void | boolean;
@@ -42,6 +44,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
   fontSizeLimits,
   minimumFontSize,
   fontFamily,
+  style,
   setStyle,
   updateFreeTextStyle,
   updateGlobalElementStyle,
@@ -162,14 +165,27 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
         ) : (
             <div className="space-y-4 animate-fade-in">
                 {(selection.type === 'category' || !selection.type) && safeStyles.category && (
-                <StyleControls 
-                    label="Titulos das categorias"
-                    value={safeStyles.category}
-                    onChange={(s) => updateGlobalElementStyle('category', s)}
-                    maxFontSize={fontSizeLimits.category}
-                    minFontSize={minimumFontSize}
-                    fallbackFontFamily={fontFamily}
-                />
+                <>
+                    <StyleControls 
+                        label="Titulos das categorias"
+                        value={safeStyles.category}
+                        onChange={(s) => updateGlobalElementStyle('category', s)}
+                        maxFontSize={fontSizeLimits.category}
+                        minFontSize={minimumFontSize}
+                        fallbackFontFamily={fontFamily}
+                    />
+                    {selection.type === 'category' && selection.id && (
+                        <CategoryDividerPicker
+                            value={style.categoryDividerStyles?.[selection.id] || 'solid'}
+                            color={style.primaryColor}
+                            onChange={(preset) => setStyle((previous) => ({
+                                ...previous,
+                                categoryDividerStyles: { ...(previous.categoryDividerStyles || {}), [selection.id!]: preset },
+                                name: 'Custom',
+                            }))}
+                        />
+                    )}
+                </>
                 )}
                 
                 {(selection.type === 'product' || !selection.type) && (
