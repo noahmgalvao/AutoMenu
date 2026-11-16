@@ -250,7 +250,7 @@ export const MobileProductEditorModal: React.FC<MobileProductEditorModalProps> =
         ) : (
           <>
         <div className="grid grid-cols-[minmax(0,1fr)_4rem_2.25rem] gap-1.5">
-          <FontSelect value={currentStyle.fontFamily || ''} includeInherit placeholder="Fonte..." onChange={(font) => onStyleChange(formattingField, { ...currentStyle, fontFamily: font || undefined }, referenceProductId || productIds[0])} />
+          <FontSelect value={currentStyle.fontFamily || style.fontFamily} fallbackFontFamily={style.fontFamily} placeholder="Fonte..." onChange={(font) => onStyleChange(formattingField, { ...currentStyle, fontFamily: font }, referenceProductId || productIds[0])} />
           <FontSizeInput value={currentStyle.fontSize} onChange={(fontSize) => onStyleChange(formattingField, { ...currentStyle, fontSize }, referenceProductId || productIds[0])} className="!w-16" />
           <div className="relative h-9 w-9 overflow-hidden rounded-lg border border-slate-200">
             <input type="color" className="absolute -left-4 -top-4 h-[200%] w-[200%]" value={currentStyle.color || '#000000'} onChange={(event) => onStyleChange(formattingField, { ...currentStyle, color: event.target.value }, referenceProductId || productIds[0])} />

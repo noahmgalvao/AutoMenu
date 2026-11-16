@@ -21,6 +21,7 @@ interface ElementsSectionProps {
   safeStyles: MenuStyle['elementStyles'];
   fontSizeLimits: ReturnType<typeof resolveFontSizeLimits>;
   minimumFontSize: number;
+  fontFamily: string;
   setStyle: React.Dispatch<React.SetStateAction<MenuStyle>>;
   updateFreeTextStyle: (id: string, newStyle: ElementStyle) => void | boolean;
   updateGlobalElementStyle: (elementType: keyof MenuStyle['elementStyles'], newStyle: ElementStyle) => void | boolean;
@@ -40,6 +41,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
   safeStyles,
   fontSizeLimits,
   minimumFontSize,
+  fontFamily,
   setStyle,
   updateFreeTextStyle,
   updateGlobalElementStyle,
@@ -85,6 +87,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                     onChange={(s) => updateGlobalElementStyle('menuTitle', s)}
                     maxFontSize={fontSizeLimits.menuTitle}
                     minFontSize={minimumFontSize}
+                    fallbackFontFamily={fontFamily}
                 />
             </div>
         ) : selection.type === 'menuSubtitle' ? (
@@ -95,6 +98,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                     onChange={(s) => updateGlobalElementStyle('menuSubtitle', s)}
                     maxFontSize={fontSizeLimits.menuSubtitle}
                     minFontSize={minimumFontSize}
+                    fallbackFontFamily={fontFamily}
                 />
             </div>
         ) : selection.type === 'freeText' && selectedFreeText ? (
@@ -106,6 +110,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                 onChange={(newStyle) => updateFreeTextStyle(selectedFreeText.id, newStyle)}
                 maxFontSize={fontSizeLimits.freeText}
                 minFontSize={minimumFontSize}
+                fallbackFontFamily={fontFamily}
                 />
             </div>
         ) : selection.type === 'addedImage' && selectedAddedImage ? (
@@ -163,6 +168,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                     onChange={(s) => updateGlobalElementStyle('category', s)}
                     maxFontSize={fontSizeLimits.category}
                     minFontSize={minimumFontSize}
+                    fallbackFontFamily={fontFamily}
                 />
                 )}
                 
@@ -174,6 +180,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                         onChange={(s) => updateGlobalElementStyle('productName', s)}
                     maxFontSize={fontSizeLimits.productName}
                     minFontSize={minimumFontSize}
+                    fallbackFontFamily={fontFamily}
                     />}
                     {safeStyles.productPrice && <StyleControls 
                         label="Preços dos produtos"
@@ -181,6 +188,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                         onChange={(s) => updateGlobalElementStyle('productPrice', s)}
                     maxFontSize={fontSizeLimits.productPrice}
                     minFontSize={minimumFontSize}
+                    fallbackFontFamily={fontFamily}
                     />}
                     {safeStyles.productDescription && <StyleControls 
                         label="Descricoes dos produtos"
@@ -188,6 +196,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                         onChange={(s) => updateGlobalElementStyle('productDescription', s)}
                     maxFontSize={fontSizeLimits.productDescription}
                     minFontSize={minimumFontSize}
+                    fallbackFontFamily={fontFamily}
                     />}
                     </>
                 )}

@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import Select from 'react-select';
+import React, { useEffect, useRef, useState } from 'react';
+import Select, { components } from 'react-select';
 import type { SingleValue, StylesConfig } from 'react-select';
 import type { MenuStyle } from '../../types';
 import {
@@ -100,27 +100,88 @@ const getTexturePreviewStyle = (url: string, showMiniFoodIcon: boolean): React.C
 export const FontSelect: React.FC<{
   value?: string;
   onChange: (font: string) => void;
-  includeInherit?: boolean;
+  fallbackFontFamily?: string;
   placeholder?: string;
-}> = ({ value, onChange, includeInherit = false, placeholder = 'Buscar fonte...' }) => {
+}> = ({ value, onChange, fallbackFontFamily, placeholder = 'Buscar fonte...' }) => {
   useFontLibrary();
-  const options = includeInherit
-    ? [{ value: '', label: 'Herdar fonte' }, ...fontOptions]
-    : fontOptions;
+  const [isTouchInput, setIsTouchInput] = useState(false);
+  const [menuIsOpen, setMenuIsOpen] = useState(false);
+  const selectRef = useRef<any>(null);
+  const keepMenuOpenRef = useRef(false);
+  const lastTouchToggleRef = useRef(0);
+  const resolvedValue = value || fallbackFontFamily || FONTS[0];
+
+  useEffect(() => {
+    const query = window.matchMedia('(hover: none), (pointer: coarse)');
+    const sync = () => setIsTouchInput(query.matches);
+    sync();
+    query.addEventListener('change', sync);
+    return () => query.removeEventListener('change', sync);
+  }, []);
+
+  const toggleFromIndicator = (event: React.SyntheticEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    lastTouchToggleRef.current = Date.now();
+    selectRef.current?.blur?.();
+    setMenuIsOpen((current) => !current);
+  };
+
+  const DropdownIndicator = (indicatorProps: any) => {
+    if (!isTouchInput) return <components.DropdownIndicator {...indicatorProps} />;
+    const innerProps = indicatorProps.innerProps || {};
+    return (
+      <components.DropdownIndicator
+        {...indicatorProps}
+        innerProps={{
+          ...innerProps,
+          onPointerDown: (event: React.PointerEvent) => toggleFromIndicator(event),
+          onMouseDown: (event: React.MouseEvent) => {
+            if (Date.now() - lastTouchToggleRef.current < 500) {
+              event.preventDefault();
+              event.stopPropagation();
+              return;
+            }
+            toggleFromIndicator(event);
+          },
+        }}
+      />
+    );
+  };
+
+  const MenuList = (menuProps: any) => {
+    const hideKeyboard = () => {
+      keepMenuOpenRef.current = true;
+      selectRef.current?.blur?.();
+      window.requestAnimationFrame(() => { keepMenuOpenRef.current = false; });
+    };
+    return (
+      <div onTouchMoveCapture={hideKeyboard} onScrollCapture={hideKeyboard}>
+        <components.MenuList {...menuProps} />
+      </div>
+    );
+  };
 
   return (
+    <div className="automenu-font-select">
     <Select
-      value={options.find((option) => option.value === (value || '')) || null}
+      ref={selectRef}
+      value={fontOptions.find((option) => option.value === resolvedValue) || { value: resolvedValue, label: resolvedValue }}
       onChange={(option: SingleValue<SelectOption>) => onChange(option?.value || '')}
-      options={options}
+      options={fontOptions}
       placeholder={placeholder}
       styles={selectStyles}
       isSearchable
+      menuIsOpen={menuIsOpen}
+      onMenuOpen={() => setMenuIsOpen(true)}
+      onMenuClose={() => { if (!keepMenuOpenRef.current) setMenuIsOpen(false); }}
+      components={{ DropdownIndicator, MenuList }}
       noOptionsMessage={() => 'Nenhuma fonte encontrada'}
       formatOptionLabel={(option) => (
-        <span style={{ fontFamily: option.value || undefined }}>{option.label}</span>
+        <span style={{ fontFamily: option.value }}>{option.label}</span>
       )}
     />
+    </div>
   );
 };
 

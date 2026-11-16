@@ -18,6 +18,8 @@ import {
 import { roundPrice } from '../utils/price';
 import { resolveMenuPageDimensions } from '../utils/pageSetup';
 import { optimizeImageForUpload, preloadImage } from '../utils/imageUpload';
+import { FontPropagationPrompt, type FontPropagationRequest } from './FontPropagationPrompt';
+import { applyFontToFreeTexts, applyFontToMenuStyle, getConfiguredCanvasFonts } from '../utils/fontPropagation';
 
 const PrintCanvasModal = React.lazy(() => import('./MenuDesigner/PrintCanvasModal').then((module) => ({
     default: module.PrintCanvasModal,
@@ -188,6 +190,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const [printPreviewError, setPrintPreviewError] = useState<string | null>(null);
     const [tipsOpen, setTipsOpen] = useState(false);
     const [fontTips, setFontTips] = useState<FontTip[]>([]);
+    const [pendingFontPropagation, setPendingFontPropagation] = useState<FontPropagationRequest | null>(null);
     const [layoutDiagnostics, setLayoutDiagnostics] = useState<LayoutDiagnostics>(EMPTY_LAYOUT_DIAGNOSTICS);
     const [dismissedTips, setDismissedTips] = useState<Set<string>>(() => new Set());
     const [hoveredFontScope, setHoveredFontScope] = useState<WordFitScope | null>(null);
@@ -265,7 +268,9 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const showOffCanvasTip = offCanvasIssueCount > 0 && !dismissedTips.has('off-canvas-elements');
     const showPositionedCategoryTip = (positionedCategoryIds.length > 0 || layoutDiagnostics.hasColumnGap)
         && !dismissedTips.has('free-categories');
-    const hasVisibleTips = visibleFontTips.length > 0 || showOverlapTip || showOffCanvasTip || showPositionedCategoryTip;
+    const configuredCanvasFonts = getConfiguredCanvasFonts(style, products);
+    const showMixedFontTip = configuredCanvasFonts.length > 1 && !dismissedTips.has('mixed-fonts');
+    const hasVisibleTips = visibleFontTips.length > 0 || showMixedFontTip || showOverlapTip || showOffCanvasTip || showPositionedCategoryTip;
 
     useEffect(() => {
         const mediaQuery = window.matchMedia('(min-width: 768px)');
@@ -501,6 +506,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
     useEffect(() => {
         const activeKeys = new Set(fontTips.map(tip => `font:${tip.scope}`));
+        if (configuredCanvasFonts.length > 1) activeKeys.add('mixed-fonts');
         if (positionedCategoryIds.length > 0) activeKeys.add('free-categories');
         if (layoutDiagnostics.hasColumnGap) activeKeys.add('free-categories');
         if (overlapIssueCount > 0) activeKeys.add('overlapping-elements');
@@ -509,7 +515,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             const next = new Set(Array.from(current).filter(key => activeKeys.has(key)));
             return next.size === current.size ? current : next;
         });
-    }, [fontTips, layoutDiagnostics.hasColumnGap, offCanvasIssueCount, overlapIssueCount, positionedCategorySignature]);
+    }, [configuredCanvasFonts.length, fontTips, layoutDiagnostics.hasColumnGap, offCanvasIssueCount, overlapIssueCount, positionedCategorySignature]);
 
     useEffect(() => {
         const root = containerRef.current;
@@ -1060,6 +1066,11 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 categoryPositions[newName] = categoryPositions[oldName];
                 delete categoryPositions[oldName];
             }
+            const categoryDividerStyles = { ...(prev.categoryDividerStyles || {}) };
+            if (categoryDividerStyles[oldName]) {
+                categoryDividerStyles[newName] = categoryDividerStyles[oldName];
+                delete categoryDividerStyles[oldName];
+            }
 
             return {
                 ...prev,
@@ -1067,6 +1078,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 customProductOrder,
                 categoryPlacements,
                 categoryPositions,
+                categoryDividerStyles,
                 name: 'Custom',
             };
         });
@@ -1604,11 +1616,27 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         const fontSizeReduced = Number(newStyle.fontSize) > 0
             && Number(currentProduct?.styles?.fontSize) > 0
             && Number(newStyle.fontSize) < Number(currentProduct?.styles?.fontSize);
+        const previousFontFamily = currentProduct?.styles?.fontFamily || style.fontFamily;
         setProducts(prev => prev.map(product => product.id === id ? { ...product, styles: newStyle } : product));
+        if (newStyle.fontFamily && newStyle.fontFamily !== previousFontFamily) {
+            setPendingFontPropagation({ sourceId: id, fontFamily: newStyle.fontFamily });
+        }
         if (fontSizeReduced) {
             setStyle(currentStyle => ({ ...currentStyle, pageBreaks: [] }));
         }
         return true;
+    };
+
+    const applyPendingFontPropagation = () => {
+        if (!pendingFontPropagation) return;
+        const nextStyle = applyFontToMenuStyle(style, pendingFontPropagation.fontFamily);
+        const nextProducts = applyFontToFreeTexts(products, pendingFontPropagation.fontFamily);
+        if (setProductsAndStyle) setProductsAndStyle(nextProducts, nextStyle, 'Fonte aplicada a todos os objetos');
+        else {
+            setProducts?.(nextProducts);
+            setStyle(nextStyle);
+        }
+        setPendingFontPropagation(null);
     };
 
     const handleAddedImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1814,10 +1842,26 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         });
     };
 
+    const applyMixedFontSuggestion = () => {
+        const nextStyle = applyFontToMenuStyle(style, style.fontFamily);
+        const nextProducts = applyFontToFreeTexts(products, style.fontFamily);
+        if (setProductsAndStyle) setProductsAndStyle(nextProducts, nextStyle, 'Fonte principal aplicada a todos os objetos');
+        else {
+            setProducts?.(nextProducts);
+            setStyle(nextStyle);
+        }
+        setTipsOpen(false);
+    };
+
     const applyAllSuggestions = () => {
         let nextProducts = products;
         let nextStyle = style;
         const appliedFontScopes = new Set<WordFitScope>();
+
+        if (showMixedFontTip) {
+            nextStyle = applyFontToMenuStyle(nextStyle, style.fontFamily);
+            nextProducts = applyFontToFreeTexts(nextProducts, style.fontFamily);
+        }
 
         visibleFontTips.forEach((tip) => {
             const root = containerRef.current;
@@ -1918,6 +1962,11 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
     return (
         <div className="flex flex-row-reverse h-full bg-slate-100 overflow-hidden relative">
+            <FontPropagationPrompt
+                request={pendingFontPropagation}
+                onApply={applyPendingFontPropagation}
+                onDismiss={() => setPendingFontPropagation(null)}
+            />
 
             {/* 1. PREVIEW AREA */}
             <div
@@ -1963,6 +2012,20 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                 </div>
 
                                 <div className="max-h-[min(60vh,32rem)] space-y-4 overflow-y-auto p-4">
+                                    {showMixedFontTip && (
+                                        <section>
+                                            <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Fontes diferentes</h3>
+                                            <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
+                                                <p className="min-w-0 flex-1 text-xs leading-relaxed text-slate-700">
+                                                    O cardápio usa {configuredCanvasFonts.length} fontes. Confirmar aplica <strong>{style.fontFamily}</strong> a todos os objetos.
+                                                </p>
+                                                <div className="flex shrink-0 gap-1">
+                                                    <button type="button" onClick={applyMixedFontSuggestion} className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700" title="Usar uma fonte em todo o cardápio" aria-label="Usar uma fonte em todo o cardápio"><Check size={16} /></button>
+                                                    <button type="button" onClick={() => dismissTip('mixed-fonts')} className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm transition hover:bg-slate-100 hover:text-slate-700" title="Remover esta dica" aria-label="Remover dica de fontes diferentes"><X size={16} /></button>
+                                                </div>
+                                            </div>
+                                        </section>
+                                    )}
                                     {visibleFontTips.length > 0 && (
                                         <section>
                                             <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Fontes reduzidas</h3>

@@ -12,6 +12,7 @@ interface StyleControlsProps {
   disabled?: boolean;
   maxFontSize?: number;
   minFontSize?: number;
+  fallbackFontFamily?: string;
 }
 
 export const StyleControls: React.FC<StyleControlsProps> = ({ 
@@ -21,6 +22,7 @@ export const StyleControls: React.FC<StyleControlsProps> = ({
   disabled = false,
   maxFontSize,
   minFontSize,
+  fallbackFontFamily,
 }) => {
     return (
         <div className={`space-y-2 p-3 bg-slate-50 rounded-lg border border-slate-100 ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
@@ -30,10 +32,10 @@ export const StyleControls: React.FC<StyleControlsProps> = ({
             <div className="flex gap-2">
                 <div className="min-w-0 flex-1">
                     <FontSelect
-                        value={value.fontFamily || ''}
-                        includeInherit
+                        value={value.fontFamily || fallbackFontFamily}
+                        fallbackFontFamily={fallbackFontFamily}
                         placeholder="Buscar fonte..."
-                        onChange={(font) => onChange({...value, fontFamily: font || undefined})}
+                        onChange={(font) => onChange({...value, fontFamily: font})}
                     />
                 </div>
                 <FontSizeInput

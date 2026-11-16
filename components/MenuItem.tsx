@@ -12,6 +12,7 @@ import { ColumnResizeHandles } from './ColumnResizeHandles';
 import { AutoFitText } from './AutoFitText';
 import { formatMenuPriceValue } from '../utils/price';
 import { resolveMenuPageDimensions } from '../utils/pageSetup';
+import { getCategoryDividerStyle } from '../utils/categoryDividers';
 
 interface MenuItemProps {
     item: any;
@@ -632,6 +633,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 value={value || {}}
                 maxFontSize={getToolbarFontSizeLimit(type)}
                 minFontSize={minimumFontSize}
+                fallbackFontFamily={style.fontFamily}
                 onChange={(newStyle) => handlers.handleInlineStyleChange?.(formattingTarget, newStyle)}
                 onDismiss={() => handlers.setFormattingTarget?.(null)}
                 onAdjustPrice={type === 'product' && formattingTarget.field === 'price'
@@ -756,8 +758,13 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const categoryAlign = catStyle.textAlign || 'left';
         const categoryImage = style.categoryImages?.[item.data];
         const categoryImageScale = style.categoryImageScale || 1;
-        const renderCategoryDivider = (key: string) => (
-            <div key={key} className="h-px min-w-0 flex-grow opacity-40" style={{ backgroundColor: style.primaryColor }} />
+        const categoryDividerPreset = style.categoryDividerStyles?.[item.data] || 'solid';
+        const renderCategoryDivider = (key: 'before' | 'after') => (
+            <div
+                key={key}
+                aria-hidden="true"
+                style={getCategoryDividerStyle(categoryDividerPreset, style.primaryColor, key === 'before' ? 'right' : 'left')}
+            />
         );
         
         return (
@@ -783,7 +790,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 />
                 {renderFormattingToolbar('category', item.data, catStyle)}
             <ProductControls type="category" catName={item.data} isMobileSelected={isSelected} index={idx} total={0} isLastInBlock={false} canMoveUp={false} canMoveDown={false} canMoveLeft={false} canMoveRight={false} hideGeneralControls={false} handlers={handlers} onEdit={(e: React.MouseEvent) => handlers.startEditing(e, item.data, elementId, 'category')} isDragging={isBeingDragged} showSelectionOutline={false} showAddControls={false} compactControls={compactControls} showGridMoveControls={false}/>
-                <div className={`flex w-full max-w-full min-w-0 items-center gap-0 ${compactControls ? 'px-1' : 'px-2'} ${categoryAlign === 'center' ? 'justify-center' : categoryAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`flex w-full max-w-full min-w-0 items-center gap-1 ${compactControls ? 'px-1' : 'px-2'} ${categoryAlign === 'center' ? 'justify-center' : categoryAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
                     {(categoryAlign === 'center' || categoryAlign === 'right') && renderCategoryDivider('before')}
                     {style.showCategoryImages !== false && categoryImage?.url && (
                         <img
@@ -898,7 +905,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     ? renderFormattingToolbar('freeText', product.id, product.styles || {})
                     : renderFormattingToolbar('product', product.id,
                         formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle)}
-                        <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={false} canMoveRight={false} isFreeText={product.isFreeText} handlers={handlers} onEdit={!product.isFreeText ? (e: React.MouseEvent) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name') : undefined} mobileOnlyEdit={!compactControls} isDragging={isBeingDragged} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>
+                        <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={false} canMoveRight={false} isFreeText={product.isFreeText} handlers={handlers} onEdit={!product.isFreeText ? (e: React.MouseEvent) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name') : undefined} mobileOnlyEdit={!compactControls} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>
                 
                 <div className={`transition-opacity duration-150 ${isBeingDragged && !product.isFreeText ? 'opacity-40' : ''}`}>
                 {product.isFreeText ? (
@@ -1135,7 +1142,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             >
                                 {renderFormattingToolbar('product', product.id,
                                     formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle)}
-                            <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={canMoveLeft} canMoveRight={canMoveRight} isFreeText={product.isFreeText} handlers={handlers} onEdit={(e: React.MouseEvent) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name')} mobileOnlyEdit={!compactControls} isDragging={isBeingDragged} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} mobileExpandedControls={mobileExpandedControls} denseControls={denseControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>
+                            <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={canMoveLeft} canMoveRight={canMoveRight} isFreeText={product.isFreeText} handlers={handlers} onEdit={(e: React.MouseEvent) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name')} mobileOnlyEdit={!compactControls} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} mobileExpandedControls={mobileExpandedControls} denseControls={denseControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>
                                 
                                 <div
                                     className={`h-full transition-all duration-150 ${isCardLayout ? `rounded-xl border border-slate-200 shadow-sm ${isEditing ? 'overflow-visible' : 'overflow-hidden'}` : 'bg-transparent'} ${isBeingDragged ? 'opacity-40' : isCardLayout ? 'group-hover:shadow-md' : ''}`}

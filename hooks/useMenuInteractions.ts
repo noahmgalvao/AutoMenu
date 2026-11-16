@@ -112,6 +112,7 @@ export const useMenuInteractions = (props: InteractionProps) => {
         handleLayerImage: imageInteractions.handleLayerImage,
 
         liveCategoryColumnWidths: columnResizeInteractions.liveCategoryColumnWidths,
+        isResizingCategoryColumns: columnResizeInteractions.isResizingCategoryColumns,
         columnResizeGuide: columnResizeInteractions.columnResizeGuide,
         startCategoryColumnResize: columnResizeInteractions.startCategoryColumnResize,
 

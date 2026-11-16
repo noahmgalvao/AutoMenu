@@ -1,6 +1,6 @@
 import React, { useMemo, useEffect, useRef, useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AddedImage, ElementStyle, Product, MenuStyle, SortOption } from '../types';
+import { AddedImage, ElementStyle, Product, MenuStyle, SortOption, type CategoryDividerStyle } from '../types';
 import { AlertTriangle, BringToFront, Copy, CopyCheck, CopyPlus, EyeOff, Paintbrush, Clipboard, Plus, Scissors, SendToBack, Trash2 } from 'lucide-react';
 import { calculatePagination, FREE_TEXT_PREFIX, SAFETY_BUFFER, type PageLayout } from '../utils/menuPagination';
 import { isPristineNewCategory, isPristineNewProduct } from '../utils/pristineItems';
@@ -23,6 +23,9 @@ import {
     type PriceAdjustmentMode,
     type PricePropagationRequest,
 } from '../utils/pricePropagation';
+import { CATEGORY_DIVIDER_PRESETS, getCategoryDividerStyle } from '../utils/categoryDividers';
+import { FontPropagationPrompt, type FontPropagationRequest } from './FontPropagationPrompt';
+import { applyFontToMenuStyle } from '../utils/fontPropagation';
 
 interface MenuPreviewProps {
     products: Product[];
@@ -153,6 +156,7 @@ const DynamicFontLoader: React.FC<{ fonts: string[] }> = ({ fonts }) => {
 export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     // 1. Hook for all interactions and state
     const [pendingPricePropagation, setPendingPricePropagation] = useState<PricePropagationRequest | null>(null);
+    const [pendingFontPropagation, setPendingFontPropagation] = useState<FontPropagationRequest | null>(null);
     const productImageInputRef = useRef<HTMLInputElement | null>(null);
     const pendingProductImageIdRef = useRef<string | null>(null);
     const handleProductUpdateWithPricePrompt = useCallback((id: string, field: keyof Product, value: any) => {
@@ -576,6 +580,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         const nextFontSize = Number(newStyle.fontSize);
         if (target.type === 'freeText') {
             const currentProduct = products.find(product => product.id === target.id);
+            const previousFontFamily = currentProduct?.styles?.fontFamily || style.fontFamily;
             const currentFontSize = Number(
                 currentProduct?.styles?.fontSize
                 || style.elementStyles.productName?.fontSize
@@ -591,6 +596,9 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 && Number(currentProduct?.styles?.fontSize) > 0
                 && Number(newStyle.fontSize) < Number(currentProduct?.styles?.fontSize);
             props.onUpdateProduct?.(target.id, 'styles', newStyle);
+            if (newStyle.fontFamily && newStyle.fontFamily !== previousFontFamily) {
+                setPendingFontPropagation({ sourceId: target.id, fontFamily: newStyle.fontFamily });
+            }
             if (fontSizeReduced) {
                 onStyleUpdate?.(prev => ({ ...prev, pageBreaks: [] }));
             }
@@ -2104,6 +2112,16 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         ? objectMenu.item
         : null;
     const objectMenuItems = contextObjectItem ? getActiveObjectItems(contextObjectItem) : [];
+    const categoryMenuItems = objectMenuItems.filter((item): item is SelectionItem & { type: 'category' } => item.type === 'category');
+    const setCategoryDividerPreset = (preset: CategoryDividerStyle) => {
+        if (categoryMenuItems.length === 0) return;
+        onStyleUpdate?.((previous) => {
+            const nextDividers = { ...(previous.categoryDividerStyles || {}) };
+            categoryMenuItems.forEach((item) => { nextDividers[item.id] = preset; });
+            return { ...previous, categoryDividerStyles: nextDividers, name: 'Custom' };
+        });
+        setObjectMenu(null);
+    };
     const canHideFromObjectMenu = objectMenuItems.some((item) => {
         if (item.type === 'category') return !isPristineNewCategory(item.id, products);
         if (item.type === 'product') {
@@ -2115,6 +2133,17 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const menuLeft = objectMenuPosition?.left
         ?? (objectMenu ? clamp(objectMenu.x, 8, Math.max(8, window.innerWidth - 220)) : 0);
     const menuTop = objectMenuPosition?.top ?? 8;
+    const applyFontPropagation = () => {
+        if (!pendingFontPropagation) return;
+        const fontFamily = pendingFontPropagation.fontFamily;
+        onStyleUpdate?.((previous) => applyFontToMenuStyle(previous, fontFamily));
+        const updates = products
+            .filter((product) => product.isFreeText)
+            .map((product) => ({ id: product.id, field: 'styles' as keyof Product, value: { ...(product.styles || {}), fontFamily } }));
+        if (props.onUpdateProducts) props.onUpdateProducts(updates);
+        else updates.forEach((update) => props.onUpdateProduct?.(update.id, update.field, update.value));
+        setPendingFontPropagation(null);
+    };
 
     return (
         <div
@@ -2151,6 +2180,13 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     style={style}
                     onApply={applyPricePropagation}
                     onDismiss={() => setPendingPricePropagation(null)}
+                />
+            )}
+            {!readOnly && (
+                <FontPropagationPrompt
+                    request={pendingFontPropagation}
+                    onApply={applyFontPropagation}
+                    onDismiss={() => setPendingFontPropagation(null)}
                 />
             )}
 
@@ -2226,6 +2262,32 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     ) : (
                     <>
                     <button onClick={() => { handlers.setMultiSelectMode?.(!handlers.multiSelectMode); setObjectMenu(null); }} className={`w-full px-3 py-2 text-left flex items-center gap-2 ${handlers.multiSelectMode ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-slate-50'}`}><CopyCheck size={15} /> Seleção múltipla</button>
+                    {categoryMenuItems.length > 0 && (
+                        <div className="border-y border-slate-100 px-3 py-2.5">
+                            <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">Linha da categoria</p>
+                            <div className="grid grid-cols-2 gap-1.5">
+                                {CATEGORY_DIVIDER_PRESETS.map((preset) => {
+                                    const active = categoryMenuItems.every((item) => (style.categoryDividerStyles?.[item.id] || 'solid') === preset.value);
+                                    return (
+                                        <button
+                                            key={preset.value}
+                                            type="button"
+                                            onClick={() => setCategoryDividerPreset(preset.value)}
+                                            className={`rounded-lg border px-2 py-1.5 text-left transition ${active ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-slate-200 hover:border-indigo-200 hover:bg-slate-50'}`}
+                                            title={preset.label}
+                                        >
+                                            <span className="flex h-4 items-center">
+                                                {preset.value === 'none'
+                                                    ? <span className="w-full text-center text-[10px] text-slate-400">sem linha</span>
+                                                    : <span className="block w-full" style={getCategoryDividerStyle(preset.value, style.primaryColor)} />}
+                                            </span>
+                                            <span className="block truncate text-[10px] font-medium">{preset.label}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
                     <button disabled={isBackgroundMenu} onClick={() => runObjectAction('copy', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Copy size={15} /> Copiar</button>
                     <button disabled={isBackgroundMenu} onClick={() => runObjectAction('copyFormat', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Paintbrush size={15} /> Copiar formatacao</button>
                     <button

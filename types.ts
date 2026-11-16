@@ -51,6 +51,18 @@ export interface MenuPageSetup {
   heightMm: number;
 }
 
+export type CategoryDividerStyle =
+  | 'none'
+  | 'solid'
+  | 'strong'
+  | 'double'
+  | 'dashed'
+  | 'dotted'
+  | 'fade'
+  | 'tapered'
+  | 'beaded'
+  | 'accent';
+
 export type WorkspaceStatus = 'active' | 'archived';
 export type WorkspaceRole = 'owner' | 'member';
 export type MenuStatus = 'draft' | 'published' | 'archived';
@@ -195,6 +207,7 @@ export interface MenuStyle {
   columnCount: 1 | 2 | 3;
   categoryColumnCount?: 1 | 2 | 3;
   categoryColumnWidths?: number[];
+  categoryDividerStyles?: Record<string, CategoryDividerStyle>;
   categoryPlacements?: Record<string, { pageIndex: number; columnIndex: number }>;
   categoryPositions?: Record<string, CategoryPosition>;
   customCategoryOrder?: string[];

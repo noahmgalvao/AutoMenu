@@ -4,6 +4,7 @@ import { BadgeDollarSign, X } from 'lucide-react';
 import type { MenuStyle } from '../types';
 import { formatMenuPriceValue } from '../utils/price';
 import type { PriceAdjustmentOperation, PricePropagationRequest } from '../utils/pricePropagation';
+import { TimedPromptFrame } from './TimedPromptFrame';
 
 export type { PriceAdjustmentMode, PricePropagationRequest } from '../utils/pricePropagation';
 
@@ -36,13 +37,10 @@ export const PricePropagationPrompt: React.FC<PricePropagationPromptProps> = ({
 
   return createPortal(
     <div className="pointer-events-none fixed inset-x-0 bottom-4 z-[2147483600] flex justify-center px-4 sm:bottom-6">
-      <div
-        role="dialog"
-        aria-modal="false"
-        aria-labelledby="price-propagation-title"
-        className="pointer-events-auto w-full max-w-md rounded-2xl border border-emerald-200 bg-white p-4 shadow-2xl shadow-slate-900/20"
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={(event) => event.stopPropagation()}
+      <TimedPromptFrame
+        timerKey={`${request.productId}:${request.nextPrice}:${request.operations.length}`}
+        onDismiss={onDismiss}
+        className="border-emerald-200"
       >
         <div className="flex items-start gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
@@ -93,7 +91,7 @@ export const PricePropagationPrompt: React.FC<PricePropagationPromptProps> = ({
             Aplicar aos demais
           </button>
         </div>
-      </div>
+      </TimedPromptFrame>
     </div>,
     document.body,
   );

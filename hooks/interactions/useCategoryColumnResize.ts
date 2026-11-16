@@ -29,8 +29,6 @@ interface ResizeSession {
     scrollTouchAction: string;
     scrollOverscrollBehavior: string;
     pointerOffsetX: number;
-    blockedDirection: -1 | 1 | null;
-    lastClientX: number;
 }
 
 const MIN_COLUMN_WIDTH_PX = 72;
@@ -91,6 +89,7 @@ export const useCategoryColumnResize = (
 ) => {
     const [liveCategoryColumnWidths, setLiveCategoryColumnWidths] = useState<number[] | null>(null);
     const [columnResizeGuide, setColumnResizeGuide] = useState<ColumnResizeGuide | null>(null);
+    const [isResizingCategoryColumns, setIsResizingCategoryColumns] = useState(false);
     const sessionRef = useRef<ResizeSession | null>(null);
     const liveWidthsRef = useRef<number[] | null>(null);
 
@@ -126,6 +125,7 @@ export const useCategoryColumnResize = (
         liveWidthsRef.current = null;
         setLiveCategoryColumnWidths(null);
         setColumnResizeGuide(null);
+        setIsResizingCategoryColumns(false);
     }, [onStyleUpdate]);
 
     useEffect(() => () => finishResize(false), [finishResize]);
@@ -154,25 +154,12 @@ export const useCategoryColumnResize = (
             const pairWidth = initialPixelWidths[session.boundaryIndex]
                 + initialPixelWidths[session.boundaryIndex + 1];
             const pageCenterClientX = pageRect.left + (pageRect.width / 2);
-            const currentWidths = liveWidthsRef.current || session.initialWidths;
             const getBoundaryForWidths = (widths: number[]) => (
                 gridRect.left
                 + (widths.slice(0, session.boundaryIndex + 1).reduce((sum, width) => sum + width, 0) * usableColumnsWidth)
                 + (gap * session.boundaryIndex)
             );
-            const currentBoundary = getBoundaryForWidths(currentWidths);
-            const pointerDeltaX = event.clientX - session.lastClientX;
-            const pointerDirection = pointerDeltaX < -0.25 ? -1 : pointerDeltaX > 0.25 ? 1 : null;
-            session.lastClientX = event.clientX;
-
-            if (session.blockedDirection) {
-                if (pointerDirection === null || pointerDirection === session.blockedDirection) {
-                    session.pointerOffsetX = event.clientX - currentBoundary;
-                    return;
-                }
-                session.blockedDirection = null;
-            }
-
+            const currentWidths = liveWidthsRef.current || session.initialWidths;
             const requestedBoundaryClientX = event.clientX - session.pointerOffsetX;
             let boundaryClientX = requestedBoundaryClientX;
             const snapDistance = CENTER_SNAP_DISTANCE_PX * scale;
@@ -193,6 +180,8 @@ export const useCategoryColumnResize = (
             nextWidths[session.boundaryIndex + 1] = nextRightWidth;
             const normalized = normalizeColumnWidths(nextWidths, session.columnCount);
             const isValidCandidate = (candidateWidths: number[]) => {
+                const isInitialState = candidateWidths.every((width, index) => Math.abs(width - session.initialWidths[index]) < 0.00005);
+                if (isInitialState) return true;
                 const nextStyle = { ...style, categoryColumnWidths: candidateWidths };
                 const keepsTextReadable = style.allowSameWordBreak
                     || canApplyLiveColumnWidths(session.grid, currentWidths, candidateWidths);
@@ -212,11 +201,11 @@ export const useCategoryColumnResize = (
             if (!isValidCandidate(normalized)) {
                 let lowerBound = 0;
                 let upperBound = 1;
-                let closestValidWidths = currentWidths;
-                for (let iteration = 0; iteration < 7; iteration += 1) {
+                let closestValidWidths = session.initialWidths;
+                for (let iteration = 0; iteration < 9; iteration += 1) {
                     const progress = (lowerBound + upperBound) / 2;
                     const candidateWidths = normalizeColumnWidths(
-                        currentWidths.map((width, index) => width + ((normalized[index] - width) * progress)),
+                        session.initialWidths.map((width, index) => width + ((normalized[index] - width) * progress)),
                         session.columnCount,
                     );
                     if (isValidCandidate(candidateWidths)) {
@@ -228,11 +217,7 @@ export const useCategoryColumnResize = (
                 }
 
                 const closestBoundary = getBoundaryForWidths(closestValidWidths);
-                const changed = closestValidWidths.some((width, index) => Math.abs(width - currentWidths[index]) > 0.00005);
-                if (changed) applyWidths(closestValidWidths, closestBoundary, false);
-                session.pointerOffsetX = event.clientX - closestBoundary;
-                session.blockedDirection = pointerDirection
-                    || (requestedBoundaryClientX < closestBoundary ? -1 : 1);
+                applyWidths(closestValidWidths, closestBoundary, false);
                 const now = performance.now();
                 if (now >= session.feedbackUntil) {
                     triggerLimitFeedback(session.source);
@@ -243,15 +228,11 @@ export const useCategoryColumnResize = (
 
             applyWidths(normalized, boundaryClientX, snappedToCenter);
             if (reachedGeometricLimit) {
-                session.pointerOffsetX = event.clientX - boundaryClientX;
-                session.blockedDirection = boundaryBeforeGeometricLimit < boundaryClientX ? -1 : 1;
                 const now = performance.now();
                 if (now >= session.feedbackUntil) {
                     triggerLimitFeedback(session.source);
                     session.feedbackUntil = now + 650;
                 }
-            } else {
-                session.blockedDirection = null;
             }
         };
         const handlePointerUp = (event: PointerEvent) => {
@@ -342,11 +323,10 @@ export const useCategoryColumnResize = (
             scrollTouchAction: scrollContainer?.style.touchAction || '',
             scrollOverscrollBehavior: scrollContainer?.style.overscrollBehavior || '',
             pointerOffsetX: event.clientX - initialBoundaryClientX,
-            blockedDirection: null,
-            lastClientX: event.clientX,
         };
         liveWidthsRef.current = initialWidths;
         setLiveCategoryColumnWidths(liveWidthsRef.current);
+        setIsResizingCategoryColumns(true);
         document.body.style.cursor = 'col-resize';
         document.body.style.userSelect = 'none';
         if (scrollContainer) {
@@ -357,6 +337,7 @@ export const useCategoryColumnResize = (
 
     return {
         liveCategoryColumnWidths,
+        isResizingCategoryColumns,
         columnResizeGuide,
         startCategoryColumnResize,
     };

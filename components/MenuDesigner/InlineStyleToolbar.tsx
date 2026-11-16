@@ -17,9 +17,10 @@ interface InlineStyleToolbarProps {
     header?: React.ReactNode;
     compact?: boolean;
     onAdjustPrice?: (direction: 1 | -1, amount: number, mode: PriceAdjustmentMode) => void;
+    fallbackFontFamily?: string;
 }
 
-export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, value, onChange, onDismiss, controls = 'all', maxFontSize, minFontSize, header, compact = false, onAdjustPrice }) => {
+export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, value, onChange, onDismiss, controls = 'all', maxFontSize, minFontSize, header, compact = false, onAdjustPrice, fallbackFontFamily }) => {
     const toolbarRef = useRef<HTMLDivElement>(null);
     const [position, setPosition] = useState({ left: 8, top: 8, width: 270 });
     const [priceAdjustment, setPriceAdjustment] = useState('10');
@@ -100,10 +101,10 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                 {!isSizeColorOnly && (
                     <div className="min-w-0 flex-1">
                         <FontSelect
-                            value={value.fontFamily || ''}
-                            includeInherit
+                            value={value.fontFamily || fallbackFontFamily}
+                            fallbackFontFamily={fallbackFontFamily}
                             placeholder="Fonte..."
-                            onChange={(font) => onChange({ ...value, fontFamily: font || undefined })}
+                            onChange={(font) => onChange({ ...value, fontFamily: font })}
                         />
                     </div>
                 )}
