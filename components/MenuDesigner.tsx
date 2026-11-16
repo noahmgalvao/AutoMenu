@@ -556,13 +556,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
             const containerRect = container.getBoundingClientRect();
             const pageRect = firstPage.getBoundingClientRect();
-            const isDesktop = window.matchMedia('(min-width: 768px)').matches;
-            anchor.style.left = `${isDesktop
-                ? pageRect.right - containerRect.left + 12
-                : pageRect.left - containerRect.left}px`;
-            anchor.style.top = `${isDesktop
-                ? pageRect.top - containerRect.top
-                : pageRect.top - containerRect.top - anchor.offsetHeight - 4}px`;
+            anchor.style.left = `${pageRect.left - containerRect.left}px`;
+            anchor.style.top = `${pageRect.top - containerRect.top - anchor.offsetHeight - 4}px`;
             anchor.style.visibility = 'visible';
         };
         const schedulePosition = () => {
@@ -1994,7 +1989,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                     )}
 
                     {hasVisibleTips && tipsOpen && (
-                            <div className="absolute left-0 top-10 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl md:left-auto md:right-0">
+                            <div className="absolute left-0 top-10 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl">
                                 <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
                                     <div>
                                         <p className="text-sm font-bold text-slate-800">Dicas do cardápio</p>

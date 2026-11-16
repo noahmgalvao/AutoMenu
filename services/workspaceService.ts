@@ -2243,6 +2243,26 @@ const readPortablePublication = (menuId: string): MenuPublication | null => {
   }
 };
 
+const readPortablePublicationBySlug = (restaurantSlug: string, menuSlug: string): MenuPublication | null => {
+  try {
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index);
+      if (!key?.startsWith('automenu:portable-publication:')) continue;
+      const stored = window.localStorage.getItem(key);
+      if (!stored) continue;
+      const publication = JSON.parse(stored) as MenuPublication;
+      if (
+        publication.restaurantSlug === restaurantSlug
+        && publication.menuSlug === menuSlug
+        && publication.portableSnapshotUrl
+      ) return publication;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+
 const savePortablePublication = (publication: MenuPublication) => {
   try {
     window.localStorage.setItem(getPortablePublicationStorageKey(publication.menuId), JSON.stringify(publication));
@@ -2429,7 +2449,12 @@ export const loadPublicMenuPublication = async ({
   restaurantSlug: string;
   menuSlug: string;
   portableSnapshotUrl?: string | null;
-}) => {
+}): Promise<{
+  publication: MenuPublication;
+  products: Product[];
+  style: MenuStyle;
+  sortOption: SortOption;
+} | null> => {
   if (portableSnapshotUrl) {
     const response = await fetch(portableSnapshotUrl, { cache: 'no-store' });
     if (!response.ok) throw new Error('O link público expirou ou está indisponível. Publique o cardápio novamente.');
@@ -2457,7 +2482,12 @@ export const loadPublicMenuPublication = async ({
     .eq('restaurant_slug', restaurantSlug)
     .eq('menu_slug', menuSlug)
     .maybeSingle();
-  if (error && isMissingSchemaObjectError(error, 'menu_publications')) return null;
+  if (error && isMissingSchemaObjectError(error, 'menu_publications')) {
+    const portable = readPortablePublicationBySlug(restaurantSlug, menuSlug);
+    return portable
+      ? loadPublicMenuPublication({ restaurantSlug, menuSlug, portableSnapshotUrl: portable.portableSnapshotUrl })
+      : null;
+  }
   if (error) throw error;
   if (!data) return null;
   const hydrated = await hydrateSnapshot(data.workspace_id, data.snapshot || {});

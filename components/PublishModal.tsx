@@ -169,7 +169,7 @@ export const PublishModal: React.FC<PublishModalProps> = ({
                 <div className="grid grid-cols-[1fr_1fr_40px] gap-2">
                   <ActionButton icon={<Copy size={15} />} label="Copiar" loading={activeAction === 'copy-link'} disabled={loading || actionBusy} primary onClick={() => onLinkAction('copy-link')} />
                   <ActionButton icon={<Share2 size={15} />} label="Compartilhar" loading={activeAction === 'share-link'} disabled={loading || actionBusy} onClick={() => onLinkAction('share-link')} />
-                  <button type="button" onClick={() => onLinkAction('open-link')} disabled={!hasPublication || hasPendingChanges || loading || actionBusy} className="h-10 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 flex items-center justify-center disabled:opacity-40" title="Abrir link em nova guia"><ExternalLink size={16} /></button>
+                  <button type="button" onClick={() => onLinkAction('open-link')} disabled={!hasPublication || loading || actionBusy} className="h-10 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 flex items-center justify-center disabled:opacity-40" title="Abrir link em nova guia"><ExternalLink size={16} /></button>
                 </div>
 
                 <div className="border-t border-slate-200 pt-3">

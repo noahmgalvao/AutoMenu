@@ -38,6 +38,7 @@ interface PendingDrag {
     startX: number;
     startY: number;
     activationTimeoutId: number | null;
+    longPressReady?: boolean;
     scrolling?: boolean;
     lastY?: number;
 }
@@ -2573,21 +2574,6 @@ export const useDraggableInteractions = (
                 productDesignerScrollContainerRef.current = pending.element.closest<HTMLElement>('[data-product-designer-scroll-container="true"]');
                 handleSelection(pending.type === 'product' && draggedProduct?.isFreeText ? 'freeText' : pending.type, pending.id);
 
-                if (
-                    pending.pointerType === 'touch'
-                    && pending.element.dataset.dragContext !== 'product-designer'
-                    && typeof window !== 'undefined'
-                ) {
-                    window.dispatchEvent(new CustomEvent('automenu:canvas-drag-ready', {
-                        detail: {
-                            type: pending.type === 'product' && draggedProduct?.isFreeText ? 'freeText' : pending.type,
-                            id: pending.id,
-                            x: pointer.x,
-                            y: pointer.y,
-                        },
-                    }));
-                }
-
                 if (pending.type === 'category') {
                     initializeCategoryDragState(pending.id, pointer);
                 } else {
@@ -3099,6 +3085,17 @@ export const useDraggableInteractions = (
             if (!pending || event.pointerId !== pending.pointerId) return;
 
             const traveledDistance = Math.hypot(event.clientX - pending.startX, event.clientY - pending.startY);
+            const isCanvasTouch = pending.pointerType === 'touch'
+                && pending.element.dataset.dragContext !== 'product-designer';
+            if (isCanvasTouch && pending.longPressReady) {
+                if (traveledDistance < 6) return;
+                if (event.cancelable) event.preventDefault();
+                event.stopPropagation();
+                window.dispatchEvent(new CustomEvent('automenu:canvas-drag-move'));
+                activateDrag(pending, { x: pending.startX, y: pending.startY });
+                handlePointerReorder({ x: event.clientX, y: event.clientY });
+                return;
+            }
             const isTwoColumnProductDesignerCategory = pending.pointerType === 'touch'
                 && pending.type === 'category'
                 && pending.element.dataset.dragContext === 'product-designer'
@@ -3453,6 +3450,20 @@ export const useDraggableInteractions = (
             if (pending.pointerType === 'touch') {
                 pending.activationTimeoutId = window.setTimeout(() => {
                     if (!pendingDragRef.current || pendingDragRef.current.pointerId !== pending.pointerId) return;
+                    if (pending.element.dataset.dragContext !== 'product-designer') {
+                        pending.longPressReady = true;
+                        pending.activationTimeoutId = null;
+                        handleSelection(pending.type === 'product' && draggedProduct?.isFreeText ? 'freeText' : pending.type, pending.id);
+                        window.dispatchEvent(new CustomEvent('automenu:canvas-drag-ready', {
+                            detail: {
+                                type: pending.type === 'product' && draggedProduct?.isFreeText ? 'freeText' : pending.type,
+                                id: pending.id,
+                                x: pending.startX,
+                                y: pending.startY,
+                            },
+                        }));
+                        return;
+                    }
                     activateDrag(pending, { x: pending.startX, y: pending.startY });
                 }, TOUCH_LONG_PRESS_MS);
             }

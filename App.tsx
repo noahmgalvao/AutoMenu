@@ -11,7 +11,7 @@ import { RevisionHistoryModal } from './components/RevisionHistoryModal';
 import type { PrintCanvasOptions } from './components/MenuDesigner/PrintCanvasModal';
 import type { PdfExportResult } from './utils/pdfExport';
 import { getErrorMessage } from './utils/errors';
-import { getPublicationUrl } from './utils/publicationUrl';
+import { getExpectedPublicationUrl, getPublicationUrl } from './utils/publicationUrl';
 import { INITIAL_STYLE, PRESET_TEMPLATES } from './constants';
 import {
   FontSizeLimits,
@@ -52,9 +52,10 @@ import {
   updateWorkspaceRuleSettings,
 } from './services/workspaceService';
 
-const ProductDesigner = React.lazy(() => import('./components/ProductDesigner').then((module) => ({
+const loadProductDesigner = () => import('./components/ProductDesigner').then((module) => ({
   default: module.ProductDesigner,
-})));
+}));
+const ProductDesigner = React.lazy(loadProductDesigner);
 const SettingsModal = React.lazy(() => import('./components/SettingsModal').then((module) => ({
   default: module.SettingsModal,
 })));
@@ -109,8 +110,8 @@ const createQrCodeBlob = (value: string) => {
   if (cached) return cached;
   const task = QRCode.toDataURL(value, {
     width: 1024,
-    margin: 4,
-    errorCorrectionLevel: 'H',
+    margin: 2,
+    errorCorrectionLevel: 'M',
     color: { dark: '#0f172a', light: '#ffffff' },
   }).then(async (dataUrl) => (await fetch(dataUrl)).blob());
   qrCodeBlobCache.set(value, task);
@@ -369,6 +370,17 @@ const App: React.FC = () => {
   useEffect(() => () => {
     if (publishFeedbackTimeoutRef.current) window.clearTimeout(publishFeedbackTimeoutRef.current);
   }, []);
+
+  useEffect(() => {
+    if (!workspaceData || hasOpenedProductDesigner) return;
+    let cancelled = false;
+    void loadProductDesigner().then(() => {
+      if (!cancelled) setHasOpenedProductDesigner(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasOpenedProductDesigner, workspaceData]);
 
   const saveCheckpoint = useCallback(() => {
     setHistory((prev) => {
@@ -1459,7 +1471,7 @@ const App: React.FC = () => {
     setPublishAction(action);
     setLoadError(null);
 
-    if (publication && !hasPublishedChanges) {
+    if (publication) {
       try {
         await performPublishedLinkAction(publication, action);
       } catch (error) {
@@ -1489,6 +1501,20 @@ const App: React.FC = () => {
       requestPrint('download');
       return;
     }
+    if (!workspaceData) return;
+
+    const publishingStartedAt = Date.now();
+    const canonicalUrl = publication
+      ? getPublicationUrl(publication).split('?')[0]
+      : getExpectedPublicationUrl({
+          restaurantSlug: workspaceData.workspace.slug,
+          menuName: workspaceData.menu.name,
+          menuId: workspaceData.menu.id,
+        });
+    const loadingUrl = new URL(canonicalUrl);
+    loadingUrl.searchParams.set('publishing', String(publishingStartedAt));
+    if (publication?.updatedAt) loadingUrl.searchParams.set('previousPublication', publication.updatedAt);
+    window.open(loadingUrl.toString(), '_blank', 'noopener,noreferrer');
 
     pendingPublishActionRef.current = null;
     setPublishAction('publish');
