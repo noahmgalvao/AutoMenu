@@ -1,6 +1,6 @@
 import { applyTemplateToCurrentStyle, getAppliedTemplateId } from '../utils/templateApplication';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Product, MenuStyle, SortOption, ElementStyle, AddedImage } from '../types';
+import { Product, MenuStyle, SortOption, ElementStyle, AddedImage, CanvasShape } from '../types';
 import { PRESET_TEMPLATES } from '../constants';
 import { MenuPreview } from './MenuPreview';
 import { Undo, Redo, Check, X } from 'lucide-react';
@@ -9,6 +9,8 @@ import { MenuSidebar } from './MenuDesigner/MenuSidebar';
 import type { PrintCanvasOptions, PrintPreviewPage } from './MenuDesigner/PrintCanvasModal';
 import { uploadFileAsset } from '../services/storageService';
 import type { MoveDirection, SelectionItem } from '../hooks/interactions/types';
+import { canvasShapeUrl } from '../utils/canvasShapes';
+import { MenuColorContext, getMenuPalette } from './MenuDesigner/ColorPicker';
 import { getImageLayerIndexes } from '../utils/imageLayers';
 import type { PdfDebugEntry, PdfExportResult } from '../utils/pdfExport';
 import {
@@ -1160,13 +1162,15 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         if (window.matchMedia('(min-width: 768px)').matches || mobileEditViewRef.current) return;
         const canvas = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas="true"]');
         if (!canvas) return;
-        mobileEditViewRef.current = {
+        const snapshot = {
             scale,
             scrollLeft: canvas.scrollLeft,
             scrollTop: canvas.scrollTop,
         };
+        mobileEditViewRef.current = snapshot;
         setScale(1.6);
         window.setTimeout(() => {
+            if (mobileEditViewRef.current !== snapshot) return;
             const target = Array.from(canvas.querySelectorAll<HTMLElement>('[data-drag-type="product"][data-drag-id]'))
                 .find((element) => element.dataset.dragId === productId);
             if (!target) return;
@@ -1592,6 +1596,24 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         setPendingFontPropagation(null);
     };
 
+    const handleAddShape = (shape: CanvasShape) => {
+        const id = crypto.randomUUID();
+        setStyle(previous => {
+            const dimensions = resolveMenuPageDimensions(previous);
+            const width = Math.min(180, dimensions.widthPx / 3);
+            return {
+                ...previous, name: 'Custom',
+                addedImages: [...(previous.addedImages || []), {
+                    id, shape, width, url: canvasShapeUrl(shape), zIndex: 1,
+                    pageIndex: currentPrintPageIndex ?? 0,
+                    x: Math.round((dimensions.widthPx - width) / 2),
+                    y: Math.round(dimensions.heightPx / 3),
+                }],
+            };
+        });
+        setSelection({ type: 'addedImage', id });
+    };
+
     const handleAddedImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -1913,7 +1935,9 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         setTipsOpen(false);
     };
 
+    const menuPalette = React.useMemo(() => getMenuPalette(style, products.map(product => product.styles?.color)), [style, products]);
     return (
+        <MenuColorContext.Provider value={menuPalette}>
         <div className="flex flex-row-reverse h-full bg-slate-100 overflow-hidden relative">
             <FontPropagationPrompt
                 request={pendingFontPropagation}
@@ -2186,6 +2210,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 updateGlobalElementStyle={updateGlobalElementStyle}
                 setPreviewAction={setPreviewAction}
                 handleAddedImageUpload={handleAddedImageUpload}
+                onAddShape={handleAddShape}
                 resizeSelectedAddedImages={resizeSelectedAddedImages}
                 removeSelectedAddedImages={removeSelectedAddedImages}
                 layerSelectedAddedImages={layerSelectedAddedImages}
@@ -2218,6 +2243,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 </React.Suspense>
             )}
         </div>
+        </MenuColorContext.Provider>
     );
 };
 

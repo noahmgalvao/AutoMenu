@@ -28,6 +28,7 @@ export interface DraftItem {
     pageIndex: number;
     columnIndex: number;
     top: number; // relative to page top
+    pageX?: number;
     floorId: string | null;
     floorBottom: number;
     ceilingId: string | null;

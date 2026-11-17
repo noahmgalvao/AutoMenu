@@ -111,6 +111,7 @@ export const FontSelect: React.FC<{
   const [isTouchInput, setIsTouchInput] = useState(false);
   const [menuIsOpen, setMenuIsOpen] = useState(false);
   const selectRef = useRef<any>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const keepMenuOpenRef = useRef(false);
   const keyboardDismissedForGestureRef = useRef(false);
   const lastTouchToggleRef = useRef(0);
@@ -128,6 +129,15 @@ export const FontSelect: React.FC<{
     query.addEventListener('change', sync);
     return () => query.removeEventListener('change', sync);
   }, []);
+
+  useEffect(() => {
+    if (!menuIsOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setMenuIsOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOutside, true);
+    return () => document.removeEventListener('pointerdown', closeOutside, true);
+  }, [menuIsOpen]);
 
   const toggleFromIndicator = (event: React.SyntheticEvent) => {
     event.preventDefault();
@@ -184,7 +194,7 @@ export const FontSelect: React.FC<{
   };
 
   return (
-    <div className="automenu-font-select">
+    <div ref={rootRef} className="automenu-font-select">
     <Select
       ref={selectRef}
       value={fontOptions.find((option) => option.value === resolvedValue) || { value: resolvedValue, label: resolvedValue }}

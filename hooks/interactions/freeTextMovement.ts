@@ -54,6 +54,7 @@ export const getCollisionSafeFreeTextTop = ({
     pointerY,
     excludeProductId,
     excludeProductIds = [],
+    excludeCategoryId,
     minTop = Number.NEGATIVE_INFINITY,
     maxBottom = Number.POSITIVE_INFINITY,
     minLeft = Number.NEGATIVE_INFINITY,
@@ -66,6 +67,7 @@ export const getCollisionSafeFreeTextTop = ({
     pointerY: number;
     excludeProductId?: string;
     excludeProductIds?: string[];
+    excludeCategoryId?: string;
     minTop?: number;
     maxBottom?: number;
     minLeft?: number;
@@ -83,6 +85,8 @@ export const getCollisionSafeFreeTextTop = ({
         .filter((element) => (
             element.isConnected &&
             element.getClientRects().length > 0 &&
+            !element.closest('[data-canvas-background-layer="true"], [data-print-control="true"]') &&
+            (!excludeCategoryId || element.closest<HTMLElement>('[data-category-chunk]')?.dataset.categoryChunk !== excludeCategoryId) &&
             !excludedProductElementIds.has(element.id)
         ))
         .map((element) => element.getBoundingClientRect())
@@ -96,7 +100,7 @@ export const getCollisionSafeFreeTextTop = ({
     const collision = objects.find((rect) => overlaps(boundedDesiredTop, rect));
     if (!collision) return boundedDesiredTop;
 
-    const preferredCandidate = pointerY <= collision.top + (collision.height / 2)
+    const preferredCandidate = pointerY <= collision.top + collision.height / 2
         ? collision.top - height - gap
         : collision.bottom + gap;
     const candidates = [

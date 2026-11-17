@@ -2107,6 +2107,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     // FIX: GLOBAL DESELECTION
     const handleBackgroundClick = (e: React.MouseEvent) => {
         setObjectMenu(null);
+        if (products.some(product => product.id === handlers.editingId && !product.isFreeText)) return;
         // Se o alvo do clique não for uma página, um produto ou um controle, limpe.
         const target = e.target as HTMLElement;
         if (target.closest('[data-page-index]') || target.closest('button') || target.closest('[contenteditable="true"]')) {
@@ -2308,7 +2309,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                         </div>
                     )}
                     <button disabled={isBackgroundMenu} onClick={() => runObjectAction('copy', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Copy size={15} /> Copiar</button>
-                    <button disabled={isBackgroundMenu} onClick={() => runObjectAction('copyFormat', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Paintbrush size={15} /> Copiar formatacao</button>
+                    <button disabled={isBackgroundMenu} onClick={() => runObjectAction('copyFormat', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Paintbrush size={15} /> Copiar formatação</button>
                     <button
                         onClick={() => runObjectAction('paste', contextObjectItem)}
                         disabled={!hasClipboardItems}
@@ -2321,7 +2322,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                         disabled={isBackgroundMenu || !hasClipboardFormat}
                         className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                        <Paintbrush size={15} /> Colar formatacao
+                        <Paintbrush size={15} /> Colar formatação
                     </button>
                     <button disabled={isBackgroundMenu} onClick={() => runObjectAction('cut', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Scissors size={15} /> Recortar</button>
                     <button disabled={isBackgroundMenu} onClick={() => runObjectAction('duplicate', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><CopyPlus size={15} /> Duplicar</button>
@@ -2330,7 +2331,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     )}
                     <div className="my-1 h-px bg-slate-100" />
                     <button disabled={isBackgroundMenu} onClick={() => runObjectAction('front', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><BringToFront size={15} /> Trazer para frente</button>
-                    <button disabled={isBackgroundMenu} onClick={() => runObjectAction('back', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><SendToBack size={15} /> Trazer para tras</button>
+                    <button disabled={isBackgroundMenu} onClick={() => runObjectAction('back', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><SendToBack size={15} /> Trazer para trás</button>
                     </>
                     )}
                 </div>,

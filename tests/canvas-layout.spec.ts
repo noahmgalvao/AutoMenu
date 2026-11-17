@@ -60,6 +60,25 @@ test.describe('touch dragging', () => {
     await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     await expect.poll(() => canvas.evaluate((element) => element.scrollTop)).toBeGreaterThan(50);
   });
+
+  test('a category can cross columns in both directions in one touch gesture', async ({ page }) => {
+    await page.goto('/tests/fixtures/template-editor.html?layout=categories');
+    const category = page.locator('[data-category-chunk="Entradas"]');
+    const start = (await category.locator('[data-category-id="Entradas"]').boundingBox())!;
+    const destination = (await page.locator('[data-category-chunk="Principais"]').boundingBox())!;
+    const session = await page.context().newCDPSession(page);
+    const left = { x: start.x + start.width / 2, y: start.y + start.height / 2 };
+    const right = { x: destination.x + destination.width / 2, y: destination.y + destination.height + 100 };
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [left] });
+    await page.waitForTimeout(550);
+    await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [right] });
+    await expect(category).toHaveAttribute('data-drag-column-index', '1');
+    await page.waitForTimeout(1000);
+    await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: left.x, y: right.y }] });
+    await expect(category).toHaveAttribute('data-drag-column-index', '0');
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await expect(category).toHaveAttribute('data-drag-column-index', '0');
+  });
 });
 
 test('a narrow free text keeps its selection buttons in a single row', async ({ page }) => {
@@ -69,6 +88,59 @@ test('a narrow free text keeps its selection buttons in a single row', async ({ 
   await expect(buttons).toHaveCount(4);
   const rows = await buttons.evaluateAll((elements) => elements.map((element) => Math.round(element.getBoundingClientRect().top)));
   expect(new Set(rows).size).toBe(1);
+});
+
+test('double click places free text at the page coordinate without column handles', async ({ page }) => {
+  const canvasPage = page.locator('[data-menu-print-page]').first();
+  const bounds = (await canvasPage.boundingBox())!;
+  const point = { x: Math.floor(bounds.width * 0.49), y: 474 };
+  await canvasPage.dblclick({ position: point });
+  const draft = page.locator('[contenteditable=true]').filter({ hasText: 'Novo texto' });
+  await expect(draft).toHaveText('Novo texto');
+  await expect.poll(async () => Math.abs((await draft.boundingBox())!.x - bounds.x - point.x)).toBeLessThan(3);
+  await draft.fill('Texto novo');
+  await page.keyboard.press('Enter');
+  const text = canvasPage.getByText('Texto novo', { exact: true });
+  await expect.poll(async () => Math.abs((await text.boundingBox())!.x - bounds.x - point.x)).toBeLessThan(8);
+  await text.click();
+  await expect(canvasPage.locator('[data-column-resize-handle]')).toHaveCount(0);
+});
+
+test('free text stays in the same insertion slot while the pointer hovers between products', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?layout=products');
+  const source = page.locator('#product-container-text-a');
+  const target = page.locator('#product-container-2');
+  const start = (await source.boundingBox())!;
+  const slot = (await target.boundingBox())!;
+  const x = slot.x + slot.width / 2;
+  const y = slot.y + slot.height / 2;
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(x, y, { steps: 6 });
+  await expect(source).toHaveAttribute('data-drag-group', 'Entradas');
+  const order = () => page.locator('[data-category-chunk="Entradas"] [data-drag-type="product"]').evaluateAll(
+    elements => elements.map(element => element.getAttribute('data-drag-id'))
+  );
+  const settled = await order();
+  for (const offset of [2, -2, 2, -2, 1, 0]) {
+    await page.mouse.move(x, y + offset);
+    expect(await order()).toEqual(settled);
+  }
+  await page.mouse.up();
+});
+
+test('dragging a category onto detached text moves the text into the category’s old space', async ({ page }) => {
+  const category = page.locator('[data-category-chunk="Entradas"]');
+  const text = page.locator('#product-container-text-b');
+  const initial = (await category.boundingBox())!;
+  const header = (await category.locator('[data-category-id="Entradas"]').boundingBox())!;
+  const slot = (await text.boundingBox())!;
+  await page.mouse.move(header.x + header.width / 2, header.y + header.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(slot.x + slot.width / 2, slot.y + slot.height / 2, { steps: 12 });
+  await page.mouse.up();
+  await expect(category).toHaveAttribute('data-drag-column-index', '1');
+  await expect.poll(async () => Math.abs((await text.boundingBox())!.y - initial.y)).toBeLessThan(4);
 });
 
 test('a category stays in the available gap between positioned categories after release', async ({ page }) => {

@@ -24,7 +24,7 @@ export const getImageLayerIndexes = (
     const nextLayers = new Map<string, number>();
     selectedImages.forEach((image) => nextLayers.set(image.id, ADDED_IMAGE_BACK_Z_INDEX));
     images
-        .filter((image) => !idSet.has(image.id))
+        .filter((image) => !idSet.has(image.id) && !image.repeatAsBackground && !(image.shape && image.zIndex === ADDED_IMAGE_BACK_Z_INDEX))
         .sort((left, right) => (
             (left.zIndex ?? ADDED_IMAGE_DEFAULT_Z_INDEX) - (right.zIndex ?? ADDED_IMAGE_DEFAULT_Z_INDEX)
         ))

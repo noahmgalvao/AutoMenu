@@ -100,6 +100,7 @@ export const useMenuInteractions = (props: InteractionProps) => {
         startMenuTextEditing: selectionState.startMenuTextEditing,
 
         // ...imageInteractions
+        imageEditPage: imageInteractions.imageEditPage,
         draggedImageId: imageInteractions.draggedImageId,
         setDraggedImageId: imageInteractions.setDraggedImageId,
         handleImageDragStart: imageInteractions.handleImageDragStart,

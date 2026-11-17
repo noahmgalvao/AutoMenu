@@ -1,3 +1,8 @@
+import { ColorPicker } from './ColorPicker';
+import { DecorationControls } from './Decorations';
+import { ShapePicker, ShapeSettings } from './ShapePicker';
+import { canvasShapeUrl, toggleBackgroundLayer } from '../../utils/canvasShapes';
+import type { CanvasShape } from '../../types';
 
 import React, { useRef } from 'react';
 import { MenuStyle, Product, ElementStyle, SortOption, AddedImage, FontSizeLimitKey } from '../../types';
@@ -6,6 +11,7 @@ import { resolveFontSizeLimits, resolveMenuContentSpacing, resolveMenuMargins, r
 import { normalizeMenuPageSetup, resolveMenuPageDimensions } from '../../utils/pageSetup';
 import { StyleControls } from './StyleControls';
 import { FontSelect, MiniFoodTextureSelect, TextureSelect } from './SearchableSelects';
+import { resolveCategoryDivider } from '../../utils/categoryDividers';
 import { CategoryDividerPicker } from './CategoryDividerPicker';
 import { 
   Type, ImagePlus, Minus, Plus, LayoutTemplate, 
@@ -18,6 +24,7 @@ interface ElementsSectionProps {
   selection: { type: 'product' | 'category' | 'freeText' | 'addedImage' | 'page' | 'menuTitle' | 'menuSubtitle' | null, id: string | null };
   selectedFreeText: Product | null;
   selectedAddedImage: AddedImage | null;
+  onAddShape: (shape: CanvasShape) => void;
   selectedAddedImageIds: string[];
   safeStyles: MenuStyle['elementStyles'];
   fontSizeLimits: ReturnType<typeof resolveFontSizeLimits>;
@@ -50,6 +57,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
   updateGlobalElementStyle,
   setPreviewAction,
   onAddedImageUpload,
+  onAddShape,
   setSelection,
   resizeSelectedAddedImages,
   removeSelectedAddedImages,
@@ -60,11 +68,11 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
     ? selectedAddedImageIds.length
     : 1;
   const editingLabel =
-    selection.type === 'menuTitle' ? 'titulo' :
+    selection.type === 'menuTitle' ? 'título' :
     selection.type === 'menuSubtitle' ? 'subtítulo' :
     selection.type === 'freeText' ? 'Texto livre' :
     selection.type === 'category' ? 'Categorias' :
-    selection.type === 'addedImage' ? 'Imagem' :
+    selection.type === 'addedImage' ? (selectedAddedImage?.shape ? 'Forma' : 'Imagem') :
     selection.type === 'page' ? 'Página' :
     'Produtos';
 
@@ -85,7 +93,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
         {selection.type === 'menuTitle' ? (
             <div className="animate-fade-in border-l-2 border-indigo-500 pl-2">
                 <StyleControls
-                    label="Estilo do titulo"
+                    label="Estilo do título"
                     value={safeStyles.menuTitle || {}}
                     onChange={(s) => updateGlobalElementStyle('menuTitle', s)}
                     maxFontSize={fontSizeLimits.menuTitle}
@@ -96,7 +104,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
         ) : selection.type === 'menuSubtitle' ? (
             <div className="animate-fade-in border-l-2 border-indigo-500 pl-2">
                 <StyleControls
-                    label="Estilo do subtitulo"
+                    label="Estilo do subtítulo"
                     value={safeStyles.menuSubtitle || {}}
                     onChange={(s) => updateGlobalElementStyle('menuSubtitle', s)}
                     maxFontSize={fontSizeLimits.menuSubtitle}
@@ -118,8 +126,19 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
             </div>
         ) : selection.type === 'addedImage' && selectedAddedImage ? (
         <div className="animate-fade-in border-l-2 border-indigo-500 pl-2">
-                <p className="text-xs text-indigo-600 font-medium mb-2">Controles da imagem</p>
-                <p className="text-xs text-slate-500 mb-2">{selectedImageCount > 1 ? `${selectedImageCount} imagens selecionadas.` : 'Arraste a imagem na pré-visualização para mover.'}</p>
+                <button type="button" aria-pressed={Boolean(selectedAddedImage.repeatAsBackground)}
+                    className="mb-2 w-full rounded-md border border-indigo-200 bg-indigo-50 px-2 py-2 text-xs font-semibold text-indigo-700"
+                    onClick={() => setStyle(previous => ({
+                        ...previous,
+                        addedImages: previous.addedImages?.map(image => image.id === selectedAddedImage.id ? toggleBackgroundLayer(image) : image),
+                    }))}>
+                    {selectedAddedImage.repeatAsBackground ? 'Usar só nesta página' : 'Definir como plano de fundo'}
+                </button>
+                {selectedAddedImage.shape && <ShapeSettings shape={selectedAddedImage.shape} onChange={shape => setStyle(previous => ({
+                    ...previous, name: 'Custom',
+                    addedImages: previous.addedImages?.map(image => image.id === selectedAddedImage.id ? { ...image, shape, url: canvasShapeUrl(shape) } : image),
+                }))} />}
+                {selectedImageCount > 1 && <p className="my-2 text-xs text-slate-500">{selectedImageCount} elementos selecionados.</p>}
                 <div className="flex items-center justify-between bg-slate-50 p-2 rounded">
                     <span className="text-xs font-bold">Tamanho</span>
                     <div className="flex items-center gap-2">
@@ -143,13 +162,13 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                         onClick={() => layerSelectedAddedImages('back')}
                         className="py-2 text-xs bg-white text-slate-600 border border-slate-200 rounded hover:bg-slate-50 flex items-center justify-center gap-1"
                     >
-                        <SendToBack size={14} /> Enviar atras
+                        <SendToBack size={14} /> Enviar para trás
                     </button>
                     <button
                         onClick={() => layerSelectedAddedImages('front')}
                         className="py-2 text-xs bg-white text-slate-600 border border-slate-200 rounded hover:bg-slate-50 flex items-center justify-center gap-1"
                     >
-                        <BringToFront size={14} /> Trazer frente
+                        <BringToFront size={14} /> Trazer à frente
                     </button>
                 </div>
                 <button
@@ -159,7 +178,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                 }}
                 className="w-full mt-2 py-2 text-xs bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100"
                 >
-                    Remover imagem
+                    {selectedAddedImage.shape ? 'Remover forma' : 'Remover imagem'}
                 </button>
         </div>
         ) : (
@@ -167,16 +186,17 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                 {(selection.type === 'category' || !selection.type) && safeStyles.category && (
                 <>
                     <StyleControls 
-                        label="Titulos das categorias"
+                        label="Títulos das categorias"
                         value={safeStyles.category}
                         onChange={(s) => updateGlobalElementStyle('category', s)}
                         maxFontSize={fontSizeLimits.category}
                         minFontSize={minimumFontSize}
                         fallbackFontFamily={fontFamily}
                     />
+                    <DecorationControls style={style} setStyle={setStyle} scope="category" />
                     {selection.type === 'category' && selection.id && (
                         <CategoryDividerPicker
-                            value={style.categoryDividerStyles?.[selection.id] || 'solid'}
+                            value={resolveCategoryDivider(style, selection.id)}
                             color={style.primaryColor}
                             onChange={(preset) => setStyle((previous) => ({
                                 ...previous,
@@ -190,6 +210,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                 
                 {(selection.type === 'product' || !selection.type) && (
                     <>
+                    <DecorationControls style={style} setStyle={setStyle} scope="product" showBorder={false} />
                     {selection.type === 'product' && selection.id && (
                         <CategoryDividerPicker
                             label="Linha do produto"
@@ -202,6 +223,10 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                             }))}
                         />
                     )}
+                    {selection.type === 'product' && <>
+                        <DecorationControls style={style} setStyle={setStyle} scope="price" />
+                        {style.showImages && <DecorationControls style={style} setStyle={setStyle} scope="productImage" />}
+                    </>}
                     {safeStyles.productName && <StyleControls 
                         label="Nomes dos produtos"
                         value={safeStyles.productName}
@@ -219,7 +244,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                     fallbackFontFamily={fontFamily}
                     />}
                     {safeStyles.productDescription && <StyleControls 
-                        label="Descricoes dos produtos"
+                        label="Descrições dos produtos"
                         value={safeStyles.productDescription}
                         onChange={(s) => updateGlobalElementStyle('productDescription', s)}
                     maxFontSize={fontSizeLimits.productDescription}
@@ -230,6 +255,10 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                 )}
             </div>
         )}
+
+        {(selection.type === 'menuTitle' || selection.type === 'menuSubtitle') &&
+            <DecorationControls style={style} setStyle={setStyle} scope="header" />}
+        {selectedFreeText && <DecorationControls style={style} setStyle={setStyle} scope="freeText" id={selectedFreeText.id} />}
 
         <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 gap-2">
         <button 
@@ -247,6 +276,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
             <ImagePlus size={18} className="text-indigo-600" />
             <span>Adicionar imagem</span>
         </button>
+        <ShapePicker color={style.primaryColor} onAdd={onAddShape} />
         <input 
             type="file" 
             ref={imageInputRef} 
@@ -412,6 +442,9 @@ export const PageSection: React.FC<PageSectionProps> = ({ style, setStyle }) => 
           category,
           {
             ...position,
+            pageX: position.pageX === undefined
+              ? undefined
+              : clampPageValue(position.pageX * horizontalScale, 0, nextDimensions.widthPx - MIN_POSITIONED_OBJECT_VISIBLE_PX),
             y: clampPageValue(
               finitePageValue(position.y, minimumCategoryY) * verticalScale,
               minimumCategoryY,
@@ -615,7 +648,9 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle })
       categoryColumnCount: nextCategoryColumnCount as 1 | 2 | 3,
       categoryPlacements: {},
       categoryPositions: nextCategoryColumnCount !== (previous.categoryColumnCount || 1)
-        ? {}
+        ? Object.fromEntries(Object.entries(previous.categoryPositions || {})
+          .filter(([, position]) => position.pageX !== undefined)
+          .map(([category, position]) => [category, { ...position, columnIndex: Math.min(position.columnIndex, nextCategoryColumnCount - 1) }]))
         : previous.categoryPositions,
       categoryColumnWidths: nextCategoryColumnCount !== (previous.categoryColumnCount || 1)
         ? []
@@ -638,15 +673,13 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle })
         ))}
     </div>
     {(style.layoutMode === 'cards' || style.layoutMode === 'grid') && (
-        <div className="flex items-center justify-between px-3 py-2 bg-slate-50 rounded-lg border border-slate-100">
-            <span className="text-xs font-bold text-slate-500 uppercase">Cor dos cartões</span>
-            <input
-                type="color"
-                value={style.cardBackgroundColor || '#ffffff'}
-                onChange={(event) => setStyle(prev => ({ ...prev, cardBackgroundColor: event.target.value, name: 'Custom' }))}
-                className="h-8 w-10 cursor-pointer rounded border border-slate-200 bg-white p-1"
-                aria-label="Cor de fundo dos cartões"
-            />
+        <div className="space-y-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+            <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-500 uppercase">Cor dos cartões</span>
+                <ColorPicker value={style.cardBackgroundColor || '#ffffff'} label="Cor de fundo dos cartões" preview="cards"
+                    onChange={color => setStyle(previous => ({ ...previous, cardBackgroundColor: color, cardBackgroundColorOverride: true, name: 'Custom' }))} />
+            </div>
+            <DecorationControls style={style} setStyle={setStyle} scope="product" showMarker={false} />
         </div>
     )}
     
@@ -961,15 +994,15 @@ export const StyleSection: React.FC<StyleSectionProps> = ({ style, setStyle }) =
     <div className="flex gap-3 pt-1">
         <div className="space-y-1 flex-1">
             <label className="text-[10px] uppercase font-bold text-slate-400">Principal</label>
-            <div className="h-8 w-full rounded border border-slate-200 overflow-hidden relative"> <input type="color" value={style.primaryColor} onChange={(e) => updatePrimaryColor(e.target.value)} className="absolute -top-4 -left-4 w-[200%] h-[200%] cursor-pointer" /> </div>
+            <ColorPicker value={style.primaryColor} onChange={updatePrimaryColor} label="Cor de destaque" className="w-full" preview="primary" />
         </div>
         <div className="space-y-1 flex-1">
             <label className="text-[10px] uppercase font-bold text-slate-400">Fundo</label>
-            <div className="h-8 w-full rounded border border-slate-200 overflow-hidden relative"> <input type="color" value={style.backgroundColor} onChange={(e) => setStyle(prev => ({ ...prev, backgroundColor: e.target.value, name: 'Custom' }))} className="absolute -top-4 -left-4 w-[200%] h-[200%] cursor-pointer" /> </div>
+            <ColorPicker value={style.backgroundColor} onChange={(color) => setStyle(prev => ({ ...prev, backgroundColor: color, name: 'Custom' }))} label="Cor de fundo" className="w-full" preview="background" />
         </div>
         <div className="space-y-1 flex-1">
             <label className="text-[10px] uppercase font-bold text-slate-400">Texto</label>
-            <div className="h-8 w-full rounded border border-slate-200 overflow-hidden relative"> <input type="color" value={style.textColor} onChange={(e) => updateTextColor(e.target.value)} className="absolute -top-4 -left-4 w-[200%] h-[200%] cursor-pointer" /> </div>
+            <ColorPicker value={style.textColor} onChange={updateTextColor} label="Cor do texto" className="w-full" preview="text" />
         </div>
     </div>
         <div className="space-y-1">

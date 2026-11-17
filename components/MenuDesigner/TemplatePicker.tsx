@@ -102,7 +102,7 @@ function Filters({ query, setQuery, tab, setTab }: {
 function CatalogStatus({ favorites }: { favorites: Favorites }) {
   if (favorites.status === 'ready') return null;
   return <p role="status" className="px-1 text-xs text-slate-600">
-    {favorites.status === 'loading' ? 'Carregando favoritos…' : favorites.status === 'offline' ? 'Favoritos disponíveis neste dispositivo. Sincronização pendente.' : 'Um favorito não pôde ser sincronizado.'}
+    {favorites.status === 'loading' ? 'Carregando favoritos…' : favorites.status === 'offline' ? 'Sincronização dos favoritos pendente.' : 'Um favorito não pôde ser sincronizado.'}
     {favorites.status !== 'loading' && <button type="button" onClick={favorites.retry} className="ml-1 font-semibold text-indigo-700 underline">Tentar novamente</button>}
   </p>;
 }
@@ -324,6 +324,7 @@ export function TemplatePicker(props: Props) {
   const panel = useId();
   const favorites = useTemplateFavorites(userId);
   const currentId = getAppliedTemplateId(current);
+  const selectedTemplate = templates.find(template => template.id === currentId);
 
   useEffect(() => {
     const timer = setTimeout(() => setSearch(query), 110);
@@ -362,21 +363,25 @@ export function TemplatePicker(props: Props) {
     const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
     buttons[index < 0 ? 0 : Math.max(0, Math.min(buttons.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))].focus();
   }}>
+    <div className="flex items-center justify-between gap-2">
+      <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Modelos</h3>
+      <button type="button" className={actionStyle + ' min-h-8 bg-indigo-50 text-indigo-700'}
+        onClick={() => {
+          history.pushState({ ...history.state, templateDiscovery: panel }, '');
+          setPickerOpen(false);
+          setDiscover(true);
+        }}><Grid2X2 size={14} /> Descobrir</button>
+    </div>
     <button type="button" ref={trigger} aria-controls={panel} aria-expanded={pickerOpen}
       onClick={() => setPickerOpen((open) => !open)}
       className={`flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold ${focusStyle}`}>
-      <span className="truncate">{templates.find((template) => template.id === currentId)?.name || 'Escolher modelo'}</span>
+      {selectedTemplate && <div className="my-1 h-20 w-16 shrink-0 overflow-hidden rounded-md"><Thumbnail template={selectedTemplate} /></div>}
+      <span className="min-w-0 flex-1 truncate text-left">{selectedTemplate?.name || 'Escolher modelo'}</span>
       <ChevronDown size={16} className="shrink-0" />
     </button>
     {pickerOpen && <div id={panel} className="space-y-2 rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
       <Filters {...{ query, setQuery, tab, setTab }} />
       <CatalogStatus favorites={favorites} />
-      <button type="button" className={actionStyle + ' w-full bg-indigo-700 text-white'}
-        onClick={() => {
-          history.pushState({ ...history.state, templateDiscovery: panel }, '');
-          setPickerOpen(false);
-          setDiscover(true);
-        }}><Grid2X2 size={17} /> Descobrir</button>
       <div className="max-h-64 space-y-1 overflow-auto overscroll-contain">
         {results.map((template) => <TemplateOption key={template.id} template={template} active={currentId === template.id}
           favorites={favorites} choose={() => { applyTemplate(template); setPickerOpen(false); trigger.current?.focus(); }} />)}

@@ -61,6 +61,7 @@ export type CategoryDividerStyle =
   | 'fade'
   | 'tapered'
   | 'beaded'
+  | 'ornamental'
   | 'accent';
 
 export type WorkspaceStatus = 'active' | 'archived';
@@ -139,6 +140,7 @@ export interface CategoryPosition {
   columnIndex: number;
   y: number;
   x?: number;
+  pageX?: number;
 }
 
 export interface FloatingTextItem {
@@ -158,8 +160,40 @@ export interface AddedImage {
   width: number;
   pageIndex: number;
   zIndex?: number;
+  repeatAsBackground?: boolean;
+  previousZIndex?: number;
+  shape?: CanvasShape;
   boundingBox?: BoundingBox;
 }
+
+export type CanvasShapeKind = 'rectangle' | 'ellipse' | 'triangle' | 'diamond' | 'polygon' | 'star' | 'arrow' | 'line';
+
+export interface CanvasShape {
+  kind: CanvasShapeKind;
+  fill: string;
+  stroke: string;
+  strokeWidth: number;
+  ratio: number;
+  rotation: number;
+  corners: number;
+  points: number;
+  innerRadius: number;
+}
+
+export type MenuBorderScope = 'header' | 'category' | 'product' | 'price' | 'productImage' | 'freeText';
+export type MenuBorderSide = 'top' | 'right' | 'bottom' | 'left';
+
+export interface MenuBorder {
+  sides: MenuBorderSide[];
+  color: string;
+  thickness: number;
+  length: number;
+  radius: number;
+  offset: number;
+  pattern: 'solid' | 'dashed' | 'dotted' | 'double';
+}
+
+export type MenuMarker = 'none' | 'dot' | 'circle' | 'diamond' | 'arrow' | 'check' | 'dash' | 'number' | 'number-circle' | 'number-square' | 'number-padded';
 
 export interface CategoryImage {
   url: string;
@@ -209,6 +243,9 @@ export interface TemplateCatalogMetadata {
 
 export interface MenuStyle {
   design?: TemplateDesign;
+  borders?: Partial<Record<Exclude<MenuBorderScope, 'freeText'>, MenuBorder>>;
+  freeTextBorders?: Record<string, MenuBorder>;
+  markers?: Partial<Record<'category' | 'product', MenuMarker>>;
   catalogMetadata?: TemplateCatalogMetadata;
   appliedTemplateId?: string;
   appliedTemplateVersionId?: string | null;
@@ -234,6 +271,7 @@ export interface MenuStyle {
   showImages: boolean;
   showCategoryImages?: boolean;
   cardBackgroundColor?: string;
+  cardBackgroundColorOverride?: boolean;
   imageScale?: number;
   categoryImageScale?: number;
   columnCount: 1 | 2 | 3;

@@ -1,4 +1,5 @@
 
+import { ColorPicker } from './ColorPicker';
 import React from 'react';
 import { ElementStyle } from '../../types';
 import { AlignLeft, AlignCenter, AlignRight, Bold, Italic, Underline } from 'lucide-react';
@@ -48,15 +49,8 @@ export const StyleControls: React.FC<StyleControlsProps> = ({
 
             {/* Cor e alinhamento */}
             <div className="flex gap-2 items-center">
-                <div className="h-8 w-10 relative rounded border border-slate-200 overflow-hidden flex-shrink-0">
-                    <input 
-                        type="color" 
-                        className="absolute -top-4 -left-4 w-[200%] h-[200%] cursor-pointer"
-                        value={value.color || '#000000'}
-                        onChange={(e) => onChange({...value, color: e.target.value})}
-                    />
-                </div>
-                
+                <ColorPicker value={value.color} onChange={color => onChange({ ...value, color })} />
+
                 <div className="flex bg-white rounded border border-slate-200">
                     {['left', 'center', 'right'].map((align) => (
                         <button

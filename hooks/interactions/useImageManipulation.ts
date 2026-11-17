@@ -36,6 +36,7 @@ export const useImageManipulation = (
 ) => {
     const { onStyleUpdate, scale, style } = props;
     const { widthPx: pageWidthPx, heightPx: pageHeightPx } = resolveMenuPageDimensions(style);
+    const [imageEditPage, setImageEditPage] = React.useState<{ id: string; pageIndex: number } | null>(null);
     const [draggedImageId, setDraggedImageId] = useState<string | null>(null);
     const imageDragCleanupRef = React.useRef<(() => void) | null>(null);
     const imageResizeCleanupRef = React.useRef<(() => void) | null>(null);
@@ -52,12 +53,13 @@ export const useImageManipulation = (
         return selectedImageIds.includes(imgId) && selectedImageIds.length > 1 ? selectedImageIds : [imgId];
     };
 
-    const handleImageDragStart = (e: React.PointerEvent, imgId: string) => {
+    const handleImageDragStart = (e: React.PointerEvent, imgId: string, pageIndex = 0) => {
         e.preventDefault();
         e.stopPropagation();
         imageDragCleanupRef.current?.();
         document.body.dataset.automenuImageInteraction = 'drag';
         setDraggedImageId(imgId);
+        setImageEditPage({ id: imgId, pageIndex });
         handleSelection('addedImage', imgId, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey });
         
         const el = e.currentTarget as HTMLElement;
@@ -112,7 +114,7 @@ export const useImageManipulation = (
                    const nextImages = prev.addedImages?.map(img => {
                        if (img.id !== imgId) return img;
 
-                       const currentPageIndex = img.pageIndex || 0;
+                       const currentPageIndex = img.repeatAsBackground ? pageIndex : img.pageIndex || 0;
                        const currentPage = pages.find((page) => page.pageIndex === currentPageIndex) || pages[0];
                        const hasExistingNextPage = pages.some((page) => page.pageIndex > currentPageIndex);
                        const shouldCreateNextPage = Boolean(
@@ -133,7 +135,7 @@ export const useImageManipulation = (
                            targetPage = pageAtPointer;
                            newX = ((moveX - targetPage.rect.left) / currentScale) - pointerOffsetX;
                            newY = ((moveY - targetPage.rect.top) / currentScale) - pointerOffsetY;
-                       } else if (shouldCreateNextPage) {
+                       } else if (shouldCreateNextPage && !img.repeatAsBackground) {
                            targetPageIndex = currentPageIndex + 1;
                            newX = 0;
                            newY = 0;
@@ -146,7 +148,7 @@ export const useImageManipulation = (
 
                         return {
                             ...img,
-                            pageIndex: targetPageIndex,
+                            pageIndex: img.repeatAsBackground ? img.pageIndex : targetPageIndex,
                             x: clamp(newX, 0, Math.max(0, pageWidthPx - img.width)),
                             y: clamp(newY, 0, Math.max(0, pageHeightPx - imageHeight)),
                         };
@@ -373,6 +375,7 @@ export const useImageManipulation = (
     };
 
     return {
+        imageEditPage,
         draggedImageId, setDraggedImageId,
         handleImageDragStart,
         handleResizeImage,

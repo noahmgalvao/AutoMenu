@@ -1,8 +1,9 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlignCenter, AlignLeft, AlignRight, Bold, ChevronDown, Italic, Minus, Plus, Underline } from 'lucide-react';
+import { AlignCenter, AlignLeft, AlignRight, Bold, Check, ChevronDown, Italic, Minus, Plus, Underline } from 'lucide-react';
 import { ElementStyle } from '../../types';
 import { FontSelect } from './SearchableSelects';
+import { ColorPicker } from './ColorPicker';
 import { FontSizeInput } from './FontSizeInput';
 import type { PriceAdjustmentMode } from '../../utils/pricePropagation';
 import type { CategoryDividerStyle } from '../../types';
@@ -14,6 +15,7 @@ interface InlineStyleToolbarProps {
     value: ElementStyle;
     onChange: (style: ElementStyle) => void | boolean;
     onDismiss: () => void;
+    onFinish?: () => void;
     controls?: 'all' | 'sizeColor';
     maxFontSize?: number;
     minFontSize?: number;
@@ -25,9 +27,10 @@ interface InlineStyleToolbarProps {
     categoryDividerColor?: string;
     onCategoryDividerChange?: (preset: CategoryDividerStyle) => void;
     dividerLabel?: string;
+    decoration?: React.ReactNode;
 }
 
-export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, positionTargetElementId, value, onChange, onDismiss, controls = 'all', maxFontSize, minFontSize, header, compact = false, onAdjustPrice, fallbackFontFamily, categoryDividerPreset, categoryDividerColor = '#000000', onCategoryDividerChange, dividerLabel }) => {
+export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, positionTargetElementId, value, onChange, onDismiss, onFinish, controls = 'all', maxFontSize, minFontSize, header, compact = false, onAdjustPrice, fallbackFontFamily, categoryDividerPreset, categoryDividerColor = '#000000', onCategoryDividerChange, dividerLabel, decoration }) => {
     const toolbarRef = useRef<HTMLDivElement>(null);
     const [position, setPosition] = useState({ left: 8, top: 8, width: 270 });
     const [priceAdjustment, setPriceAdjustment] = useState('10');
@@ -43,7 +46,9 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
 
     useEffect(() => {
         const dismissOnOutsidePointer = (event: PointerEvent) => {
-            if (!toolbarRef.current?.contains(event.target as Node)) onDismiss();
+            const target = event.target;
+            if (target instanceof Element && target.closest('[data-editor-popover="true"]')) return;
+            if (!onFinish && !toolbarRef.current?.contains(target as Node)) onDismiss();
         };
         const dismissOnPdf = () => onDismiss();
 
@@ -53,7 +58,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
             document.removeEventListener('pointerdown', dismissOnOutsidePointer, true);
             document.removeEventListener('automenu:close-inline-formatting', dismissOnPdf);
         };
-    }, [onDismiss]);
+    }, [onDismiss, onFinish]);
 
     useLayoutEffect(() => {
         const target = document.getElementById(positionTargetElementId || targetElementId);
@@ -122,14 +127,9 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                     className={compact ? '!w-14' : undefined}
                     onChange={(fontSize) => onChange({ ...value, fontSize })}
                 />
-                <div className="relative h-8 w-8 flex-shrink-0 overflow-hidden rounded border border-slate-200">
-                    <input
-                        type="color"
-                        className="absolute -left-4 -top-4 h-[200%] w-[200%] cursor-pointer"
-                        value={value.color || '#000000'}
-                        onChange={(event) => onChange({ ...value, color: event.target.value })}
-                    />
-                </div>
+                <ColorPicker value={value.color} onChange={color => onChange({ ...value, color })} />
+                {onFinish && <button type="button" aria-label="Concluir edição" title="Concluir edição" onClick={onFinish}
+                    className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-indigo-50 text-indigo-700 hover:bg-indigo-100"><Check size={16} /></button>}
             </div>
             {!isSizeColorOnly && (
                 <div className="mt-1.5 flex items-center justify-center gap-1">
@@ -179,6 +179,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                     />
                 </div>
             )}
+            {decoration && <div className="mt-2 border-t border-slate-100 pt-2">{decoration}</div>}
             {onAdjustPrice && (
                 <div className="mt-2 border-t border-slate-100 pt-2">
                     <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Alterar valor</div>

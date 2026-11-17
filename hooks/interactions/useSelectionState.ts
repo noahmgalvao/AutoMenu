@@ -198,6 +198,7 @@ export const useSelectionState = (
     }, [getSingleSelectionItem, props.selection]);
 
     const handleSelection = useCallback((type: SelectionType, id: string | null, options?: { shiftKey?: boolean; ctrlKey?: boolean }) => {
+        setEditingId(current => current === id ? current : null);
         if (!type || !id) {
             setFormattingTarget(null);
             setSelectedId(null);
@@ -411,21 +412,10 @@ export const useSelectionState = (
             e.currentTarget.innerText = originalValue;
             e.currentTarget.dataset.wordOverflow = 'false';
             triggerLimitFeedback(e.currentTarget);
-            setEditingId(null);
+            if (type !== 'product') setEditingId(null);
             return;
         }
-        if (type === 'product') {
-            window.setTimeout(() => {
-                const activeElement = document.activeElement as HTMLElement | null;
-                const isSameProductField = activeElement?.dataset.productEditId === id;
-                const isFormattingControl = Boolean(activeElement?.closest('[data-inline-format-toolbar="true"]'));
-                if (!isSameProductField && !isFormattingControl) {
-                    setEditingId(current => current === id ? null : current);
-                }
-            }, 0);
-        } else if (type !== 'floating') {
-            setEditingId(null);
-        }
+        if (type !== 'product' && type !== 'floating') setEditingId(null);
         const newVal = e.currentTarget.innerText;
         if (type === 'product' && field && onUpdateProduct) {
             const product = products.find(candidate => candidate.id === id);
@@ -481,7 +471,7 @@ export const useSelectionState = (
                     }
                 }
                 else e.currentTarget.innerText = formatMenuPriceValue(product?.price ?? 0, style);
-            } else {
+            } else if (newVal !== product?.[field as keyof Product]) {
                 onUpdateProduct(id, field as keyof Product, newVal);
             }
         } else if (type === 'category' && onUpdateCategoryName) {
@@ -492,6 +482,13 @@ export const useSelectionState = (
     }, [emitSelection, onDeleteProduct, onStyleUpdate, onUpdateProduct, onUpdateCategoryName, onUpdateMenuText, products, style]);
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
+        if (e.key === 'Escape' && editingId) {
+            e.stopPropagation();
+            e.currentTarget.blur();
+            setEditingId(null);
+            setFormattingTarget(null);
+            return;
+        }
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             if (e.currentTarget.id.startsWith('product-price-')) {
@@ -507,6 +504,10 @@ export const useSelectionState = (
                 return;
             }
             e.currentTarget.blur();
+            if (e.currentTarget.dataset.productEditId) {
+                setEditingId(null);
+                setFormattingTarget(null);
+            }
         }
     };
 

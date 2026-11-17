@@ -2,12 +2,12 @@ import React, { useRef, useMemo } from 'react';
 import { Product } from '../../types';
 import { InteractionProps, DraftItem, FREE_TEXT_PREFIX, NUDGE_STEP, SelectionItem, SelectionType, MoveDirection } from './types';
 import { getCollisionSafeFreeTextTop, moveFreeTextOneStep } from './freeTextMovement';
-import { SAFETY_BUFFER } from '../../utils/menuPagination';
 import { resolveMenuPageDimensions } from '../../utils/pageSetup';
 
 const isCanvasObjectOrControlTarget = (target: EventTarget | null, pageEl: HTMLElement) => {
     if (!(target instanceof HTMLElement)) return false;
     if (target === pageEl) return false;
+    if (target.closest('[data-canvas-background-layer="true"]')) return false;
 
     return Boolean(target.closest([
         'button',
@@ -123,42 +123,31 @@ export const useKeyboardMovement = (
         const columnEls = Array.from(
             pageEl.querySelectorAll<HTMLElement>('[data-drag-column-container="category"][data-drag-column-index]')
         );
-        const clickedColumnEl = columnEls.find((columnEl) => {
-            const rect = columnEl.getBoundingClientRect();
-            return e.clientX >= rect.left && e.clientX <= rect.right;
-        }) || columnEls.reduce<HTMLElement | null>((best, columnEl) => {
-            if (!best) return columnEl;
-            const rect = columnEl.getBoundingClientRect();
-            const bestRect = best.getBoundingClientRect();
-            const distance = Math.abs(e.clientX - (rect.left + rect.width / 2));
-            const bestDistance = Math.abs(e.clientX - (bestRect.left + bestRect.width / 2));
-            return distance < bestDistance ? columnEl : best;
-        }, null);
-        const columnIndex = Number(clickedColumnEl?.dataset.dragColumnIndex ?? 0);
-        
+        const columnIndex = Number(columnEls.find(column => {
+            const rect = column.getBoundingClientRect();
+            return e.clientX >= rect.left && e.clientX < rect.right;
+        })?.dataset.dragColumnIndex ?? 0);
+        const pageX = Math.max(0, Math.min(pageEl.offsetWidth - 24, (e.clientX - pageRect.left) / currentScale));
+        const clickLeft = pageRect.left + pageX * currentScale;
         let floorId: string | null = null;
-        let floorBottom = 0; 
+        let floorBottom = 0;
         let ceilingId: string | null = null;
         let ceilingTop = pageHeightPx;
-        
         let minDistAbove = Infinity;
         let minDistBelow = Infinity;
-        const searchRoot = clickedColumnEl || pageEl;
-        const pagePadding = style.pagePadding || 48;
-        const columnRect = clickedColumnEl?.getBoundingClientRect();
         const safeClientTop = getCollisionSafeFreeTextTop({
             root: pageEl,
-            desiredTop: pageRect.top + (clickY * currentScale),
-            height: 40 * currentScale,
+            desiredTop: e.clientY,
+            height: 32 * currentScale,
             pointerY: e.clientY,
-            minTop: columnRect?.top ?? pageRect.top + (pagePadding * currentScale),
-            maxBottom: pageRect.bottom - ((pagePadding + SAFETY_BUFFER) * currentScale),
-            minLeft: columnRect?.left,
-            maxRight: columnRect?.right,
+            minTop: pageRect.top,
+            maxBottom: pageRect.bottom,
+            minLeft: clickLeft,
+            maxRight: clickLeft + 24 * currentScale,
         });
         if (safeClientTop === null) return;
         clickY = (safeClientTop - pageRect.top) / currentScale;
-        const allElements = searchRoot.querySelectorAll('[id^="product-container-"], [id^="category-header-"]');
+        const allElements = pageEl.querySelectorAll('[id^="product-container-"], [id^="category-header-"]');
         const pageIsEmpty = !pageEl.querySelector('[id^="product-container-"], [id^="category-header-"], [data-menu-heading]');
         
         allElements.forEach(el => {
@@ -192,6 +181,7 @@ export const useKeyboardMovement = (
             pageIndex,
             columnIndex,
             top: clickY,
+            pageX,
             floorId,
             floorBottom,
             ceilingId,
@@ -218,6 +208,30 @@ export const useKeyboardMovement = (
         if (!text) {
             setDraftItem(null);
             return;
+        }
+        let positionY = draftItem.top;
+        if (draftItem.pageX !== undefined) {
+            const page = draftInputRef.current.closest<HTMLElement>('[data-menu-print-page="true"]');
+            if (page) {
+                const pageRect = page.getBoundingClientRect();
+                const draftRect = draftInputRef.current.getBoundingClientRect();
+                const pageScale = pageRect.width / page.offsetWidth;
+                const safeTop = getCollisionSafeFreeTextTop({
+                    root: page,
+                    desiredTop: draftRect.top,
+                    height: draftRect.height,
+                    pointerY: draftRect.top,
+                    minTop: pageRect.top,
+                    maxBottom: pageRect.bottom,
+                    minLeft: draftRect.left,
+                    maxRight: draftRect.right,
+                });
+                if (safeTop === null) {
+                    setDraftItem(null);
+                    return;
+                }
+                positionY = (safeTop - pageRect.top) / pageScale;
+            }
         }
         const newId = crypto.randomUUID();
         const ghostCategoryName = `${FREE_TEXT_PREFIX}${newId}`;
@@ -288,7 +302,8 @@ export const useKeyboardMovement = (
                     [ghostCategoryName]: {
                         pageIndex: draftItem.pageIndex,
                         columnIndex: draftItem.columnIndex,
-                        y: Math.max(0, draftItem.top),
+                        y: Math.max(0, positionY),
+                        pageX: draftItem.pageX,
                     },
                 },
                 name: 'Custom'

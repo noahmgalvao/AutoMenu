@@ -32,7 +32,12 @@ export function resizeMenuStyle(current: MenuStyle, setup: MenuPageSetup): MenuS
       const width = Math.min(image.width * Math.min(xRatio, yRatio), right - left);
       return { ...image, x: x(image.x, width), y: y(image.y), width };
     }),
-    categoryPositions: undefined,
+    categoryPositions: current.categoryPositions && Object.fromEntries(Object.entries(current.categoryPositions)
+      .filter(([, position]) => position.pageX !== undefined)
+      .map(([category, position]) => [category, {
+        ...position, pageX: clamp(position.pageX! * xRatio, 0, to.widthPx - 24),
+        y: clamp(position.y * yRatio, 0, to.heightPx - 28),
+      }])),
     categoryPlacements: undefined,
   };
 }
@@ -67,13 +72,21 @@ export function applyTemplateToCurrentStyle(current: MenuStyle, template: MenuSt
     categoryColumnWidths: visual.categoryColumnWidths?.length === (visual.categoryColumnCount || 1)
       ? visual.categoryColumnWidths : undefined,
     categoryPlacements: sameColumns && sameProductColumns && sameLayout ? resized.categoryPlacements : undefined,
-    categoryPositions: sameColumns && sameProductColumns && sameLayout ? resized.categoryPositions : undefined,
+    categoryPositions: sameColumns && sameProductColumns && sameLayout ? resized.categoryPositions
+      : resized.categoryPositions && Object.fromEntries(Object.entries(resized.categoryPositions)
+        .filter(([, position]) => position.pageX !== undefined)
+        .map(([category, position]) => [category, {
+          ...position, columnIndex: Math.min(position.columnIndex, (visual.categoryColumnCount || 1) - 1),
+        }])),
     pagePadding: visual.pagePadding,
     margins: resized.margins,
     itemGap: visual.itemGap,
     contentSpacing: visual.contentSpacing,
     globalRadius: visual.globalRadius,
     cardBackgroundColor: visual.cardBackgroundColor,
+    cardBackgroundColorOverride: visual.cardBackgroundColorOverride,
+    borders: visual.borders,
+    markers: visual.markers,
     imageScale: visual.imageScale,
     fontSizeLimits: visual.fontSizeLimits,
     elementStyles: visual.elementStyles,

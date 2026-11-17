@@ -16,7 +16,7 @@ export const CategoryDividerPicker: React.FC<CategoryDividerPickerProps> = ({ va
 
   const renderPreview = (preset: CategoryDividerStyle) => preset === 'none'
     ? <span className="w-full text-center text-[10px] text-slate-400">sem linha</span>
-    : <span className="block w-full" style={getCategoryDividerStyle(preset, color, 'right')} />;
+    : <span className="block w-full" data-ornamental-divider={preset === 'ornamental' ? 'right' : undefined} style={getCategoryDividerStyle(preset, color, 'right')} />;
 
   return (
     <div className="space-y-1.5">

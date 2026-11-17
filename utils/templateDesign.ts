@@ -30,10 +30,10 @@ export function getTemplateColors(style: MenuStyle) {
   const tint = /^#[a-f\d]{6}$/i.test(accent) ? accent + '18' : 'rgba(100, 116, 139, .12)';
   const [width, height] = (style.design?.imageRatio || '4:3').split(':').map(Number);
   return {
-    '--template-accent': accent,
-    '--template-ink': style.textColor,
-    '--template-paper': style.backgroundColor,
-    '--template-tint': tint,
+    '--template-accent': `var(--automenu-preview-primary, ${accent})`,
+    '--template-ink': `var(--automenu-preview-text, ${style.textColor})`,
+    '--template-paper': `var(--automenu-preview-background, ${style.backgroundColor})`,
+    '--template-tint': `var(--automenu-preview-tint, ${tint})`,
     '--template-radius': (style.globalRadius ?? 8) + 'px',
     '--template-image-ratio': width + ' / ' + height,
   };

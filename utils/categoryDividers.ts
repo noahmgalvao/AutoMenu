@@ -1,5 +1,5 @@
 import type React from 'react';
-import type { CategoryDividerStyle } from '../types';
+import type { CategoryDividerStyle, MenuStyle } from '../types';
 
 export const CATEGORY_DIVIDER_PRESETS: { value: CategoryDividerStyle; label: string }[] = [
   { value: 'solid', label: 'Fina' },
@@ -10,9 +10,13 @@ export const CATEGORY_DIVIDER_PRESETS: { value: CategoryDividerStyle; label: str
   { value: 'fade', label: 'Degradê' },
   { value: 'tapered', label: 'Afunilada' },
   { value: 'beaded', label: 'Contas' },
+  { value: 'ornamental', label: 'Ornamental' },
   { value: 'accent', label: 'Destaque' },
   { value: 'none', label: 'Sem linha' },
 ];
+
+export const resolveCategoryDivider = (style: MenuStyle, category: string): CategoryDividerStyle =>
+  style.categoryDividerStyles?.[category] || style.design?.divider || 'solid';
 
 export const getCategoryDividerStyle = (
   preset: CategoryDividerStyle = 'solid',
@@ -38,6 +42,8 @@ export const getCategoryDividerStyle = (
       return { ...base, height: 3, background: `linear-gradient(${towardTitle}, transparent 0%, ${color} 100%)`, clipPath: titleEdge === 'right' ? 'polygon(0 42%, 100% 0, 100% 100%, 0 58%)' : 'polygon(0 0, 100% 42%, 100% 58%, 0 100%)', opacity: 0.68 };
     case 'beaded':
       return { ...base, height: 3, backgroundImage: `radial-gradient(circle, ${color} 1.2px, transparent 1.35px)`, backgroundPosition: 'right center', backgroundSize: '7px 3px', opacity: 0.68 };
+    case 'ornamental':
+      return { ...base, position: 'relative', height: 4, borderBlock: `1px solid ${color}`, color };
     case 'accent':
       return { ...base, height: 3, background: `linear-gradient(${towardTitle}, transparent 0%, ${color} 64%, ${color} 82%, transparent 82%)`, opacity: 0.72 };
     case 'solid':

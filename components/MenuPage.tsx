@@ -2,7 +2,7 @@ import { getTemplateColors, getTemplateDesignAttributes } from '../utils/templat
 import './MenuDesigner/templateDesign.css';
 import React from 'react';
 import { Product, MenuStyle } from '../types';
-import { BringToFront, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Minus, MoreHorizontal, Plus, SendToBack, Trash2 } from 'lucide-react';
+import { BringToFront, Layers, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Minus, MoreHorizontal, Plus, SendToBack, Trash2 } from 'lucide-react';
 import { Resizable } from 're-resizable';
 import { MenuItem, ResponsiveMoveButton } from './MenuItem';
 import { PageLayout, CategoryChunkLayout, PageItem, FREE_TEXT_PREFIX } from '../utils/menuPagination';
@@ -13,6 +13,7 @@ import { InlineStyleToolbar } from './MenuDesigner/InlineStyleToolbar';
 import { resolveMenuMargins, resolveMinimumFontSize, roundFontSize } from '../utils/styleRules';
 import { getColumnGridTemplate, getPageColumnWidths } from '../utils/categoryColumns';
 import { ColumnResizeHandles } from './ColumnResizeHandles';
+import { toggleBackgroundLayer } from '../utils/canvasShapes';
 import { resolveMenuPageDimensions } from '../utils/pageSetup';
 
 const CategoryMoveIcon = ({ direction }: { direction: FlowDirection }) => {
@@ -31,13 +32,14 @@ const PositionedCategoryChunk: React.FC<
     React.HTMLAttributes<HTMLDivElement> & {
         desiredPageY?: number;
         desiredPageX?: number;
+        absolutePageX?: number;
         flowOffsetBefore?: number;
         detachedForDrag?: boolean;
         detachedFromFlow?: boolean;
         pageIndex: number;
         layoutKey: string;
     }
-> = ({ desiredPageY, desiredPageX, flowOffsetBefore = 0, detachedForDrag = false, detachedFromFlow = false, pageIndex, layoutKey, style, children, ...props }) => {
+> = ({ desiredPageY, desiredPageX, absolutePageX, flowOffsetBefore = 0, detachedForDrag = false, detachedFromFlow = false, pageIndex, layoutKey, style, children, ...props }) => {
     const elementRef = React.useRef<HTMLDivElement>(null);
     const [position, setPosition] = React.useState({ top: 0, left: 0 });
     const isFreePositioned = detachedFromFlow && Number.isFinite(desiredPageY);
@@ -54,9 +56,11 @@ const PositionedCategoryChunk: React.FC<
             const columnRect = column.getBoundingClientRect();
             const elementRect = element.getBoundingClientRect();
             const scale = Math.max(0.001, pageRect.width / Math.max(1, page.offsetWidth));
-            const top = Math.max(0, (pageRect.top - columnRect.top) / scale + Number(desiredPageY));
+            const top = (pageRect.top - columnRect.top) / scale + Number(desiredPageY);
             const maximumLeft = Math.max(0, (columnRect.width - elementRect.width) / scale);
-            const left = Math.max(0, Math.min(maximumLeft, Number(desiredPageX) || 0));
+            const left = absolutePageX !== undefined
+                ? (pageRect.left - columnRect.left) / scale + absolutePageX
+                : Math.max(0, Math.min(maximumLeft, Number(desiredPageX) || 0));
             setPosition((current) => current.top === top && current.left === left ? current : { top, left });
         };
 
@@ -66,13 +70,14 @@ const PositionedCategoryChunk: React.FC<
         observer.observe(column);
         observer.observe(element);
         return () => observer.disconnect();
-    }, [desiredPageX, desiredPageY, isFreePositioned, layoutKey, pageIndex]);
+    }, [absolutePageX, desiredPageX, desiredPageY, isFreePositioned, layoutKey, pageIndex]);
 
     return (
         <div
             {...props}
             ref={elementRef}
             data-free-positioned={isFreePositioned ? 'true' : undefined}
+            data-page-positioned-text={isFreePositioned && absolutePageX !== undefined ? 'true' : undefined}
             data-category-flow-offset={flowOffsetBefore || undefined}
             style={{
                 ...style,
@@ -83,7 +88,7 @@ const PositionedCategoryChunk: React.FC<
                     top: position.top,
                     left: position.left,
                     width: 'max-content',
-                    maxWidth: '100%',
+                    maxWidth: absolutePageX !== undefined ? `calc(var(--menu-page-width) - ${absolutePageX}px)` : '100%',
                 } : {}),
             }}
         >
@@ -151,11 +156,15 @@ export const MenuPage: React.FC<MenuPageProps> = ({
         handlers.liveCategoryColumnWidths,
     );
 
+    const visibleImages = (style.addedImages || []).filter(image => image?.id && (image.repeatAsBackground || (image.pageIndex || 0) === pageIndex));
+    const editableImages = readOnly ? [] : visibleImages.filter(image => (
+        ((handlers.imageEditPage?.id === image.id && image.repeatAsBackground ? handlers.imageEditPage.pageIndex : image.pageIndex) || 0) === pageIndex
+    ));
     const pageStyle: React.CSSProperties = {
         fontFamily: style.fontFamily + (style.design ? ', Georgia, serif' : ''),
         ...getTemplateColors(style),
-        backgroundColor: isImportedMenu ? 'transparent' : style.backgroundColor,
-        color: style.textColor,
+        backgroundColor: isImportedMenu ? 'transparent' : 'var(--template-paper)',
+        color: 'var(--template-ink)',
         backgroundImage: !isImportedMenu && backgroundSource ? `url(${backgroundSource})` : style.design ? decorativeBackground[style.design.background] : 'none',
         backgroundSize: 'cover',
         backgroundPosition: 'center',
@@ -234,6 +243,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 key={chunk.chunkId}
                 desiredPageY={desiredPageY}
                 desiredPageX={isFreeTextTarget ? categoryPosition?.x : undefined}
+                absolutePageX={isFreeTextTarget ? categoryPosition?.pageX : undefined}
                 flowOffsetBefore={chunk.flowOffsetBefore}
                 detachedForDrag={isCategoryDragged}
                 detachedFromFlow={isFreeTextTarget}
@@ -417,7 +427,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
             const precedingWidth = categoryColumnWidths
                 .slice(0, draftColumnIndex)
                 .reduce((sum, width) => sum + (width * usableColumnsWidth), 0);
-            const draftLeft = margins.left + precedingWidth + (draftColumnIndex * columnGap);
+            const draftLeft = handlers.draftItem.pageX ?? (margins.left + precedingWidth + (draftColumnIndex * columnGap));
 
             elements.push(
                 <div
@@ -427,7 +437,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         top: `${handlers.draftItem.top}px`,
                         left: `${draftLeft}px`,
                         width: 'fit-content',
-                        maxWidth: `${columnWidth}px`,
+                        maxWidth: `${handlers.draftItem.pageX === undefined ? columnWidth : pageDimensions.widthPx - draftLeft}px`,
                     }}
                 >
                     <div
@@ -443,7 +453,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         }}
                         className="w-fit max-w-full whitespace-pre-wrap break-words bg-indigo-500/15 ring-2 ring-blue-500 rounded p-1 font-normal text-xl leading-snug outline-none shadow-xl min-h-[30px] border border-blue-200 select-text"
                         style={{
-                            color: style.textColor,
+                            color: 'var(--template-ink)',
                             WebkitTextFillColor: style.textColor,
                             '--automenu-edit-color': style.textColor,
                         } as React.CSSProperties}
@@ -474,11 +484,12 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 data-menu-page-height-px={pageDimensions.heightPx}
                 data-menu-page-width-mm={pageDimensions.widthMm}
                 data-menu-page-height-mm={pageDimensions.heightMm}
-                style={pageStyle}
+                style={{ ...pageStyle, '--menu-page-width': `${pageDimensions.widthPx}px` } as React.CSSProperties}
                 onDragOver={(e) => handlers.handleDragOverItem?.(e)}
-                className={`shadow-2xl ${isImportedMenu ? '' : 'bg-white'} print:shadow-none print:mb-0 print:break-after-page group/page transition-all md:cursor-default ${isPageSelected ? 'ring-4 ring-blue-500' : ''}`}
+                className={`shadow-2xl ${isImportedMenu ? '' : 'bg-white'} print:shadow-none print:mb-0 print:break-after-page group/page transition-shadow md:cursor-default ${isPageSelected ? 'ring-4 ring-blue-500' : ''}`}
                 onClick={readOnly ? undefined : (e) => {
                     e.stopPropagation();
+                    if (products.some(product => product.id === handlers.editingId && !product.isFreeText)) return;
                     handlers.setSelectedPageIndex(pageIndex);
                     handlers.setSelectedId(null);
                     handlers.handleSelection('page', pageIndex.toString(), { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey });
@@ -519,29 +530,30 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         {text.text}
                     </p>
                 ))}
-                {(style.addedImages || []).filter((img) => img && img.id && (img.pageIndex || 0) === pageIndex).map((img, imgIdx) => {
+                {visibleImages.map((img, imgIdx) => {
                     return (
                         <div
                             key={img.id || imgIdx}
                             id={readOnly ? undefined : `added-image-${pageIndex}-${img.id}`}
                             data-added-image-drag="true"
                             data-added-image-id={img.id}
+                            data-canvas-background-layer={img.repeatAsBackground || (img.shape && (img.zIndex ?? 1) <= 1) ? 'true' : undefined}
                             className="automenu-drag-item absolute group cursor-move"
                             style={{
                                 left: `${img.x}px`,
                                 top: `${img.y}px`,
                                 width: `${img.width}px`,
-                                zIndex: img.zIndex ?? 11,
+                                zIndex: img.repeatAsBackground ? 1 : (img.zIndex ?? 11),
                                 touchAction: 'none',
                             }}
                             onPointerDown={(e) => {
                                 if ((e.target as HTMLElement).closest('.automenu-image-resize-handle')) return;
-                                handlers.handleImageDragStart(e, img.id);
+                                if (!readOnly) handlers.handleImageDragStart(e, img.id, pageIndex);
                             }}
                             onClick={(e) => e.stopPropagation()}
                             onContextMenu={(e) => handlers.openObjectMenu?.(e, { type: 'addedImage', id: img.id })}
                         >
-                            <img src={img.url} alt="imagem adicionada" className="w-full h-auto pointer-events-none select-none" draggable={false} />
+                            <img src={img.url} alt={img.shape ? 'Forma adicionada' : 'Imagem adicionada'} className="w-full h-auto pointer-events-none select-none" draggable={false} />
                         </div>
                     );
                 })}
@@ -559,12 +571,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                     {renderPageContent()}
                 </div>
 
-                {(style.addedImages || []).filter((img) => (
-                    img
-                    && img.id
-                    && (img.pageIndex || 0) === pageIndex
-                    && (handlers.isSelected?.('addedImage', img.id) ?? handlers.selectedId === img.id)
-                )).map((img) => (
+                {editableImages.filter(img => handlers.isSelected?.('addedImage', img.id) ?? handlers.selectedId === img.id).map((img) => (
                     <div
                         key={`resize-controls-${img.id}`}
                         data-print-control="true"
@@ -580,7 +587,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         }}
                         onPointerDown={(event) => {
                             if ((event.target as HTMLElement).closest('.automenu-image-resize-handle')) return;
-                            handlers.handleImageDragStart(event, img.id);
+                            handlers.handleImageDragStart(event, img.id, pageIndex);
                         }}
                         onClick={(event) => event.stopPropagation()}
                         onContextMenu={(event) => handlers.openObjectMenu?.(event, { type: 'addedImage', id: img.id })}
@@ -707,7 +714,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                     </div>
                 </div>
             </div>
-            {(style.addedImages || []).filter((img) => img && img.id && (img.pageIndex || 0) === pageIndex && handlers.selectedId === img.id).map((img) => (
+            {editableImages.filter(img => handlers.selectedId === img.id).map((img) => (
                 <div
                     key={`controls-${img.id}`}
                     data-print-control="true"
@@ -722,8 +729,16 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         zIndex: 100000,
                     }}
                 >
-                    <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => handlers.handleLayerImage(e, img.id, 'back')} className="p-2.5 hover:bg-slate-100 rounded-l-full rounded-r text-slate-600" title="Enviar atras"><SendToBack size={24} /></button>
-                    <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => handlers.handleLayerImage(e, img.id, 'front')} className="p-2.5 hover:bg-slate-100 rounded text-slate-600" title="Trazer frente"><BringToFront size={24} /></button>
+                    <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => handlers.handleLayerImage(e, img.id, 'back')} className="p-2.5 hover:bg-slate-100 rounded-l-full rounded-r text-slate-600" title="Enviar para trás"><SendToBack size={24} /></button>
+                    <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => handlers.handleLayerImage(e, img.id, 'front')} className="p-2.5 hover:bg-slate-100 rounded text-slate-600" title="Trazer à frente"><BringToFront size={24} /></button>
+                    <button type="button" aria-pressed={Boolean(img.repeatAsBackground)} title={img.repeatAsBackground ? 'Usar só nesta página' : 'Definir como plano de fundo'}
+                        aria-label={img.repeatAsBackground ? 'Usar só nesta página' : 'Definir como plano de fundo'}
+                        onPointerDown={event => event.stopPropagation()} onClick={event => {
+                            event.stopPropagation();
+                            handlers.updateStyle?.((previous: MenuStyle) => ({
+                                ...previous, addedImages: previous.addedImages?.map(image => image.id === img.id ? toggleBackgroundLayer(image, pageIndex) : image),
+                            }));
+                        }} className={`p-2.5 rounded transition-colors ${img.repeatAsBackground ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'}`}><Layers size={24} /></button>
                     <div className="w-px bg-slate-200 mx-1"></div>
                     <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => handlers.handleRemoveImage(e, img.id)} className="p-2.5 hover:bg-red-50 rounded text-red-500"><Trash2 size={24} /></button>
                     <button data-open-object-menu="true" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => handlers.openObjectMenu?.(e, { type: 'addedImage', id: img.id })} className="p-2.5 hover:bg-slate-100 rounded-l rounded-r-full text-slate-600" title="Mais opções"><MoreHorizontal size={24} /></button>

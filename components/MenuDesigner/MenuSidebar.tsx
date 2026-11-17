@@ -1,3 +1,4 @@
+import type { CanvasShape } from '../../types';
 import { TemplatePicker } from './TemplatePicker';
 import React from 'react';
 import { MenuStyle, Product, ElementStyle, SortOption, AddedImage } from '../../types';
@@ -40,6 +41,7 @@ interface MenuSidebarProps {
     updateFreeTextStyle: (id: string, newStyle: ElementStyle) => void | boolean;
     updateGlobalElementStyle: (elementType: keyof MenuStyle['elementStyles'], newStyle: ElementStyle) => void | boolean;
     setPreviewAction: React.Dispatch<React.SetStateAction<{ type: string, id: number } | undefined>>;
+    onAddShape: (shape: CanvasShape) => void;
     handleAddedImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
     resizeSelectedAddedImages: (delta: number) => void;
     removeSelectedAddedImages: () => void;
@@ -50,7 +52,7 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
     isOpen, onClose, onPdfClick, handleResetDesign,
     style, setStyle, templates, applyTemplate, sortOption, setSortOption, products, currentUserId, splitCategoryAcrossPages,
     selection, setSelection, selectedFreeText, selectedAddedImage, selectedAddedImageIds,
-    updateFreeTextStyle, updateGlobalElementStyle, setPreviewAction, handleAddedImageUpload,
+    updateFreeTextStyle, updateGlobalElementStyle, setPreviewAction, handleAddedImageUpload, onAddShape,
     resizeSelectedAddedImages, removeSelectedAddedImages, layerSelectedAddedImages
 }) => {
     
@@ -119,6 +121,7 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
             updateGlobalElementStyle={updateGlobalElementStyle}
             setPreviewAction={setPreviewAction}
             onAddedImageUpload={handleAddedImageUpload}
+            onAddShape={onAddShape}
             resizeSelectedAddedImages={resizeSelectedAddedImages}
             removeSelectedAddedImages={removeSelectedAddedImages}
             layerSelectedAddedImages={layerSelectedAddedImages}
@@ -127,7 +130,6 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
           <hr className="border-slate-100" />
 
           <section className="space-y-2">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Modelos</h3>
             <TemplatePicker key={currentUserId} userId={currentUserId} current={style} templates={templates}
               applyTemplate={applyTemplate} products={products} sortOption={sortOption}
               splitCategoryAcrossPages={splitCategoryAcrossPages} />

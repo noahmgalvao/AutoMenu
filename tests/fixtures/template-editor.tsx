@@ -32,7 +32,7 @@ function Fixture() {
   </>;
 }
 
-function LayoutFixture({ categories }: { categories: boolean }) {
+function LayoutFixture({ categories, productsInCategory }: { categories: boolean; productsInCategory: boolean }) {
   const [style, setStyle] = useState<MenuStyle>({
     ...initial, categoryColumnCount: 2,
     customCategoryOrder: categories ? ['Principais', 'Sobremesas', 'Entradas'] : ['Entradas', 'ft_zone_a', 'ft_zone_b'],
@@ -46,13 +46,19 @@ function LayoutFixture({ categories }: { categories: boolean }) {
     },
   });
   const [items, setItems] = useState<Product[]>(categories ? products : [
-    products[0],
+    ...(productsInCategory ? products.map(product => ({ ...product, category: 'Entradas' })) : [products[0]]),
     { id: 'text-a', category: 'ft_zone_a', name: 'A', description: '', price: 0, isFreeText: true, freeTextWidth: 44 },
-    { id: 'text-b', category: 'ft_zone_b', name: 'B', description: '', price: 0, isFreeText: true, freeTextWidth: 44 },
+    ...(productsInCategory ? [] : [
+      { id: 'text-b', category: 'ft_zone_b', name: 'B', description: '', price: 0, isFreeText: true, freeTextWidth: 44 },
+    ]),
   ]);
   return <main data-automenu-editor-canvas="true" style={{ maxHeight: '100vh', overflow: 'auto' }}>
     <MenuPreview products={items} style={style} sortOption={{ field:'name', direction:'asc' }}
       onStyleUpdate={setStyle}
+      onAddProduct={(category, _productId, isFreeText, id, initialData) => {
+        if (!id) return;
+        setItems(current => [...current, { id, category, name: '', description: '', price: 0, isFreeText, ...initialData }]);
+      }}
       onCommitCategoryOrder={(customCategoryOrder) => setStyle((current) => ({ ...current, customCategoryOrder }))}
       onUpdateProducts={(updates) => setItems((current) => current.map((item) => updates.reduce((result, update) => (
         update.id === item.id ? { ...result, [update.field]: update.value } : result
@@ -63,5 +69,5 @@ function LayoutFixture({ categories }: { categories: boolean }) {
 
 const layout = new URLSearchParams(location.search).get('layout');
 createRoot(document.getElementById('root')!).render(<React.StrictMode>
-  {layout !== null ? <LayoutFixture categories={layout === 'categories'} /> : <Fixture />}
+  {layout !== null ? <LayoutFixture categories={layout === 'categories'} productsInCategory={layout === 'products'} /> : <Fixture />}
 </React.StrictMode>);

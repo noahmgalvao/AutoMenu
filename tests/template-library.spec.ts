@@ -104,6 +104,99 @@ test('queued favorites sync after reconnect without editing the menu', async ({ 
   await expect(page.getByTestId('editor-state')).toHaveAttribute('data-edits','0');
 });
 
+test('background color previews during the gesture and saves only on release', async ({ page }) => {
+  const canvas = page.locator('[data-menu-print-page]').first();
+  const previous = await canvas.evaluate(element => getComputedStyle(element).backgroundColor);
+  const history = page.getByTestId('editor-state');
+  await page.getByRole('button', { name: 'Cor de fundo', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Cor de fundo' });
+  const spectrum = (await dialog.locator('.react-colorful__saturation').boundingBox())!;
+  await page.mouse.move(spectrum.x + 20, spectrum.y + 18);
+  await page.mouse.down();
+  await page.mouse.move(spectrum.x + spectrum.width - 20, spectrum.y + 32, { steps: 10 });
+  await expect.poll(() => canvas.evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe(previous);
+  await expect(history).toHaveAttribute('data-edits', '0');
+  await page.mouse.up();
+  await expect(history).toHaveAttribute('data-edits', '1');
+  await dialog.getByRole('combobox', { name: 'Formato da cor' }).selectOption('HSL');
+  await expect(dialog.getByRole('spinbutton', { name: 'H', exact: true })).toBeVisible();
+});
+
+test('the canvas eyedropper samples the page without the native eyedropper API', async ({ page }) => {
+  await page.evaluate(() => Object.defineProperty(window, 'EyeDropper', { configurable: true, value: undefined }));
+  const canvas = page.locator('[data-menu-print-page]').first();
+  const paper = await canvas.evaluate(element => getComputedStyle(element).backgroundColor);
+  const bounds = (await canvas.boundingBox())!;
+  const point = { x: bounds.x + bounds.width / 5, y: bounds.y + bounds.height * .75 };
+  const trigger = page.getByRole('button', { name: 'Cor de destaque', exact: true });
+  await trigger.click();
+  await page.getByRole('button', { name: 'Conta-gotas' }).click();
+  await expect(page.getByText('Toque em um ponto da página')).toBeVisible();
+  await page.mouse.click(point.x, point.y);
+  await expect.poll(() => trigger.evaluate(element => getComputedStyle(element).backgroundColor)).toBe(paper);
+});
+
+test('a shape becomes the same editable background on newly added pages', async ({ page }) => {
+  await page.getByRole('button', { name: 'Adicionar forma' }).click();
+  await page.getByRole('button', { name: 'Estrela', exact: true }).click();
+  await page.getByRole('button', { name: 'Inserir forma' }).click();
+  await expect(page.getByAltText('Forma adicionada')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Definir como plano de fundo' }).first().click();
+  const pages = page.locator('[data-menu-print-page]');
+  await pages.first().dispatchEvent('click');
+  const addPage = page.getByTitle('Adicionar página depois');
+  await expect(addPage).toBeVisible();
+  await addPage.click();
+  await expect(pages).toHaveCount(2);
+  await expect(pages.last().getByAltText('Forma adicionada')).toHaveCount(1);
+  const ids = await pages.locator('[data-canvas-background-layer]').evaluateAll(
+    elements => elements.map(element => element.getAttribute('data-added-image-id')),
+  );
+  expect(new Set(ids).size).toBe(1);
+});
+
+test('title and subtitle edit the same border and categories share their marker style', async ({ page }) => {
+  const canvas = page.locator('[data-menu-print-page]').first();
+  const toolbar = page.locator('[data-inline-format-toolbar]');
+  await canvas.locator('#menu-title-text').focus();
+  await toolbar.getByText('Borda do título e subtítulo', { exact: true }).click();
+  await toolbar.getByRole('button', { name: 'Acima', exact: true }).click();
+  await expect(canvas.locator('[data-template-header]')).toHaveAttribute('data-custom-border', 'true');
+  await canvas.locator('#menu-subtitle-text').focus();
+  const topSide = toolbar.getByRole('button', { name: 'Acima', exact: true });
+  if (!(await topSide.isVisible())) await toolbar.getByText('Borda do título e subtítulo', { exact: true }).click();
+  await expect(topSide).toHaveAttribute('aria-pressed', 'true');
+  await canvas.getByRole('heading', { name: 'Entradas', exact: true }).click();
+  await page.getByLabel('Marcadores das categorias', { exact: true }).selectOption('number-square');
+  const markers = await canvas.locator('[data-template-category] > span[aria-hidden="true"]').allTextContents();
+  expect(markers).toEqual(['1', '2', '3']);
+});
+
+test.describe('mobile product formatting', () => {
+  test.use({ viewport: { width: 430, height: 932 }, hasTouch: true, isMobile: true });
+
+  test('closing the font dropdown keeps the product and zoom active until editing ends', async ({ page }) => {
+    const canvas = page.locator('[data-menu-print-page]').first();
+    const initialWidth = (await canvas.boundingBox())!.width;
+    const product = page.locator('#product-container-1');
+    await product.getByRole('heading', { name: 'Burrata da casa' }).tap();
+    await product.getByRole('button', { name: 'Editar produto' }).tap();
+    const toolbar = page.locator('[data-inline-format-toolbar]');
+    const name = product.getByRole('heading', { name: 'Burrata da casa' });
+    await expect(name).toHaveAttribute('contenteditable', 'true');
+    await expect.poll(async () => (await canvas.boundingBox())!.width).toBeGreaterThan(initialWidth + 100);
+    await toolbar.locator('.automenu-font-select [class$="-indicatorContainer"]').tap();
+    await expect(toolbar.getByRole('listbox')).toBeVisible();
+    await toolbar.getByRole('button', { name: 'Negrito' }).tap();
+    await expect(toolbar.getByRole('listbox')).toHaveCount(0);
+    await expect(name).toHaveAttribute('contenteditable', 'true');
+    expect((await canvas.boundingBox())!.width).toBeGreaterThan(initialWidth + 100);
+    await toolbar.getByRole('button', { name: 'Concluir edição' }).tap();
+    await expect(name).toHaveAttribute('contenteditable', 'false');
+    await expect.poll(async () => Math.abs((await canvas.boundingBox())!.width - initialWidth)).toBeLessThan(2);
+  });
+});
+
 test('exports a landscape screen-sized PDF using the same dimensions as the editor', async ({ page }, testInfo) => {
   await page.getByRole('button',{name:'Minimal Editorial',exact:true}).click();
   await page.getByRole('textbox',{name:'Pesquisar modelos'}).fill('Menu Board 16:9');

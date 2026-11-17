@@ -10,11 +10,12 @@ import { InlineStyleToolbar } from './MenuDesigner/InlineStyleToolbar';
 import type { MoveDirection } from '../hooks/interactions/types';
 import type { PriceAdjustmentMode } from '../utils/pricePropagation';
 import { clampFontSize, resolveFontSizeLimits, resolveMenuContentSpacing, resolveMinimumFontSize } from '../utils/styleRules';
+import { BorderDecoration, DecorationControls, getBorderOverride, getMarker, MenuMarkerGlyph } from './MenuDesigner/Decorations';
 import { ColumnResizeHandles } from './ColumnResizeHandles';
 import { AutoFitText } from './AutoFitText';
 import { formatMenuPriceValue } from '../utils/price';
 import { resolveMenuPageDimensions } from '../utils/pageSetup';
-import { getCategoryDividerStyle } from '../utils/categoryDividers';
+import { getCategoryDividerStyle, resolveCategoryDivider } from '../utils/categoryDividers';
 
 interface MenuItemProps {
     item: any;
@@ -151,6 +152,16 @@ const getRenderedScale = (element: HTMLElement) => {
     return page && rect?.width ? rect.width / Math.max(1, page.offsetWidth) : 1;
 };
 
+const getFreeTextMaximumWidth = (element: HTMLElement) => {
+    const scale = getRenderedScale(element);
+    if (element.closest('[data-page-positioned-text="true"]')) {
+        const page = element.closest('[data-menu-print-page="true"]');
+        if (page) return (page.getBoundingClientRect().right - element.getBoundingClientRect().left) / scale;
+    }
+    const column = element.closest('[data-drag-column-container="category"]');
+    return (column || element).getBoundingClientRect().width / scale;
+};
+
 const getFreeTextContentWidth = (element: HTMLElement, maximumWidth: number) => {
     const computed = window.getComputedStyle(element);
     const canvas = document.createElement('canvas');
@@ -170,14 +181,13 @@ const FreeTextResizeHandles = ({ product, style, handlers }: { product: Product;
         event.currentTarget.setPointerCapture(event.pointerId);
         const container = document.getElementById(`product-container-${product.id}`);
         const text = document.getElementById(`product-name-${product.id}`);
-        const column = container?.closest<HTMLElement>('[data-drag-column-container="category"]');
-        if (!container || !text || !column) return;
+        if (!container || !text) return;
         const scale = getRenderedScale(container);
         const startX = event.clientX;
         const startY = event.clientY;
         const startWidth = container.getBoundingClientRect().width / scale;
         const startFontSize = Number(product.styles?.fontSize) || Number.parseFloat(window.getComputedStyle(text).fontSize) / scale || 18;
-        const maxWidth = column.getBoundingClientRect().width / scale;
+        const maxWidth = getFreeTextMaximumWidth(container);
         const minimumFontSize = resolveMinimumFontSize(style);
         const maximumFontSize = resolveFontSizeLimits(style).freeText;
         let nextWidth = startWidth;
@@ -808,8 +818,15 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 fallbackFontFamily={style.fontFamily}
                 onChange={(newStyle) => handlers.handleInlineStyleChange?.(formattingTarget, newStyle)}
                 onDismiss={() => handlers.setFormattingTarget?.(null)}
+                onFinish={type === 'product' && handlers.editingId === id ? () => {
+                    handlers.setEditingId(null);
+                    handlers.setFormattingTarget(null);
+                } : undefined}
+                decoration={handlers.updateStyle && <DecorationControls style={style} setStyle={handlers.updateStyle} id={id}
+                    scope={type === 'menuTitle' || type === 'menuSubtitle' ? 'header' : type === 'category' ? 'category' : type === 'freeText' ? 'freeText' : formattingTarget.field === 'price' ? 'price' : 'product'}
+                    showBorder={type !== 'product' || formattingTarget.field === 'price' || style.layoutMode !== 'list' || style.design?.product === 'editorial'} />}
                 categoryDividerPreset={type === 'category'
-                    ? (style.categoryDividerStyles?.[id] || 'solid')
+                    ? resolveCategoryDivider(style, id)
                     : type === 'product'
                         ? (style.productDividerStyles?.[id] || 'none')
                         : undefined}
@@ -853,9 +870,11 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 data-block-id="main-header"
                 data-pagination-item="main-header"
                 data-template-header
-                className="text-center group relative pointer-events-auto" 
-                style={{ marginBottom: 0 }}
+                data-custom-border={getBorderOverride(style, 'header')}
+                className={`text-center group relative pointer-events-auto ${isTitleSelected || isSubtitleSelected ? 'ring-2 ring-indigo-500' : ''}`}
+                style={{ marginBottom: 0, borderRadius: style.borders?.header?.radius }}
             >
+            <BorderDecoration style={style} scope="header" />
             {heroImage && <img src={heroImage} data-template-hero-image alt="" draggable={false} onError={(event) => { event.currentTarget.hidden = true; }} />}
             {formattingTarget?.type === 'menuTitle' && renderFormattingToolbar('menuTitle', 'menuTitle', titleStyle)}
             {formattingTarget?.type === 'menuSubtitle' && renderFormattingToolbar('menuSubtitle', 'menuSubtitle', subStyle)}
@@ -872,7 +891,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 data-menu-heading="title"
                 className={`tracking-tight outline-none focus:bg-blue-50/50 rounded cursor-text ${isTitleSelected ? 'ring-2 ring-indigo-500 bg-indigo-50/20' : ''}`}
                 style={{ 
-                    color: titleStyle.color || style.primaryColor, 
+                    color: `var(--automenu-preview-primary, ${titleStyle.color || style.primaryColor})`,
                     fontFamily: titleStyle.fontFamily || style.fontFamily,
                     fontSize: `${clampFontSize(style, 'menuTitle', titleStyle.fontSize, 48)}px`,
                     fontWeight: titleStyle.fontWeight || '700',
@@ -907,7 +926,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 data-menu-heading="subtitle"
                 className={`opacity-90 outline-none focus:bg-blue-50/50 rounded cursor-text ${isSubtitleSelected ? 'ring-2 ring-indigo-500 bg-indigo-50/20' : ''}`}
                 style={{
-                    color: subStyle.color || style.textColor,
+                    color: `var(--automenu-preview-primary, ${subStyle.color || style.textColor})`,
                     fontFamily: subStyle.fontFamily || style.fontFamily,
                     fontSize: `${clampFontSize(style, 'menuSubtitle', subStyle.fontSize, 18)}px`,
                     fontWeight: subStyle.fontWeight,
@@ -943,13 +962,13 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const categoryAlign = catStyle.textAlign || 'left';
         const categoryImage = style.categoryImages?.[item.data];
         const categoryImageScale = style.categoryImageScale || 1;
-        const categoryDividerPreset = style.categoryDividerStyles?.[item.data] || 'solid';
+        const categoryDividerPreset = resolveCategoryDivider(style, item.data);
         const renderCategoryDivider = (key: 'before' | 'after') => (
             <div
                 key={key}
-                data-template-divider={style.categoryDividerStyles?.[item.data] ? undefined : true}
+                data-ornamental-divider={categoryDividerPreset === 'ornamental' ? (key === 'before' ? 'right' : 'left') : undefined}
                 aria-hidden="true"
-                style={getCategoryDividerStyle(categoryDividerPreset, style.primaryColor, key === 'before' ? 'right' : 'left')}
+                style={getCategoryDividerStyle(categoryDividerPreset, 'var(--template-accent)', key === 'before' ? 'right' : 'left')}
             />
         );
         
@@ -963,7 +982,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 onDragStart={(e) => e.preventDefault()}
                 className={`automenu-drag-item relative group transition-all duration-200 select-none touch-auto cursor-grab pointer-events-auto ${isSelected || handlers.editingId === item.data ? 'z-[60]' : 'z-[1]'} ${inGroup ? 'px-2 pt-2' : 'hover:bg-black/5 rounded-lg'}`}
                 style={{ 
-                    marginBottom: `${contentSpacing.categoryToProduct}px`
+                    marginBottom: `${contentSpacing.categoryToProduct}px`,
+                    touchAction: handlers.editingId === item.data ? undefined : 'none'
                 }}
                 onContextMenu={(e) => handlers.openObjectMenu?.(e, { type: 'category', id: item.data })} 
                 onClick={(e) => { e.stopPropagation(); if (handlers.editingId !== item.data) { handlers.handleSelection('category', item.data, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey }); handlers.setSelectedPageIndex(null); } }}
@@ -977,8 +997,10 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 />
                 {renderFormattingToolbar('category', item.data, catStyle)}
             {!handlers.readOnly && <ProductControls type="category" catName={item.data} isMobileSelected={isSelected} index={idx} total={0} isLastInBlock={false} canMoveUp={false} canMoveDown={false} canMoveLeft={false} canMoveRight={false} hideGeneralControls={false} handlers={handlers} onEdit={(e: React.MouseEvent) => handlers.startEditing(e, item.data, elementId, 'category')} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showSelectionOutline={false} showAddControls={false} compactControls={compactControls} showGridMoveControls={false}/>}
-                <div data-template-category className={`flex w-full max-w-full min-w-0 items-center gap-[2px] ${compactControls ? 'px-1' : 'px-2'} ${categoryAlign === 'center' ? 'justify-center' : categoryAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
-                    {style.design?.category === 'numbered' && <span data-template-category-number aria-hidden="true">{String(Math.max(0, handlers.sortedCategories.indexOf(item.data)) + 1).padStart(2, '0')}</span>}
+                <div data-template-category data-custom-border={getBorderOverride(style, 'category')} style={{ borderRadius: style.borders?.category?.radius }} className={`relative flex w-full max-w-full min-w-0 items-center gap-1 ${compactControls ? 'px-1' : 'px-2'} ${categoryAlign === 'center' ? 'justify-center' : categoryAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
+                    <BorderDecoration style={style} scope="category" />
+                    <MenuMarkerGlyph marker={getMarker(style, 'category')}
+                        index={handlers.sortedCategories.filter((id: string) => !id.startsWith(FREE_TEXT_PREFIX)).indexOf(item.data)} color="var(--template-accent)" />
                     {(categoryAlign === 'center' || categoryAlign === 'right') && renderCategoryDivider('before')}
                     {style.showCategoryImages !== false && categoryImage?.url && (
                         <img
@@ -1006,7 +1028,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                         id={handlers.readOnly ? undefined : elementId}
                         className={`min-w-0 max-w-full shrink whitespace-normal break-words [overflow-wrap:anywhere] [word-break:normal] outline-none rounded ${handlers.editingId === item.data ? 'bg-white ring-2 ring-blue-500 z-10 cursor-text' : ''}`}
                         style={{ 
-                            color: catStyle.color || style.primaryColor,
+                            color: `var(--automenu-preview-primary, ${catStyle.color || style.primaryColor})`,
                             fontFamily: catStyle.fontFamily,
                             fontSize: `${clampFontSize(style, 'category', catStyle.fontSize, 24)}px`,
                             fontWeight: catStyle.fontWeight,
@@ -1067,6 +1089,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     data-drag-type="product"
                     data-drag-id={product.id}
                     data-template-product={product.isFreeText ? undefined : true}
+                    data-custom-border={getBorderOverride(style, product.isFreeText ? 'freeText' : 'product', product.id)}
                     data-pagination-item={getPaginationItemKey(item)}
                     data-drag-group={item.category}
                     onPointerDown={(e) => handlers.handleDragStart(e, 'product', product.id, item.category)}
@@ -1089,7 +1112,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                         paddingBottom: inGroup && !isSelected && !product.isFreeText ? 0 : undefined,
                     }}
                 >
-                {isSelected && (
+                <BorderDecoration style={style} scope={product.isFreeText ? 'freeText' : 'product'} id={product.id} />
+                {isSelected && !isFreeTextGhost && (
                     <ColumnResizeHandles
                         columnIndex={columnIndex}
                         columnCount={renderedCategoryColumnCount || categoryColumnCount}
@@ -1143,10 +1167,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             }} onKeyDown={handlers.handleKeyDown} onInput={(e) => {
                                 if (!isEditing) return;
                                 const container = document.getElementById(`product-container-${product.id}`);
-                                const column = container?.closest<HTMLElement>('[data-drag-column-container="category"]');
-                                if (!container || !column) return;
-                                const scale = getRenderedScale(container);
-                                const maximumWidth = column.getBoundingClientRect().width / scale;
+                                if (!container) return;
+                                const maximumWidth = getFreeTextMaximumWidth(container);
                                 const nextWidth = getFreeTextContentWidth(e.currentTarget, maximumWidth);
                                 container.style.width = `${nextWidth}px`;
                                 container.dataset.pendingFreeTextWidth = String(nextWidth);
@@ -1158,6 +1180,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     {style.showImages && product.image && ( 
                         <div
                             data-template-image
+                            data-custom-border={getBorderOverride(style, 'productImage')}
                             data-product-image-surface={product.id}
                             style={{ width: stackImage ? '100%' : `${imageSizePx}px`, height: `${templateProductImageHeight(style, imageSizePx)}px` }}
                             className={`relative rounded-md flex-shrink-0 bg-gray-100 shadow-inner select-none transition-all duration-300 ${isEditing ? 'cursor-pointer ring-2 ring-indigo-400' : 'overflow-hidden'}`}
@@ -1166,7 +1189,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             title={isEditing ? 'Opções da imagem' : undefined}
                         >
                             <img src={product.image} alt={product.name} className="w-full h-full rounded-md object-cover" style={{ objectPosition: `${product.imageAlignment || 'center'} center` }} onError={(event) => { event.currentTarget.hidden = true; }} draggable={false} />
-                            {renderProductImageControls(product, isEditing)}
+                            <BorderDecoration style={style} scope="productImage" />
+                        {renderProductImageControls(product, isEditing)}
                         </div> 
                     )}
                     <div className={`flex-grow min-w-0 ${isNameCentered ? 'text-center' : isNameRight ? 'text-right' : 'text-left'}`}>
@@ -1174,11 +1198,14 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             className={`flex min-w-0 flex-wrap ${isNameCentered ? 'items-center' : 'items-start'}`}
                             style={{
                                 marginBottom: contentSpacing.productNameToDescription,
-                                columnGap: showProductDivider ? 2 : contentSpacing.productNameToPrice,
+                                columnGap: showProductDivider ? 5 : contentSpacing.productNameToPrice,
                                 rowGap: 2,
                             }}
                          >
                             <div className={`flex items-center gap-2 ${isNameCentered ? 'justify-center' : isNameRight ? 'justify-end' : ''}`} style={{ flex: showProductDivider ? '0 1 auto' : '1 1 min-content', minWidth: 'min-content' }}>
+                                <MenuMarkerGlyph marker={getMarker(style, 'product')}
+                                    index={visibleCatProducts.filter((candidate: Product) => !candidate.isFreeText).findIndex((candidate: Product) => candidate.id === product.id)}
+                                    color="var(--template-accent)" />
                                 <AutoFitText
                                     as="h3"
                                     text={product.name}
@@ -1207,16 +1234,17 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             {showProductDivider && (
                                 <span
                                     aria-hidden="true"
-                                    className="min-w-2 self-center"
+                                    className="min-w-2 self-center" data-ornamental-divider={productDividerPreset === 'ornamental' ? 'right' : undefined}
                                     style={getCategoryDividerStyle(productDividerPreset, style.textColor, 'right')}
                                 />
                             )}
                             {style.showPrices !== false && <div
-                              data-template-price className="ml-auto flex min-w-0 shrink-0 items-center gap-1 whitespace-nowrap"
+                              data-template-price data-custom-border={getBorderOverride(style, 'price')} className="relative ml-auto flex min-w-0 shrink-0 items-center gap-1 whitespace-nowrap"
                               style={{ 
+                                borderRadius: style.borders?.price?.radius,
                                 justifyContent: priceStyle.textAlign === 'left' ? 'flex-start' : (priceStyle.textAlign === 'center' ? 'center' : 'flex-end'), 
                                 display: 'flex',
-                                color: priceStyle.color || style.textColor,
+                                color: `var(--automenu-preview-text, ${priceStyle.color || style.textColor})`,
                                 fontFamily: priceStyle.fontFamily,
                                 fontSize: `${clampFontSize(style, 'productPrice', priceStyle.fontSize, 18)}px`,
                                 fontWeight: priceStyle.fontWeight,
@@ -1226,6 +1254,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 letterSpacing: priceStyle.letterSpacing ? `${priceStyle.letterSpacing}px` : undefined,
                               }}
                             >
+                                <BorderDecoration style={style} scope="price" />
                                 {style.showCurrencySymbol !== false && <span className="mr-[1px] select-none touch-auto">R$</span>}
                                 <AutoFitText
                                     as="span"
@@ -1238,7 +1267,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                     showOverflowFeedback={isEditing}
                                     id={handlers.readOnly ? undefined : `product-price-${product.id}`} data-product-edit-id={product.id} className={`whitespace-nowrap outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
                                     style={{ 
-                                        color: priceStyle.color || style.textColor,
+                                        color: `var(--automenu-preview-text, ${priceStyle.color || style.textColor})`,
                                         fontFamily: priceStyle.fontFamily,
                                         fontSize: `${clampFontSize(style, 'productPrice', priceStyle.fontSize, 18)}px`,
                                         fontWeight: priceStyle.fontWeight,
@@ -1262,7 +1291,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             showOverflowFeedback={isEditing}
                             data-template-description id={handlers.readOnly ? undefined : `product-description-${product.id}`} data-product-edit-id={product.id} className={`max-w-full opacity-80 break-words [overflow-wrap:anywhere] [word-break:normal] leading-relaxed outline-none rounded ${isEditing ? 'min-h-[1.5em] bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
                             style={{ 
-                                color: descStyle.color || style.textColor,
+                                color: `var(--automenu-preview-text, ${descStyle.color || style.textColor})`,
                                 fontFamily: descStyle.fontFamily,
                                 fontSize: `${clampFontSize(style, 'productDescription', descStyle.fontSize, 14)}px`,
                                 fontWeight: descStyle.fontWeight,
@@ -1304,7 +1333,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const imgScale = style.imageScale || 1;
         const productColumnCount = style.columnCount || 1;
         const categoryColumnCount = style.categoryColumnCount || 1;
-        const isCardLayout = style.design ? style.design.card !== 'flat' : style.layoutMode === 'cards' || style.layoutMode === 'grid';
+        const isCardLayout = style.layoutMode === 'cards' || (style.design ? style.design.card !== 'flat' : style.layoutMode === 'grid');
         const cardBackgroundColor = style.cardBackgroundColor || '#ffffff';
         const compactControls = categoryColumnCount > 1 || productColumnCount > 1;
         const denseControls = categoryColumnCount > 1 && productColumnCount > 1;
@@ -1373,6 +1402,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 data-drag-type="product"
                                 data-drag-id={product.id}
                                 data-template-product={product.isFreeText ? undefined : true}
+                    data-custom-border={getBorderOverride(style, product.isFreeText ? 'freeText' : 'product', product.id)}
                                 data-drag-group={item.category}
                                 onPointerDown={(e) => handlers.handleDragStart(e, 'product', product.id, item.category)}
                                 onDragStart={(e) => e.preventDefault()}
@@ -1386,13 +1416,17 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 
                                 <div
                                     data-template-card
+                                    data-card-layout={isCardLayout || undefined}
+                                    data-card-color-custom={style.cardBackgroundColorOverride || undefined}
+                                    data-custom-border={getBorderOverride(style, 'product')}
                                     className={`h-full transition-all duration-150 ${isCardLayout ? `rounded-xl border border-slate-200 shadow-sm ${isEditing ? 'overflow-visible' : 'overflow-hidden'}` : 'bg-transparent'} ${isBeingDragged ? 'opacity-40' : isCardLayout ? 'group-hover:shadow-md' : ''}`}
-                                    style={isCardLayout ? { backgroundColor: cardBackgroundColor } : undefined}
+                                    style={isCardLayout ? { backgroundColor: `var(--automenu-preview-cards, ${cardBackgroundColor})`, borderRadius: style.borders?.product?.radius } : undefined}
                                 >
                                     <div className="h-full flex flex-col">
                                         {style.showImages && product.image && (
                                             <div
                                                 data-template-image
+                                                data-custom-border={getBorderOverride(style, 'productImage')}
                                                 data-product-image-surface={product.id}
                                                 style={{ height: `${templateProductImageHeight(style, cardImageHeight)}px` }}
                                                 className={`relative w-full bg-gray-100 transition-all duration-300 ${isCardLayout ? '' : 'rounded-md'} ${isEditing ? 'cursor-pointer ring-2 ring-inset ring-indigo-400' : 'overflow-hidden'}`}
@@ -1401,19 +1435,23 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                 title={isEditing ? 'Opções da imagem' : undefined}
                                             >
                                                 <img src={product.image} className={`w-full h-full object-cover ${isCardLayout ? 'rounded-t-xl' : 'rounded-md'}`} style={{ objectPosition: `${product.imageAlignment || 'center'} center` }} alt={product.name} onError={(event) => { event.currentTarget.hidden = true; }} draggable={false} />
+                                                <BorderDecoration style={style} scope="productImage" />
                                                 {renderProductImageControls(product, isEditing)}
                                             </div>
                                         )}
                                         <div data-template-content className={`${isCardLayout ? (categoryColumnCount > 1 || productColumnCount > 2 ? 'p-1.5' : productColumnCount > 1 ? 'p-2' : 'p-4') : 'py-2'} flex min-w-0 flex-col flex-grow ${textAlignClass}`}>
                                             <div
-                                                className="flex min-w-0 flex-wrap items-start"
+                                                className={`flex min-w-0 flex-wrap ${showProductDivider ? 'items-center' : 'items-start'}`}
                                                 style={{
                                                     marginBottom: contentSpacing.productNameToDescription,
-                                                    columnGap: showProductDivider ? 2 : contentSpacing.productNameToPrice,
+                                                    columnGap: showProductDivider ? 5 : contentSpacing.productNameToPrice,
                                                     rowGap: 2,
                                                 }}
                                             >
                                                 <div className={`flex items-center gap-1 ${nameStyle.textAlign === 'center' ? 'justify-center' : nameStyle.textAlign === 'right' ? 'justify-end' : 'justify-start'}`} style={{ flex: showProductDivider ? '0 1 auto' : '1 1 min-content', minWidth: 'min-content' }}>
+                                                    <MenuMarkerGlyph marker={getMarker(style, 'product')}
+                                                        index={visibleCatProducts.filter((candidate: Product) => !candidate.isFreeText).findIndex((candidate: Product) => candidate.id === product.id)}
+                                                        color="var(--template-accent)" />
                                                     <AutoFitText
                                                         as="h3"
                                                         text={product.name}
@@ -1426,7 +1464,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         id={handlers.readOnly ? undefined : `product-name-${product.id}`}
                                                         data-product-edit-id={product.id}
                                                         className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
-                                                        style={{ color: nameStyle.color || style.textColor, fontFamily: nameStyle.fontFamily, fontSize: clampFontSize(style, 'productName', nameStyle.fontSize, 18), fontWeight: nameStyle.fontWeight, fontStyle: nameStyle.italic ? 'italic' : 'normal', textDecoration: nameStyle.underline ? 'underline' : 'none', textAlign: nameStyle.textAlign, textTransform: nameStyle.textTransform }}
+                                                        style={{ color: `var(--automenu-preview-text, ${nameStyle.color || style.textColor})`, fontFamily: nameStyle.fontFamily, fontSize: clampFontSize(style, 'productName', nameStyle.fontSize, 18), fontWeight: nameStyle.fontWeight, fontStyle: nameStyle.italic ? 'italic' : 'normal', textDecoration: nameStyle.underline ? 'underline' : 'none', textAlign: nameStyle.textAlign, textTransform: nameStyle.textTransform }}
                                                         contentEditable={isEditing}
                                                         suppressContentEditableWarning
                                                         onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'name')}
@@ -1449,14 +1487,15 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                 {showProductDivider && (
                                                     <span
                                                         aria-hidden="true"
-                                                        className="min-w-2 self-center"
+                                                        className="min-w-2 self-center" data-ornamental-divider={productDividerPreset === 'ornamental' ? 'right' : undefined}
                                                         style={getCategoryDividerStyle(productDividerPreset, style.textColor, 'right')}
                                                     />
                                                 )}
                                                 {style.showPrices !== false && <div
-                                                    data-template-price className={`ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap ${isCardLayout ? `rounded-full bg-white/90 border border-black/5 shadow-sm ${compactControls ? 'px-1.5 py-0.5' : 'px-2.5 py-1'}` : ''}`}
-                                                    style={{ color: priceStyle.color || style.textColor, fontFamily: priceStyle.fontFamily, fontSize: clampFontSize(style, 'productPrice', priceStyle.fontSize, 18), fontWeight: priceStyle.fontWeight, fontStyle: priceStyle.italic ? 'italic' : 'normal', textDecoration: priceStyle.underline ? 'underline' : 'none', textTransform: priceStyle.textTransform, letterSpacing: priceStyle.letterSpacing ? `${priceStyle.letterSpacing}px` : undefined }}
+                                                    data-template-price data-custom-border={getBorderOverride(style, 'price')} className={`relative ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap ${isCardLayout ? `rounded-full bg-white/90 border border-black/5 shadow-sm ${compactControls ? 'px-1.5 py-0.5' : 'px-2.5 py-1'}` : ''}`}
+                                                    style={{ borderRadius: style.borders?.price?.radius, color: `var(--automenu-preview-text, ${priceStyle.color || style.textColor})`, fontFamily: priceStyle.fontFamily, fontSize: clampFontSize(style, 'productPrice', priceStyle.fontSize, 18), fontWeight: priceStyle.fontWeight, fontStyle: priceStyle.italic ? 'italic' : 'normal', textDecoration: priceStyle.underline ? 'underline' : 'none', textTransform: priceStyle.textTransform, letterSpacing: priceStyle.letterSpacing ? `${priceStyle.letterSpacing}px` : undefined }}
                                                 >
+                                                    <BorderDecoration style={style} scope="price" />
                                                     {style.showCurrencySymbol !== false && <span className="select-none touch-auto">R$</span>}
                                                     <AutoFitText
                                                         as="span"
@@ -1498,7 +1537,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                 data-template-description id={handlers.readOnly ? undefined : `product-description-${product.id}`}
                                                 data-product-edit-id={product.id}
                                                 className={`max-w-full opacity-75 break-words [overflow-wrap:anywhere] [word-break:normal] flex-grow outline-none rounded ${isEditing ? 'min-h-[1.5em] bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : 'line-clamp-4'}`}
-                                                style={{ color: descStyle.color || style.textColor, fontFamily: descStyle.fontFamily, fontSize: clampFontSize(style, 'productDescription', descStyle.fontSize, 14), fontWeight: descStyle.fontWeight, fontStyle: descStyle.italic ? 'italic' : 'normal', textDecoration: descStyle.underline ? 'underline' : 'none', textAlign: descStyle.textAlign }}
+                                                style={{ color: `var(--automenu-preview-text, ${descStyle.color || style.textColor})`, fontFamily: descStyle.fontFamily, fontSize: clampFontSize(style, 'productDescription', descStyle.fontSize, 14), fontWeight: descStyle.fontWeight, fontStyle: descStyle.italic ? 'italic' : 'normal', textDecoration: descStyle.underline ? 'underline' : 'none', textAlign: descStyle.textAlign }}
                                                 contentEditable={isEditing}
                                                 tabIndex={isEditing ? 0 : undefined}
                                                 suppressContentEditableWarning

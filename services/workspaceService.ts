@@ -677,6 +677,7 @@ const normalizeStyleAssets = async (workspaceId: string, userId: string, style: 
 
   const addedImages: AddedImage[] = await Promise.all(
     (style.addedImages || []).map(async (image) => {
+      if (image.shape) return image;
       const assetRef = await ensureAssetReference({
         url: image.url,
         existingAssetId: image.assetId,
@@ -952,9 +953,13 @@ export const deleteWorkspaceMenu = async ({
   if (error) throw error;
 };
 
-const createInitialMenuVersionPayload = () => {
-  const products = assignCategoryIds(cloneJson(INITIAL_PRODUCTS));
+const createInitialMenuVersionPayload = (blankMenuTitle?: string) => {
+  const products = blankMenuTitle === undefined ? assignCategoryIds(cloneJson(INITIAL_PRODUCTS)) : [];
   const style = withStyleDefaults(cloneJson(INITIAL_STYLE));
+  if (blankMenuTitle !== undefined) {
+    style.menuTitle = blankMenuTitle;
+    style.menuSubtitle = '';
+  }
   const sortOption = DEFAULT_SORT_OPTION;
 
   return {
@@ -963,13 +968,13 @@ const createInitialMenuVersionPayload = () => {
   };
 };
 
-const initializeWorkspaceMenu = async (menu: Menu, userId: string) => {
+const initializeWorkspaceMenu = async (menu: Menu, userId: string, blank = false) => {
   if (menu.currentDraftVersionId) {
     return menu;
   }
 
   const supabase = getSupabaseClient();
-  const { editorState, renderSnapshot } = createInitialMenuVersionPayload();
+  const { editorState, renderSnapshot } = createInitialMenuVersionPayload(blank ? menu.name : undefined);
   const { versionId } = await insertMenuVersionWithRetry({
     menuId: menu.id,
     userId,
@@ -1115,7 +1120,7 @@ export const createWorkspaceMenu = async ({
     return mapMenuRow(copiedMenu);
   }
 
-  return initializeWorkspaceMenu(mapMenuRow(menuRow), userId);
+  return initializeWorkspaceMenu(mapMenuRow(menuRow), userId, true);
 };
 
 const resolveActiveMenu = async (workspaceId: string, menuId?: string | null) => {

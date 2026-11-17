@@ -1,3 +1,4 @@
+import { ColorPicker } from './MenuDesigner/ColorPicker';
 import React from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -252,9 +253,7 @@ export const MobileProductEditorModal: React.FC<MobileProductEditorModalProps> =
         <div className="grid grid-cols-[minmax(0,1fr)_4rem_2.25rem] gap-1.5">
           <FontSelect value={currentStyle.fontFamily || style.fontFamily} fallbackFontFamily={style.fontFamily} placeholder="Fonte..." onChange={(font) => onStyleChange(formattingField, { ...currentStyle, fontFamily: font }, referenceProductId || productIds[0])} />
           <FontSizeInput value={currentStyle.fontSize} onChange={(fontSize) => onStyleChange(formattingField, { ...currentStyle, fontSize }, referenceProductId || productIds[0])} className="!w-16" />
-          <div className="relative h-9 w-9 overflow-hidden rounded-lg border border-slate-200">
-            <input type="color" className="absolute -left-4 -top-4 h-[200%] w-[200%]" value={currentStyle.color || '#000000'} onChange={(event) => onStyleChange(formattingField, { ...currentStyle, color: event.target.value }, referenceProductId || productIds[0])} />
-          </div>
+          <ColorPicker value={currentStyle.color} onChange={color => onStyleChange(formattingField, { ...currentStyle, color }, referenceProductId || productIds[0])} />
         </div>
         <div className="mt-2 flex items-center justify-center gap-1">
           {(['left', 'center', 'right'] as const).map((align) => <button key={align} type="button" onClick={() => onStyleChange(formattingField, { ...currentStyle, textAlign: align }, referenceProductId || productIds[0])} className={`rounded-lg border p-1.5 ${currentStyle.textAlign === align ? 'border-indigo-300 bg-indigo-50 text-indigo-600' : 'border-slate-200 text-slate-500'}`}>{align === 'left' ? <AlignLeft size={15} /> : align === 'center' ? <AlignCenter size={15} /> : <AlignRight size={15} />}</button>)}
