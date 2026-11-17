@@ -32,7 +32,7 @@ function Fixture() {
   </>;
 }
 
-function LayoutFixture({ categories, productsInCategory }: { categories: boolean; productsInCategory: boolean }) {
+function LayoutFixture({ categories, productsInCategory, closeTexts }: { categories: boolean; productsInCategory: boolean; closeTexts: boolean }) {
   const [style, setStyle] = useState<MenuStyle>({
     ...initial, categoryColumnCount: 2,
     customCategoryOrder: categories ? ['Principais', 'Sobremesas', 'Entradas'] : ['Entradas', 'ft_zone_a', 'ft_zone_b'],
@@ -42,7 +42,7 @@ function LayoutFixture({ categories, productsInCategory }: { categories: boolean
       Entradas: { pageIndex: 0, columnIndex: 0, y: 210 },
     } : {
       ft_zone_a: { pageIndex: 0, columnIndex: 1, x: 20, y: 220 },
-      ft_zone_b: { pageIndex: 0, columnIndex: 1, x: 20, y: 310 },
+      ft_zone_b: { pageIndex: 0, columnIndex: 1, x: 20, y: closeTexts ? 259 : 310 },
     },
   });
   const [items, setItems] = useState<Product[]>(categories ? products : [
@@ -69,5 +69,5 @@ function LayoutFixture({ categories, productsInCategory }: { categories: boolean
 
 const layout = new URLSearchParams(location.search).get('layout');
 createRoot(document.getElementById('root')!).render(<React.StrictMode>
-  {layout !== null ? <LayoutFixture categories={layout === 'categories'} productsInCategory={layout === 'products'} /> : <Fixture />}
+  {layout !== null ? <LayoutFixture categories={layout === 'categories'} productsInCategory={layout === 'products'} closeTexts={layout === 'borders'} /> : <Fixture />}
 </React.StrictMode>);

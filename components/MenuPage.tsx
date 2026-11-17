@@ -525,7 +525,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 )}
 
                 {(style.floatingText || []).filter((text) => text.pageIndex === pageIndex).map((text) => (
-                    <p key={text.id} className="pointer-events-none absolute z-[11] whitespace-pre-wrap break-words"
+                    <p key={text.id} data-border-text className="pointer-events-none absolute z-[11] whitespace-pre-wrap break-words"
                         style={{ left: text.x, top: text.y, maxWidth: Math.max(1, pageDimensions.widthPx - text.x) }}>
                         {text.text}
                     </p>

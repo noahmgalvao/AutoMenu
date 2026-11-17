@@ -193,7 +193,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                         minFontSize={minimumFontSize}
                         fallbackFontFamily={fontFamily}
                     />
-                    <DecorationControls style={style} setStyle={setStyle} scope="category" />
+                    <DecorationControls style={style} setStyle={setStyle} scope="category" targetElementId={selection.id ? `text-${selection.id}` : undefined} />
                     {selection.type === 'category' && selection.id && (
                         <CategoryDividerPicker
                             value={resolveCategoryDivider(style, selection.id)}
@@ -224,8 +224,8 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                         />
                     )}
                     {selection.type === 'product' && <>
-                        <DecorationControls style={style} setStyle={setStyle} scope="price" />
-                        {style.showImages && <DecorationControls style={style} setStyle={setStyle} scope="productImage" />}
+                        <DecorationControls style={style} setStyle={setStyle} scope="price" targetElementId={`product-price-${selection.id}`} />
+                        {style.showImages && <DecorationControls style={style} setStyle={setStyle} scope="productImage" targetElementId={`product-container-${selection.id}`} />}
                     </>}
                     {safeStyles.productName && <StyleControls 
                         label="Nomes dos produtos"
