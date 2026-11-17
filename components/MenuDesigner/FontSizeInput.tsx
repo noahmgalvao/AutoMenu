@@ -6,27 +6,27 @@ interface FontSizeInputProps {
     onChange: (fontSize: number) => void | boolean;
     className?: string;
     placeholder?: string;
+    label?: string;
     max?: number;
     min?: number;
 }
 
-const toInputValue = (value?: number): string => (
-    Number.isFinite(value) && Number(value) > 0 ? String(roundFontSize(value)) : ''
-);
+const toInputValue = (value?: number): string => Number.isFinite(value) ? String(value) : '';
 
 export const FontSizeInput: React.FC<FontSizeInputProps> = ({
     value,
     onChange,
     className = '',
     placeholder = 'Tam.',
+    label,
     max,
     min = 1,
 }) => {
     const inputRef = useRef<HTMLInputElement>(null);
-    const normalizeValue = (nextValue: number) => roundFontSize(Math.max(
-        min,
-        Math.min(max ?? Number.POSITIVE_INFINITY, nextValue),
-    ));
+    const normalizeValue = (nextValue: number) => {
+        const bounded = Math.max(min, Math.min(max ?? Number.POSITIVE_INFINITY, nextValue));
+        return min <= 0 ? Math.round(bounded * 10) / 10 : roundFontSize(bounded);
+    };
     const effectiveValue = Number.isFinite(value)
         ? normalizeValue(Number(value))
         : value;
@@ -68,6 +68,7 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
             className={`automenu-font-size-input h-8 w-16 rounded border border-slate-200 px-2 text-xs ${className}`}
             value={draftValue}
             placeholder={placeholder}
+            aria-label={label}
             onFocus={() => {
                 if (!draftValue) restoreCurrentValue();
             }}

@@ -106,7 +106,8 @@ export const FontSelect: React.FC<{
   onChange: (font: string) => void;
   fallbackFontFamily?: string;
   placeholder?: string;
-}> = ({ value, onChange, fallbackFontFamily, placeholder = 'Buscar fonte...' }) => {
+  menuGap?: number;
+}> = ({ value, onChange, fallbackFontFamily, placeholder = 'Buscar fonte...', menuGap }) => {
   useFontLibrary();
   const [isTouchInput, setIsTouchInput] = useState(false);
   const [menuIsOpen, setMenuIsOpen] = useState(false);
@@ -201,7 +202,10 @@ export const FontSelect: React.FC<{
       onChange={(option: SingleValue<SelectOption>) => onChange(option?.value || '')}
       options={fontOptions}
       placeholder={placeholder}
-      styles={selectStyles}
+      styles={menuGap === undefined ? selectStyles : {
+        ...selectStyles,
+        menu: (base, state) => ({ ...selectStyles.menu?.(base, state), marginTop: menuGap }),
+      }}
       captureMenuScroll={false}
       menuShouldScrollIntoView={false}
       isSearchable

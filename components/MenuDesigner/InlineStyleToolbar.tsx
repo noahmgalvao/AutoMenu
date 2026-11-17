@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlignCenter, AlignLeft, AlignRight, Bold, Check, ChevronDown, Italic, Minus, Plus, Underline } from 'lucide-react';
+import { AlignCenter, AlignLeft, AlignRight, Bold, ChevronDown, Italic, Minus, Plus, Underline } from 'lucide-react';
 import { ElementStyle } from '../../types';
 import { FontSelect } from './SearchableSelects';
 import { ColorPicker } from './ColorPicker';
@@ -15,7 +15,6 @@ interface InlineStyleToolbarProps {
     value: ElementStyle;
     onChange: (style: ElementStyle) => void | boolean;
     onDismiss: () => void;
-    onFinish?: () => void;
     controls?: 'all' | 'sizeColor';
     maxFontSize?: number;
     minFontSize?: number;
@@ -27,17 +26,20 @@ interface InlineStyleToolbarProps {
     categoryDividerColor?: string;
     onCategoryDividerChange?: (preset: CategoryDividerStyle) => void;
     dividerLabel?: string;
-    decoration?: React.ReactNode;
+    decoration?: (formatButtons: React.ReactNode) => React.ReactNode;
+    borderOffset?: number;
 }
 
-export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, positionTargetElementId, value, onChange, onDismiss, onFinish, controls = 'all', maxFontSize, minFontSize, header, compact = false, onAdjustPrice, fallbackFontFamily, categoryDividerPreset, categoryDividerColor = '#000000', onCategoryDividerChange, dividerLabel, decoration }) => {
+export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, positionTargetElementId, value, onChange, onDismiss, controls = 'all', maxFontSize, minFontSize, header, compact = false, onAdjustPrice, fallbackFontFamily, categoryDividerPreset, categoryDividerColor = '#000000', onCategoryDividerChange, dividerLabel, decoration, borderOffset }) => {
     const toolbarRef = useRef<HTMLDivElement>(null);
-    const [position, setPosition] = useState({ left: 8, top: 8, width: 270 });
+    const contentRef = useRef<HTMLDivElement>(null);
+    const [position, setPosition] = useState<React.CSSProperties>({ left: 8, top: 8, width: 270 });
     const [priceAdjustment, setPriceAdjustment] = useState('10');
     const [priceAdjustmentMode, setPriceAdjustmentMode] = useState<PriceAdjustmentMode>('percentage');
     const isSizeColorOnly = controls === 'sizeColor';
     const hasHeader = Boolean(header);
     const hasPriceAdjustment = Boolean(onAdjustPrice);
+    const hasDecoration = Boolean(decoration);
 
     useEffect(() => {
         setPriceAdjustment('10');
@@ -47,8 +49,13 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
     useEffect(() => {
         const dismissOnOutsidePointer = (event: PointerEvent) => {
             const target = event.target;
-            if (target instanceof Element && target.closest('[data-editor-popover="true"]')) return;
-            if (!onFinish && !toolbarRef.current?.contains(target as Node)) onDismiss();
+            if (!(target instanceof Element) || toolbarRef.current?.contains(target) || target.closest('[data-editor-popover="true"]')) return;
+            const editedElement = document.getElementById(targetElementId);
+            const editedProduct = editedElement?.closest('[data-drag-type="product"]');
+            const editedHeader = editedElement?.closest('[data-template-header]');
+            if (editedProduct?.contains(target) || (editedHeader?.contains(target) && target.closest('[data-menu-heading]'))) return;
+            if (editedElement === document.activeElement) editedElement?.blur();
+            onDismiss();
         };
         const dismissOnPdf = () => onDismiss();
 
@@ -58,29 +65,55 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
             document.removeEventListener('pointerdown', dismissOnOutsidePointer, true);
             document.removeEventListener('automenu:close-inline-formatting', dismissOnPdf);
         };
-    }, [onDismiss, onFinish]);
+    }, [onDismiss, targetElementId]);
 
     useLayoutEffect(() => {
         const target = document.getElementById(positionTargetElementId || targetElementId);
         if (!target) return;
 
         const updatePosition = () => {
-            const targetRect = target.getBoundingClientRect();
-            const toolbarHeight = toolbarRef.current?.getBoundingClientRect().height || 76;
+            const toolbarHeight = (contentRef.current?.offsetHeight || 76) + (compact ? 10 : 14);
             const preferredWidth = hasHeader ? (compact ? 148 : 210) : isSizeColorOnly ? 120 : hasPriceAdjustment || onCategoryDividerChange ? 300 : 270;
-            const minimumWidth = hasHeader ? (compact ? 144 : 190) : isSizeColorOnly ? 120 : 210;
-            const width = Math.min(preferredWidth, Math.max(minimumWidth, window.innerWidth - 16));
-            const left = Math.max(8, Math.min(window.innerWidth - width - 8, targetRect.left + (targetRect.width / 2) - (width / 2)));
-            const top = targetRect.top - toolbarHeight - 8 >= 8
-                ? targetRect.top - toolbarHeight - 8
-                : Math.min(window.innerHeight - toolbarHeight - 8, targetRect.bottom + 8);
-            setPosition({ left, top: Math.max(8, top), width });
+            const width = Math.min(preferredWidth, window.innerWidth - 16);
+            const borderSurface = hasDecoration
+                ? document.getElementById(targetElementId)?.closest('[data-menu-border-surface]')
+                : null;
+            const targetRect = (borderSurface || target).getBoundingClientRect();
+            const strokes = Array.from(borderSurface?.querySelectorAll(':scope > [data-menu-border]') || [])
+                .map((element) => element.getBoundingClientRect());
+            const top = Math.min(targetRect.top, ...strokes.map((rect) => rect.top));
+            const bottom = Math.max(targetRect.bottom, ...strokes.map((rect) => rect.bottom));
+            const left = Math.min(targetRect.left, ...strokes.map((rect) => rect.left));
+            const right = Math.max(targetRect.right, ...strokes.map((rect) => rect.right));
+            const centeredLeft = Math.max(8, Math.min(window.innerWidth - width - 8, (left + right - width) / 2));
+            const availableAbove = top - 16;
+            const availableBelow = window.innerHeight - bottom - 16;
+
+            if (borderSurface && Math.max(availableAbove, availableBelow) < toolbarHeight) {
+                const sideLeft = window.innerWidth - right - 16 >= width ? right + 8 : left - width - 8;
+                if (sideLeft >= 8 && sideLeft + width <= window.innerWidth - 8) {
+                    setPosition({ left: sideLeft, top: Math.max(8, Math.min(top, window.innerHeight - toolbarHeight - 8)), width,
+                        maxHeight: window.innerHeight - 16, overflowY: toolbarHeight > window.innerHeight - 16 ? 'auto' : undefined });
+                    return;
+                }
+                const useTop = availableAbove >= availableBelow;
+                const available = Math.max(availableAbove, availableBelow);
+                if (available >= 80) {
+                    setPosition({ left: centeredLeft, top: useTop ? 8 : bottom + 8, width, maxHeight: available, overflowY: 'auto' });
+                    return;
+                }
+            }
+
+            const above = availableAbove >= toolbarHeight;
+            const toolbarTop = above ? top - toolbarHeight - 8 : Math.min(window.innerHeight - toolbarHeight - 8, bottom + 8);
+            setPosition({ left: centeredLeft, top: Math.max(8, toolbarTop), width, maxHeight: window.innerHeight - 16,
+                overflowY: toolbarHeight > window.innerHeight - 16 ? 'auto' : undefined });
         };
 
         updatePosition();
         const resizeObserver = new ResizeObserver(updatePosition);
         resizeObserver.observe(target);
-        if (toolbarRef.current) resizeObserver.observe(toolbarRef.current);
+        if (contentRef.current) resizeObserver.observe(contentRef.current);
         window.addEventListener('resize', updatePosition);
         window.addEventListener('scroll', updatePosition, true);
 
@@ -89,7 +122,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
             window.removeEventListener('resize', updatePosition);
             window.removeEventListener('scroll', updatePosition, true);
         };
-    }, [compact, hasHeader, hasPriceAdjustment, isSizeColorOnly, onCategoryDividerChange, positionTargetElementId, targetElementId]);
+    }, [borderOffset, compact, hasDecoration, hasHeader, hasPriceAdjustment, isSizeColorOnly, onCategoryDividerChange, positionTargetElementId, targetElementId]);
 
     const parsedPriceAdjustment = Number(priceAdjustment);
     const canAdjustPrice = Number.isFinite(parsedPriceAdjustment) && parsedPriceAdjustment > 0;
@@ -104,6 +137,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
         >
+          <div ref={contentRef}>
             {header && (
                 <div className={`flex items-center justify-between border-b border-slate-100 ${compact ? 'mb-1 gap-1 pb-1' : 'mb-1.5 gap-2 pb-1.5'}`}>
                     {header}
@@ -116,6 +150,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                             value={value.fontFamily || fallbackFontFamily}
                             fallbackFontFamily={fallbackFontFamily}
                             placeholder="Fonte..."
+                            menuGap={36}
                             onChange={(font) => onChange({ ...value, fontFamily: font })}
                         />
                     </div>
@@ -128,11 +163,9 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                     onChange={(fontSize) => onChange({ ...value, fontSize })}
                 />
                 <ColorPicker value={value.color} onChange={color => onChange({ ...value, color })} />
-                {onFinish && <button type="button" aria-label="Concluir edição" title="Concluir edição" onClick={onFinish}
-                    className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-indigo-50 text-indigo-700 hover:bg-indigo-100"><Check size={16} /></button>}
             </div>
-            {!isSizeColorOnly && (
-                <div className="mt-1.5 flex items-center justify-center gap-1">
+            {!isSizeColorOnly && (() => {
+                const formatButtons = <>
                     {(['left', 'center', 'right'] as const).map((align) => (
                         <button
                             type="button"
@@ -167,8 +200,12 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                     >
                         <Underline size={14} />
                     </button>
-                </div>
-            )}
+                </>;
+                return <div className="mt-1.5">{decoration
+                    ? decoration(formatButtons)
+                    : <div className="flex items-center justify-center gap-1">{formatButtons}</div>}
+                </div>;
+            })()}
             {onCategoryDividerChange && categoryDividerPreset && (
                 <div className="mt-2 border-t border-slate-100 pt-2">
                     <CategoryDividerPicker
@@ -179,7 +216,6 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                     />
                 </div>
             )}
-            {decoration && <div className="mt-2 border-t border-slate-100 pt-2">{decoration}</div>}
             {onAdjustPrice && (
                 <div className="mt-2 border-t border-slate-100 pt-2">
                     <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Alterar valor</div>
@@ -227,6 +263,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                     </div>
                 </div>
             )}
+          </div>
         </div>,
         document.body
     );

@@ -1,9 +1,10 @@
 import React from 'react';
-import { ChevronDown, SquareDashed } from 'lucide-react';
+import { List, Square } from 'lucide-react';
 import type { MenuBorder, MenuBorderScope, MenuBorderSide, MenuMarker, MenuStyle } from '../../types';
 import { resolveMenuPageDimensions } from '../../utils/pageSetup';
 import { resolveMenuMargins } from '../../utils/styleRules';
 import { ColorPicker } from './ColorPicker';
+import { FontSizeInput } from './FontSizeInput';
 
 const sides: { id: MenuBorderSide; label: string }[] = [
   { id: 'top', label: 'Acima' }, { id: 'right', label: 'Direita' },
@@ -85,11 +86,15 @@ function getBorderConfiguration(style: MenuStyle, scope: MenuBorderScope, id?: s
 
 export function BorderDecoration({ style, scope, id }: { style: MenuStyle; scope: MenuBorderScope; id?: string }) {
   const border = activeBorder(style, scope, id);
-  if (!border?.sides.length) return null;
+  return border ? <BorderShape border={border} /> : null;
+}
+
+function BorderShape({ border }: { border: MenuBorder }) {
+  if (!border.sides.length) return null;
   const stroke = `${border.thickness}px ${border.pattern} ${border.color}`;
   const inset = -border.offset;
   if (border.length === 100) {
-    return <span aria-hidden="true" className="pointer-events-none absolute z-[1]" style={{
+    return <span data-menu-border aria-hidden="true" className="pointer-events-none absolute z-[1]" style={{
       inset,
       borderTop: border.sides.includes('top') ? stroke : undefined,
       borderRight: border.sides.includes('right') ? stroke : undefined,
@@ -100,7 +105,7 @@ export function BorderDecoration({ style, scope, id }: { style: MenuStyle; scope
   }
   return <>{border.sides.map(side => {
     const horizontal = side === 'top' || side === 'bottom';
-    return <span key={side} aria-hidden="true" className="pointer-events-none absolute z-[1]" style={{
+    return <span key={side} data-menu-border aria-hidden="true" className="pointer-events-none absolute z-[1]" style={{
       [side]: inset,
       [horizontal ? 'left' : 'top']: `${(100 - border.length) / 2}%`,
       [horizontal ? 'width' : 'height']: `${border.length}%`,
@@ -115,19 +120,19 @@ export function getMarker(style: MenuStyle, scope: 'category' | 'product'): Menu
   return style.markers?.[scope] || (scope === 'category' && style.design?.category === 'numbered' ? 'number-padded' : 'none');
 }
 
-export function MenuMarkerGlyph({ marker, index, color }: { marker: MenuMarker; index: number; color: string }) {
+export function MenuMarkerGlyph({ marker, index, color, fontSize }: { marker: MenuMarker; index: number; color: string; fontSize: number }) {
   if (marker === 'none') return null;
   const number = Math.max(1, index + 1);
   const framed = marker === 'number-circle' || marker === 'number-square' || marker === 'number-padded';
   const content = marker === 'number' ? `${number}.` : marker === 'number-padded' ? String(number).padStart(2, '0')
     : framed ? number : markers.find(([id]) => marker === id)?.[2];
-  return <span aria-hidden="true" className="inline-flex shrink-0 items-center justify-center font-semibold tabular-nums" style={{
+  return <span data-menu-marker aria-hidden="true" className="inline-flex shrink-0 items-center justify-center font-semibold tabular-nums" style={{
     color,
     border: framed ? '1px solid currentColor' : undefined,
     borderRadius: marker === 'number-circle' ? 999 : marker === 'number-square' ? 2 : undefined,
     minWidth: framed ? '1.55em' : undefined,
     paddingInline: framed ? '0.24em' : undefined,
-    fontSize: framed ? '0.8em' : '1em',
+    fontSize: framed ? fontSize * 0.85 : fontSize,
     fontFamily: marker === 'number-padded' ? 'monospace' : undefined,
     lineHeight: framed ? 1.45 : 1,
   }}>{content}</span>;
@@ -140,9 +145,32 @@ interface DecorationProps {
   id?: string;
   showBorder?: boolean;
   showMarker?: boolean;
+  children?: React.ReactNode;
 }
 
-export function DecorationControls({ style, setStyle, scope, id, showBorder = true, showMarker = true }: DecorationProps) {
+const borderPresets: { label: string; sides: MenuBorderSide[] }[] = [
+  { label: 'Contorno', sides: sides.map(({ id }) => id) },
+  { label: 'Horizontais', sides: ['top', 'bottom'] },
+  { label: 'Verticais', sides: ['left', 'right'] },
+  { label: 'Sem borda', sides: [] },
+];
+
+const borderValues = [
+  ['thickness', 'Espessura (px)', 1, 32],
+  ['length', 'Comprimento (%)', 5, 100],
+  ['radius', 'Arredondamento (px)', 0, 200],
+  ['offset', 'Distância (px)', -60, 100],
+] as const;
+
+const edgeClasses: Record<MenuBorderSide, string> = {
+  top: 'inset-x-7 top-0 h-5 border-b-2',
+  right: 'inset-y-5 right-0 w-7 border-l-2',
+  bottom: 'inset-x-7 bottom-0 h-5 border-t-2',
+  left: 'inset-y-5 left-0 w-7 border-r-2',
+};
+
+export function DecorationControls({ style, setStyle, scope, id, showBorder = true, showMarker = true, children }: DecorationProps) {
+  const [panel, setPanel] = React.useState<'border' | 'marker' | null>(null);
   const border = getBorderConfiguration(style, scope, id);
   const change = (update: Partial<MenuBorder>) => setStyle(previous => {
     const next = { ...getBorderConfiguration(previous, scope, id), ...update };
@@ -152,59 +180,74 @@ export function DecorationControls({ style, setStyle, scope, id, showBorder = tr
   });
   const markerScope = scope === 'category' || scope === 'product' ? scope : null;
   const markerLabel = markerScope === 'category' ? 'Marcadores das categorias' : 'Marcadores dos produtos';
-  const label = scope === 'header' ? 'Borda do título e subtítulo' : scope === 'price' ? 'Borda do preço'
+  const borderLabel = scope === 'header' ? 'Borda do título e subtítulo' : scope === 'price' ? 'Borda do preço'
     : scope === 'productImage' ? 'Borda da foto' : 'Borda';
+  const buttonClass = (active: boolean) => `grid size-6 shrink-0 place-items-center rounded border ${active ? 'border-indigo-200 bg-indigo-50 text-indigo-600' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`;
+
   return <div className="space-y-2">
-    {showBorder && <details className="group/border rounded-lg border border-slate-200 bg-white">
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-2.5 py-2 text-xs font-semibold text-slate-700">
-        <SquareDashed size={15} /> {label}
-        <ChevronDown size={14} className="ml-auto group-open/border:rotate-180" />
-      </summary>
-      <div className="space-y-2 border-t border-slate-100 p-2">
-        <div className="grid grid-cols-2 gap-1" aria-label="Lados da borda">
-          {sides.map(side => <button key={side.id} type="button" aria-pressed={border.sides.includes(side.id)}
-            onClick={() => change({ sides: border.sides.includes(side.id) ? border.sides.filter(item => item !== side.id) : [...border.sides, side.id] })}
-            className={`min-h-8 rounded-md border px-1 text-xs ${border.sides.includes(side.id) ? 'border-indigo-300 bg-indigo-50 text-indigo-800' : 'border-slate-200'}`}>{side.label}</button>)}
+    <div className={`flex flex-wrap items-center gap-1 ${children ? 'justify-center' : ''}`}>
+      {children}
+      {showBorder && <button type="button" title={borderLabel} aria-label={borderLabel} aria-expanded={panel === 'border'}
+        className={buttonClass(panel === 'border')} onClick={() => {
+          const opening = panel !== 'border';
+          if (opening && !border.sides.length) change({ sides: borderPresets[0].sides });
+          setPanel(opening ? 'border' : null);
+        }}><Square size={14} /></button>}
+      {markerScope && showMarker && <button type="button" title={markerLabel} aria-label={markerLabel} aria-expanded={panel === 'marker'}
+        className={buttonClass(panel === 'marker')} onClick={() => setPanel(panel === 'marker' ? null : 'marker')}>
+        <List size={14} />
+      </button>}
+    </div>
+    {showBorder && panel === 'border' && <div data-border-panel className="space-y-2 rounded-md border border-slate-200 bg-white p-2">
+      <div className="grid grid-cols-2 gap-2">
+        <div className="relative h-20 overflow-hidden rounded bg-slate-50" aria-label="Prévia e lados da borda" role="group">
+          <div className="pointer-events-none absolute inset-x-7 inset-y-6">
+            <BorderShape border={{ ...border, thickness: Math.min(7, border.thickness / 2), offset: Math.max(-7, Math.min(12, border.offset / 5)) }} />
+          </div>
+          {sides.map(({ id, label }) => {
+            const active = border.sides.includes(id);
+            return <button type="button" key={id} title={label} aria-label={label} aria-pressed={active}
+              className={`absolute ${edgeClasses[id]} ${active ? 'border-indigo-500 bg-indigo-100/50 hover:bg-indigo-100' : 'border-slate-200 hover:bg-slate-200'}`}
+              onClick={() => change({ sides: active ? border.sides.filter(side => side !== id) : [...border.sides, id] })} />;
+          })}
         </div>
-        <div className="flex items-center gap-2">
-          <ColorPicker value={border.color} onChange={color => change({ color })} label="Cor da borda" />
-          <select aria-label="Traço da borda" value={border.pattern} onChange={event => change({ pattern: event.target.value as MenuBorder['pattern'] })}
-            className="h-8 w-full rounded-md border border-slate-200 text-xs">
-            {patterns.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-          </select>
+        <div className="grid grid-cols-2 gap-1" aria-label="Tipos de contorno" role="group">
+          {borderPresets.map(preset => {
+            const active = preset.sides.length === border.sides.length && preset.sides.every(side => border.sides.includes(side));
+            return <button key={preset.label} type="button" aria-pressed={active} onClick={() => change({ sides: preset.sides })}
+              className={`rounded border px-1 text-[10px] font-medium ${active ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>{preset.label}</button>;
+          })}
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          {([
-            ['thickness', 'Espessura (px)', 1, 32], ['length', 'Comprimento (%)', 5, 100],
-            ['radius', 'Arredondamento (px)', 0, 200], ['offset', 'Distância (px)', -60, 100],
-          ] as const).map(([key, label, min, max]) => (
-            <label className="text-[10px] text-slate-600" key={key}>{label}
-              <input type="number" min={min} max={max} key={border[key]} defaultValue={border[key]}
-                className="mt-0.5 h-8 w-full rounded-md border border-slate-200 px-1.5 text-xs"
-                onBlur={event => {
-                  const value = event.currentTarget.valueAsNumber;
-                  if (Number.isFinite(value) && value !== border[key]) change({ [key]: Math.max(min, Math.min(max, value)) });
-                }} onKeyDown={event => {
-                  if (event.key === 'Enter') { event.stopPropagation(); event.currentTarget.blur(); }
-                }} />
-            </label>
-          ))}
-        </div>
-        {activeBorder(style, scope, id) && <button type="button" className="text-xs font-semibold text-indigo-700"
-          onClick={() => setStyle(previous => scope === 'freeText'
-            ? { ...previous, freeTextBorders: Object.fromEntries(Object.entries(previous.freeTextBorders || {}).filter(([key]) => key !== id)) }
-            : { ...previous, borders: { ...previous.borders, [scope]: undefined } })}>Restaurar borda do modelo</button>}
       </div>
-    </details>}
-    {markerScope && showMarker && <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-      {markerLabel}
-      <select aria-label={markerLabel} value={getMarker(style, markerScope)} className="h-8 min-w-0 flex-1 rounded-md border border-slate-200 bg-white text-xs"
-        onChange={event => {
-          const marker = event.target.value as MenuMarker;
-          setStyle(previous => ({ ...previous, markers: { ...previous.markers, [markerScope]: marker }, name: 'Custom' }));
-        }}>
-        {markers.map(([key, label, glyph]) => <option key={key} value={key}>{glyph} {label}</option>)}
-      </select>
-    </label>}
+      <div className="flex items-center gap-2">
+        <ColorPicker value={border.color} onChange={color => change({ color })} label="Cor da borda" />
+        <select aria-label="Traço da borda" value={border.pattern} onChange={event => change({ pattern: event.target.value as MenuBorder['pattern'] })}
+          className="h-8 w-full rounded-md border border-slate-200 text-xs">
+          {patterns.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+      </div>
+      {borderValues.map(([key, label, min, max]) => (
+        <div key={key} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2">
+          <label className="text-xs font-medium text-slate-600">
+            {label}
+            <input type="range" min={min} max={max} value={border[key]}
+              className="block w-full accent-indigo-600" onChange={event => change({ [key]: event.currentTarget.valueAsNumber })} />
+          </label>
+          <FontSizeInput label={label} min={min} max={max} value={border[key]} onChange={value => change({ [key]: value })} />
+        </div>
+      ))}
+      {activeBorder(style, scope, id) && <button type="button" className="text-xs font-semibold text-indigo-700"
+        onClick={() => setStyle(previous => scope === 'freeText'
+          ? { ...previous, freeTextBorders: Object.fromEntries(Object.entries(previous.freeTextBorders || {}).filter(([key]) => key !== id)) }
+          : { ...previous, borders: { ...previous.borders, [scope]: undefined } })}>Restaurar borda do modelo</button>}
+    </div>}
+    {markerScope && showMarker && panel === 'marker' && <select aria-label={markerLabel} value={getMarker(style, markerScope)}
+      className="h-8 w-full rounded-md border border-slate-200 bg-white text-xs"
+      onChange={event => {
+        const marker = event.target.value as MenuMarker;
+        setStyle(previous => ({ ...previous, markers: { ...previous.markers, [markerScope]: marker }, name: 'Custom' }));
+      }}>
+      {markers.map(([key, label, glyph]) => <option key={key} value={key}>{glyph} {label}</option>)}
+    </select>}
   </div>;
 }

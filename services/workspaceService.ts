@@ -954,7 +954,7 @@ export const deleteWorkspaceMenu = async ({
 };
 
 const createInitialMenuVersionPayload = (blankMenuTitle?: string) => {
-  const products = blankMenuTitle === undefined ? assignCategoryIds(cloneJson(INITIAL_PRODUCTS)) : [];
+  const products = assignCategoryIds(cloneJson(INITIAL_PRODUCTS));
   const style = withStyleDefaults(cloneJson(INITIAL_STYLE));
   if (blankMenuTitle !== undefined) {
     style.menuTitle = blankMenuTitle;

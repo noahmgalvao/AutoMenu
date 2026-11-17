@@ -1,7 +1,7 @@
 import { templateProductImageHeight } from '../utils/templateDesign';
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Product, MenuStyle } from '../types';
+import { Product, MenuStyle, type MenuBorderScope } from '../types';
 import { ImagePlus, Minus, MoreHorizontal, Plus, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Edit3, CopyCheck } from 'lucide-react';
 import { FREE_TEXT_PREFIX, getPaginationItemKey } from '../utils/menuPagination';
 import { selectionLayerClasses } from './selectionLayers';
@@ -807,9 +807,13 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         }
         return undefined;
     };
-    const renderFormattingToolbar = (type: string, id: string, value: any) => (
-        formattingTarget?.type === type && formattingTarget?.id === id
-            ? <InlineStyleToolbar
+    const renderFormattingToolbar = (type: string, id: string, value: any) => {
+        if (formattingTarget?.type !== type || formattingTarget.id !== id) return null;
+        const scope: MenuBorderScope = type === 'menuTitle' || type === 'menuSubtitle' ? 'header' :
+            type === 'category' ? 'category' : type === 'freeText' ? 'freeText' :
+            formattingTarget.field === 'price' ? 'price' : 'product';
+        const border = scope === 'freeText' ? style.freeTextBorders?.[id] : style.borders?.[scope];
+        return <InlineStyleToolbar
                 targetElementId={formattingTarget.elementId}
                 positionTargetElementId={type === 'product' ? `product-name-${id}` : undefined}
                 value={value || {}}
@@ -817,14 +821,16 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 minFontSize={minimumFontSize}
                 fallbackFontFamily={style.fontFamily}
                 onChange={(newStyle) => handlers.handleInlineStyleChange?.(formattingTarget, newStyle)}
-                onDismiss={() => handlers.setFormattingTarget?.(null)}
-                onFinish={type === 'product' && handlers.editingId === id ? () => {
-                    handlers.setEditingId(null);
-                    handlers.setFormattingTarget(null);
-                } : undefined}
-                decoration={handlers.updateStyle && <DecorationControls style={style} setStyle={handlers.updateStyle} id={id}
-                    scope={type === 'menuTitle' || type === 'menuSubtitle' ? 'header' : type === 'category' ? 'category' : type === 'freeText' ? 'freeText' : formattingTarget.field === 'price' ? 'price' : 'product'}
-                    showBorder={type !== 'product' || formattingTarget.field === 'price' || style.layoutMode !== 'list' || style.design?.product === 'editorial'} />}
+                onDismiss={() => {
+                    if (type === 'product' && handlers.editingId === id) handlers.setEditingId(null);
+                    handlers.setFormattingTarget?.(null);
+                }}
+                borderOffset={border?.offset}
+                decoration={handlers.updateStyle ? (formatButtons) => (
+                    <DecorationControls key={scope} style={style} setStyle={handlers.updateStyle} id={id} scope={scope}>
+                        {formatButtons}
+                    </DecorationControls>
+                ) : undefined}
                 categoryDividerPreset={type === 'category'
                     ? resolveCategoryDivider(style, id)
                     : type === 'product'
@@ -846,9 +852,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 onAdjustPrice={type === 'product' && formattingTarget.field === 'price'
                     ? (direction: 1 | -1, amount: number, mode: PriceAdjustmentMode) => handlers.adjustProductPrice?.(id, direction, amount, mode)
                     : undefined}
-              />
-            : null
-    );
+            />;
+    };
     const renderProductImageControls = (product: Product, isEditing: boolean) => (
         isEditing && imageMenuProductId === product.id ? (
             <ProductImageToolbar productId={product.id} anchorId={`product-name-${product.id}`} handlers={handlers} />
@@ -859,6 +864,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const titleStyle = style.elementStyles?.menuTitle || {};
         const subStyle = style.elementStyles?.menuSubtitle || {};
         const hasSubtitle = Boolean(style.menuSubtitle?.trim());
+        const showSubtitleDraft = !hasSubtitle && !handlers.readOnly &&
+            (formattingTarget?.type === 'menuTitle' || formattingTarget?.type === 'menuSubtitle');
+        const showSubtitle = hasSubtitle || showSubtitleDraft;
         const heroImage = style.design?.header === 'hero' && style.showImages && style.design.image !== 'none'
             ? products.find((product) => product.image && !product.isFreeText && !style.hiddenProductIds.includes(product.id))?.image : undefined;
         const isTitleSelected = handlers.isSelected?.('menuTitle', 'menuTitle') ?? handlers.selectedId === 'menuTitle';
@@ -870,7 +878,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 data-block-id="main-header"
                 data-pagination-item="main-header"
                 data-template-header
-                data-custom-border={getBorderOverride(style, 'header')}
+                data-menu-border-surface data-custom-border={getBorderOverride(style, 'header')}
                 className={`text-center group relative pointer-events-auto ${isTitleSelected || isSubtitleSelected ? 'ring-2 ring-indigo-500' : ''}`}
                 style={{ marginBottom: 0, borderRadius: style.borders?.header?.radius }}
             >
@@ -899,7 +907,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     textDecoration: titleStyle.underline ? 'underline' : 'none',
                     textAlign: titleStyle.textAlign as any,
                     textTransform: titleStyle.textTransform,
-                    marginBottom: `${hasSubtitle ? (titleStyle.marginBottom ?? 10) : contentSpacing.headerToContent}px`
+                    marginBottom: `${showSubtitle ? (titleStyle.marginBottom ?? 10) : contentSpacing.headerToContent}px`
                 }} 
                 onContextMenu={!hasSubtitle ? (event) => handlers.openObjectMenu?.(event, { type: 'menuTitle', id: 'menuTitle' }) : undefined}
                 onClick={(e) => {
@@ -913,9 +921,12 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 }}
                 contentEditable={handlers.readOnly ? undefined : true} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'menu', 'header', 'menuTitle')} onKeyDown={handlers.handleKeyDown}
             />
-            {hasSubtitle && <AutoFitText
+            {showSubtitle && <AutoFitText
                 as="p"
-                text={style.menuSubtitle}
+                text={hasSubtitle ? style.menuSubtitle : ''}
+                data-subtitle-placeholder={showSubtitleDraft ? 'Adicionar subtítulo' : undefined}
+                data-print-control={showSubtitleDraft ? 'true' : undefined}
+                aria-label={showSubtitleDraft ? 'Adicionar subtítulo' : undefined}
                 baseFontSize={clampFontSize(style, 'menuSubtitle', subStyle.fontSize, 18)}
                 minimumFontSize={minimumFontSize}
                 allowSameWordBreak={allowSameWordBreak}
@@ -924,7 +935,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 showOverflowFeedback
                 id={handlers.readOnly ? undefined : "menu-subtitle-text"}
                 data-menu-heading="subtitle"
-                className={`opacity-90 outline-none focus:bg-blue-50/50 rounded cursor-text ${isSubtitleSelected ? 'ring-2 ring-indigo-500 bg-indigo-50/20' : ''}`}
+                className={`opacity-90 outline-none focus:bg-blue-50/50 rounded cursor-text empty:before:pointer-events-none empty:before:opacity-50 empty:before:content-[attr(data-subtitle-placeholder)] ${isSubtitleSelected ? 'ring-2 ring-indigo-500 bg-indigo-50/20' : ''}`}
                 style={{
                     color: `var(--automenu-preview-primary, ${subStyle.color || style.textColor})`,
                     fontFamily: subStyle.fontFamily || style.fontFamily,
@@ -997,9 +1008,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 />
                 {renderFormattingToolbar('category', item.data, catStyle)}
             {!handlers.readOnly && <ProductControls type="category" catName={item.data} isMobileSelected={isSelected} index={idx} total={0} isLastInBlock={false} canMoveUp={false} canMoveDown={false} canMoveLeft={false} canMoveRight={false} hideGeneralControls={false} handlers={handlers} onEdit={(e: React.MouseEvent) => handlers.startEditing(e, item.data, elementId, 'category')} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showSelectionOutline={false} showAddControls={false} compactControls={compactControls} showGridMoveControls={false}/>}
-                <div data-template-category data-custom-border={getBorderOverride(style, 'category')} style={{ borderRadius: style.borders?.category?.radius }} className={`relative flex w-full max-w-full min-w-0 items-center gap-1 ${compactControls ? 'px-1' : 'px-2'} ${categoryAlign === 'center' ? 'justify-center' : categoryAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
+                <div data-template-category data-menu-border-surface data-custom-border={getBorderOverride(style, 'category')} style={{ borderRadius: style.borders?.category?.radius }} className={`relative flex w-full max-w-full min-w-0 items-center gap-1 ${compactControls ? 'px-1' : 'px-2'} ${categoryAlign === 'center' ? 'justify-center' : categoryAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
                     <BorderDecoration style={style} scope="category" />
-                    <MenuMarkerGlyph marker={getMarker(style, 'category')}
+                    <MenuMarkerGlyph marker={getMarker(style, 'category')} fontSize={clampFontSize(style, 'category', catStyle.fontSize, 24)}
                         index={handlers.sortedCategories.filter((id: string) => !id.startsWith(FREE_TEXT_PREFIX)).indexOf(item.data)} color="var(--template-accent)" />
                     {(categoryAlign === 'center' || categoryAlign === 'right') && renderCategoryDivider('before')}
                     {style.showCategoryImages !== false && categoryImage?.url && (
@@ -1089,7 +1100,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     data-drag-type="product"
                     data-drag-id={product.id}
                     data-template-product={product.isFreeText ? undefined : true}
-                    data-custom-border={getBorderOverride(style, product.isFreeText ? 'freeText' : 'product', product.id)}
+                    data-menu-border-surface data-custom-border={getBorderOverride(style, product.isFreeText ? 'freeText' : 'product', product.id)}
                     data-pagination-item={getPaginationItemKey(item)}
                     data-drag-group={item.category}
                     onPointerDown={(e) => handlers.handleDragStart(e, 'product', product.id, item.category)}
@@ -1180,7 +1191,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     {style.showImages && product.image && ( 
                         <div
                             data-template-image
-                            data-custom-border={getBorderOverride(style, 'productImage')}
+                            data-menu-border-surface data-custom-border={getBorderOverride(style, 'productImage')}
                             data-product-image-surface={product.id}
                             style={{ width: stackImage ? '100%' : `${imageSizePx}px`, height: `${templateProductImageHeight(style, imageSizePx)}px` }}
                             className={`relative rounded-md flex-shrink-0 bg-gray-100 shadow-inner select-none transition-all duration-300 ${isEditing ? 'cursor-pointer ring-2 ring-indigo-400' : 'overflow-hidden'}`}
@@ -1203,7 +1214,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             }}
                          >
                             <div className={`flex items-center gap-2 ${isNameCentered ? 'justify-center' : isNameRight ? 'justify-end' : ''}`} style={{ flex: showProductDivider ? '0 1 auto' : '1 1 min-content', minWidth: 'min-content' }}>
-                                <MenuMarkerGlyph marker={getMarker(style, 'product')}
+                                <MenuMarkerGlyph marker={getMarker(style, 'product')} fontSize={clampFontSize(style, 'productName', nameStyle.fontSize, 18)}
                                     index={visibleCatProducts.filter((candidate: Product) => !candidate.isFreeText).findIndex((candidate: Product) => candidate.id === product.id)}
                                     color="var(--template-accent)" />
                                 <AutoFitText
@@ -1239,7 +1250,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 />
                             )}
                             {style.showPrices !== false && <div
-                              data-template-price data-custom-border={getBorderOverride(style, 'price')} className="relative ml-auto flex min-w-0 shrink-0 items-center gap-1 whitespace-nowrap"
+                              data-template-price data-menu-border-surface data-custom-border={getBorderOverride(style, 'price')} className="relative ml-auto flex min-w-0 shrink-0 items-center gap-1 whitespace-nowrap"
                               style={{ 
                                 borderRadius: style.borders?.price?.radius,
                                 justifyContent: priceStyle.textAlign === 'left' ? 'flex-start' : (priceStyle.textAlign === 'center' ? 'center' : 'flex-end'), 
@@ -1402,7 +1413,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 data-drag-type="product"
                                 data-drag-id={product.id}
                                 data-template-product={product.isFreeText ? undefined : true}
-                    data-custom-border={getBorderOverride(style, product.isFreeText ? 'freeText' : 'product', product.id)}
+                                data-menu-border-surface data-custom-border={getBorderOverride(style, 'product')}
                                 data-drag-group={item.category}
                                 onPointerDown={(e) => handlers.handleDragStart(e, 'product', product.id, item.category)}
                                 onDragStart={(e) => e.preventDefault()}
@@ -1410,6 +1421,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 onClick={(e) => { e.stopPropagation(); handlers.handleSelection('product', product.id, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey }); handlers.setSelectedPageIndex(null); }}
                                 className={`automenu-drag-item relative group min-w-0 transition-all pointer-events-auto p-0 ${isEditing ? 'select-text touch-auto cursor-text' : 'select-none touch-auto cursor-grab'} ${isCardLayout ? 'rounded-xl' : 'rounded-lg'} ${isSelected || isEditing ? 'z-[60] bg-indigo-50/30' : 'z-[1] hover:bg-black/5'}`}
                             >
+                                <BorderDecoration style={style} scope="product" />
                                 {renderFormattingToolbar('product', product.id,
                                     formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle)}
                             {!handlers.readOnly && <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={canMoveLeft} canMoveRight={canMoveRight} isFreeText={product.isFreeText} handlers={handlers} onEdit={(e: React.MouseEvent) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name')} mobileOnlyEdit={!compactControls} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} mobileExpandedControls={mobileExpandedControls} denseControls={denseControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>}
@@ -1426,7 +1438,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                         {style.showImages && product.image && (
                                             <div
                                                 data-template-image
-                                                data-custom-border={getBorderOverride(style, 'productImage')}
+                                                data-menu-border-surface data-custom-border={getBorderOverride(style, 'productImage')}
                                                 data-product-image-surface={product.id}
                                                 style={{ height: `${templateProductImageHeight(style, cardImageHeight)}px` }}
                                                 className={`relative w-full bg-gray-100 transition-all duration-300 ${isCardLayout ? '' : 'rounded-md'} ${isEditing ? 'cursor-pointer ring-2 ring-inset ring-indigo-400' : 'overflow-hidden'}`}
@@ -1449,7 +1461,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                 }}
                                             >
                                                 <div className={`flex items-center gap-1 ${nameStyle.textAlign === 'center' ? 'justify-center' : nameStyle.textAlign === 'right' ? 'justify-end' : 'justify-start'}`} style={{ flex: showProductDivider ? '0 1 auto' : '1 1 min-content', minWidth: 'min-content' }}>
-                                                    <MenuMarkerGlyph marker={getMarker(style, 'product')}
+                                                    <MenuMarkerGlyph marker={getMarker(style, 'product')} fontSize={clampFontSize(style, 'productName', nameStyle.fontSize, 18)}
                                                         index={visibleCatProducts.filter((candidate: Product) => !candidate.isFreeText).findIndex((candidate: Product) => candidate.id === product.id)}
                                                         color="var(--template-accent)" />
                                                     <AutoFitText
@@ -1492,7 +1504,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                     />
                                                 )}
                                                 {style.showPrices !== false && <div
-                                                    data-template-price data-custom-border={getBorderOverride(style, 'price')} className={`relative ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap ${isCardLayout ? `rounded-full bg-white/90 border border-black/5 shadow-sm ${compactControls ? 'px-1.5 py-0.5' : 'px-2.5 py-1'}` : ''}`}
+                                                    data-template-price data-menu-border-surface data-custom-border={getBorderOverride(style, 'price')} className={`relative ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap ${isCardLayout ? `rounded-full bg-white/90 border border-black/5 shadow-sm ${compactControls ? 'px-1.5 py-0.5' : 'px-2.5 py-1'}` : ''}`}
                                                     style={{ borderRadius: style.borders?.price?.radius, color: `var(--automenu-preview-text, ${priceStyle.color || style.textColor})`, fontFamily: priceStyle.fontFamily, fontSize: clampFontSize(style, 'productPrice', priceStyle.fontSize, 18), fontWeight: priceStyle.fontWeight, fontStyle: priceStyle.italic ? 'italic' : 'normal', textDecoration: priceStyle.underline ? 'underline' : 'none', textTransform: priceStyle.textTransform, letterSpacing: priceStyle.letterSpacing ? `${priceStyle.letterSpacing}px` : undefined }}
                                                 >
                                                     <BorderDecoration style={style} scope="price" />
