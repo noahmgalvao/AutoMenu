@@ -39,131 +39,56 @@ const PositionedCategoryChunk: React.FC<
     }
 > = ({ desiredPageY, desiredPageX, flowOffsetBefore = 0, detachedForDrag = false, detachedFromFlow = false, pageIndex, layoutKey, style, children, ...props }) => {
     const elementRef = React.useRef<HTMLDivElement>(null);
-    const placeholderRef = React.useRef<HTMLDivElement>(null);
-    const marginTopRef = React.useRef(Math.max(0, flowOffsetBefore));
-    const [flowMarginTop, setFlowMarginTop] = React.useState(Math.max(0, flowOffsetBefore));
-    const [resolvedTop, setResolvedTop] = React.useState(0);
-    const [resolvedLeft, setResolvedLeft] = React.useState(0);
-    const [placeholderHeight, setPlaceholderHeight] = React.useState(0);
+    const [position, setPosition] = React.useState({ top: 0, left: 0 });
+    const isFreePositioned = detachedFromFlow && Number.isFinite(desiredPageY);
 
     React.useLayoutEffect(() => {
         const element = elementRef.current;
-        if (!element) return;
-        if (!Number.isFinite(desiredPageY)) {
-            delete element.dataset.categoryNaturalPageY;
-            marginTopRef.current = 0;
-            setFlowMarginTop(0);
-            setResolvedTop(0);
-            setResolvedLeft(0);
-            setPlaceholderHeight(0);
-            return;
-        }
-
-        const placeholder = placeholderRef.current;
+        if (!isFreePositioned || !element) return;
         const page = element.closest<HTMLElement>(`[data-page-index="${pageIndex}"]`);
         const column = element.closest<HTMLElement>('[data-drag-column-container="category"]');
-        if (!page || !column || (!detachedFromFlow && !placeholder)) return;
-        let animationFrame: number | null = null;
-        const updateTop = () => {
-            animationFrame = null;
+        if (!page || !column) return;
+
+        const updatePosition = () => {
             const pageRect = page.getBoundingClientRect();
             const columnRect = column.getBoundingClientRect();
             const elementRect = element.getBoundingClientRect();
             const scale = Math.max(0.001, pageRect.width / Math.max(1, page.offsetWidth));
-            const requestedTop = pageRect.top + (Number(desiredPageY) * scale);
-
-            if (detachedFromFlow) {
-                delete element.dataset.categoryNaturalPageY;
-                marginTopRef.current = 0;
-                setFlowMarginTop(0);
-                setPlaceholderHeight(0);
-                setResolvedTop(Math.max(0, (requestedTop - columnRect.top) / scale));
-                const requestedLeft = columnRect.left + ((Number(desiredPageX) || 0) * scale);
-                const maximumLeft = Math.max(0, (columnRect.width - elementRect.width) / scale);
-                setResolvedLeft(Math.max(0, Math.min(maximumLeft, (requestedLeft - columnRect.left) / scale)));
-                return;
-            }
-
-            const placeholderRect = placeholder!.getBoundingClientRect();
-            const nextPlaceholderHeight = elementRect.height / scale;
-            setPlaceholderHeight((current) => (
-                Math.abs(nextPlaceholderHeight - current) < 0.25 ? current : nextPlaceholderHeight
-            ));
-            const naturalTop = placeholderRect.top - (marginTopRef.current * scale);
-            element.dataset.categoryNaturalPageY = String((naturalTop - pageRect.top) / scale);
-            const nextResolvedClientTop = Math.max(requestedTop, naturalTop);
-            const nextMargin = Math.max(0, (nextResolvedClientTop - naturalTop) / scale);
-            const nextResolvedTop = (nextResolvedClientTop - columnRect.top) / scale;
-            if (Math.abs(nextMargin - marginTopRef.current) >= 0.25) {
-                marginTopRef.current = nextMargin;
-                setFlowMarginTop(nextMargin);
-            }
-            setResolvedTop((current) => (
-                Math.abs(nextResolvedTop - current) < 0.25 ? current : nextResolvedTop
-            ));
-        };
-        const scheduleUpdate = () => {
-            if (animationFrame !== null) cancelAnimationFrame(animationFrame);
-            animationFrame = requestAnimationFrame(updateTop);
+            const top = Math.max(0, (pageRect.top - columnRect.top) / scale + Number(desiredPageY));
+            const maximumLeft = Math.max(0, (columnRect.width - elementRect.width) / scale);
+            const left = Math.max(0, Math.min(maximumLeft, Number(desiredPageX) || 0));
+            setPosition((current) => current.top === top && current.left === left ? current : { top, left });
         };
 
-        updateTop();
-        const observer = new ResizeObserver(scheduleUpdate);
+        updatePosition();
+        const observer = new ResizeObserver(updatePosition);
         observer.observe(page);
         observer.observe(column);
-        if (!detachedFromFlow) {
-            observer.observe(element);
-            if (placeholder) observer.observe(placeholder);
-            Array.from(column.children).forEach((child) => {
-                if (child instanceof HTMLElement) observer.observe(child);
-            });
-        }
-        window.addEventListener('resize', scheduleUpdate);
-        return () => {
-            observer.disconnect();
-            window.removeEventListener('resize', scheduleUpdate);
-            if (animationFrame !== null) cancelAnimationFrame(animationFrame);
-        };
-    }, [desiredPageX, desiredPageY, detachedFromFlow, flowOffsetBefore, layoutKey, pageIndex]);
-
-    const isFreePositioned = Number.isFinite(desiredPageY);
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, [desiredPageX, desiredPageY, isFreePositioned, layoutKey, pageIndex]);
 
     return (
-        <>
-            {isFreePositioned && !detachedFromFlow && (
-                <div
-                    ref={placeholderRef}
-                    aria-hidden="true"
-                    data-category-drag-placeholder="true"
-                    className="pointer-events-none invisible"
-                    style={{
-                        height: `${placeholderHeight}px`,
-                        marginTop: `${flowMarginTop}px`,
-                    }}
-                />
-            )}
-            <div
-                {...props}
-                ref={elementRef}
-                data-free-positioned={isFreePositioned ? 'true' : undefined}
-                style={{
-                    ...style,
-                    ...(isFreePositioned
-                        ? {
-                            position: 'absolute',
-                            top: `${resolvedTop}px`,
-                            left: detachedFromFlow ? `${resolvedLeft}px` : 0,
-                            right: detachedFromFlow ? 'auto' : 0,
-                            width: detachedFromFlow ? 'max-content' : '100%',
-                            maxWidth: '100%',
-                            zIndex: detachedForDrag ? 40 : undefined,
-                        }
-                        : {}),
-                }}
-            >
-                {children}
-            </div>
-        </>
+        <div
+            {...props}
+            ref={elementRef}
+            data-free-positioned={isFreePositioned ? 'true' : undefined}
+            data-category-flow-offset={flowOffsetBefore || undefined}
+            style={{
+                ...style,
+                marginTop: flowOffsetBefore || undefined,
+                zIndex: detachedForDrag ? 40 : undefined,
+                ...(isFreePositioned ? {
+                    position: 'absolute',
+                    top: position.top,
+                    left: position.left,
+                    width: 'max-content',
+                    maxWidth: '100%',
+                } : {}),
+            }}
+        >
+            {children}
+        </div>
     );
 };
 
@@ -381,7 +306,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         )}
                     </>
                 )}
-                <div className={`transition-opacity duration-150 ${isCategoryDragged ? 'opacity-40' : ''}`}>
+                <div data-pagination-chunk-content className={`transition-opacity duration-150 ${isFreeTextTarget ? '' : 'flex flex-col'} ${isCategoryDragged ? 'opacity-40' : ''}`}>
                     {renderItems.map((item, idx) => (
                         <MenuItem
                             key={item.type === 'product-item'
@@ -475,7 +400,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         data-drag-page-index={pageIndex}
                         data-drag-column-index={column.columnIndex}
                         onDragOver={(e) => handlers.handleDragOverItem?.(e)}
-                        className="relative min-w-0 min-h-full flex flex-col gap-4"
+                        className="relative min-w-0 min-h-full flex flex-col gap-4 [&>*]:shrink-0"
                     >
                         {renderColumnChunks(column.chunks)}
                     </div>

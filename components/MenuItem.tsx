@@ -3,7 +3,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { Product, MenuStyle } from '../types';
 import { ImagePlus, Minus, MoreHorizontal, Plus, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Edit3, CopyCheck } from 'lucide-react';
-import { FREE_TEXT_PREFIX } from '../utils/menuPagination';
+import { FREE_TEXT_PREFIX, getPaginationItemKey } from '../utils/menuPagination';
 import { selectionLayerClasses } from './selectionLayers';
 import { getDirectionLabel, getEdgeControlClass, type FlowDirection } from '../utils/flowControls';
 import { InlineStyleToolbar } from './MenuDesigner/InlineStyleToolbar';
@@ -499,6 +499,27 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
         }
     }
     const showMoveControls = isActiveSelection && (!effectiveHideGeneralControls || (isFreeText && isSelected));
+    const freeTextControlsRef = React.useRef<HTMLDivElement>(null);
+
+    React.useLayoutEffect(() => {
+        const controls = freeTextControlsRef.current;
+        const page = controls?.closest<HTMLElement>('[data-menu-print-page]');
+        if (!controls || !page) return;
+
+        const positionControls = () => {
+            controls.style.translate = '';
+            const rect = controls.getBoundingClientRect();
+            const pageRect = page.getBoundingClientRect();
+            const scale = pageRect.width / page.offsetWidth || 1;
+            const shift = Math.min(0, pageRect.right - rect.right);
+            controls.style.translate = `${shift / scale}px`;
+        };
+        positionControls();
+        const observer = new ResizeObserver(positionControls);
+        observer.observe(controls);
+        observer.observe(page);
+        return () => observer.disconnect();
+    }, [isSelected, isDragging, handlers.editingId, effectiveHideGeneralControls, canMoveUp, canMoveDown]);
     
     const [shakingCategory, setShakingCategory] = React.useState<string | null>(null);
 
@@ -575,13 +596,15 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
            {!effectiveHideGeneralControls && (
                <div
                     data-responsive-control-obstacle={isSelected ? 'true' : undefined}
-                    className={`absolute ${generalControlsPosition} ${pointerEventsClass} flex ${generalControlsMaxWidth} flex-wrap justify-end gap-1 ${selectionLayerClasses.controls}`}
+                    ref={isFreeText ? freeTextControlsRef : undefined}
+                    className={`absolute ${isFreeText ? 'bottom-full left-0 mb-2 w-max flex-nowrap items-center [&>button]:shrink-0' : `${generalControlsPosition} ${generalControlsMaxWidth} flex-wrap justify-end`} ${pointerEventsClass} flex gap-1 ${selectionLayerClasses.controls}`}
                >
                     {onEdit && (
                         <button
                             onClick={onEdit}
+                            data-product-edit-id={isFreeText ? id : undefined}
                             className={`${mobileOnlyEdit ? 'md:hidden' : ''} ${controlPadding} bg-white border border-slate-200 shadow-md rounded-full text-slate-500 hover:text-indigo-600 hover:bg-slate-50 hover:scale-110 transition-transform cursor-pointer`}
-                            title="Editar produto"
+                            title={isFreeText ? 'Editar texto' : 'Editar produto'}
                             onPointerDown={(e) => e.stopPropagation()}
                         >
                             <Edit3 size={iconSize} className={iconClass} />
@@ -612,9 +635,23 @@ const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMo
                     >
                         <MoreHorizontal size={iconSize} className={iconClass} />
                     </button>
+                    {isFreeText && showMoveControls && [
+                        { enabled: canMoveUp, direction: 'up' as const, edge: flowDirections.before },
+                        { enabled: canMoveDown, direction: 'down' as const, edge: flowDirections.after },
+                    ].filter(({ enabled }) => enabled).map(({ direction, edge }) => (
+                        <button
+                            key={direction}
+                            onClick={(e) => handlers.handleGlobalMove(e, type, id, catName, direction)}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            className={`${controlPadding} bg-white border border-slate-200 shadow-sm rounded-full text-slate-500 hover:text-indigo-600 hover:bg-slate-50 cursor-pointer`}
+                            title={`Mover ${getDirectionLabel(edge)}`}
+                        >
+                            <DirectionIcon direction={edge} size={iconSize} className={iconClass} />
+                        </button>
+                    ))}
                </div>
            )}
-          {showMoveControls && (
+          {showMoveControls && !isFreeText && (
               <>
                   {showGridMoveControls ? (
                     <>
@@ -814,6 +851,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             <header 
                 key={`header-${idx}`} 
                 data-block-id="main-header"
+                data-pagination-item="main-header"
                 data-template-header
                 className="text-center group relative pointer-events-auto" 
                 style={{ marginBottom: 0 }}
@@ -920,6 +958,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 key={`cat-header-${item.data}`}
                 id={handlers.readOnly ? undefined : `category-header-${item.data}`}
                 data-category-id={item.data} 
+                data-pagination-item={getPaginationItemKey(item)}
                 onPointerDown={(e) => handlers.handleDragStart(e, 'category', item.data)}
                 onDragStart={(e) => e.preventDefault()}
                 className={`automenu-drag-item relative group transition-all duration-200 select-none touch-auto cursor-grab pointer-events-auto ${isSelected || handlers.editingId === item.data ? 'z-[60]' : 'z-[1]'} ${inGroup ? 'px-2 pt-2' : 'hover:bg-black/5 rounded-lg'}`}
@@ -1028,6 +1067,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     data-drag-type="product"
                     data-drag-id={product.id}
                     data-template-product={product.isFreeText ? undefined : true}
+                    data-pagination-item={getPaginationItemKey(item)}
                     data-drag-group={item.category}
                     onPointerDown={(e) => handlers.handleDragStart(e, 'product', product.id, item.category)}
                     onDragStart={(e) => e.preventDefault()}
@@ -1038,6 +1078,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     style={{
                         width: product.isFreeText ? (product.freeTextWidth ? `${product.freeTextWidth}px` : 'fit-content') : undefined,
                         maxWidth: product.isFreeText ? '100%' : undefined,
+                        touchAction: product.isFreeText && !isEditing && !handlers.readOnly ? 'none' : undefined,
                         marginTop: customMarginTop,
                         marginBottom: isFreeTextGhost
                             ? -customMarginTop
@@ -1062,7 +1103,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     ? renderFormattingToolbar('freeText', product.id, product.styles || {})
                     : renderFormattingToolbar('product', product.id,
                         formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle)}
-                        {!handlers.readOnly && <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={false} canMoveRight={false} isFreeText={product.isFreeText} handlers={handlers} onEdit={!product.isFreeText ? (e: React.MouseEvent) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'name') : undefined} mobileOnlyEdit={!compactControls} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>}
+                        {!handlers.readOnly && <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={false} canMoveRight={false} isFreeText={product.isFreeText} handlers={handlers} onEdit={(e: React.MouseEvent) => handlers.startEditing(e, product.id, `product-name-${product.id}`, product.isFreeText ? 'freeText' : 'name')} mobileOnlyEdit={!product.isFreeText && !compactControls} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>}
                 
                 <div className={`transition-opacity duration-150 ${isBeingDragged && !product.isFreeText ? 'opacity-40' : ''}`}>
                 {product.isFreeText ? (
@@ -1111,15 +1152,6 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 container.dataset.pendingFreeTextWidth = String(nextWidth);
                             }} onFocus={(e) => clearDefaultTextOnFocus(e.currentTarget, ['Novo texto'])} onMouseDown={(e) => { if(!isEditing) e.preventDefault(); }} onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }}
                             />
-                            {!handlers.readOnly && <button
-                                data-product-edit-id={product.id} data-template-edit-action
-                                onClick={(e) => handlers.startEditing(e, product.id, `product-name-${product.id}`, 'freeText')}
-                                className={`absolute left-full top-1/2 ml-2 -translate-y-1/2 inline-flex align-middle ${selectionLayerClasses.controls} ${compactControls ? 'p-2.5 md:p-1.5' : 'p-3 md:p-2'} bg-white border border-slate-200 shadow-sm rounded-md text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all ${isSelected || handlers.editingId === product.id ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'}`}
-                                onPointerDown={(e) => e.stopPropagation()}
-                                title="Editar texto"
-                            >
-                                <Edit3 size={compactControls ? 15 : 20} className="h-6 w-6 md:h-auto md:w-auto" />
-                            </button>}
                     </div>
                 ) : (
                 <div className={`flex items-start justify-between ${stackImage ? 'flex-col gap-2' : compactControls ? 'gap-2' : 'gap-4'}`}>
@@ -1250,7 +1282,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
 
     if (item.type === 'free-text-row') {
         return (
-            <div className="flex min-w-0 max-w-full flex-wrap items-start gap-2 pointer-events-none">
+            <div data-pagination-item={getPaginationItemKey(item)} className="flex min-w-0 max-w-full flex-wrap items-start gap-2 pointer-events-none">
                 {(item.data as Product[]).map((product) => (
                     <MenuItem
                         key={product.id}
@@ -1299,6 +1331,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         return (
             <div
                 key={`row-${idx}`}
+                data-pagination-grid="true"
                 className="grid"
                 style={{
                     gridTemplateColumns: `repeat(${productColumnCount}, minmax(0, 1fr))`,

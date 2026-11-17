@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import MenuDesigner from '../../components/MenuDesigner';
+import { MenuPreview } from '../../components/MenuPreview';
 import { PRESET_TEMPLATES } from '../../utils/templateCatalog';
 import type { MenuStyle, Product, SortOption } from '../../types';
 import '../../index.css';
@@ -31,4 +32,36 @@ function Fixture() {
   </>;
 }
 
-createRoot(document.getElementById('root')!).render(<React.StrictMode><Fixture /></React.StrictMode>);
+function LayoutFixture({ categories }: { categories: boolean }) {
+  const [style, setStyle] = useState<MenuStyle>({
+    ...initial, categoryColumnCount: 2,
+    customCategoryOrder: categories ? ['Principais', 'Sobremesas', 'Entradas'] : ['Entradas', 'ft_zone_a', 'ft_zone_b'],
+    categoryPositions: categories ? {
+      Principais: { pageIndex: 0, columnIndex: 1, y: 210 },
+      Sobremesas: { pageIndex: 0, columnIndex: 1, y: 690 },
+      Entradas: { pageIndex: 0, columnIndex: 0, y: 210 },
+    } : {
+      ft_zone_a: { pageIndex: 0, columnIndex: 1, x: 20, y: 220 },
+      ft_zone_b: { pageIndex: 0, columnIndex: 1, x: 20, y: 310 },
+    },
+  });
+  const [items, setItems] = useState<Product[]>(categories ? products : [
+    products[0],
+    { id: 'text-a', category: 'ft_zone_a', name: 'A', description: '', price: 0, isFreeText: true, freeTextWidth: 44 },
+    { id: 'text-b', category: 'ft_zone_b', name: 'B', description: '', price: 0, isFreeText: true, freeTextWidth: 44 },
+  ]);
+  return <main data-automenu-editor-canvas="true" style={{ maxHeight: '100vh', overflow: 'auto' }}>
+    <MenuPreview products={items} style={style} sortOption={{ field:'name', direction:'asc' }}
+      onStyleUpdate={setStyle}
+      onCommitCategoryOrder={(customCategoryOrder) => setStyle((current) => ({ ...current, customCategoryOrder }))}
+      onUpdateProducts={(updates) => setItems((current) => current.map((item) => updates.reduce((result, update) => (
+        update.id === item.id ? { ...result, [update.field]: update.value } : result
+      ), item)))}
+    />
+  </main>;
+}
+
+const layout = new URLSearchParams(location.search).get('layout');
+createRoot(document.getElementById('root')!).render(<React.StrictMode>
+  {layout !== null ? <LayoutFixture categories={layout === 'categories'} /> : <Fixture />}
+</React.StrictMode>);

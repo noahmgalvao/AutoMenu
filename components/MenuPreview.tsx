@@ -2,7 +2,7 @@ import React, { useMemo, useEffect, useRef, useCallback, useState } from 'react'
 import { createPortal } from 'react-dom';
 import { AddedImage, ElementStyle, Product, MenuStyle, SortOption, type CategoryDividerStyle } from '../types';
 import { AlertTriangle, BringToFront, Copy, CopyCheck, CopyPlus, EyeOff, Paintbrush, Clipboard, Plus, Scissors, SendToBack, Trash2 } from 'lucide-react';
-import { calculatePagination, finalizeMenuPages, FREE_TEXT_PREFIX, SAFETY_BUFFER, type PageLayout } from '../utils/menuPagination';
+import { calculatePagination, finalizeMenuPages, FREE_TEXT_PREFIX, getPaginationHeightKey, SAFETY_BUFFER, type PageLayout } from '../utils/menuPagination';
 import { isPristineNewCategory, isPristineNewProduct } from '../utils/pristineItems';
 import { useMenuInteractions } from '../hooks/useMenuInteractions';
 import { NUDGE_STEP, type DraftItem, type MoveDirection, type SelectionItem } from '../hooks/interactions/types';
@@ -181,6 +181,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const handlers = useMenuInteractions({ ...props, onUpdateProduct: handleProductUpdateWithPricePrompt });
     const clipboardRef = useRef<CanvasClipboard | null>(null);
     const previewRootRef = useRef<HTMLDivElement | null>(null);
+    const [measuredHeights, setMeasuredHeights] = useState<ReadonlyMap<string, number>>(() => new Map());
     const objectMenuRef = useRef<HTMLDivElement | null>(null);
     const lastCanvasPointRef = useRef<{ x: number; y: number } | null>(null);
     const handledExternalActionIdRef = useRef<number | null>(null);
@@ -452,11 +453,64 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     : Object.keys(positionAssignments).length > 0
                         ? positionAssignments
                         : null),
-            { splitCategoryAcrossPages: props.splitCategoryAcrossPages }
+            { splitCategoryAcrossPages: props.splitCategoryAcrossPages, measuredHeights }
         );
-    }, [products, props.splitCategoryAcrossPages, style, handlers.groupedProducts, handlers.sortedCategories, handlers.liveCategoryPageAssignments, handlers.liveCategoryPositions]);
+    }, [products, props.splitCategoryAcrossPages, style, handlers.groupedProducts, handlers.sortedCategories, handlers.liveCategoryPageAssignments, handlers.liveCategoryPositions, measuredHeights]);
 
     const pages = useMemo(() => finalizeMenuPages(basePages, style), [basePages, style]);
+
+    React.useLayoutEffect(() => {
+        const root = previewRootRef.current;
+        if (!root) return;
+        const header = root.querySelector<HTMLElement>('[data-pagination-item="main-header"]');
+        const items = Array.from(root.querySelectorAll<HTMLElement>(
+            '[data-pagination-chunk-content] > [data-pagination-item], [data-pagination-chunk-content] > [data-pagination-grid]'
+        ));
+        let frame = 0;
+        const measure = () => {
+            const next = new Map<string, number>();
+            if (header?.offsetWidth) next.set('main-header', parseFloat(getComputedStyle(header).height));
+            for (const item of items) {
+                const column = item.closest<HTMLElement>('[data-drag-column-container="category"]');
+                if (!column?.offsetWidth) continue;
+                const width = parseFloat(getComputedStyle(column).width);
+                const css = getComputedStyle(item);
+                const bottomMargin = parseFloat(css.marginBottom) || 0;
+                const itemKey = item.dataset.paginationItem;
+                if (itemKey) {
+                    next.set(getPaginationHeightKey(itemKey, width), parseFloat(css.height) + (parseFloat(css.marginTop) || 0) + bottomMargin);
+                    continue;
+                }
+
+                // The grid renders consecutive pagination rows as one element.
+                const columnCount = style.columnCount || 1;
+                const tracks = css.gridTemplateRows.split(' ').map(parseFloat);
+                const children = Array.from(item.children) as HTMLElement[];
+                tracks.forEach((height, row) => {
+                    const ids = children.slice(row * columnCount, (row + 1) * columnCount).map((child) => child.dataset.dragId);
+                    if (!ids.length || !Number.isFinite(height)) return;
+                    const key = getPaginationHeightKey(JSON.stringify(['product-row', ids]), width);
+                    const gap = row === tracks.length - 1 ? bottomMargin : parseFloat(css.rowGap) || 0;
+                    next.set(key, height + gap);
+                });
+            }
+            setMeasuredHeights((current) => {
+                const changes = [...next].filter(([key, height]) => Number.isFinite(height) && Math.abs((current.get(key) ?? -1) - height) >= 0.25);
+                return changes.length ? new Map([...current, ...changes]) : current;
+            });
+        };
+        const observer = new ResizeObserver(() => {
+            cancelAnimationFrame(frame);
+            frame = requestAnimationFrame(measure);
+        });
+        if (header) observer.observe(header);
+        items.forEach((item) => observer.observe(item));
+        measure();
+        return () => {
+            observer.disconnect();
+            cancelAnimationFrame(frame);
+        };
+    }, [pages, style.columnCount]);
 
     useEffect(() => {
         onPageCountChange?.(pages.length);

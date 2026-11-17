@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { flushSync } from 'react-dom';
 import { CategoryPosition, Product } from '../../types';
 import { InteractionProps } from './types';
-import { FREE_TEXT_PREFIX, SAFETY_BUFFER, STANDARD_GAP, type CategoryPlacementAssignment } from '../../utils/menuPagination';
+import { CATEGORY_CHUNK_GAP_PX, FREE_TEXT_PREFIX, getPaginationBottomInset, SAFETY_BUFFER, STANDARD_GAP, type CategoryPlacementAssignment } from '../../utils/menuPagination';
 import {
     getCollisionSafeFreeTextTop,
     getNearestRenderedFreeTextTarget,
@@ -40,6 +40,8 @@ interface PendingDrag {
     activationTimeoutId: number | null;
     longPressReady?: boolean;
     scrolling?: boolean;
+    freeText?: boolean;
+    lastX?: number;
     lastY?: number;
 }
 
@@ -221,7 +223,7 @@ export const useDraggableInteractions = (
     const [liveProductOrder, setLiveProductOrder] = useState<Record<string, string[]> | null>(null);
 
     const draggedItemRef = useRef<DragItem>(null);
-    const activePointerRef = useRef<{ pointerId: number; pointerType: string } | null>(null);
+    const activePointerRef = useRef<{ pointerId: number; pointerType: string; freeText: boolean } | null>(null);
     const pointerCaptureRef = useRef<{ element: HTMLElement; pointerId: number } | null>(null);
     const pendingDragRef = useRef<PendingDrag | null>(null);
     const liveCategoryOrderRef = useRef<string[] | null>(null);
@@ -752,19 +754,24 @@ export const useDraggableInteractions = (
                     return breaks;
                 }, []);
 
+                const draggedCategoryPlacement = categoryAssignmentsSnapshot[currentDraggedItem.id];
+                const isCanvasDrag = dragSourceContextRef.current !== 'product-designer';
                 onStyleUpdate((prev) => {
                     const categoryPositions = { ...(categoryPositionsSnapshot || prev.categoryPositions || {}) };
-                    const positionedCategories = new Set(Object.keys(categoryPositions));
-                    const mergedPlacements = { ...(prev.categoryPlacements || {}), ...categoryAssignmentsSnapshot };
-                    const categoryPlacements = (prev.categoryColumnCount || 1) > 1
-                        ? Object.fromEntries(
-                            Object.entries(mergedPlacements)
-                                .filter(([category]) => positionedCategories.has(category))
-                        )
-                        : mergedPlacements;
+                    const categoryPlacements = { ...(prev.categoryPlacements || {}) };
+                    if (isCanvasDrag && draggedCategoryPlacement) {
+                        categoryPlacements[currentDraggedItem.id] = draggedCategoryPlacement;
+                    } else if (!isCanvasDrag) {
+                        Object.assign(categoryPlacements, categoryAssignmentsSnapshot);
+                        if ((prev.categoryColumnCount || 1) > 1) {
+                            Object.keys(categoryPlacements).forEach((category) => {
+                                if (!categoryPositions[category]) delete categoryPlacements[category];
+                            });
+                        }
+                    }
                     return {
                         ...prev,
-                        pageBreaks: nextPageBreaks,
+                        pageBreaks: isCanvasDrag ? prev.pageBreaks : nextPageBreaks,
                         categoryPlacements,
                         categoryPositions,
                         name: 'Custom',
@@ -1116,9 +1123,8 @@ export const useDraggableInteractions = (
                 const scale = pageRect && pageRect.height > 0 ? pageRect.height / Math.max(1, pageElement?.offsetHeight || 1) : 1;
                 const margins = resolveMenuMargins(style);
                 const topPadding = margins.top * scale;
-                const bottomPadding = margins.bottom * scale;
                 const pageSafeBottom = pageRect
-                    ? pageRect.bottom - (bottomPadding + (SAFETY_BUFFER * scale))
+                    ? pageRect.bottom - getPaginationBottomInset(style) * scale
                     : rect.bottom;
                 const top = pageRect ? Math.max(rect.top, pageRect.top + topPadding) : rect.top;
                 const bottom = Math.max(top, pageRect ? pageSafeBottom : rect.bottom);
@@ -1241,11 +1247,6 @@ export const useDraggableInteractions = (
                 Math.min(sourceRect.height, current.pointer.y - sourceRect.top),
             );
             categoryDraggedHeightRef.current = sourceRect.height / scale;
-            categoryActivePageIndexRef.current = Number(sourceElement.dataset.dragPageIndex ?? 0);
-            categoryActiveLaneKeyRef.current = getCategoryLaneKey(
-                sourceElement.dataset.dragPageIndex,
-                sourceElement.dataset.dragColumnIndex,
-            );
             categorySwapRebaseFrameRef.current = null;
             categorySwapRebaseRef.current = null;
         };
@@ -1283,59 +1284,60 @@ export const useDraggableInteractions = (
         const maximumBottom = lane.rect.bottom;
         if (elementHeight > maximumBottom - minimumTop) return false;
 
-        const desiredTop = Math.max(
-            minimumTop,
-            Math.min(maximumBottom - elementHeight, pointer.y - pointerOffset),
-        );
-
+        const desiredTop = Math.max(minimumTop, Math.min(maximumBottom - elementHeight, pointer.y - pointerOffset));
         const currentPositions = liveCategoryPositionsRef.current || style.categoryPositions || {};
         const previousPosition = currentPositions[categoryId];
-        const renderedPageIndex = Number(element.dataset.dragPageIndex ?? activePageIndex);
-        const renderedColumnIndex = Number(element.dataset.dragColumnIndex ?? activeColumnIndex);
-        const remainsInNaturalLane = (
-            renderedPageIndex === activePageIndex
-            && renderedColumnIndex === activeColumnIndex
-        );
-        const freePlacementActivationDistance = (STANDARD_GAP + 4) * scale;
-        const naturalPageY = Number(element.dataset.categoryNaturalPageY);
-        const naturalTop = Number.isFinite(naturalPageY)
-            ? pageRect.top + (naturalPageY * scale)
-            : null;
-        if (
-            previousPosition
-            && remainsInNaturalLane
-            && naturalTop !== null
-            && Math.abs(desiredTop - naturalTop) <= freePlacementActivationDistance
-        ) {
-            const nextPositions = { ...currentPositions };
-            delete nextPositions[categoryId];
-            liveCategoryPositionsRef.current = nextPositions;
-            setLiveCategoryPositions(nextPositions);
-            hasDragMutationRef.current = true;
-            return true;
+        const currentOrder = liveCategoryOrderRef.current || sortedCategoriesRef.current;
+        const orderWithoutDragged = currentOrder.filter((id) => id !== categoryId);
+        const obstacles = Array.from(lane.element.querySelectorAll<HTMLElement>('[data-category-chunk]'))
+            .filter((chunk) => chunk.dataset.categoryChunk !== categoryId && chunk.dataset.freePositioned !== 'true')
+            .map((chunk) => ({ id: chunk.dataset.categoryChunk!, rect: chunk.getBoundingClientRect() }))
+            .sort((left, right) => left.rect.top - right.rect.top);
+        const gap = CATEGORY_CHUNK_GAP_PX * scale;
+        let gapStart = minimumTop;
+        let nearestSlot: { top: number; nextCategory?: string } | undefined;
+        for (const obstacle of [...obstacles, null]) {
+            const gapEnd = obstacle ? obstacle.rect.top - gap : maximumBottom;
+            const lastTop = gapEnd - elementHeight;
+            if (lastTop + 0.25 >= gapStart) {
+                const top = Math.max(gapStart, Math.min(lastTop, desiredTop));
+                if (!nearestSlot || Math.abs(top - desiredTop) < Math.abs(nearestSlot.top - desiredTop)) {
+                    nearestSlot = { top, nextCategory: obstacle?.id };
+                }
+            }
+            if (obstacle) gapStart = Math.max(gapStart, obstacle.rect.bottom + gap);
         }
-        if (
-            !previousPosition
-            && remainsInNaturalLane
-            && Math.abs(desiredTop - elementRect.top) <= freePlacementActivationDistance
-        ) {
-            return true;
+        if (!nearestSlot) return false;
+
+        const anchorId = nearestSlot.nextCategory || obstacles[obstacles.length - 1]?.id;
+        const anchorIndex = anchorId ? orderWithoutDragged.indexOf(anchorId) : -1;
+        if (anchorIndex >= 0) {
+            const insertionIndex = nearestSlot.nextCategory ? anchorIndex : anchorIndex + 1;
+            const nextOrder = moveItemToInsertionIndex(currentOrder, categoryId, insertionIndex);
+            if (!areOrdersEqual(nextOrder, currentOrder)) {
+                liveCategoryOrderRef.current = nextOrder;
+                setLiveCategoryOrder(nextOrder);
+                hasDragMutationRef.current = true;
+            }
         }
 
-        const obstacles = getOrderedCategoryTargets()
-            .filter((target) => target.id !== categoryId && target.laneKey === activeLaneKey)
-            .sort((left, right) => left.rect.top - right.rect.top);
-        const desiredBottom = desiredTop + elementHeight;
-        const overlapsCategory = obstacles.some((target) => (
-            desiredTop < target.rect.bottom - 0.5
-            && desiredBottom > target.rect.top + 0.5
-        ));
-        if (overlapsCategory) return false;
+        const remainsInLane = getCategoryLaneKey(element.dataset.dragPageIndex, element.dataset.dragColumnIndex) === activeLaneKey;
+        const naturalTop = elementRect.top - (Number(element.dataset.categoryFlowOffset || 0) * scale);
+        if (remainsInLane && Math.abs(nearestSlot.top - naturalTop) <= 0.5) {
+            if (previousPosition) {
+                const nextPositions = { ...currentPositions };
+                delete nextPositions[categoryId];
+                liveCategoryPositionsRef.current = nextPositions;
+                setLiveCategoryPositions(nextPositions);
+                hasDragMutationRef.current = true;
+            }
+            return true;
+        }
 
         const nextPosition: CategoryPosition = {
             pageIndex: activePageIndex,
             columnIndex: activeColumnIndex,
-            y: Math.max(0, Math.round((desiredTop - pageRect.top) / scale)),
+            y: Math.max(0, (nearestSlot.top - pageRect.top) / scale),
         };
         if (
             previousPosition?.pageIndex === nextPosition.pageIndex
@@ -1353,7 +1355,7 @@ export const useDraggableInteractions = (
         setLiveCategoryPositions(nextPositions);
         hasDragMutationRef.current = true;
         return true;
-    }, [dragScope, getCategoryLanes, getOrderedCategoryTargets, getRenderedDragElement, style.categoryPositions]);
+    }, [dragScope, getCategoryLanes, getRenderedDragElement, style.categoryPositions]);
 
     const ensureFreeTextCategoryDragState = useCallback(
         (
@@ -1588,7 +1590,7 @@ export const useDraggableInteractions = (
             const activeLaneKey = resolveCategoryLaneKey(pointer, activePageIndex, currentLaneKey, true);
             if (!activeLaneKey) return;
 
-            const changedColumn = activePageIndex === currentPageIndex && activeLaneKey !== currentLaneKey;
+            const changedLane = activeLaneKey !== currentLaneKey;
 
             categoryActiveLaneKeyRef.current = activeLaneKey;
 
@@ -1609,15 +1611,24 @@ export const useDraggableInteractions = (
                 };
                 setLiveCategoryPageAssignments(nextAssignments);
                 liveCategoryPageAssignmentsRef.current = nextAssignments;
+                hasDragMutationRef.current = true;
             };
 
             const orderWithoutDragged = currentOrder.filter((id) => id !== currentDragItem.id);
-            const orderedTargets = getOrderedCategoryTargets().filter((target) => target.id !== currentDragItem.id);
+            const orderedTargets = getOrderedCategoryTargets()
+                .filter((target) => target.id !== currentDragItem.id && !target.id.startsWith(FREE_TEXT_PREFIX));
             const laneTargets = orderedTargets
                 .filter((target) => target.laneKey === activeLaneKey)
                 .sort((left, right) => left.rect.top - right.rect.top);
 
-            if (changedColumn) {
+            if (changedLane && !isProductDesignerDrag && !laneTargets.some((target) => (
+                pointer.y >= target.rect.top && pointer.y <= target.rect.bottom
+            )) && updateDraggedCategoryPosition(currentDragItem.id, pointer, activePageIndex, activeColumnIndex, activeLaneKey)) {
+                updateDraggedAssignment();
+                return;
+            }
+
+            if (changedLane) {
                 const currentRect = currentElement?.getBoundingClientRect();
                 const pointerOffset = categoryPointerOffsetYRef.current ?? 0;
                 const projectedTop = currentRect ? pointer.y - pointerOffset : pointer.y;
@@ -1768,7 +1779,7 @@ export const useDraggableInteractions = (
                 JSON.stringify(nextPositions[currentDragItem.id]) !== JSON.stringify(currentPositions[currentDragItem.id])
                 || JSON.stringify(nextPositions[categoryDropTarget.id]) !== JSON.stringify(currentPositions[categoryDropTarget.id])
             );
-            const targetAssignment = currentAssignments[categoryDropTarget.id] || {
+            const targetAssignment = {
                 pageIndex: Number(categoryDropTarget.element.dataset.dragPageIndex ?? activePageIndex),
                 columnIndex: Number(categoryDropTarget.element.dataset.dragColumnIndex ?? activeColumnIndex),
             };
@@ -2256,10 +2267,13 @@ export const useDraggableInteractions = (
         if (typeof document === 'undefined') return null;
 
         const scope = escapeSelectorValue(dragScope);
+        const lock = freeTextSwapLockRef.current;
+        const sourceCenterY = sourceRect.top + sourceRect.height / 2;
         const candidates = Array.from(document.querySelectorAll<HTMLElement>(
             `[data-drag-scope="${scope}"][data-drag-type="product"][data-drag-id][data-drag-group]`
         ))
-            .filter((element) => element.dataset.dragId !== productId)
+            .filter((element) => element.dataset.dragId !== productId
+                && !(lock?.sourceId === productId && element.dataset.dragId === lock.targetId))
             .map((element) => {
                 const id = element.dataset.dragId || '';
                 const product = id ? getLatestProductById(id) : null;
@@ -2268,9 +2282,11 @@ export const useDraggableInteractions = (
                     rect: element.getBoundingClientRect(),
                 };
             })
-            .filter((target): target is { product: Product; rect: DOMRect } => Boolean(
-                target.product?.isFreeText
-            ));
+            .filter((target): target is { product: Product; rect: DOMRect } => {
+                const targetCenterY = target.rect.top + target.rect.height / 2;
+                return Boolean(target.product?.isFreeText)
+                    && (direction === 'down' ? targetCenterY > sourceCenterY : targetCenterY < sourceCenterY);
+            });
         const target = getNearestRenderedFreeTextTarget(sourceRect, candidates, direction);
         if (!target) return null;
 
@@ -2614,7 +2630,7 @@ export const useDraggableInteractions = (
                 hasDragMutationRef.current = false;
                 setDraggedItem(newItem);
                 draggedItemRef.current = newItem;
-                activePointerRef.current = { pointerId: pending.pointerId, pointerType: pending.pointerType };
+                activePointerRef.current = { pointerId: pending.pointerId, pointerType: pending.pointerType, freeText: Boolean(draggedProduct?.isFreeText) };
                 lastPointerRef.current = { x: pointer.x, y: pointer.y };
                 dragStartPointerRef.current = { x: pointer.x, y: pointer.y };
                 dragSourceContextRef.current = pending.element.dataset.dragContext || null;
@@ -2777,8 +2793,6 @@ export const useDraggableInteractions = (
                         const isLockedOnTarget = activeLock?.sourceId === currentDragItem.id
                             && activeLock.targetId === horizontalSwapTarget.product.id;
                         if (!isLockedOnTarget) {
-                            const targetCategoryBeforeSwap = freeTextActiveCategoryRef.current[horizontalSwapTarget.product.id]
-                                || horizontalSwapTarget.product.category;
                             let collisionResult = { moved: false, shouldLock: false };
                             flushSync(() => {
                                 collisionResult = swapDraggedFreeTextWithTarget(activeProduct, horizontalSwapTarget.product);
@@ -2786,7 +2800,7 @@ export const useDraggableInteractions = (
                             if (collisionResult.moved) {
                                 rebaseFreeTextAfterSwap({
                                     sourceId: currentDragItem.id,
-                                    sourceCategory: targetCategoryBeforeSwap,
+                                    sourceCategory: freeTextActiveCategoryRef.current[currentDragItem.id] || currentCategory,
                                     pointer,
                                 });
                                 if (collisionResult.shouldLock) {
@@ -2821,8 +2835,6 @@ export const useDraggableInteractions = (
                         );
 
                         if (!isLockedOnTarget) {
-                            const targetCategoryBeforeSwap =
-                                freeTextActiveCategoryRef.current[targetProduct.id] || targetProduct.category;
                             const sourcePageElement = currentElement?.closest<HTMLElement>(
                                 '[data-drag-page-container="category"][data-drag-page-index]'
                             );
@@ -2847,7 +2859,7 @@ export const useDraggableInteractions = (
                             if (collisionResult.moved) {
                                 rebaseFreeTextAfterSwap({
                                     sourceId: currentDragItem.id,
-                                    sourceCategory: targetCategoryBeforeSwap,
+                                    sourceCategory: freeTextActiveCategoryRef.current[currentDragItem.id] || currentCategory,
                                     pointer,
                                 });
                                 if (collisionResult.shouldLock) {
@@ -3188,7 +3200,7 @@ export const useDraggableInteractions = (
                 event.stopPropagation();
                 if (activePointer.pointerType === 'touch') {
                     clearTouchCancelCommit();
-                    if (Date.now() - lastNativeTouchMoveAtRef.current < 80) {
+                    if (!activePointer.freeText && Date.now() - lastNativeTouchMoveAtRef.current < 80) {
                         keepScrollLocked();
                         return;
                     }
@@ -3222,9 +3234,24 @@ export const useDraggableInteractions = (
                     ? TWO_COLUMN_CATEGORY_TOUCH_MOVE_CANCEL_THRESHOLD_PX
                     : TOUCH_MOVE_CANCEL_THRESHOLD_PX
                 : POINTER_MOVE_THRESHOLD_PX;
-            if (traveledDistance < activationThreshold) return;
+            if (!pending.scrolling && traveledDistance < activationThreshold) return;
 
             if (pending.pointerType === 'touch') {
+                if (pending.freeText && isCanvasTouch) {
+                    if (pending.activationTimeoutId !== null) {
+                        window.clearTimeout(pending.activationTimeoutId);
+                        pending.activationTimeoutId = null;
+                    }
+                    const canvas = pending.element.closest<HTMLElement>('[data-automenu-editor-canvas="true"]');
+                    if (canvas) {
+                        canvas.scrollLeft -= event.clientX - (pending.lastX ?? pending.startX);
+                        canvas.scrollTop -= event.clientY - (pending.lastY ?? pending.startY);
+                    }
+                    pending.scrolling = true;
+                    pending.lastX = event.clientX;
+                    pending.lastY = event.clientY;
+                    return;
+                }
                 if (isTwoColumnProductDesignerCategory) {
                     if (event.cancelable) event.preventDefault();
                     event.stopPropagation();
@@ -3309,7 +3336,7 @@ export const useDraggableInteractions = (
                 }
                 event.stopPropagation();
 
-                if (activePointer.pointerType === 'touch' && isDraggingRef.current) {
+                if (activePointer.pointerType === 'touch' && !activePointer.freeText && isDraggingRef.current) {
                     keepScrollLocked();
                     scheduleTouchCancelCommit();
                     return;
@@ -3367,6 +3394,8 @@ export const useDraggableInteractions = (
             clearTouchCancelCommit();
             keepScrollLocked();
             lastNativeTouchMoveAtRef.current = Date.now();
+            // The captured pointer keeps tracking even if the original touch target moves in the DOM.
+            if (activePointerRef.current?.freeText) return;
 
             const touch = event.touches[0] || event.changedTouches[0];
             if (!touch) return;
@@ -3411,6 +3440,7 @@ export const useDraggableInteractions = (
                 event.stopPropagation();
                 event.stopImmediatePropagation();
                 keepScrollLocked();
+                if (activePointerRef.current?.freeText) return;
                 // DOM reordering can emit a transient touchcancel even though the finger
                 // is still down. Keep two-column category drags alive until touchend;
                 // other drags still commit after the cancellation grace time.
@@ -3566,6 +3596,7 @@ export const useDraggableInteractions = (
                 startX: event.clientX,
                 startY: event.clientY,
                 activationTimeoutId: null,
+                freeText: draggedProduct?.isFreeText,
             };
 
             if (pending.pointerType === 'touch') {

@@ -1,6 +1,6 @@
 import { templateCategoryExtra, templateHeaderExtra, templateProductImageHeight } from './templateDesign';
 import { Product, MenuStyle } from '../types';
-import { clampFontSize, resolveMenuContentSpacing, resolveMenuMargins } from './styleRules';
+import { clampFontSize, resolveMenuContentSpacing, resolveMenuMargins, resolveMinimumFontSize } from './styleRules';
 import { normalizeColumnWidths } from './categoryColumns';
 import { formatMenuPriceValue } from './price';
 import { resolveMenuPageDimensions } from './pageSetup';
@@ -9,8 +9,7 @@ export const SAFETY_BUFFER = 20;
 export const STANDARD_GAP = 15;
 export const FREE_TEXT_PREFIX = 'ft_zone_';
 
-const DENSE_COLUMNS_SAFETY_BUFFER_PX = 16;
-const CATEGORY_CHUNK_GAP_PX = 16;
+export const CATEGORY_CHUNK_GAP_PX = 16;
 const PRODUCT_GRID_GAP_PX = 24;
 const PRODUCT_ITEM_HORIZONTAL_PADDING_PX = 16;
 const PRODUCT_ITEM_VERTICAL_PADDING_PX = 0;
@@ -56,7 +55,17 @@ export interface CategoryPlacementAssignment {
 
 export interface PaginationOptions {
     splitCategoryAcrossPages?: boolean;
+    measuredHeights?: ReadonlyMap<string, number>;
 }
+
+export const getPaginationItemKey = (item: PageItem) => {
+    if (item.type === 'main-header') return item.type;
+    const data = item.type === 'category-header' ? item.data
+        : item.type === 'product-item' ? item.data.id : item.data.map((product) => product.id);
+    return JSON.stringify([item.type, data]);
+};
+
+export const getPaginationHeightKey = (itemKey: string, width: number) => `${itemKey}:${Math.round(width)}`;
 
 interface MutablePage extends PageLayout {
     _columnHeights: number[];
@@ -115,16 +124,11 @@ const getProductCardImageHeight = (style: MenuStyle) => {
     return PRODUCT_CARD_IMAGE_HEIGHT_PX * imgScale;
 };
 
-const getPaginationSafetyBuffer = (style: MenuStyle) => {
-    const baseline = (style.columnCount || 1) > 2 || (style.categoryColumnCount || 1) > 2
-        ? DENSE_COLUMNS_SAFETY_BUFFER_PX
-        : SAFETY_BUFFER;
-    const pageNumberSize = Math.min(50, Math.max(1, Number(style.elementStyles?.pageNumber?.fontSize) || 14));
-    const pageNumberReserve = Math.max(
-        0,
-        (pageNumberSize * 1.2) + 8 - resolveMenuMargins(style).bottom
-    );
-    return Math.max(baseline, pageNumberReserve);
+export const getPaginationBottomInset = (style: MenuStyle) => {
+    const margin = resolveMenuMargins(style).bottom;
+    if (style.showPageNumbers === false) return margin;
+    const pageNumberSize = Math.max(resolveMinimumFontSize(style), Math.min(50, Number(style.elementStyles?.pageNumber?.fontSize) || 14));
+    return Math.max(margin, 24 + pageNumberSize * 0.6);
 };
 
 const getCategoryColumnWidth = (
@@ -146,7 +150,9 @@ const getCategoryColumnWidth = (
     );
 };
 
-const getMainHeaderHeight = (style: MenuStyle) => {
+const getMainHeaderHeight = (style: MenuStyle, measuredHeights?: PaginationOptions['measuredHeights']) => {
+    const measured = measuredHeights?.get('main-header');
+    if (measured !== undefined) return measured;
     const spacing = resolveMenuContentSpacing(style);
     const titleSize = clampFontSize(style, 'menuTitle', style.elementStyles?.menuTitle?.fontSize, 48);
     const hasSubtitle = Boolean(style.menuSubtitle?.trim());
@@ -330,6 +336,7 @@ const createPageItemHeightCalculator = (
     style: MenuStyle,
     categoryColumnCountOverride?: number,
     categoryColumnIndex?: number,
+    measuredHeights?: PaginationOptions['measuredHeights'],
 ) => {
     const categoryStyle = style.elementStyles?.category || {};
     const categoryFontSize = clampFontSize(style, 'category', categoryStyle.fontSize, 24);
@@ -339,6 +346,8 @@ const createPageItemHeightCalculator = (
     const categoryColumnWidth = getCategoryColumnWidth(style, categoryColumnCount, categoryColumnIndex);
 
     return (item: PageItem) => {
+        const measured = measuredHeights?.get(getPaginationHeightKey(getPaginationItemKey(item), categoryColumnWidth));
+        if (measured !== undefined) return measured;
         if (item.type === 'category-header') {
             const editButtonReserve = categoryColumnCount > 1 ? 32 : 52;
             const dividerReserve = categoryStyle.textAlign === 'center' ? 64 : 32;
@@ -407,29 +416,45 @@ const createCategoryChunkIdFactory = () => {
     };
 };
 
+const FIT_TOLERANCE_PX = 0.25;
+
+const findCategoryColumn = (
+    columns: PageColumnLayout[],
+    preferredIndex: number,
+    emptyColumnHeight: number,
+    requiredHeight: (index: number) => number,
+    remainingHeight: (index: number) => number,
+) => {
+    const columnOrder = columns.map((_, index) => (preferredIndex + index) % columns.length);
+    const fittingColumn = columnOrder.find((index) => remainingHeight(index) + FIT_TOLERANCE_PX >= requiredHeight(index));
+    if (fittingColumn !== undefined) return fittingColumn;
+    if (columnOrder.some((index) => requiredHeight(index) <= emptyColumnHeight)) return undefined;
+    // Allow oversized items to render in an empty column if advancing cannot make them fit.
+    return columnOrder.find((index) => columns[index].estimatedHeight === 0);
+};
+
 const buildLockedPagination = (
     style: MenuStyle,
     groupedProducts: Record<string, Product[]>,
     sortedCategories: string[],
     categoryPlacementAssignments: Record<string, CategoryPlacementAssignment>,
     isHidden: (id: string) => boolean,
-    getItemHeight: (item: PageItem) => number,
     options: PaginationOptions
 ): PageLayout[] => {
     const categoryColumnCount = style.categoryColumnCount || 1;
     const margins = resolveMenuMargins(style);
     const baseColumnHeight = Math.max(
         1,
-        resolveMenuPageDimensions(style).heightPx - margins.top - margins.bottom - getPaginationSafetyBuffer(style),
+        resolveMenuPageDimensions(style).heightPx - margins.top - getPaginationBottomInset(style),
     );
-    const headerHeight = getMainHeaderHeight(style);
+    const headerHeight = getMainHeaderHeight(style, options.measuredHeights);
     const normalizePlacement = (placement?: CategoryPlacementAssignment | null): CategoryPlacementAssignment => {
         const pageIndex = Number(placement?.pageIndex);
         const columnIndex = Number(placement?.columnIndex);
 
         return {
             pageIndex: Number.isFinite(pageIndex) ? Math.max(0, Math.floor(pageIndex)) : 0,
-            columnIndex: Number.isFinite(columnIndex) ? Math.max(0, Math.floor(columnIndex)) : 0,
+            columnIndex: Number.isFinite(columnIndex) ? Math.max(0, Math.min(categoryColumnCount - 1, Math.floor(columnIndex))) : 0,
         };
     };
     const getLockedPageColumnCount = (_pageIndex: number) => categoryColumnCount;
@@ -437,7 +462,7 @@ const buildLockedPagination = (
     const getNextChunkId = createCategoryChunkIdFactory();
     let fallbackPlacement: CategoryPlacementAssignment = { pageIndex: 0, columnIndex: 0 };
 
-    const hasChunks = (column: PageColumnLayout) => column.chunks.length > 0;
+    const hasChunks = (column: PageColumnLayout) => column.estimatedHeight > 0;
 
     const ensurePage = (pageIndex: number) => {
         const safePageIndex = Number.isFinite(pageIndex) ? Math.max(0, Math.floor(pageIndex)) : 0;
@@ -451,10 +476,9 @@ const buildLockedPagination = (
         page: PageLayout,
         column: PageColumnLayout,
         placement: CategoryPlacementAssignment,
-        category?: string,
-        startsCategory: boolean = false,
+        category: string,
+        height: number,
     ) => {
-        if (!startsCategory || !category) return 0;
         const requestedPosition = style.categoryPositions?.[category];
         if (
             !requestedPosition
@@ -466,7 +490,8 @@ const buildLockedPagination = (
         const requestedOffset = Math.max(0, requestedPosition.y - contentStartY);
         const normalGap = hasChunks(column) ? CATEGORY_CHUNK_GAP_PX : 0;
         const naturalOffset = column.estimatedHeight + normalGap;
-        return Math.max(0, requestedOffset - naturalOffset);
+        const remainingHeight = baseColumnHeight - (page.mainHeader ? headerHeight : 0) - naturalOffset;
+        return Math.max(0, Math.min(requestedOffset - naturalOffset, remainingHeight - height));
     };
 
     const pushLockedChunk = (
@@ -474,12 +499,12 @@ const buildLockedPagination = (
         category: string,
         startsCategory: boolean,
         items: PageItem[],
-        estimatedHeight: number
+        estimatedHeight: number,
+        flowOffsetBefore = 0,
     ) => {
         const page = ensurePage(placement.pageIndex);
         const column = page.columns[Math.max(0, Math.min(placement.columnIndex, page.columns.length - 1))];
         const gapBeforeChunk = hasChunks(column) ? CATEGORY_CHUNK_GAP_PX : 0;
-        const flowOffsetBefore = getFlowOffsetBefore(page, column, placement, category, startsCategory);
 
         column.chunks.push({
             chunkId: getNextChunkId(category),
@@ -500,18 +525,17 @@ const buildLockedPagination = (
             : { pageIndex: placement.pageIndex + 1, columnIndex: 0 };
     };
 
-    const getRemainingHeight = (
-        placement: CategoryPlacementAssignment,
-        category?: string,
-        startsCategory: boolean = false,
-    ) => {
+    const getRemainingHeight = (placement: CategoryPlacementAssignment) => {
         const page = ensurePage(placement.pageIndex);
         const column = page.columns[Math.max(0, Math.min(placement.columnIndex, page.columns.length - 1))];
         const columnLimit = baseColumnHeight - (page.mainHeader ? headerHeight : 0);
         const gapBeforeChunk = hasChunks(column) ? CATEGORY_CHUNK_GAP_PX : 0;
-        const flowOffsetBefore = getFlowOffsetBefore(page, column, placement, category, startsCategory);
-        return columnLimit - column.estimatedHeight - gapBeforeChunk - flowOffsetBefore;
+        return columnLimit - column.estimatedHeight - gapBeforeChunk;
     };
+
+    const calculators = Array.from({ length: categoryColumnCount }, (_, columnIndex) => (
+        createPageItemHeightCalculator(style, categoryColumnCount, columnIndex, options.measuredHeights)
+    ));
 
     sortedCategories.forEach((category) => {
         const categoryProducts = groupedProducts[category];
@@ -547,14 +571,14 @@ const buildLockedPagination = (
                     startsCategory: false,
                     columnIndex: column.columnIndex,
                     items: remainingItems,
-                    estimatedHeight: remainingItems.reduce((total, item) => total + getItemHeight(item), 0),
+                    estimatedHeight: remainingItems.reduce((total, item) => total + calculators[column.columnIndex](item), 0),
                     flowOffsetBefore: 0,
                 });
                 return;
             }
 
             while (remainingItems.length > 0) {
-                let availableHeight = getRemainingHeight(currentPlacement);
+                const availableHeight = getRemainingHeight(currentPlacement);
                 const page = ensurePage(currentPlacement.pageIndex);
                 const column = page.columns[Math.max(0, Math.min(currentPlacement.columnIndex, page.columns.length - 1))];
                 if (availableHeight <= 0 && hasChunks(column)) {
@@ -565,7 +589,7 @@ const buildLockedPagination = (
                 const chunkItems: PageItem[] = [];
                 let chunkHeight = 0;
                 while (remainingItems.length > 0) {
-                    const itemHeight = getItemHeight(remainingItems[0]);
+                    const itemHeight = calculators[currentPlacement.columnIndex](remainingItems[0]);
                     const fits = chunkHeight + itemHeight <= availableHeight;
                     if (!fits && chunkItems.length > 0) break;
                     if (!fits && hasChunks(column)) break;
@@ -591,73 +615,41 @@ const buildLockedPagination = (
         const contentItems = buildCategoryProductItems(visibleProducts, category, isRowLayout, productColumnCount);
 
         const headerItem: PageItem = { type: 'category-header', data: category, category };
-        const lockedPage = ensurePage(placement.pageIndex);
-        let lockedCalculator = createPageItemHeightCalculator(style, lockedPage.columns.length, placement.columnIndex);
-        let headerItemHeight = lockedCalculator(headerItem);
-        let fullCategoryHeight = headerItemHeight
-            + contentItems.reduce((total, item) => total + lockedCalculator(item), 0);
+        const fullHeights = calculators.map((calculateHeight) => (
+            calculateHeight(headerItem) + contentItems.reduce((sum, item) => sum + calculateHeight(item), 0)
+        ));
+        const keepTogether = !options.splitCategoryAcrossPages && fullHeights.some((height) => height <= baseColumnHeight);
         let remainingItems = [...contentItems];
         let currentPlacement = placement;
         let startsCategory = true;
 
-        if (!freePosition && !assignedPlacement && placement.columnIndex > 0) {
-            for (let columnIndex = 0; columnIndex < placement.columnIndex; columnIndex += 1) {
-                const candidatePlacement = { pageIndex: placement.pageIndex, columnIndex };
-                const candidateCalculator = createPageItemHeightCalculator(style, lockedPage.columns.length, columnIndex);
-                const candidateHeaderHeight = candidateCalculator(headerItem);
-                const candidateFullHeight = candidateHeaderHeight
-                    + contentItems.reduce((total, item) => total + candidateCalculator(item), 0);
-                const requiredHeight = options.splitCategoryAcrossPages
-                    ? candidateHeaderHeight + candidateCalculator(contentItems[0])
-                    : candidateFullHeight;
-                if (getRemainingHeight(candidatePlacement) < requiredHeight) continue;
-
-                currentPlacement = candidatePlacement;
-                lockedCalculator = candidateCalculator;
-                headerItemHeight = candidateHeaderHeight;
-                fullCategoryHeight = candidateFullHeight;
-                break;
-            }
-        }
-        fallbackPlacement = currentPlacement;
-
-        if (!options.splitCategoryAcrossPages) {
-            if (
-                fullCategoryHeight <= baseColumnHeight
-                && getRemainingHeight(currentPlacement, category, true) < fullCategoryHeight
-            ) {
-                currentPlacement = advancePlacement(currentPlacement);
-            }
-        }
-
         while (remainingItems.length > 0) {
-            const currentCalculator = createPageItemHeightCalculator(
-                style,
-                ensurePage(currentPlacement.pageIndex).columns.length,
-                currentPlacement.columnIndex,
-            );
-            let availableHeight = getRemainingHeight(currentPlacement, category, startsCategory);
-            const firstItemHeight = currentCalculator(remainingItems[0]);
-            const currentHeaderItemHeight = startsCategory ? currentCalculator(headerItem) : 0;
-
-            if (startsCategory && availableHeight < currentHeaderItemHeight + firstItemHeight) {
-                const page = ensurePage(currentPlacement.pageIndex);
-                const column = page.columns[Math.max(0, Math.min(currentPlacement.columnIndex, page.columns.length - 1))];
-                const anchoredOffset = getFlowOffsetBefore(page, column, currentPlacement, category, true);
-                if (hasChunks(column) || anchoredOffset > 0 || (page.mainHeader && currentHeaderItemHeight + firstItemHeight <= baseColumnHeight)) {
-                    currentPlacement = advancePlacement(currentPlacement);
-                    continue;
-                }
-            } else if (!startsCategory && availableHeight < firstItemHeight) {
-                const page = ensurePage(currentPlacement.pageIndex);
-                const column = page.columns[Math.max(0, Math.min(currentPlacement.columnIndex, page.columns.length - 1))];
-                if (hasChunks(column) || (page.mainHeader && firstItemHeight <= baseColumnHeight)) {
-                    currentPlacement = advancePlacement(currentPlacement);
-                    continue;
-                }
+            const page = ensurePage(currentPlacement.pageIndex);
+            const requiredHeight = (index: number) => {
+                const calculateHeight = calculators[index];
+                const firstItemHeight = calculateHeight(remainingItems[0]);
+                if (!startsCategory) return firstItemHeight;
+                return keepTogether ? fullHeights[index] : calculateHeight(headerItem) + firstItemHeight;
+            };
+            const fittingColumn = findCategoryColumn(page.columns, currentPlacement.columnIndex, baseColumnHeight, requiredHeight,
+                (columnIndex) => getRemainingHeight({ pageIndex: currentPlacement.pageIndex, columnIndex }));
+            if (fittingColumn === undefined) {
+                currentPlacement = { pageIndex: currentPlacement.pageIndex + 1, columnIndex: 0 };
+                continue;
             }
+            currentPlacement = { ...currentPlacement, columnIndex: fittingColumn };
 
-            availableHeight = getRemainingHeight(currentPlacement, category, startsCategory);
+            const column = page.columns[currentPlacement.columnIndex];
+            const currentCalculator = calculators[currentPlacement.columnIndex];
+            const currentHeaderItemHeight = startsCategory ? currentCalculator(headerItem) : 0;
+            const naturalHeight = getRemainingHeight(currentPlacement);
+            const positionReservedHeight = startsCategory && fullHeights[currentPlacement.columnIndex] <= naturalHeight
+                ? fullHeights[currentPlacement.columnIndex]
+                : requiredHeight(currentPlacement.columnIndex);
+            const flowOffsetBefore = startsCategory
+                ? getFlowOffsetBefore(page, column, currentPlacement, category, positionReservedHeight)
+                : 0;
+            const availableHeight = naturalHeight - flowOffsetBefore + FIT_TOLERANCE_PX;
             const chunkItems: PageItem[] = startsCategory ? [headerItem] : [];
             let chunkHeight = currentHeaderItemHeight;
 
@@ -675,7 +667,7 @@ const buildLockedPagination = (
                 if (chunkHeight > availableHeight) break;
             }
 
-            pushLockedChunk(currentPlacement, category, startsCategory, chunkItems, chunkHeight);
+            pushLockedChunk(currentPlacement, category, startsCategory, chunkItems, chunkHeight, flowOffsetBefore);
             startsCategory = false;
 
             if (remainingItems.length > 0) {
@@ -726,12 +718,11 @@ export const calculatePagination = (
     const margins = resolveMenuMargins(style);
     const baseColumnHeight = Math.max(
         1,
-        resolveMenuPageDimensions(style).heightPx - margins.top - margins.bottom - getPaginationSafetyBuffer(style),
+        resolveMenuPageDimensions(style).heightPx - margins.top - getPaginationBottomInset(style),
     );
-    const headerHeight = getMainHeaderHeight(style);
+    const headerHeight = getMainHeaderHeight(style, options.measuredHeights);
     const pageBreaks = new Set(style.pageBreaks || []);
     const isHidden = (id: string) => style.hiddenProductIds?.includes(id);
-    const baseGetItemHeight = createPageItemHeightCalculator(style);
 
     if (categoryPlacementAssignments) {
         return buildLockedPagination(
@@ -740,7 +731,6 @@ export const calculatePagination = (
             sortedCategories,
             categoryPlacementAssignments,
             isHidden,
-            baseGetItemHeight,
             options
         );
     }
@@ -806,22 +796,17 @@ export const calculatePagination = (
     const pages: PageLayout[] = [];
     let currentPage = createPage(true);
     let currentColumnIndex = 0;
-    const heightCalculators = new Map<number, ReturnType<typeof createPageItemHeightCalculator>>();
-    const getHeightCalculator = (columnCount: number) => {
-        const existing = heightCalculators.get(columnCount);
-        if (existing) return existing;
-        const calculator = createPageItemHeightCalculator(style, columnCount);
-        heightCalculators.set(columnCount, calculator);
-        return calculator;
-    };
-    const getItemHeight = (item: PageItem) => getHeightCalculator(currentPage.columns.length)(item);
+    const calculators = Array.from({ length: categoryColumnCount }, (_, columnIndex) => (
+        createPageItemHeightCalculator(style, categoryColumnCount, columnIndex, options.measuredHeights)
+    ));
+    const getItemHeight = (item: PageItem) => calculators[currentColumnIndex](item);
 
     const getColumnLimit = (page: MutablePage) => baseColumnHeight - (page.mainHeader ? headerHeight : 0);
     const getCurrentColumnHeight = () => currentPage._columnHeights[currentColumnIndex];
-    const getRemainingHeight = () => {
-        const column = currentPage.columns[currentColumnIndex];
+    const getRemainingHeight = (index = currentColumnIndex) => {
+        const column = currentPage.columns[index];
         const nextChunkGap = column.chunks.length > 0 ? CATEGORY_CHUNK_GAP_PX : 0;
-        return getColumnLimit(currentPage) - getCurrentColumnHeight() - nextChunkGap;
+        return getColumnLimit(currentPage) - currentPage._columnHeights[index] - nextChunkGap;
     };
     const pageHasAnyContent = (page: MutablePage) =>
         Boolean(page.mainHeader) || page.columns.some((column) => column.chunks.length > 0);
@@ -913,61 +898,30 @@ export const calculatePagination = (
         }
 
         const headerItem: PageItem = { type: 'category-header', data: category, category };
-        const headerHeightValue = getItemHeight(headerItem);
-        const firstContentHeight = getItemHeight(items[0]);
-        const fullCategoryHeight = headerHeightValue + items.reduce((total, item) => total + getItemHeight(item), 0);
-
-        if (
-            !options.splitCategoryAcrossPages &&
-            currentPage.mainHeader &&
-            fullCategoryHeight > getColumnLimit(currentPage) &&
-            fullCategoryHeight <= baseColumnHeight
-        ) {
-            startNextPage();
-        }
-
-        if (
-            currentPage.mainHeader &&
-            headerHeightValue + firstContentHeight > getColumnLimit(currentPage) &&
-            headerHeightValue + firstContentHeight <= baseColumnHeight
-        ) {
-            startNextPage();
-        }
-
-        const columnLimit = getColumnLimit(currentPage);
-        const canFitInSingleEmptyColumn = fullCategoryHeight <= columnLimit;
-        const minStartHeight = headerHeightValue + firstContentHeight;
-
-        if (canFitInSingleEmptyColumn && getCurrentColumnHeight() > 0 && getRemainingHeight() < fullCategoryHeight) {
-            if (!options.splitCategoryAcrossPages || getRemainingHeight() < minStartHeight) {
-                moveToNextColumnOrPage();
-            }
-        } else if (!canFitInSingleEmptyColumn && getCurrentColumnHeight() > 0 && getRemainingHeight() < minStartHeight) {
-            moveToNextColumnOrPage();
-        }
-
-        if (fullCategoryHeight <= getRemainingHeight()) {
-            pushChunk(category, true, [headerItem, ...items], fullCategoryHeight);
-            return;
-        }
-
+        const fullHeights = calculators.map((calculateHeight) => (
+            calculateHeight(headerItem) + items.reduce((sum, item) => sum + calculateHeight(item), 0)
+        ));
+        const keepTogether = !options.splitCategoryAcrossPages && fullHeights.some((height) => height <= baseColumnHeight);
         let remainingItems = [...items];
         let startsCategory = true;
 
         while (remainingItems.length > 0) {
-            if (getRemainingHeight() <= 0 && getCurrentColumnHeight() > 0) {
-                moveToNextColumnOrPage();
+            const requiredHeight = (index: number) => {
+                const calculateHeight = calculators[index];
+                const firstItemHeight = calculateHeight(remainingItems[0]);
+                if (!startsCategory) return firstItemHeight;
+                return keepTogether ? fullHeights[index] : calculateHeight(headerItem) + firstItemHeight;
+            };
+            const fittingColumn = findCategoryColumn(currentPage.columns, currentColumnIndex, baseColumnHeight, requiredHeight, getRemainingHeight);
+            if (fittingColumn === undefined) {
+                startNextPage();
+                continue;
             }
+            currentColumnIndex = fittingColumn;
 
-            const availableHeight = getRemainingHeight();
-            const columnWasEmpty = getCurrentColumnHeight() === 0;
-            const chunkItems: PageItem[] = [];
-            let chunkHeight = 0;
-
-            if (startsCategory) {
-                chunkItems.push(headerItem);
-                chunkHeight += headerHeightValue;
-            }
+            const availableHeight = getRemainingHeight() + FIT_TOLERANCE_PX;
+            const chunkItems: PageItem[] = startsCategory ? [headerItem] : [];
+            let chunkHeight = startsCategory ? getItemHeight(headerItem) : 0;
 
             while (remainingItems.length > 0) {
                 const nextItem = remainingItems[0];
@@ -975,7 +929,6 @@ export const calculatePagination = (
                 const fits = chunkHeight + nextItemHeight <= availableHeight;
 
                 if (!fits && chunkItems.length > (startsCategory ? 1 : 0)) break;
-                if (!fits && !columnWasEmpty) break;
 
                 chunkItems.push(nextItem);
                 chunkHeight += nextItemHeight;
@@ -984,17 +937,8 @@ export const calculatePagination = (
                 if (!fits) break;
             }
 
-            if (chunkItems.length === (startsCategory ? 1 : 0)) {
-                moveToNextColumnOrPage();
-                continue;
-            }
-
             pushChunk(category, startsCategory, chunkItems, chunkHeight);
             startsCategory = false;
-
-            if (remainingItems.length > 0) {
-                moveToNextColumnOrPage();
-            }
         }
     };
 
