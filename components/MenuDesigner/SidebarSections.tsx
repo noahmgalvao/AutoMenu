@@ -193,40 +193,31 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                         minFontSize={minimumFontSize}
                         fallbackFontFamily={fontFamily}
                     />
-                    <DecorationControls style={style} setStyle={setStyle} scope="category" targetElementId={selection.id ? `text-${selection.id}` : undefined} />
-                    {selection.type === 'category' && selection.id && (
-                        <CategoryDividerPicker
-                            value={resolveCategoryDivider(style, selection.id)}
-                            color={style.primaryColor}
-                            onChange={(preset) => setStyle((previous) => ({
-                                ...previous,
-                                categoryDividerStyles: { ...(previous.categoryDividerStyles || {}), [selection.id!]: preset },
-                                name: 'Custom',
-                            }))}
-                        />
-                    )}
+                    <DecorationControls
+                        style={style}
+                        setStyle={setStyle}
+                        scope="category"
+                        sidebar
+                        targetElementId={selection.id ? `text-${selection.id}` : undefined}
+                        divider={selection.id ? {
+                            label: 'Linha da categoria',
+                            picker: <CategoryDividerPicker
+                                inlineOptions
+                                value={resolveCategoryDivider(style, selection.id)}
+                                color={style.primaryColor}
+                                onChange={(preset) => setStyle((previous) => ({
+                                    ...previous,
+                                    categoryDividerStyles: { ...(previous.categoryDividerStyles || {}), [selection.id!]: preset },
+                                    name: 'Custom',
+                                }))}
+                            />,
+                        } : undefined}
+                    />
                 </>
                 )}
                 
                 {(selection.type === 'product' || !selection.type) && (
                     <>
-                    <DecorationControls style={style} setStyle={setStyle} scope="product" showBorder={false} />
-                    {selection.type === 'product' && selection.id && (
-                        <CategoryDividerPicker
-                            label="Linha do produto"
-                            value={style.productDividerStyles?.[selection.id] || 'none'}
-                            color={style.textColor}
-                            onChange={(preset) => setStyle((previous) => ({
-                                ...previous,
-                                productDividerStyles: { ...(previous.productDividerStyles || {}), [selection.id!]: preset },
-                                name: 'Custom',
-                            }))}
-                        />
-                    )}
-                    {selection.type === 'product' && <>
-                        <DecorationControls style={style} setStyle={setStyle} scope="price" targetElementId={`product-price-${selection.id}`} />
-                        {style.showImages && <DecorationControls style={style} setStyle={setStyle} scope="productImage" targetElementId={`product-container-${selection.id}`} />}
-                    </>}
                     {safeStyles.productName && <StyleControls 
                         label="Nomes dos produtos"
                         value={safeStyles.productName}
@@ -251,6 +242,32 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                     minFontSize={minimumFontSize}
                     fallbackFontFamily={fontFamily}
                     />}
+                    <DecorationControls
+                        style={style}
+                        setStyle={setStyle}
+                        scope="product"
+                        sidebar
+                        targetElementId={selection.id ? `product-container-${selection.id}` : undefined}
+                        divider={selection.id ? {
+                            label: 'Linha do produto',
+                            picker: <CategoryDividerPicker
+                                inlineOptions
+                                label="Linha do produto"
+                                value={style.productDividerStyles?.[selection.id] || 'none'}
+                                color={style.textColor}
+                                onChange={(preset) => setStyle((previous) => ({
+                                    ...previous,
+                                    productDividerStyles: { ...(previous.productDividerStyles || {}), [selection.id!]: preset },
+                                    name: 'Custom',
+                                }))}
+                            />,
+                        } : undefined}
+                        borderTargets={selection.id ? [
+                            { scope: 'product', label: 'Produto', elementId: `product-container-${selection.id}` },
+                            ...(style.showPrices !== false ? [{ scope: 'price' as const, label: 'Preço', elementId: `product-price-${selection.id}` }] : []),
+                            ...(style.showImages ? [{ scope: 'productImage' as const, label: 'Foto', elementId: `product-container-${selection.id}` }] : []),
+                        ] : undefined}
+                    />
                     </>
                 )}
             </div>
@@ -679,7 +696,6 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle })
                 <ColorPicker value={style.cardBackgroundColor || '#ffffff'} label="Cor de fundo dos cartões" preview="cards"
                     onChange={color => setStyle(previous => ({ ...previous, cardBackgroundColor: color, cardBackgroundColorOverride: true, name: 'Custom' }))} />
             </div>
-            <DecorationControls style={style} setStyle={setStyle} scope="product" showMarker={false} />
         </div>
     )}
     

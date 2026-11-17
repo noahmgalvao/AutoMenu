@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Minus } from 'lucide-react';
 import type { CategoryDividerStyle } from '../../types';
 import { CATEGORY_DIVIDER_PRESETS, getCategoryDividerStyle } from '../../utils/categoryDividers';
 
@@ -8,9 +8,10 @@ interface CategoryDividerPickerProps {
   color: string;
   onChange: (value: CategoryDividerStyle) => void;
   label?: string;
+  inlineOptions?: boolean;
 }
 
-export const CategoryDividerPicker: React.FC<CategoryDividerPickerProps> = ({ value, color, onChange, label = 'Linha da categoria' }) => {
+export const CategoryDividerPicker: React.FC<CategoryDividerPickerProps> = ({ value, color, onChange, label = 'Linha da categoria', inlineOptions = false }) => {
   const [isOpen, setIsOpen] = useState(false);
   const selected = CATEGORY_DIVIDER_PRESETS.find((preset) => preset.value === value) || CATEGORY_DIVIDER_PRESETS[0];
 
@@ -20,6 +21,7 @@ export const CategoryDividerPicker: React.FC<CategoryDividerPickerProps> = ({ va
 
   return (
     <div className="space-y-1.5">
+      {!inlineOptions && <>
       <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</div>
       <button
         type="button"
@@ -27,16 +29,19 @@ export const CategoryDividerPicker: React.FC<CategoryDividerPickerProps> = ({ va
         className="flex h-9 w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 text-left text-slate-700 transition hover:border-indigo-300"
         aria-expanded={isOpen}
       >
+        <Minus size={14} className="shrink-0 text-slate-500" />
         <span className="flex h-4 min-w-0 flex-1 items-center">{renderPreview(selected.value)}</span>
         <span className="text-[11px] font-semibold">{selected.label}</span>
         <ChevronDown size={14} className={`shrink-0 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
-      {isOpen && (
-        <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
+      </>}
+      {(inlineOptions || isOpen) && (
+        <div role="group" aria-label={label} className={`max-h-56 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 ${inlineOptions ? '' : 'shadow-lg'}`}>
           {CATEGORY_DIVIDER_PRESETS.map((preset) => (
             <button
               key={preset.value}
               type="button"
+              aria-pressed={value === preset.value}
               onClick={() => {
                 onChange(preset.value);
                 setIsOpen(false);

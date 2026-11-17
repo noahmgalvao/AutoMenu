@@ -105,3 +105,33 @@ test('category markers scale with the configured heading size', async ({ page })
   await expect.poll(async () => parseFloat(await marker.evaluate((node) => getComputedStyle(node).fontSize))).toBeGreaterThan(original);
   await expect(heading).toBeVisible();
 });
+
+test('the designer groups product decorations after its text controls', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html');
+  const product = page.locator('#product-container-1');
+  await product.getByRole('heading', { name: 'Burrata da casa' }).click();
+  const decorations = page.locator('[data-sidebar-decorations="product"]');
+  await expect(decorations).toBeVisible();
+  for (const label of ['Nomes dos produtos', 'Preços dos produtos', 'Descrições dos produtos']) {
+    expect(await page.getByText(label, { exact: true }).evaluate((element) => {
+      const group = document.querySelector('[data-sidebar-decorations="product"]')!;
+      return Boolean(element.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING);
+    })).toBe(true);
+  }
+  const line = decorations.getByRole('button', { name: 'Linha do produto' });
+  const border = decorations.getByRole('button', { name: 'Borda', exact: true });
+  const markers = decorations.getByRole('button', { name: 'Marcadores dos produtos' });
+  await line.click();
+  await decorations.getByRole('button', { name: 'Ornamental' }).click();
+  await expect(product.locator('[data-ornamental-divider]')).toHaveCount(1);
+  await border.click();
+  await expect(line).toHaveAttribute('aria-expanded', 'false');
+  await expect(decorations.getByRole('combobox', { name: 'Aplicar borda em' })).toHaveValue('product');
+  await decorations.getByRole('combobox', { name: 'Aplicar borda em' }).selectOption('price');
+  await decorations.getByRole('combobox', { name: 'Lados da borda' }).selectOption('outline');
+  await expect(product.locator('[data-template-price] [data-menu-border]')).toBeVisible();
+  await markers.click();
+  await expect(border).toHaveAttribute('aria-expanded', 'false');
+  await decorations.getByRole('combobox', { name: 'Marcadores dos produtos' }).selectOption('dot');
+  await expect(product.locator('[data-menu-marker]')).toHaveText('•');
+});

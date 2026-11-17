@@ -1,5 +1,5 @@
 import React from 'react';
-import { List, Square } from 'lucide-react';
+import { List, Minus, Square } from 'lucide-react';
 import type { MenuBorder, MenuBorderScope, MenuBorderSide, MenuMarker, MenuStyle } from '../../types';
 import { resolveMenuPageDimensions } from '../../utils/pageSetup';
 import { resolveMenuMargins } from '../../utils/styleRules';
@@ -93,6 +93,7 @@ export function BorderDecoration({ style, scope, id }: { style: MenuStyle; scope
 function useBorderGeometry(enabled: boolean, scope?: MenuBorderScope, id?: string, anchor?: React.RefObject<HTMLElement | null>) {
   const [geometry, setGeometry] = React.useState<BorderGeometry | null>(null);
   React.useLayoutEffect(() => {
+    setGeometry(null);
     if (!enabled) return;
     const selector = `[data-menu-border-surface="${scope}"]`;
     const target = id ? document.getElementById(id) : null;
@@ -176,6 +177,9 @@ interface DecorationProps {
   showMarker?: boolean;
   children?: React.ReactNode;
   targetElementId?: string;
+  sidebar?: boolean;
+  divider?: { label: string; picker: React.ReactNode };
+  borderTargets?: { scope: MenuBorderScope; label: string; elementId: string }[];
 }
 
 const borderPresets: { id: string; label: string; sides: MenuBorderSide[] }[] = [
@@ -203,10 +207,13 @@ const edgeClasses: Record<MenuBorderSide, string> = {
   left: 'inset-y-5 left-0 w-7 border-r-2',
 };
 
-export function DecorationControls({ style, setStyle, scope, id, showBorder = true, showMarker = true, children, targetElementId }: DecorationProps) {
-  const [panel, setPanel] = React.useState<'border' | 'marker' | null>(null);
+export function DecorationControls({ style, setStyle, scope: baseScope, id, showBorder = true, showMarker = true, children, targetElementId, sidebar = false, divider, borderTargets }: DecorationProps) {
+  const [panel, setPanel] = React.useState<'line' | 'border' | 'marker' | null>(null);
+  const [targetScope, setTargetScope] = React.useState(baseScope);
+  const selectedTarget = borderTargets?.find((target) => target.scope === targetScope);
+  const scope = selectedTarget?.scope ?? baseScope;
   const border = getBorderConfiguration(style, scope, id);
-  const geometry = useBorderGeometry(panel === 'border', scope, targetElementId || (id ? `product-container-${id}` : undefined));
+  const geometry = useBorderGeometry(panel === 'border', scope, selectedTarget?.elementId || targetElementId || (id ? `product-container-${id}` : undefined));
   const fitted = geometry && fitBorder(border, geometry);
   const preview = fitted?.border ?? border;
   const activePreset = borderPresets.find((preset) => preset.sides.length === border.sides.length && preset.sides.every((side) => border.sides.includes(side)));
@@ -217,27 +224,42 @@ export function DecorationControls({ style, setStyle, scope, id, showBorder = tr
       ? { ...previous, freeTextBorders: { ...previous.freeTextBorders, [id!]: safeBorder }, name: 'Custom' }
       : { ...previous, borders: { ...previous.borders, [scope]: safeBorder }, name: 'Custom' };
   });
-  const markerScope = scope === 'category' || scope === 'product' ? scope : null;
+  const markerScope = baseScope === 'category' || baseScope === 'product' ? baseScope : null;
   const markerLabel = markerScope === 'category' ? 'Marcadores das categorias' : 'Marcadores dos produtos';
-  const borderLabel = scope === 'header' ? 'Borda do título e subtítulo' : scope === 'price' ? 'Borda do preço'
-    : scope === 'productImage' ? 'Borda da foto' : 'Borda';
-  const buttonClass = (active: boolean) => `grid size-6 shrink-0 place-items-center rounded border ${active ? 'border-indigo-200 bg-indigo-50 text-indigo-600' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`;
+  const borderLabel = baseScope === 'header' ? 'Borda do título e subtítulo' : baseScope === 'price' ? 'Borda do preço'
+    : baseScope === 'productImage' ? 'Borda da foto' : 'Borda';
+  const buttonClass = (active: boolean) => `grid place-items-center border transition-colors ${sidebar
+    ? 'min-h-12 min-w-0 flex-1 content-center gap-1 rounded-lg px-1 py-1.5 text-[11px] font-semibold'
+    : 'size-6 shrink-0 rounded'} ${active ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`;
+  const iconSize = sidebar ? 16 : 14;
 
-  return <div className="space-y-2">
-    <div className={`flex flex-wrap items-center gap-1 ${children ? 'justify-center' : ''}`}>
+  return <div data-sidebar-decorations={sidebar ? baseScope : undefined} className={sidebar ? 'space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5' : 'space-y-2'}>
+    <div className={sidebar ? 'flex items-stretch gap-2' : `flex flex-wrap items-center gap-1 ${children ? 'justify-center' : ''}`}>
       {children}
+      {divider && <button type="button" title={divider.label} aria-label={divider.label} aria-expanded={panel === 'line'}
+        className={buttonClass(panel === 'line')} onClick={() => setPanel(panel === 'line' ? null : 'line')}>
+        <Minus size={iconSize} />
+        {sidebar && 'Linha'}
+      </button>}
       {showBorder && <button type="button" title={borderLabel} aria-label={borderLabel} aria-expanded={panel === 'border'}
         className={buttonClass(panel === 'border')} onClick={() => {
           const opening = panel !== 'border';
           if (opening && !activeBorder(style, scope, id) && !border.sides.length) change({ sides: borderPresets[0].sides });
           setPanel(opening ? 'border' : null);
-        }}><Square size={14} /></button>}
+        }}><Square size={iconSize} />{sidebar && 'Borda'}</button>}
       {markerScope && showMarker && <button type="button" title={markerLabel} aria-label={markerLabel} aria-expanded={panel === 'marker'}
         className={buttonClass(panel === 'marker')} onClick={() => setPanel(panel === 'marker' ? null : 'marker')}>
-        <List size={14} />
+        <List size={iconSize} />
+        {sidebar && 'Marcadores'}
       </button>}
     </div>
+    {panel === 'line' && divider?.picker}
     {showBorder && panel === 'border' && <div data-border-panel className="space-y-2 rounded-md border border-slate-200 bg-white p-2">
+      {borderTargets && borderTargets.length > 1 && <select aria-label="Aplicar borda em" value={scope}
+        className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
+        onChange={(event) => setTargetScope(event.target.value as MenuBorderScope)}>
+        {borderTargets.map((target) => <option key={target.scope} value={target.scope}>{target.label}</option>)}
+      </select>}
       <div className="grid grid-cols-2 gap-2">
         <div className="relative h-20 overflow-hidden rounded bg-slate-50" aria-label="Prévia e lados da borda" role="group">
           <div className="pointer-events-none absolute inset-x-7 inset-y-6">
