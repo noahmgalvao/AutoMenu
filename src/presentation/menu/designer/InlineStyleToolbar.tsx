@@ -6,6 +6,7 @@ import { FontSelect } from './SearchableSelects';
 import { ColorPicker } from './ColorPicker';
 import { FontSizeInput } from './FontSizeInput';
 import type { PriceAdjustmentMode } from '../../../domain/menu/pricePropagation';
+import { getCanvasViewportBounds } from '../canvas/canvasViewport';
 
 type InlineStyleToolbarProps = {
     targetElementId: string;
@@ -18,7 +19,7 @@ type InlineStyleToolbarProps = {
     compact?: boolean;
     onAdjustPrice?: (direction: 1 | -1, amount: number, mode: PriceAdjustmentMode) => void;
     fallbackFontFamily?: string;
-    decoration?: (formatButtons: React.ReactNode) => React.ReactNode;
+    decoration?: (formatButtons: React.ReactNode, onGroupBorderPanelChange: (open: boolean) => void) => React.ReactNode;
     borderOffset?: number;
 } & (
     | { value: ElementStyle; onChange: (style: ElementStyle) => void | boolean; children?: never }
@@ -29,6 +30,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
     const toolbarRef = useRef<HTMLDivElement>(null);
     const contentRef = useRef<HTMLDivElement>(null);
     const [position, setPosition] = useState<React.CSSProperties>({ left: 8, top: 8, width: 270 });
+    const [groupBorderOpen, setGroupBorderOpen] = useState(false);
     const [priceAdjustment, setPriceAdjustment] = useState('10');
     const [priceAdjustmentMode, setPriceAdjustmentMode] = useState<PriceAdjustmentMode>('percentage');
     const isSizeColorOnly = controls === 'sizeColor';
@@ -70,21 +72,32 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
     useLayoutEffect(() => {
         const target = document.getElementById(positionTargetElementId || targetElementId);
         if (!target) return;
+        const groupSurface = groupBorderOpen ? target.closest<HTMLElement>('[data-menu-border-surface="categoryGroup"]') : null;
+        const canvas = groupSurface?.closest<HTMLElement>('[data-automenu-editor-canvas]');
 
         const updatePosition = () => {
             const toolbarHeight = (contentRef.current?.offsetHeight || 76) + (compact ? 10 : 14);
             const preferredWidth = !hasTextControls ? 200 : hasHeader ? (compact ? 148 : 210) : isSizeColorOnly ? 120 : hasPriceAdjustment ? 300 : 270;
             const width = Math.min(preferredWidth, window.innerWidth - 16);
-            const borderSurface = hasDecoration
+            const borderSurface = groupSurface || (hasDecoration
                 ? document.getElementById(targetElementId)?.closest('[data-menu-border-surface]')
-                : null;
+                : null);
             const targetRect = (borderSurface || target).getBoundingClientRect();
             const strokes = Array.from(borderSurface?.querySelectorAll(':scope > [data-menu-border]') || [])
                 .map((element) => element.getBoundingClientRect());
-            const top = Math.min(targetRect.top, ...strokes.map((rect) => rect.top));
-            const bottom = Math.max(targetRect.bottom, ...strokes.map((rect) => rect.bottom));
-            const left = Math.min(targetRect.left, ...strokes.map((rect) => rect.left));
-            const right = Math.max(targetRect.right, ...strokes.map((rect) => rect.right));
+            let top = Math.min(targetRect.top, ...strokes.map((rect) => rect.top));
+            let bottom = Math.max(targetRect.bottom, ...strokes.map((rect) => rect.bottom));
+            let left = Math.min(targetRect.left, ...strokes.map((rect) => rect.left));
+            let right = Math.max(targetRect.right, ...strokes.map((rect) => rect.right));
+            if (canvas) {
+                const visible = getCanvasViewportBounds(canvas);
+                if (left < visible.right && right > visible.left && top < visible.bottom && bottom > visible.top) {
+                    top = Math.max(visible.top, top);
+                    bottom = Math.min(visible.bottom, bottom);
+                    left = Math.max(visible.left, left);
+                    right = Math.min(visible.right, right);
+                }
+            }
             const centeredLeft = Math.max(8, Math.min(window.innerWidth - width - 8, (left + right - width) / 2));
             const availableAbove = top - 16;
             const availableBelow = window.innerHeight - bottom - 16;
@@ -98,7 +111,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                 }
                 const useTop = availableAbove >= availableBelow;
                 const available = Math.max(availableAbove, availableBelow);
-                if (available >= 80) {
+                if (available >= (groupSurface ? 48 : 80)) {
                     setPosition({ left: centeredLeft, top: useTop ? 8 : bottom + 8, width, maxHeight: available, overflowY: 'auto' });
                     return;
                 }
@@ -112,17 +125,26 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
 
         updatePosition();
         const resizeObserver = new ResizeObserver(updatePosition);
-        resizeObserver.observe(target);
+        resizeObserver.observe(groupSurface || target);
         if (contentRef.current) resizeObserver.observe(contentRef.current);
+        if (canvas) resizeObserver.observe(canvas);
+        const borderObserver = groupSurface && new MutationObserver(records => {
+            if (records.some(({ target }) => target === groupSurface ||
+                (target instanceof Element && target.parentElement === groupSurface && target.hasAttribute('data-menu-border')))) {
+                updatePosition();
+            }
+        });
+        if (groupSurface) borderObserver?.observe(groupSurface, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
         window.addEventListener('resize', updatePosition);
         window.addEventListener('scroll', updatePosition, true);
 
         return () => {
             resizeObserver.disconnect();
+            borderObserver?.disconnect();
             window.removeEventListener('resize', updatePosition);
             window.removeEventListener('scroll', updatePosition, true);
         };
-    }, [borderOffset, compact, hasDecoration, hasHeader, hasPriceAdjustment, hasTextControls, isSizeColorOnly, positionTargetElementId, targetElementId]);
+    }, [borderOffset, compact, groupBorderOpen, hasDecoration, hasHeader, hasPriceAdjustment, hasTextControls, isSizeColorOnly, positionTargetElementId, targetElementId]);
 
     const parsedPriceAdjustment = Number(priceAdjustment);
     const canAdjustPrice = Number.isFinite(parsedPriceAdjustment) && parsedPriceAdjustment > 0;
@@ -204,7 +226,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                     </button>
                 </>;
                 return <div className="mt-1.5">{decoration
-                    ? decoration(formatButtons)
+                    ? decoration(formatButtons, setGroupBorderOpen)
                     : <div className="flex items-center justify-center gap-1">{formatButtons}</div>}
                 </div>;
             })()}

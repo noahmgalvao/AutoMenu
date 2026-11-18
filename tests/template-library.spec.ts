@@ -305,12 +305,12 @@ test('title and subtitle edit the same border and categories share their marker 
   await canvas.locator('#menu-title-text').focus();
   const borderButton = toolbar.getByRole('button', { name: 'Borda do título e subtítulo', exact: true });
   await borderButton.click();
-  await toolbar.getByRole('button', { name: 'Acima', exact: true }).click();
+  const presets = toolbar.getByRole('combobox', { name: 'Lados da borda' });
+  await presets.selectOption('top');
   await expect(canvas.locator('[data-template-header]')).toHaveAttribute('data-custom-border', 'true');
   await canvas.locator('#menu-subtitle-text').focus();
-  const topSide = toolbar.getByRole('button', { name: 'Acima', exact: true });
-  if (!(await topSide.isVisible())) await borderButton.click();
-  await expect(topSide).toHaveAttribute('aria-pressed', 'true');
+  if (!(await presets.isVisible())) await borderButton.click();
+  await expect(presets).toHaveValue('top');
   await canvas.getByRole('heading', { name: 'Entradas', exact: true }).click();
   await page.getByRole('button', { name: 'Marcadores das categorias', exact: true }).click();
   await page.getByRole('combobox', { name: 'Marcadores das categorias', exact: true }).selectOption('number-square');

@@ -59,14 +59,23 @@ test('the border panel starts with a contour and applies sliders and numbers imm
   const toolbar = page.locator('[data-inline-format-toolbar]');
   await toolbar.getByRole('button', { name: 'Borda', exact: true }).click();
   const presets = toolbar.getByRole('combobox', { name: 'Lados da borda' });
+  const sideButtons = toolbar.getByRole('group', { name: 'Lados individuais da borda' });
   await expect(toolbar.locator('[data-menu-border]')).toHaveCount(0);
   await expect(presets).toHaveValue('outline');
-  for (const [preset, side] of [['top', 'Acima'], ['bottom', 'Abaixo'], ['left', 'Esquerda'], ['right', 'Direita']]) {
+  await expect(presets.locator('option').last()).toHaveText('Personalizada');
+  await expect(sideButtons).toHaveCount(0);
+  for (const preset of ['top', 'bottom', 'left', 'right']) {
     await presets.selectOption(preset);
-    await expect(toolbar.getByRole('button', { name: side, exact: true })).toHaveAttribute('aria-pressed', 'true');
-    await expect(toolbar.locator('[role="group"] button[aria-pressed="true"]')).toHaveCount(1);
+    await expect(sideButtons).toHaveCount(0);
   }
+  await presets.selectOption('custom');
+  await expect(sideButtons.getByRole('button', { name: 'Direita' })).toHaveAttribute('aria-pressed', 'true');
+  await sideButtons.getByRole('button', { name: 'Acima' }).click();
+  await sideButtons.getByRole('button', { name: 'Direita' }).click();
+  await expect(presets).toHaveValue('custom');
+  await expect(sideButtons.getByRole('button', { name: 'Acima' })).toHaveAttribute('aria-pressed', 'true');
   await presets.selectOption('outline');
+  await expect(sideButtons).toHaveCount(0);
   const stroke = freeText.locator('[data-menu-border]');
   await expect(stroke).toHaveCSS('border-left-width', '1px');
   const thickness = toolbar.getByRole('spinbutton', { name: 'Espessura (px)' });
@@ -368,12 +377,22 @@ test('category text and group have independent borders and the formatting panel 
   await toolbar.getByRole('combobox', { name: 'Lados da borda' }).selectOption('outline');
   const groupBorder = group.locator(':scope > [data-menu-border]');
   await expect(groupBorder).toHaveCSS('border-right-width', '1px');
+  const toolbarClearsBorder = async () => {
+    const [menu, border] = await Promise.all([toolbar.boundingBox(), groupBorder.boundingBox()]);
+    return !!menu && !!border && (menu.y >= border.y + border.height || border.y >= menu.y + menu.height
+      || menu.x >= border.x + border.width || border.x >= menu.x + menu.width);
+  };
+  await expect.poll(toolbarClearsBorder).toBe(true);
   const [outline, product] = await Promise.all([groupBorder.boundingBox(), page.locator('#product-container-3').boundingBox()]);
   expect(outline!.y + outline!.height).toBeGreaterThanOrEqual(product!.y + product!.height - 1);
   await toolbar.getByRole('spinbutton', { name: 'Espessura (px)' }).dblclick();
   await expect(page.getByText('Pressione Enter para salvar')).toHaveCount(0);
   await tabs.getByRole('tab', { name: 'Grupo' }).press('ArrowLeft');
   await expect(toolbar.getByRole('combobox', { name: 'Lados da borda' })).toHaveValue('bottom');
+  await tabs.getByRole('tab', { name: 'Texto da categoria' }).press('ArrowRight');
+  await page.setViewportSize({ width: 390, height: 660 });
+  await expect.poll(toolbarClearsBorder).toBe(true);
+  await expect(toolbar.getByRole('combobox', { name: 'Lados da borda' })).toHaveValue('outline');
 });
 
 test('a narrow two-column card saves a corrected name even after typing an oversized word', async ({ page }) => {

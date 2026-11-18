@@ -222,8 +222,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     handlers.setFormattingTarget?.(null);
                 }}
                 borderOffset={border?.offset}
-                decoration={handlers.updateStyle ? (formatButtons) => (
-                    <DecorationControls key={scope} style={style} setStyle={handlers.updateStyle} id={id} scope={scope} targetElementId={formattingTarget.elementId} divider={divider}>
+                decoration={handlers.updateStyle ? (formatButtons, onGroupBorderPanelChange) => (
+                    <DecorationControls key={scope} style={style} setStyle={handlers.updateStyle} id={id} scope={scope} targetElementId={formattingTarget.elementId} divider={divider}
+                        onGroupBorderPanelChange={type === 'category' ? onGroupBorderPanelChange : undefined}>
                         {formatButtons}
                     </DecorationControls>
                 ) : undefined}

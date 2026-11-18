@@ -197,6 +197,7 @@ interface DecorationProps {
   sidebar?: boolean;
   divider?: { label: string; picker: React.ReactNode };
   borderTargets?: { scope: MenuBorderScope; label: string; elementId: string }[];
+  onGroupBorderPanelChange?: (open: boolean) => void;
 }
 
 const borderPresets: { id: string; label: string; sides: MenuBorderSide[] }[] = [
@@ -217,9 +218,10 @@ const borderValues = [
   ['offset', 'Distância (px)'],
 ] as const;
 
-export function DecorationControls({ style, setStyle, scope: baseScope, id, showBorder = true, showMarker = true, children, targetElementId, sidebar = false, divider, borderTargets }: DecorationProps) {
+export function DecorationControls({ style, setStyle, scope: baseScope, id, showBorder = true, showMarker = true, children, targetElementId, sidebar = false, divider, borderTargets, onGroupBorderPanelChange }: DecorationProps) {
   const [panel, setPanel] = React.useState<'line' | 'border' | 'marker' | null>(null);
   const [targetScope, setTargetScope] = React.useState(baseScope);
+  const [customScope, setCustomScope] = React.useState<MenuBorderScope | null>(null);
   const borderTabId = React.useId();
   const selectedTarget = borderTargets?.find((target) => target.scope === targetScope);
   const scope = baseScope === 'category' && targetScope === 'categoryGroup'
@@ -232,6 +234,12 @@ export function DecorationControls({ style, setStyle, scope: baseScope, id, show
   const geometry = useBorderGeometry(panel === 'border', scope, surfaceId);
   const fitted = geometry && fitBorder(border, geometry);
   const activePreset = borderPresets.find((preset) => preset.sides.length === border.sides.length && preset.sides.every((side) => border.sides.includes(side)));
+  const selectedPreset = customScope === scope ? 'custom' : (activePreset?.id ?? 'custom');
+  const isGroupBorderOpen = showBorder && panel === 'border' && scope === 'categoryGroup';
+  React.useLayoutEffect(() => {
+    onGroupBorderPanelChange?.(isGroupBorderOpen);
+  }, [isGroupBorderOpen, onGroupBorderPanelChange]);
+
   const change = (update: Partial<MenuBorder>) => {
     if (update.offset !== undefined && update.offset > (fitted?.border.offset ?? border.offset) && border.sides.length) {
       findBorderSurface(scope, surfaceId)?.dispatchEvent(new Event('automenu:border-offset-increase', { bubbles: true }));
@@ -302,22 +310,27 @@ export function DecorationControls({ style, setStyle, scope: baseScope, id, show
         {borderTargets.map((target) => <option key={target.scope} value={target.scope}>{target.label}</option>)}
       </select>}
       <div className="space-y-1.5">
-        <div className="flex flex-wrap gap-1" aria-label="Lados individuais da borda" role="group">
+        {selectedPreset === 'custom' && <div className="flex flex-wrap gap-1" aria-label="Lados individuais da borda" role="group">
           {sides.map(({ id, label }) => {
             const active = border.sides.includes(id);
             return <button type="button" key={id} title={label} aria-label={label} aria-pressed={active}
               className={`rounded border px-1.5 py-1 text-[11px] ${active ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-600 hover:bg-slate-100'}`}
               onClick={() => change({ sides: active ? border.sides.filter(side => side !== id) : [...border.sides, id] })}>{label}</button>;
           })}
-        </div>
-        <select aria-label="Lados da borda" value={activePreset?.id ?? 'custom'}
+        </div>}
+        <select aria-label="Lados da borda" value={selectedPreset}
           className="h-8 w-full rounded-md border border-slate-200 text-xs"
           onChange={(event) => {
             const preset = borderPresets.find(({ id }) => id === event.target.value);
-            if (preset) change({ sides: preset.sides });
+            if (preset) {
+              if (customScope === scope) setCustomScope(null);
+              change({ sides: preset.sides });
+            } else {
+              setCustomScope(scope);
+            }
           }}>
-          {!activePreset && <option value="custom" disabled>Personalizada</option>}
           {borderPresets.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
+          <option value="custom">Personalizada</option>
         </select>
       </div>
       <div className="flex items-center gap-2">
@@ -342,9 +355,12 @@ export function DecorationControls({ style, setStyle, scope: baseScope, id, show
         );
       })}
       {activeBorder(style, scope, id) && <button type="button" className="text-xs font-semibold text-indigo-700"
-        onClick={() => setStyle(previous => scope === 'freeText'
-          ? { ...previous, freeTextBorders: Object.fromEntries(Object.entries(previous.freeTextBorders || {}).filter(([key]) => key !== id)) }
-          : { ...previous, borders: { ...previous.borders, [scope]: undefined } })}>Restaurar borda do modelo</button>}
+        onClick={() => {
+          if (customScope === scope) setCustomScope(null);
+          setStyle(previous => scope === 'freeText'
+            ? { ...previous, freeTextBorders: Object.fromEntries(Object.entries(previous.freeTextBorders || {}).filter(([key]) => key !== id)) }
+            : { ...previous, borders: { ...previous.borders, [scope]: undefined } });
+        }}>Restaurar borda do modelo</button>}
       </div>
     </div>}
     {markerScope && showMarker && panel === 'marker' && <select aria-label={markerLabel} value={getMarker(style, markerScope)}
