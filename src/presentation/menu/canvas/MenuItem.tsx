@@ -16,7 +16,8 @@ import { FREE_TEXT_PREFIX } from '../../../domain/menu/flow';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 import { ColumnResizeHandles } from './ColumnResizeHandles';
 import { templateProductImageHeight } from '../../../domain/templates/templateDesign';
-import { formatMenuPriceValue } from '../../../domain/menu/price';
+import { formatMenuPriceValue, getMenuPriceSymbol } from '../../../domain/menu/price';
+import { PriceFormatSettings } from '../designer/PriceFormatSettings';
 
 interface MenuItemProps {
     item: any;
@@ -254,7 +255,50 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 onAdjustPrice={type === 'product' && formattingTarget.field === 'price'
                     ? (direction: 1 | -1, amount: number, mode: PriceAdjustmentMode) => handlers.adjustProductPrice?.(id, direction, amount, mode)
                     : undefined}
+                priceFormatHeader={type === 'product' && formattingTarget.field === 'price' && handlers.updateStyle
+                    ? <PriceFormatSettings style={style} setStyle={handlers.updateStyle}>Alterar valor</PriceFormatSettings>
+                    : undefined}
+                priceAdjustmentCurrency={getMenuPriceSymbol(style)}
             />;
+    };
+    const renderProductPrice = (product: Product, isEditable: boolean, badgeClass = '') => {
+        if (style.showPrices === false) return null;
+        const priceStyle = style.elementStyles?.productPrice || {};
+        const baseSize = clampFontSize(style, 'productPrice', priceStyle.fontSize, 18);
+        const currency = getMenuPriceSymbol(style);
+        return <div data-template-price data-price-base-size={baseSize} data-price-minimum-size={minimumFontSize}
+            data-menu-border-surface="price" data-custom-border={getBorderOverride(style, 'price')}
+            className={`relative ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap ${badgeClass}`}
+            style={{
+                borderRadius: style.borders?.price?.radius,
+                color: `var(--automenu-preview-text, ${priceStyle.color || style.textColor})`,
+                fontFamily: priceStyle.fontFamily,
+                fontSize: `var(--automenu-fitted-price-size, ${baseSize}px)`,
+                fontWeight: priceStyle.fontWeight,
+                fontStyle: priceStyle.italic ? 'italic' : 'normal',
+                textDecoration: priceStyle.underline ? 'underline' : 'none',
+                textTransform: priceStyle.textTransform,
+                letterSpacing: priceStyle.letterSpacing ? `${priceStyle.letterSpacing}px` : undefined,
+            }}>
+            <BorderDecoration style={style} scope="price" />
+            {currency && <span data-price-symbol data-border-text className="select-none touch-auto">{currency}</span>}
+            <span id={handlers.readOnly ? undefined : `product-price-${product.id}`} data-product-edit-id={product.id}
+                data-price-value data-border-text className={`whitespace-nowrap outline-none rounded ${isEditable ? editableTextClassName : ''}`}
+                style={{ textAlign: priceStyle.textAlign }}
+                contentEditable={isEditable} tabIndex={isEditable ? 0 : undefined} inputMode="decimal"
+                enterKeyHint="done" suppressContentEditableWarning
+                onBlur={event => {
+                    replacePriceOnNextInputRef.current.delete(product.id);
+                    handlers.handleBlur(event, 'product', product.id, 'price');
+                }}
+                onKeyDown={event => handlePriceKeyDown(event, product.id)}
+                onBeforeInput={event => handlePriceBeforeInput(event, product.id)}
+                onPaste={event => handlePricePaste(event, product.id)}
+                onFocus={event => handlePriceFocus(event, product.id)}
+                onPointerDown={event => { if (isEditable) event.stopPropagation(); }}
+                onClick={handleEditableFieldClick}
+            >{formatMenuPriceValue(product.price, style)}</span>
+        </div>;
     };
     const renderProductImageControls = (product: Product, isEditing: boolean) => (
         isEditing && product.image && imageMenuProductId === product.id && !formattingTarget ? (
@@ -658,14 +702,15 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     <div className={`flex-grow min-w-0 ${stackImage ? 'w-full' : ''} ${isNameCentered ? 'text-center' : isNameRight ? 'text-right' : 'text-left'}`}>
                          <div
                             data-product-text-row="true"
-                            className={`flex min-w-0 flex-wrap ${isNameCentered ? 'items-center' : 'items-start'}`}
+                            data-product-leader={showProductDivider || undefined}
+                            className={`relative flex min-w-0 ${showProductDivider || isNameCentered ? 'items-center' : 'items-start'}`}
                             style={{
                                 marginBottom: contentSpacing.productNameToDescription,
                                 columnGap: showProductDivider ? 5 : contentSpacing.productNameToPrice,
                                 rowGap: 2,
                             }}
                          >
-                            <div className={`flex min-w-0 items-center gap-2 ${isNameCentered ? 'justify-center' : isNameRight ? 'justify-end' : ''}`} style={{ flex: showProductDivider ? '0 1 auto' : '1 1 auto' }}>
+                            <div data-product-title-group className={`flex min-w-0 items-center gap-2 ${isNameCentered ? 'justify-center' : isNameRight ? 'justify-end' : ''}`} style={{ flexGrow: showProductDivider ? 0 : 1 }}>
                                 <MenuMarkerGlyph marker={getMarker(style, 'product')} fontSize={clampFontSize(style, 'productName', nameStyle.fontSize, 18)}
                                     index={visibleCatProducts.filter((candidate: Product) => !candidate.isFreeText).findIndex((candidate: Product) => candidate.id === product.id)}
                                     color="var(--template-accent)" />
@@ -695,48 +740,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 />
                             </div>
                             {showProductDivider && (
-                                <CanvasTextDivider preset={productDividerPreset} color={style.textColor} titleEdge="left" />
+                                <CanvasTextDivider preset={productDividerPreset} color={style.textColor} titleEdge="left" product />
                             )}
-                            {style.showPrices !== false && <div
-                              data-template-price data-menu-border-surface="price" data-custom-border={getBorderOverride(style, 'price')} className="relative ml-auto flex min-w-0 shrink-0 items-center gap-1 whitespace-nowrap"
-                              style={{ 
-                                borderRadius: style.borders?.price?.radius,
-                                justifyContent: priceStyle.textAlign === 'left' ? 'flex-start' : (priceStyle.textAlign === 'center' ? 'center' : 'flex-end'), 
-                                display: 'flex',
-                                color: `var(--automenu-preview-text, ${priceStyle.color || style.textColor})`,
-                                fontFamily: priceStyle.fontFamily,
-                                fontSize: `${clampFontSize(style, 'productPrice', priceStyle.fontSize, 18)}px`,
-                                fontWeight: priceStyle.fontWeight,
-                                fontStyle: priceStyle.italic ? 'italic' : 'normal',
-                                textDecoration: priceStyle.underline ? 'underline' : 'none',
-                                textTransform: priceStyle.textTransform,
-                                letterSpacing: priceStyle.letterSpacing ? `${priceStyle.letterSpacing}px` : undefined,
-                              }}
-                            >
-                                <BorderDecoration style={style} scope="price" />
-                                {style.showCurrencySymbol !== false && <span data-border-text className="mr-[1px] select-none touch-auto">R$</span>}
-                                <AutoFitText
-                                    as="span"
-                                    text={formatMenuPriceValue(product.price, style)}
-                                    baseFontSize={clampFontSize(style, 'productPrice', priceStyle.fontSize, 18)}
-                                    minimumFontSize={minimumFontSize}
-                                    allowSameWordBreak={false}
-                                    fitScope="productPrice"
-                                    containerSelector="[data-product-text-row]"
-                                    id={handlers.readOnly ? undefined : `product-price-${product.id}`} data-product-edit-id={product.id} className={`whitespace-nowrap outline-none rounded ${isEditable ? editableTextClassName : ''}`}
-                                    style={{ 
-                                        color: `var(--automenu-preview-text, ${priceStyle.color || style.textColor})`,
-                                        fontFamily: priceStyle.fontFamily,
-                                        fontSize: `${clampFontSize(style, 'productPrice', priceStyle.fontSize, 18)}px`,
-                                        fontWeight: priceStyle.fontWeight,
-                                        fontStyle: priceStyle.italic ? 'italic' : 'normal',
-                                        textDecoration: priceStyle.underline ? 'underline' : 'none',
-                                        textAlign: priceStyle.textAlign,
-                                        display: 'inline-block'
-                                    }}
-                                    contentEditable={Boolean(isEditable)} tabIndex={isEditable ? 0 : undefined} inputMode="decimal" enterKeyHint="done" suppressContentEditableWarning onBlur={(e) => { replacePriceOnNextInputRef.current.delete(product.id); handlers.handleBlur(e, 'product', product.id, 'price'); }} onKeyDown={(e) => handlePriceKeyDown(e, product.id)} onBeforeInput={(e) => handlePriceBeforeInput(e, product.id)} onPaste={(e) => handlePricePaste(e, product.id)} onFocus={(e) => handlePriceFocus(e, product.id)} onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }} onClick={handleEditableFieldClick}
-                                />
-                            </div>}
+                            {renderProductPrice(product, Boolean(isEditable))}
                         </div>
                         <AutoFitText
                             as="p"
@@ -894,14 +900,15 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                         <div data-template-content className={`${isCardLayout ? (categoryColumnCount > 1 || productColumnCount > 2 ? 'p-1.5' : productColumnCount > 1 ? 'p-2' : 'p-4') : 'py-2'} flex min-w-0 flex-col flex-grow ${textAlignClass}`}>
                                             <div
                                                 data-product-text-row="true"
-                                                className={`flex min-w-0 flex-wrap ${showProductDivider ? 'items-center' : 'items-start'}`}
+                                                data-product-leader={showProductDivider || undefined}
+                                                className={`relative flex min-w-0 ${showProductDivider ? 'items-center' : 'items-start'}`}
                                                 style={{
                                                     marginBottom: contentSpacing.productNameToDescription,
                                                     columnGap: showProductDivider ? 5 : contentSpacing.productNameToPrice,
                                                     rowGap: 2,
                                                 }}
                                             >
-                                                <div className={`flex min-w-0 items-center gap-1 ${nameStyle.textAlign === 'center' ? 'justify-center' : nameStyle.textAlign === 'right' ? 'justify-end' : 'justify-start'}`} style={{ flex: showProductDivider ? '0 1 auto' : '1 1 auto' }}>
+                                                <div data-product-title-group className={`flex min-w-0 items-center gap-1 ${nameStyle.textAlign === 'center' ? 'justify-center' : nameStyle.textAlign === 'right' ? 'justify-end' : 'justify-start'}`} style={{ flexGrow: showProductDivider ? 0 : 1 }}>
                                                     <MenuMarkerGlyph marker={getMarker(style, 'product')} fontSize={clampFontSize(style, 'productName', nameStyle.fontSize, 18)}
                                                         index={visibleCatProducts.filter((candidate: Product) => !candidate.isFreeText).findIndex((candidate: Product) => candidate.id === product.id)}
                                                         color="var(--template-accent)" />
@@ -931,40 +938,11 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                     />
                                                 </div>
                                                 {showProductDivider && (
-                                                    <CanvasTextDivider preset={productDividerPreset} color={style.textColor} titleEdge="left" />
+                                                    <CanvasTextDivider preset={productDividerPreset} color={style.textColor} titleEdge="left" product />
                                                 )}
-                                                {style.showPrices !== false && <div
-                                                    data-template-price data-menu-border-surface="price" data-custom-border={getBorderOverride(style, 'price')} className={`relative ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap ${isCardLayout ? `rounded-full bg-white/90 border border-black/5 shadow-sm ${compactControls ? 'px-1.5 py-0.5' : 'px-2.5 py-1'}` : ''}`}
-                                                    style={{ borderRadius: style.borders?.price?.radius, color: `var(--automenu-preview-text, ${priceStyle.color || style.textColor})`, fontFamily: priceStyle.fontFamily, fontSize: clampFontSize(style, 'productPrice', priceStyle.fontSize, 18), fontWeight: priceStyle.fontWeight, fontStyle: priceStyle.italic ? 'italic' : 'normal', textDecoration: priceStyle.underline ? 'underline' : 'none', textTransform: priceStyle.textTransform, letterSpacing: priceStyle.letterSpacing ? `${priceStyle.letterSpacing}px` : undefined }}
-                                                >
-                                                    <BorderDecoration style={style} scope="price" />
-                                                    {style.showCurrencySymbol !== false && <span data-border-text className="select-none touch-auto">R$</span>}
-                                                    <AutoFitText
-                                                        as="span"
-                                                        text={formatMenuPriceValue(product.price, style)}
-                                                        baseFontSize={clampFontSize(style, 'productPrice', priceStyle.fontSize, 18)}
-                                                        minimumFontSize={minimumFontSize}
-                                                        allowSameWordBreak={false}
-                                                        fitScope="productPrice"
-                                                        containerSelector="[data-product-text-row]"
-                                                        id={handlers.readOnly ? undefined : `product-price-${product.id}`}
-                                                        data-product-edit-id={product.id}
-                                                        className={`whitespace-nowrap outline-none rounded ${isEditable ? editableTextClassName : ''}`}
-                                                        style={{ textAlign: priceStyle.textAlign }}
-                                                        contentEditable={Boolean(isEditable)}
-                                                        tabIndex={isEditable ? 0 : undefined}
-                                                        inputMode="decimal"
-                                                        enterKeyHint="done"
-                                                        suppressContentEditableWarning
-                                                        onBlur={(e) => { replacePriceOnNextInputRef.current.delete(product.id); handlers.handleBlur(e, 'product', product.id, 'price'); }}
-                                                        onKeyDown={(e) => handlePriceKeyDown(e, product.id)}
-                                                        onBeforeInput={(e) => handlePriceBeforeInput(e, product.id)}
-                                                        onPaste={(e) => handlePricePaste(e, product.id)}
-                                                        onFocus={(e) => handlePriceFocus(e, product.id)}
-                                                        onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }}
-                                                        onClick={handleEditableFieldClick}
-                                                    />
-                                                </div>}
+                                                {renderProductPrice(product, Boolean(isEditable), isCardLayout
+                                                    ? `rounded-full bg-white/90 border border-black/5 shadow-sm ${compactControls ? 'px-1.5 py-0.5' : 'px-2.5 py-1'}`
+                                                    : undefined)}
                                             </div>
                                             <AutoFitText
                                                 as="p"

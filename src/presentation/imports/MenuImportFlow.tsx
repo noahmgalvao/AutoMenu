@@ -328,6 +328,7 @@ const ImportedItemsEditor: React.FC<{
           categories={categories}
           grouped={grouped}
           style={style}
+          setStyle={setStyle}
           handlers={logic.handlers}
           collapsedCategories={logic.collapsedCategories}
           toggleCollapse={logic.toggleCollapse}

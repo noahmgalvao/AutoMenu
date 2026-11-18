@@ -37,28 +37,39 @@ const transformText = (text: string, transform?: ElementStyle['textTransform']) 
   return text;
 };
 
-const getLongestWordWidth = (
-  text: string,
+const measureTextWidths = (
+  parts: string[],
   fontSize: number,
   options: MeasureOptions,
 ) => {
-  const words = transformText(text, options.textTransform).split(/\s+/).filter(Boolean);
-  if (words.length === 0) return 0;
+  if (parts.length === 0) return 0;
 
   if (typeof document === 'undefined') {
-    return Math.max(...words.map((word) => word.length)) * fontSize * 0.62;
+    return Math.max(...parts.map(part => part.length)) * fontSize * 0.62;
   }
 
   measurementCanvas ||= document.createElement('canvas');
   const context = measurementCanvas.getContext('2d');
-  if (!context) return Math.max(...words.map((word) => word.length)) * fontSize * 0.62;
+  if (!context) return Math.max(...parts.map(part => part.length)) * fontSize * 0.62;
 
   context.font = `${options.fontStyle || 'normal'} ${options.fontWeight || '400'} ${fontSize}px ${options.fontFamily || 'sans-serif'}`;
   const letterSpacing = Number(options.letterSpacing) || 0;
-  return Math.max(...words.map((word) => (
-    context.measureText(word).width + (Math.max(0, word.length - 1) * letterSpacing)
+  return Math.max(...parts.map(part => (
+    context.measureText(part).width + (Math.max(0, part.length - 1) * letterSpacing)
   )));
 };
+
+const getLongestWordWidth = (text: string, fontSize: number, options: MeasureOptions) =>
+  measureTextWidths(transformText(text, options.textTransform).split(/\s+/).filter(Boolean), fontSize, options);
+
+export const measureRenderedText = (text: string, fontSize: number, css: CSSStyleDeclaration) =>
+  measureTextWidths(transformText(text.trim(), css.textTransform as ElementStyle['textTransform'])
+    .split('\n').map(line => line.replace(/\s+/g, ' ')), fontSize, {
+    fontFamily: css.fontFamily,
+    fontWeight: css.fontWeight,
+    fontStyle: css.fontStyle,
+    letterSpacing: parseFloat(css.letterSpacing),
+  });
 
 export const fitTextToUnbrokenWords = (
   text: string,

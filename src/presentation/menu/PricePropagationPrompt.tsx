@@ -2,7 +2,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { BadgeDollarSign, X } from 'lucide-react';
 import type { MenuStyle } from '../../domain/menu/model';
-import { formatMenuPriceValue } from '../../domain/menu/price';
+import { formatMenuPrice } from '../../domain/menu/price';
 import type { PricePropagationRequest } from '../../domain/menu/pricePropagation';
 import { TimedPromptFrame } from '../common/TimedPromptFrame';
 
@@ -31,7 +31,7 @@ export const PricePropagationPrompt: React.FC<PricePropagationPromptProps> = ({
   const percent = (multiplier - 1) * 100;
   const sign = (value: number) => value < 0 ? '−' : '+';
   const percentLabel = `${sign(percent)}${Math.abs(percent).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
-  const fixedLabel = `${sign(fixed)}R$ ${formatMenuPriceValue(Math.abs(fixed), style)}`;
+  const fixedLabel = `${sign(fixed)}${formatMenuPrice(Math.abs(fixed), style)}`;
   const hasPercent = request.operations.some((operation) => operation.mode === 'percentage');
   const hasFixed = request.operations.some((operation) => operation.mode === 'integer');
   const adjustment = [hasPercent && percentLabel, hasFixed && fixedLabel].filter(Boolean).join(' e ');

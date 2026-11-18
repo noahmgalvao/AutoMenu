@@ -10,6 +10,7 @@ import { DEFAULT_MINIMUM_FONT_SIZE, isMiniFoodTexture, normalizeTextureUrl } fro
 import { resolveFontSizeLimits, resolveMenuContentSpacing, resolveMenuMargins, resolveMinimumFontSize, roundFontSize } from '../../../domain/menu/styleRules';
 import { normalizeMenuPageSetup, resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 import { StyleControls } from './StyleControls';
+import { PriceFormatSettings } from './PriceFormatSettings';
 import { updateCanvasPageSetup } from './updateCanvasPageSetup';
 import { FontSelect, MiniFoodTextureSelect, TextureSelect } from './SearchableSelects';
 import { resolveCategoryDivider, resolveProductDivider } from '../canvas/categoryDividers';
@@ -233,6 +234,9 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                     />}
                     {safeStyles.productPrice && <StyleControls 
                         label="Preços dos produtos"
+                        header={<PriceFormatSettings style={style} setStyle={setStyle}>
+                            <span className="text-xs font-bold uppercase text-slate-500">Preços dos produtos</span>
+                        </PriceFormatSettings>}
                         value={safeStyles.productPrice}
                         onChange={(s) => updateGlobalElementStyle('productPrice', s)}
                     maxFontSize={fontSizeLimits.productPrice}

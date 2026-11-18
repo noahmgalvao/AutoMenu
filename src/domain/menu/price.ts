@@ -2,6 +2,32 @@ import type { MenuStyle, PriceDecimalPlaces, PriceDecimalSeparator } from './mod
 
 export const DEFAULT_PRICE_DECIMAL_PLACES: PriceDecimalPlaces = 2;
 export const DEFAULT_PRICE_DECIMAL_SEPARATOR: PriceDecimalSeparator = ',';
+export const PRICE_CURRENCIES = [
+  ['R$', 'Real brasileiro'],
+  ['$', 'Cifrão'],
+  ['US$', 'Dólar americano'],
+  ['€', 'Euro'],
+  ['£', 'Libra esterlina'],
+  ['¥', 'Iene ou yuan'],
+  ['CA$', 'Dólar canadense'],
+  ['A$', 'Dólar australiano'],
+  ['CHF', 'Franco suíço'],
+  ['AR$', 'Peso argentino'],
+  ['MX$', 'Peso mexicano'],
+  ['$U', 'Peso uruguaio'],
+  ['₲', 'Guarani'],
+  ['S/', 'Sol peruano'],
+  ['₩', 'Won sul-coreano'],
+  ['₹', 'Rupia indiana'],
+] as const;
+
+export type MenuPriceFormat = Pick<MenuStyle, 'priceDecimalPlaces' | 'priceDecimalSeparator' | 'priceCurrencySymbol' | 'showCurrencySymbol'>;
+
+export const resolvePriceCurrencySymbol = (value: unknown) =>
+  PRICE_CURRENCIES.find(([symbol]) => symbol === value)?.[0] ?? PRICE_CURRENCIES[0][0];
+
+export const getMenuPriceSymbol = (style?: MenuPriceFormat) =>
+  style?.showCurrencySymbol === false ? '' : resolvePriceCurrencySymbol(style?.priceCurrencySymbol);
 
 export const roundPrice = (value: unknown): number => {
   const numeric = Number(value);
@@ -37,3 +63,6 @@ export const formatMenuPriceValue = (
   const formatted = roundPrice(value).toFixed(decimalPlaces);
   return decimalSeparator === ',' ? formatted.replace('.', ',') : formatted;
 };
+
+export const formatMenuPrice = (value: unknown, style?: MenuPriceFormat) =>
+  [getMenuPriceSymbol(style), formatMenuPriceValue(value, style)].filter(Boolean).join(' ');

@@ -6,6 +6,7 @@ import { calculatePagination, finalizeMenuPages } from '../../../domain/menu/men
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 import { MenuPage } from '../canvas/MenuPage';
 import { DynamicFontLoader } from '../canvas/MenuPreview';
+import { useResponsivePrices } from '../canvas/useResponsivePrices';
 
 const sampleImage = (base: string, topping: string, herb: string) =>
   'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
@@ -62,6 +63,7 @@ export const TemplatePreviewSurface = memo(function TemplatePreviewSurface({
   }, [content, style, groupedProductsBase, sortedCategoriesBase, splitCategoryAcrossPages]);
   const { widthPx, heightPx } = resolveMenuPageDimensions(style);
   const stage = useRef<HTMLDivElement>(null);
+  useResponsivePrices(stage, style);
   const [scale, setScale] = useState(0);
   const [pageIndex, setPageIndex] = useState(0);
   const visibleIndex = Math.min(pageIndex, pages.length - 1);

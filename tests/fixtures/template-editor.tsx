@@ -27,6 +27,7 @@ function Fixture() {
   const params = new URLSearchParams(location.search);
   const photoMode = params.get('photos');
   const defaultFields = params.has('default-fields');
+  const priceFlow = params.has('price-flow');
   const splitCategory = params.has('split-category');
   const [history, setHistory] = useState<MenuStyle[]>(() => !photoMode ? [
     params.has('added-image') ? {
@@ -36,7 +37,15 @@ function Fixture() {
       ],
     } : initial,
   ] : [{
-    ...initial, showImages: !splitCategory,
+    ...initial, showImages: !splitCategory && !priceFlow,
+    ...(priceFlow ? {
+      productDividerStyle: 'dashed',
+      elementStyles: {
+        ...initial.elementStyles,
+        productName: { fontFamily: 'Arial', fontSize: 20 },
+        productPrice: { fontFamily: 'Arial', fontSize: 28 },
+      },
+    } : {}),
     layoutMode: photoMode === 'list' ? 'list' : 'cards',
     columnCount: photoMode === 'list' || params.get('cols') === '1' ? 1 : params.get('cols') === '2' ? 2 : 3,
     categoryColumnCount: params.get('lanes') === '3' ? 3 : params.get('lanes') === '2' ? 2 : initial.categoryColumnCount,

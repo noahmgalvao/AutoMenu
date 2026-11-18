@@ -19,6 +19,8 @@ type InlineStyleToolbarProps = {
     header?: React.ReactNode;
     compact?: boolean;
     onAdjustPrice?: (direction: 1 | -1, amount: number, mode: PriceAdjustmentMode) => void;
+    priceFormatHeader?: React.ReactNode;
+    priceAdjustmentCurrency?: string;
     fallbackFontFamily?: string;
     decoration?: (formatButtons: React.ReactNode, onGroupBorderPanelChange: (open: boolean) => void) => React.ReactNode;
     borderOffset?: number;
@@ -27,7 +29,7 @@ type InlineStyleToolbarProps = {
     | { value?: never; onChange?: never; children: React.ReactNode }
 );
 
-export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, positionTargetElementId, value, onChange, onDismiss, dismissOnClickInCanvas = false, controls = 'all', maxFontSize, minFontSize, header, compact = false, onAdjustPrice, fallbackFontFamily, decoration, borderOffset, children }) => {
+export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, positionTargetElementId, value, onChange, onDismiss, dismissOnClickInCanvas = false, controls = 'all', maxFontSize, minFontSize, header, compact = false, onAdjustPrice, priceFormatHeader, priceAdjustmentCurrency, fallbackFontFamily, decoration, borderOffset, children }) => {
     const toolbarRef = useRef<HTMLDivElement>(null);
     const contentRef = useRef<HTMLDivElement>(null);
     const [position, setPosition] = useState<React.CSSProperties>({ left: 8, top: 8, width: 270 });
@@ -236,7 +238,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
             })()}
             {onAdjustPrice && (
                 <div className="mt-2 border-t border-slate-100 pt-2">
-                    <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Alterar valor</div>
+                    <div className="mb-1.5 text-[10px] font-semibold text-slate-600">{priceFormatHeader || 'Alterar valor'}</div>
                     <div className="grid grid-cols-[2rem_minmax(0,1fr)_4.5rem_2rem] items-center gap-1">
                         <button
                             type="button"
@@ -265,7 +267,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                                 aria-label="Tipo do reajuste"
                             >
                                 <option value="percentage">%</option>
-                                <option value="integer">R$</option>
+                                <option value="integer">{priceAdjustmentCurrency || 'Valor'}</option>
                             </select>
                             <ChevronDown size={11} className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400" />
                         </label>

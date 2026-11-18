@@ -8,6 +8,7 @@ interface ImportToolsProps {
   bulkPercentage: number | string;
   setBulkPercentage: (value: string) => void;
   bulkAdjustmentMode: 'percentage' | 'integer';
+  currencySymbol: string;
   setBulkAdjustmentMode: (value: 'percentage' | 'integer') => void;
   handleBulkAdjust: (direction: 1 | -1) => void;
   setShowInsights: (show: boolean) => void;
@@ -22,6 +23,7 @@ export const ImportTools: React.FC<ImportToolsProps> = ({
   bulkPercentage,
   setBulkPercentage,
   bulkAdjustmentMode,
+  currencySymbol,
   setBulkAdjustmentMode,
   handleBulkAdjust,
   setShowInsights,
@@ -54,7 +56,7 @@ export const ImportTools: React.FC<ImportToolsProps> = ({
               onChange={e => setBulkPercentage(e.target.value)}
             />
             <span className="shrink-0 text-sm font-semibold text-slate-400">
-              {bulkAdjustmentMode === 'percentage' ? '%' : 'R$'}
+              {bulkAdjustmentMode === 'percentage' ? '%' : currencySymbol}
             </span>
           </div>
           <label className="relative mt-1.5 block shrink-0">

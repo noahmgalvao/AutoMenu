@@ -2,7 +2,7 @@ import type { SortOption, Product, MenuStyle } from '../../domain/menu/model';
 import type { WorkspaceBootstrapData, MenuEditorState } from '../../domain/workspace/model';
 import { PRESET_TEMPLATES, INITIAL_STYLE } from '../../domain/menu/defaults';
 import { FREE_TEXT_PREFIX } from '../../domain/menu/flow';
-import { roundPrice, resolvePriceDecimalPlaces, resolvePriceDecimalSeparator } from '../../domain/menu/price';
+import { roundPrice, resolvePriceCurrencySymbol, resolvePriceDecimalPlaces, resolvePriceDecimalSeparator } from '../../domain/menu/price';
 import { roundFontSize, resolveFontSizeLimits, resolveMinimumFontSize } from '../../domain/menu/styleRules';
 import { normalizeTemplateDesign } from '../../domain/templates/templateDesign';
 import { normalizeMenuPageSetup } from '../../domain/menu/pageSetup';
@@ -110,6 +110,7 @@ export const withStyleDefaults = (style: MenuStyle | null | undefined): MenuStyl
     allowSameWordBreak: source.allowSameWordBreak === true,
     priceDecimalPlaces: resolvePriceDecimalPlaces(source.priceDecimalPlaces),
     priceDecimalSeparator: resolvePriceDecimalSeparator(source.priceDecimalSeparator),
+    priceCurrencySymbol: resolvePriceCurrencySymbol(source.priceCurrencySymbol),
     showPrices: source.showPrices !== false,
     showCurrencySymbol: source.showCurrencySymbol !== false,
     showPageNumbers: source.showPageNumbers !== false,

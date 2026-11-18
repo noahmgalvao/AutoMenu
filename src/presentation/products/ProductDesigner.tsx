@@ -7,6 +7,7 @@ import { ProductList } from './ProductList';
 import { InsightsModal } from './InsightsModal';
 import { useBottomSheetDrag } from '../common/useBottomSheetDrag';
 import { FREE_TEXT_PREFIX } from '../../domain/menu/flow';
+import { getMenuPriceSymbol } from '../../domain/menu/price';
 import {
     MenuImportFlow,
     MenuImportFlowHandle,
@@ -254,6 +255,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                         bulkPercentage={bulkPercentage}
                         setBulkPercentage={setBulkPercentage}
                         bulkAdjustmentMode={bulkAdjustmentMode}
+                        currencySymbol={getMenuPriceSymbol(style)}
                         setBulkAdjustmentMode={setBulkAdjustmentMode}
                         handleBulkAdjust={handleBulkAdjust}
                         setShowInsights={setShowInsights}
@@ -267,6 +269,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                         categories={categories}
                         grouped={grouped}
                         style={style}
+                        setStyle={setStyle}
                         handlers={handlers}
                         collapsedCategories={collapsedCategories}
                         toggleCollapse={toggleCollapse}

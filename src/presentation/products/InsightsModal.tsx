@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import type { MenuStyle, Product } from '../../domain/menu/model';
 import { BarChart as BarChartIcon, X } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { formatMenuPriceValue } from '../../domain/menu/price';
+import { formatMenuPrice } from '../../domain/menu/price';
 
 interface InsightsModalProps {
   products: Product[];
@@ -36,7 +36,7 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({ products, categori
             </div>
             <div className="p-4 bg-emerald-50 rounded-lg text-center">
               <div className="text-3xl font-bold text-emerald-600">
-                {style.showCurrencySymbol !== false ? 'R$ ' : ''}{formatMenuPriceValue(products.reduce((acc, p) => acc + p.price, 0) / (products.length || 1), style)}
+                {formatMenuPrice(products.reduce((acc, p) => acc + p.price, 0) / (products.length || 1), style)}
               </div>
               <div className="text-xs text-emerald-400 uppercase font-bold mt-1">Preço médio</div>
             </div>

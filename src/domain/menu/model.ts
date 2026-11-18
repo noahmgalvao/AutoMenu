@@ -238,6 +238,7 @@ export interface MenuStyle {
   allowSameWordBreak?: boolean;
   priceDecimalPlaces?: PriceDecimalPlaces;
   priceDecimalSeparator?: PriceDecimalSeparator;
+  priceCurrencySymbol?: string;
   showPrices?: boolean;
   showCurrencySymbol?: boolean;
   showPageNumbers?: boolean;

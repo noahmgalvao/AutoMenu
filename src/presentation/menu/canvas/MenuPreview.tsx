@@ -8,6 +8,7 @@ import { FREE_TEXT_PREFIX, SAFETY_BUFFER } from '../../../domain/menu/flow';
 import { isPristineNewCategory, isPristineNewProduct } from '../../../domain/menu/pristineItems';
 import { useMenuInteractions } from '../interactions/useMenuInteractions';
 import { useReplacePlaceholderOnInput } from '../interactions/useReplacePlaceholderOnInput';
+import { useResponsivePrices } from './useResponsivePrices';
 import { NUDGE_STEP, type DraftItem, type MoveDirection, type SelectionItem } from '../interactions/types';
 import { MenuPage } from './MenuPage';
 import { getImageLayerIndexes } from '../../../domain/menu/imageLayers';
@@ -199,6 +200,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const clipboardRef = useRef<CanvasClipboard | null>(null);
     const previewRootRef = useRef<HTMLDivElement | null>(null);
     useReplacePlaceholderOnInput(previewRootRef);
+    useResponsivePrices(previewRootRef, props.style);
     const [measuredHeights, setMeasuredHeights] = useState<ReadonlyMap<string, number>>(() => new Map());
     const objectMenuRef = useRef<HTMLDivElement | null>(null);
     const lastCanvasPointRef = useRef<{ x: number; y: number } | null>(null);

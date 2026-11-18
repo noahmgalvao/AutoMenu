@@ -4,7 +4,7 @@ import { resolveMenuPageDimensions } from './pageSetup';
 import { normalizeColumnWidths } from './categoryColumns';
 import { templateHeaderExtra, templateProductImageHeight, templateCategoryExtra } from '../templates/templateDesign';
 import { FREE_TEXT_PREFIX, CATEGORY_CHUNK_GAP_PX } from './flow';
-import { formatMenuPriceValue } from './price';
+import { formatMenuPrice } from './price';
 
 const PRODUCT_GRID_GAP_PX = 24;
 
@@ -258,8 +258,7 @@ export const calculateItemHeight = (
 
         const nameCharWidth = fontSize * 0.6;
         const showPrice = style.showPrices !== false;
-        const formattedPriceLength = formatMenuPriceValue(product.price, style).length
-            + (style.showCurrencySymbol !== false ? 3 : 0);
+        const formattedPriceLength = formatMenuPrice(product.price, style).length;
         const priceColumnReserve = showPrice
             ? Math.max(36, formattedPriceLength * priceSize * 0.58) + spacing.productNameToPrice
             : 0;

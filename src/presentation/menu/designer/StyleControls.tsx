@@ -14,6 +14,7 @@ interface StyleControlsProps {
   maxFontSize?: number;
   minFontSize?: number;
   fallbackFontFamily?: string;
+  header?: React.ReactNode;
 }
 
 export const StyleControls: React.FC<StyleControlsProps> = ({ 
@@ -24,10 +25,11 @@ export const StyleControls: React.FC<StyleControlsProps> = ({
   maxFontSize,
   minFontSize,
   fallbackFontFamily,
+  header,
 }) => {
     return (
         <div className={`space-y-2 p-3 bg-slate-50 rounded-lg border border-slate-100 ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
-            <label className="text-xs font-bold text-slate-500 uppercase">{label}</label>
+            {header ?? <label className="text-xs font-bold text-slate-500 uppercase">{label}</label>}
             
             {/* Fonte e tamanho */}
             <div className="flex gap-2">

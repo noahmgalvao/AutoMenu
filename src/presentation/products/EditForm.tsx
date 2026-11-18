@@ -2,13 +2,15 @@
 import React from 'react';
 import type { MenuStyle, Product, CategoryDividerStyle } from '../../domain/menu/model';
 import { AlignCenter, AlignLeft, AlignRight, Check, ImagePlus, Loader2, X } from 'lucide-react';
-import { formatMenuPriceValue, parseAndRoundPrice } from '../../domain/menu/price';
+import { formatMenuPriceValue, getMenuPriceSymbol, parseAndRoundPrice } from '../../domain/menu/price';
+import { PriceFormatSettings } from '../menu/designer/PriceFormatSettings';
 import { CategoryDividerPicker } from '../menu/designer/CategoryDividerPicker';
 import { useReplacePlaceholderOnInput } from '../menu/interactions/useReplacePlaceholderOnInput';
 
 interface EditFormProps {
   type: 'product' | 'category';
   style: MenuStyle;
+  setStyle: React.Dispatch<React.SetStateAction<MenuStyle>>;
   formData: Partial<Product>;
   setFormData: React.Dispatch<React.SetStateAction<Partial<Product>>>;
   saveEdit: () => void;
@@ -25,6 +27,7 @@ interface EditFormProps {
 export const EditForm: React.FC<EditFormProps> = ({
   type,
   style,
+  setStyle,
   formData,
   setFormData,
   saveEdit,
@@ -39,6 +42,7 @@ export const EditForm: React.FC<EditFormProps> = ({
 }) => {
   const formRef = React.useRef<HTMLDivElement>(null);
   useReplacePlaceholderOnInput(formRef);
+  const currencySymbol = getMenuPriceSymbol(style);
   const priceInputFocusedRef = React.useRef(false);
   const priceAtFocusRef = React.useRef<number | undefined>(undefined);
   const replacePriceOnNextInputRef = React.useRef(false);
@@ -103,8 +107,9 @@ export const EditForm: React.FC<EditFormProps> = ({
             value={formData.description || ''}
             onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
           />
+          <PriceFormatSettings style={style} setStyle={setStyle}>
           <div className="flex items-center gap-2">
-            {style.showCurrencySymbol !== false && <span className="text-xs text-slate-400">R$</span>}
+            {currencySymbol && <span className="text-xs text-slate-400">{currencySymbol}</span>}
             <input 
               type="text"
               inputMode="decimal"
@@ -172,6 +177,7 @@ export const EditForm: React.FC<EditFormProps> = ({
               }}
             />
           </div>
+          </PriceFormatSettings>
           {productDividerStyle && onProductDividerStyleChange && (
             <CategoryDividerPicker
               label="Linha do produto"

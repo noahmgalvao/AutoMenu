@@ -635,7 +635,7 @@ test('category and product dividers align to the middle of the rendered titles',
   await toolbar.getByRole('combobox', { name: 'Linha do produto' }).selectOption('ornamental');
   const getCenterDifference = (node: Element) => {
     const range = document.createRange();
-    range.selectNodeContents(node.parentElement!.querySelector('[data-divider-title]')!);
+    range.selectNodeContents(node.closest('[data-product-text-row], [data-template-category]')!.querySelector('[data-divider-title]')!);
     const line = node.getBoundingClientRect();
     const text = range.getBoundingClientRect();
     return Math.abs(line.top + line.height / 2 - text.top - text.height / 2);
@@ -643,6 +643,134 @@ test('category and product dividers align to the middle of the rendered titles',
   await expect.poll(() => product.locator('[data-ornamental-divider]').evaluate(getCenterDifference)).toBeLessThan(1);
   await expect(page.locator('#product-container-2 [data-ornamental-divider]')).toBeVisible();
   await expect(page.locator('#product-container-3 [data-ornamental-divider]')).toBeVisible();
-  const categoryLine = page.locator('[data-template-category] [data-divider-title] + span').first();
+  const categoryLine = page.locator('[data-template-category] [data-divider-segment="start"]').first();
   await expect.poll(() => categoryLine.evaluate(getCenterDifference)).toBeLessThan(1);
+});
+
+for (const layout of ['photos=list&lanes=2', 'photos=cards&cols=3']) {
+  test(`a price shrinks before wrapping and the leader follows the last line (${layout})`, async ({ page }) => {
+    await page.goto(`/tests/fixtures/template-editor.html?${layout}&price-flow`);
+    const product = page.locator('#product-container-1');
+    const row = product.locator('[data-product-text-row]');
+    const prices = page.locator('[data-price-value]');
+    const price = product.locator('[data-price-value]');
+    await expect(price).toBeVisible();
+    await page.locator('[data-product-text-row]').evaluateAll(rows => {
+      rows.forEach(row => { (row as HTMLElement).style.width = '330px'; });
+    });
+    await expect(price).toHaveCSS('font-size', '28px');
+    const widths = await row.evaluate(element => {
+      const width = element.getBoundingClientRect().width;
+      const scale = width / element.clientWidth;
+      const title = element.querySelector('[data-divider-title]')!;
+      const price = element.querySelector('[data-template-price]')!;
+      const titleRange = document.createRange();
+      titleRange.selectNodeContents(title);
+      const titleWidth = titleRange.getBoundingClientRect().width / scale;
+      const priceWidth = price.getBoundingClientRect().width / scale;
+      return {
+        tight: Math.ceil(titleWidth + priceWidth * 0.82 + 10),
+        wrapped: Math.ceil(priceWidth + 14),
+      };
+    });
+    const resize = (width: number) => row.evaluate((element, width) => { element.style.width = `${width}px`; }, width);
+    await resize(widths.tight);
+    await expect.poll(() => price.evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBeLessThan(28);
+    await expect(row).not.toHaveAttribute('data-price-wrap', '');
+    const reduced = await price.evaluate(element => getComputedStyle(element).fontSize);
+    for (const other of await prices.all()) await expect(other).toHaveCSS('font-size', reduced);
+
+    await resize(widths.wrapped);
+    await expect(row).toHaveAttribute('data-price-wrap', '');
+    await expect(price).toHaveCSS('font-size', '28px');
+    await expect(row.locator('[data-divider-segment="continuation"]')).toBeVisible();
+    const samples = await row.evaluate(async element => {
+      const frames = new Set<string>();
+      const lastLine = element.querySelector('[data-divider-title]')!;
+      const start = element.querySelector('[data-divider-segment="start"]')!;
+      const continuation = element.querySelector('[data-divider-segment="continuation"]')!;
+      const priceBox = element.querySelector('[data-template-price]')!;
+      for (let index = 0; index < 20; index++) {
+        await new Promise(requestAnimationFrame);
+        const range = document.createRange();
+        range.selectNodeContents(lastLine);
+        const glyphs = Array.from(range.getClientRects());
+        const tail = glyphs[glyphs.length - 1];
+        const line = start.getBoundingClientRect();
+        const lower = continuation.getBoundingClientRect();
+        frames.add(JSON.stringify({
+          lines: glyphs.length,
+          aligned: Math.abs(line.top + line.height / 2 - tail.top - tail.height / 2) < 1,
+          afterName: line.left >= tail.right,
+          beforePrice: lower.right <= priceBox.getBoundingClientRect().left,
+        }));
+      }
+      return [...frames].map(sample => JSON.parse(sample));
+    });
+    expect(samples).toHaveLength(1);
+    expect(samples[0]).toEqual({ lines: expect.any(Number), aligned: true, afterName: true, beforePrice: true });
+    expect(samples[0].lines).toBeGreaterThan(1);
+
+    await resize(330);
+    for (const other of await prices.all()) await expect(other).toHaveCSS('font-size', '28px');
+    await resize(widths.tight);
+    await product.getByRole('heading').click();
+    await product.getByTitle('Editar produto').click();
+    await price.focus();
+    const fontSize = page.locator('[data-inline-format-toolbar]').getByRole('spinbutton').first();
+    await fontSize.fill('22');
+    await fontSize.press('Enter');
+    await resize(330);
+    for (const other of await prices.all()) await expect(other).toHaveCSS('font-size', '22px');
+  });
+}
+
+test('prices stay inside narrow cards with three product and three category columns', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=cards&cols=3&lanes=3&price-flow');
+  const price = page.locator('#product-container-1 [data-template-price]');
+  await expect(price).toHaveAttribute('data-price-stacked', '');
+  await expect(price).toHaveCSS('font-size', '15px');
+  await expect.poll(() => price.evaluate(element => {
+    const price = element.getBoundingClientRect();
+    const row = element.parentElement!.getBoundingClientRect();
+    return Math.max(0, row.left - price.left, price.right - row.right);
+  })).toBeLessThan(0.5);
+  const currency = (await price.locator('[data-price-symbol]').boundingBox())!;
+  const amount = (await price.locator('[data-price-value]').boundingBox())!;
+  expect(amount.y).toBeGreaterThan(currency.y);
+});
+
+test('price format settings apply currency and decimals to every product from the canvas toolbar', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=list');
+  const product = page.locator('#product-container-1');
+  await product.getByRole('heading').click();
+  await product.getByTitle('Editar produto').click();
+  await product.locator('[data-price-value]').focus();
+  const toolbar = page.locator('[data-inline-format-toolbar]');
+  await toolbar.getByRole('button', { name: 'Configurações de preço' }).click();
+  const format = toolbar.locator('[data-price-format-settings]');
+  await format.getByLabel('Símbolo da moeda').selectOption('$');
+  await format.getByLabel('Casas decimais').selectOption('1');
+  await format.getByLabel('Separador decimal').selectOption('.');
+  await expect(format.locator('output')).toHaveText('$ 12.5');
+  await expect(page.locator('[data-price-symbol]')).toHaveText(['$', '$', '$']);
+  await expect(page.locator('#product-price-2')).toHaveText('59.0');
+  await format.getByLabel('Símbolo da moeda').selectOption('€');
+  await expect(product.locator('[data-price-symbol]')).toHaveText('€');
+  await format.getByLabel('Símbolo da moeda').selectOption('');
+  await expect(page.locator('[data-price-symbol]')).toHaveCount(0);
+});
+
+test('the product designer edits the shared price format alongside the price', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=list&product-designer');
+  const product = page.locator('#product-container-1');
+  await product.hover();
+  await product.getByRole('button').last().click();
+  await product.getByRole('button', { name: 'Editar' }).click();
+  await product.getByRole('button', { name: 'Configurações de preço' }).click();
+  await product.getByLabel('Símbolo da moeda').selectOption('£');
+  await product.getByLabel('Casas decimais').selectOption('0');
+  await expect(product.locator('input[inputmode="decimal"]')).toHaveValue('34');
+  await product.getByRole('button', { name: 'Salvar' }).click();
+  await expect(page.locator('#product-container-2')).toContainText('£ 59');
 });

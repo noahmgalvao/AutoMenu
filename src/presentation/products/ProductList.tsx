@@ -8,7 +8,7 @@ import {
 import { EditForm } from './EditForm';
 import { resolveProductDivider } from '../menu/canvas/categoryDividers';
 import { isPristineNewCategory, isPristineNewProduct } from '../../domain/menu/pristineItems';
-import { formatMenuPriceValue } from '../../domain/menu/price';
+import { formatMenuPrice } from '../../domain/menu/price';
 
 interface PendingImageUpload {
   id: string;
@@ -64,6 +64,7 @@ interface ProductListProps {
   categories: string[];
   grouped: Record<string, Product[]>;
   style: MenuStyle;
+  setStyle: React.Dispatch<React.SetStateAction<MenuStyle>>;
   handlers: any; // Return type from useMenuInteractions
   collapsedCategories: Set<string>;
   toggleCollapse: (cat: string) => void;
@@ -98,6 +99,7 @@ export const ProductList: React.FC<ProductListProps> = ({
   categories,
   grouped,
   style,
+  setStyle,
   handlers,
   collapsedCategories,
   toggleCollapse,
@@ -190,6 +192,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                   <EditForm 
                     type="category" 
                     style={style}
+                    setStyle={setStyle}
                     autoFocus={editModeId === cat}
                     formData={{ name: cat, ...existingEdits[cat] }}
                     setFormData={update => updateExistingEdit(cat, update)}
@@ -326,6 +329,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                       <EditForm 
                         type="product" 
                         style={style}
+                        setStyle={setStyle}
                         autoFocus={editModeId === product.id}
                         formData={{ ...product, ...existingEdits[product.id] }}
                         setFormData={update => updateExistingEdit(product.id, update)}
@@ -385,7 +389,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                             <h4 className="text-sm font-medium text-slate-800 truncate">{product.name}</h4>
                             {style.showPrices !== false && (
                               <span className="text-xs font-mono font-bold text-slate-600">
-                                {style.showCurrencySymbol !== false ? 'R$ ' : ''}{formatMenuPriceValue(product.price, style)}
+                                {formatMenuPrice(product.price, style)}
                               </span>
                             )}
                           </div>
@@ -439,6 +443,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                 <EditForm 
                   type="product" 
                   style={style}
+                  setStyle={setStyle}
                   formData={formData} 
                   setFormData={setFormData} 
                   saveEdit={saveEdit} 
@@ -462,6 +467,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                 <EditForm 
                   type="category" 
                   style={style}
+                  setStyle={setStyle}
                   formData={formData} 
                   setFormData={setFormData} 
                   saveEdit={saveEdit} 

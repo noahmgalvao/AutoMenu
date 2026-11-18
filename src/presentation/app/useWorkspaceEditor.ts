@@ -7,8 +7,6 @@ import type {
   MenuContentSpacing,
   MenuMargins,
   MenuStyle,
-  PriceDecimalPlaces,
-  PriceDecimalSeparator,
   Product,
   SortOption,
 } from '../../domain/menu/model';
@@ -679,10 +677,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     productsCanChangeCategory: boolean;
     minimumFontSize: number;
     allowSameWordBreak: boolean;
-    priceDecimalPlaces: PriceDecimalPlaces;
-    priceDecimalSeparator: PriceDecimalSeparator;
     showPrices: boolean;
-    showCurrencySymbol: boolean;
     fontSizeLimits: FontSizeLimits;
     margins: MenuMargins;
     contentSpacing: MenuContentSpacing;
@@ -709,10 +704,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
         fontSizeLimits,
         minimumFontSize,
         allowSameWordBreak,
-        priceDecimalPlaces,
-        priceDecimalSeparator,
         showPrices,
-        showCurrencySymbol,
         margins,
         contentSpacing,
       } = values;
@@ -721,10 +713,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
         fontSizeLimits,
         minimumFontSize,
         allowSameWordBreak,
-        priceDecimalPlaces,
-        priceDecimalSeparator,
         showPrices,
-        showCurrencySymbol,
         margins,
         contentSpacing,
         elementStyles: Object.fromEntries(Object.entries(previous.elementStyles).map(([key, elementStyle]) => {
