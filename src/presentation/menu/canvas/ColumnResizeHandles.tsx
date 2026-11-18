@@ -22,7 +22,7 @@ export const ColumnResizeHandles: React.FC<ColumnResizeHandlesProps> = ({
         return (
             <CanvasActionGroup direction={edge} kind="resize">
                 <button type="button" data-column-resize-handle="true"
-                    className={`${canvasActionButtonClass} touch-none cursor-col-resize !border-rose-300 !text-rose-600 hover:!bg-rose-50`}
+                    className={`${canvasActionButtonClass} touch-none cursor-col-resize before:!border-rose-300 !text-rose-600 hover:before:!bg-rose-50`}
                     onPointerDown={(event) => onResizeStart(event, edge)}
                     title={`Ajustar largura da coluna pela borda ${edge === 'left' ? 'esquerda' : 'direita'}`}>
                     <GripVertical size={19} />

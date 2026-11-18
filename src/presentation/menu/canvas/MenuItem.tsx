@@ -54,6 +54,29 @@ const clearDefaultTextOnFocus = (element: HTMLElement, defaultTexts: string[]) =
     }, 0);
 };
 
+const isMenuHeadingTextHit = (event: React.MouseEvent<HTMLElement>) => {
+    const heading = event.currentTarget;
+    if (!heading.textContent?.trim()) return heading.hasAttribute('data-subtitle-placeholder');
+
+    const range = heading.ownerDocument.createRange();
+    const textNodes = heading.ownerDocument.createTreeWalker(heading, NodeFilter.SHOW_TEXT);
+    for (let node = textNodes.nextNode(); node; node = textNodes.nextNode()) {
+        range.selectNodeContents(node);
+        const isInsideText = Array.from(range.getClientRects()).some(({ left, right, top, bottom }) => (
+            right > left && event.clientX >= left && event.clientX <= right && event.clientY >= top && event.clientY <= bottom
+        ));
+        if (isInsideText) return true;
+    }
+    return false;
+};
+
+const preventHeadingFocusOutsideText = (event: React.PointerEvent<HTMLElement>) => {
+    if (isMenuHeadingTextHit(event)) return;
+    event.preventDefault();
+    const activeHeading = event.currentTarget.ownerDocument.activeElement;
+    if (activeHeading instanceof HTMLElement && activeHeading.hasAttribute('data-menu-heading')) activeHeading.blur();
+};
+
 export const MenuItem: React.FC<MenuItemProps> = ({
     item,
     idx,
@@ -277,6 +300,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             ? products.find((product) => product.image && !product.isFreeText && !style.hiddenProductIds.includes(product.id))?.image : undefined;
         const isTitleSelected = handlers.isSelected?.('menuTitle', 'menuTitle') ?? handlers.selectedId === 'menuTitle';
         const isSubtitleSelected = handlers.isSelected?.('menuSubtitle', 'menuSubtitle') ?? handlers.selectedId === 'menuSubtitle';
+        const subtitlePlaceholderAlignment = style.design?.header === 'split' ? ''
+            : subStyle.textAlign === 'left' ? 'empty:mr-auto'
+            : subStyle.textAlign === 'right' ? 'empty:ml-auto' : 'empty:mx-auto';
         
         return (
             <header 
@@ -314,8 +340,12 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     textTransform: titleStyle.textTransform,
                     marginBottom: `${showSubtitle ? (titleStyle.marginBottom ?? 10) : contentSpacing.headerToContent}px`
                 }} 
-                onContextMenu={!hasSubtitle ? (event) => handlers.openObjectMenu?.(event, { type: 'menuTitle', id: 'menuTitle' }) : undefined}
+                onPointerDown={handlers.readOnly ? undefined : preventHeadingFocusOutsideText}
+                onContextMenu={!hasSubtitle ? (event) => {
+                    if (isMenuHeadingTextHit(event)) handlers.openObjectMenu?.(event, { type: 'menuTitle', id: 'menuTitle' });
+                } : undefined}
                 onClick={(e) => {
+                    if (!isMenuHeadingTextHit(e)) return;
                     e.stopPropagation();
                     handlers.handleSelection('menuTitle', 'menuTitle', { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey });
                     handlers.setSelectedPageIndex(null);
@@ -339,7 +369,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 widthMode="parent"
                 id={handlers.readOnly ? undefined : "menu-subtitle-text"}
                 data-menu-heading="subtitle"
-                className={`opacity-90 outline-none focus:bg-blue-50/50 rounded cursor-text empty:before:pointer-events-none empty:before:opacity-50 empty:before:content-[attr(data-subtitle-placeholder)] ${isSubtitleSelected ? 'ring-2 ring-indigo-500 bg-indigo-50/20' : ''}`}
+                className={`opacity-90 outline-none focus:bg-blue-50/50 rounded cursor-text empty:before:pointer-events-none empty:before:opacity-50 empty:before:content-[attr(data-subtitle-placeholder)] ${showSubtitleDraft ? `empty:w-fit ${subtitlePlaceholderAlignment}` : ''} ${isSubtitleSelected ? 'ring-2 ring-indigo-500 bg-indigo-50/20' : ''}`}
                 style={{
                     color: `var(--automenu-preview-primary, ${subStyle.color || style.textColor})`,
                     fontFamily: subStyle.fontFamily || style.fontFamily,
@@ -352,7 +382,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     letterSpacing: subStyle.letterSpacing ? `${subStyle.letterSpacing}px` : undefined,
                     marginBottom: `${contentSpacing.headerToContent}px`
                 }}
+                onPointerDown={handlers.readOnly ? undefined : preventHeadingFocusOutsideText}
                 onClick={(e) => {
+                    if (!isMenuHeadingTextHit(e)) return;
                     e.stopPropagation();
                     handlers.handleSelection('menuSubtitle', 'menuSubtitle', { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey });
                     handlers.setSelectedPageIndex(null);

@@ -15,6 +15,33 @@ body {
   -webkit-touch-callout: none;
 }
 
+.automenu-canvas-action {
+  width: 28px;
+  height: 28px;
+}
+
+.automenu-canvas-action::before {
+  inset: 0;
+}
+
+.automenu-canvas-action > svg {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+}
+
+@media (pointer: coarse) {
+  .automenu-canvas-action {
+    width: 44px;
+    height: 44px;
+  }
+
+  .automenu-canvas-action::before {
+    inset: 8px;
+  }
+}
+
 [data-menu-print-page="true"],
 [data-page-number="true"] {
   user-select: none !important;

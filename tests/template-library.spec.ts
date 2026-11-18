@@ -251,6 +251,7 @@ test('the shape prompt dismisses outside, remembers No, and leaves background an
   await page.mouse.click(x - 45, y + height / 2);
   await expect(prompt).toHaveCount(0);
   await expect(controls).toBeVisible();
+  await expect(controls.locator(':scope > button').last()).toHaveAttribute('title', 'Remover forma');
   await releaseShape();
   await expect(prompt).toBeVisible();
   await prompt.getByRole('button', { name: 'Não', exact: true }).click();
@@ -290,9 +291,11 @@ test('an added image can use the background prompt and keeps its More options ac
   await expect(controls.getByTitle('Seleção múltipla')).toBeVisible();
   await controls.getByTitle('Mais opções').click();
   const menu = page.locator('[data-canvas-object-menu]');
+  await expect(menu.getByRole('button', { name: 'Remover imagem' })).toBeVisible();
   await menu.getByRole('button', { name: 'Usar só nesta página' }).click();
-  await controls.getByTitle('Mais opções').click();
-  await menu.getByRole('button', { name: 'Remover imagem' }).click();
+  const removeImage = controls.locator(':scope > button').last();
+  await expect(removeImage).toHaveAttribute('title', 'Remover imagem');
+  await removeImage.click();
   await expect(image).toHaveCount(0);
 });
 

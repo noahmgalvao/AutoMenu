@@ -1710,7 +1710,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                     showZoomInfo={showZoomInfo}
                 />
 
-                <div ref={tipsAnchorRef} className="absolute z-[80] flex items-start gap-2" style={{ visibility: 'hidden' }}>
+                <div ref={tipsAnchorRef} data-canvas-control-obstacle className="absolute z-[80] flex items-start gap-2" style={{ visibility: 'hidden' }}>
                     {hasVisibleTips && (
                         <button
                             type="button"
@@ -1863,7 +1863,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 </div>
 
                 {/* Undo/Redo Controls - Dynamic Positioning for Bottom Sheet */}
-                <div className={`fixed right-4 z-[70] flex gap-2 transition-all duration-300 md:absolute md:z-10 ${(isOpen || isProductDesignerOpen) ? 'bottom-[calc(var(--automenu-bottom-sheet-height,45vh)+1rem)] md:bottom-24' : 'bottom-[5.25rem] md:bottom-24'}`}>
+                <div data-canvas-control-obstacle className={`fixed right-4 z-[70] flex gap-2 transition-all duration-300 md:absolute md:z-10 ${(isOpen || isProductDesignerOpen) ? 'bottom-[calc(var(--automenu-bottom-sheet-height,45vh)+1rem)] md:bottom-24' : 'bottom-[5.25rem] md:bottom-24'}`}>
                     <button data-canvas-history-control onClick={undo} disabled={!canUndo} className={`p-2 bg-white rounded-full shadow-lg hover:bg-slate-50 text-slate-700 transition-all ${!canUndo ? 'text-slate-300 cursor-not-allowed' : ''}`} title="Desfazer"> <Undo size={16} /> </button>
                     <button data-canvas-history-control onClick={redo} disabled={!canRedo} className={`p-2 bg-white rounded-full shadow-lg hover:bg-slate-50 text-slate-700 transition-all ${!canRedo ? 'text-slate-300 cursor-not-allowed' : ''}`} title="Refazer"> <Redo size={16} /> </button>
                 </div>

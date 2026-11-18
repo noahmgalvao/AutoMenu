@@ -236,7 +236,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
         };
         const renderCategoryAddButton = (position: 'before' | 'after', direction: FlowDirection) => (
             <CanvasActionGroup direction={direction} kind="add">
-                <button type="button" className={`${canvasActionButtonClass} !border-indigo-600 !bg-indigo-600 !text-white hover:!bg-indigo-700`}
+                <button type="button" className={`${canvasActionButtonClass} before:!border-indigo-600 before:!bg-indigo-600 !text-white hover:before:!bg-indigo-700`}
                     onClick={event => handlers.handleAddClick?.(event, chunk.category, true, position)}
                     title={`Adicionar categoria ${getDirectionLabel(direction)}`}><Plus size={20} /></button>
             </CanvasActionGroup>
@@ -740,7 +740,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                                 event.stopPropagation();
                                 setFormattingShapeId((current) => current === img.id ? null : img.id);
                             }}
-                            className={`${canvasActionButtonClass} ${formattingShapeId === img.id ? '!bg-indigo-50 !text-indigo-700' : ''}`}>
+                            className={`${canvasActionButtonClass} ${formattingShapeId === img.id ? 'before:!bg-indigo-50 !text-indigo-700' : ''}`}>
                             <SlidersHorizontal size={19} />
                         </button>
                     )}
@@ -750,10 +750,15 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                             event.stopPropagation();
                             handlers.setMultiSelectMode?.(!handlers.multiSelectMode);
                         }}
-                        className={`${canvasActionButtonClass} ${handlers.multiSelectMode ? '!bg-indigo-50 !text-indigo-700' : ''}`}>
+                        className={`${canvasActionButtonClass} ${handlers.multiSelectMode ? 'before:!bg-indigo-50 !text-indigo-700' : ''}`}>
                         <CopyCheck size={19} />
                     </button>
                     <button data-open-object-menu="true" onClick={(e) => handlers.openObjectMenu?.(e, { type: 'addedImage', id: img.id })} className={canvasActionButtonClass} title="Mais opções"><MoreHorizontal size={20} /></button>
+                    <button type="button" className={`${canvasActionButtonClass} !text-red-600 hover:before:!border-red-300 hover:before:!bg-red-50`}
+                        aria-hidden={handlers.objectMenuOpen || undefined} tabIndex={handlers.objectMenuOpen ? -1 : undefined}
+                        onClick={(event) => handlers.handleRemoveImage(event, img.id)} title={img.shape ? 'Remover forma' : 'Remover imagem'}>
+                        <Trash2 size={19} />
+                    </button>
                     {img.shape && formattingShapeId === img.id && (
                         <InlineStyleToolbar compact targetElementId={`added-image-${pageIndex}-${img.id}`}
                             onDismiss={() => setFormattingShapeId(null)}>

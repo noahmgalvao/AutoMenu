@@ -1,5 +1,5 @@
 import { type FlowDirection, getDirectionLabel } from './flowControls';
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Plus, Edit3, CopyCheck, MoreHorizontal } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Plus, Edit3, CopyCheck, MoreHorizontal, Trash2 } from 'lucide-react';
 import type { Product, MenuStyle } from '../../../domain/menu/model';
 import React from 'react';
 import { resolveMinimumFontSize, resolveFontSizeLimits } from '../../../domain/menu/styleRules';
@@ -95,6 +95,7 @@ export const FreeTextResizeHandles = ({ product, style, handlers }: { product: P
                 key={`${x}:${y}`}
                 type="button"
                 data-drag-ignore="true"
+                data-free-text-resize-handle="true"
                 aria-label="Redimensionar texto"
                 title="Arraste para redimensionar"
                 className={`absolute z-[75] h-3 w-3 touch-none rounded-[3px] border border-white bg-indigo-500 shadow-sm ${position}`}
@@ -129,6 +130,7 @@ export const ProductControls = ({
 }: ProductControlsProps) => {
     const selectionType = type === 'category' ? 'category' : isFreeText ? 'freeText' : 'product';
     const selectionId = id || catName;
+    const editLabel = type === 'category' ? 'Editar categoria' : isFreeText ? 'Editar texto' : 'Editar produto';
     const isSelected = handlers.isSelected?.(selectionType, selectionId) ?? handlers.selectedId === selectionId;
     const isActive = isSelected && ((handlers.selectedItems?.length || 0) <= 1 || handlers.selectedId === selectionId);
     const flow = handlers.getFlowControlDirections?.(selectionType, selectionId) || { before: 'top', after: 'bottom' };
@@ -162,7 +164,7 @@ export const ProductControls = ({
     );
     const renderAdd = (position: 'before' | 'after', direction: FlowDirection) => (
         <CanvasActionGroup direction={direction} kind="add">
-            <button type="button" className={`${canvasActionButtonClass} !border-indigo-600 !text-white ${limitReached ? '!bg-red-500 animate-shake' : '!bg-indigo-600 hover:!bg-indigo-700'}`}
+            <button type="button" className={`${canvasActionButtonClass} before:!border-indigo-600 !text-white ${limitReached ? 'before:!bg-red-500 animate-shake' : 'before:!bg-indigo-600 hover:before:!bg-indigo-700'}`}
                 onClick={event => handlers.handleAddClick?.(event, catName, type === 'category', position, id)}
                 title={`${type === 'category' ? 'Adicionar categoria' : 'Adicionar item'} ${getDirectionLabel(direction)}`}>
                 <Plus size={20} />
@@ -195,18 +197,21 @@ export const ProductControls = ({
             )}
             {!handlers.editingId && (!isSelected || isActive) && (
                 <CanvasActionGroup direction="top" kind="quick" hoverOnly={!isActive}>
-                    {type === 'product' && !isFreeText && (
-                        <button type="button" className={`${canvasActionButtonClass} hidden md:grid`}
-                            aria-hidden={handlers.objectMenuOpen || undefined} tabIndex={handlers.objectMenuOpen ? -1 : undefined}
-                            title="Editar produto"
-                            onClick={event => handlers.startEditing(event, selectionId, `product-name-${selectionId}`)}>
-                            <Edit3 size={19} />
-                        </button>
-                    )}
-                    <button type="button" className={`${canvasActionButtonClass} ${handlers.multiSelectMode ? '!border-indigo-500 !bg-indigo-50 !text-indigo-600' : ''}`}
+                    <button type="button" className={canvasActionButtonClass}
+                        aria-hidden={handlers.objectMenuOpen || undefined} tabIndex={handlers.objectMenuOpen ? -1 : undefined}
+                        title={editLabel}
+                        onClick={event => handlers.startEditing(event, selectionId, type === 'category' ? `text-${selectionId}` : `product-name-${selectionId}`)}>
+                        <Edit3 size={19} />
+                    </button>
+                    <button type="button" className={`${canvasActionButtonClass} ${handlers.multiSelectMode ? 'before:!border-indigo-500 before:!bg-indigo-50 !text-indigo-600' : ''}`}
                         onClick={() => handlers.setMultiSelectMode?.(!handlers.multiSelectMode)}
                         aria-pressed={Boolean(handlers.multiSelectMode)} title="Seleção múltipla">
                         <CopyCheck size={19} />
+                    </button>
+                    <button type="button" className={`${canvasActionButtonClass} !text-red-600 hover:before:!border-red-300 hover:before:!bg-red-50`}
+                        aria-hidden={handlers.objectMenuOpen || undefined} tabIndex={handlers.objectMenuOpen ? -1 : undefined}
+                        onClick={() => handlers.removeCanvasObject?.({ type: selectionType, id: selectionId })} title="Remover">
+                        <Trash2 size={19} />
                     </button>
                     <button type="button" data-open-object-menu="true" className={canvasActionButtonClass}
                         onClick={event => handlers.openObjectMenu?.(event, { type: selectionType, id: selectionId })} title="Mais opções">

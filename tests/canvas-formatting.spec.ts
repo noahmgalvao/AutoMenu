@@ -22,6 +22,34 @@ test('a cleared subtitle can be restored from the title editor', async ({ page }
   await expect(placeholder).toHaveCount(0);
 });
 
+test.describe('heading hit areas', () => {
+  test.use({ hasTouch: true });
+
+  test('title and subtitle only accept clicks and taps on text', async ({ page }) => {
+    await page.goto('/tests/fixtures/template-editor.html');
+    for (const selector of ['#menu-title-text', '#menu-subtitle-text']) {
+      const heading = page.locator(selector);
+      const points = await heading.evaluate((element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const text = range.getBoundingClientRect();
+        const block = element.getBoundingClientRect();
+        const y = (text.top + text.bottom) / 2;
+        const gapX = text.left - block.left > block.right - text.right
+          ? (text.left + block.left) / 2 : (text.right + block.right) / 2;
+        return { text: { x: (text.left + text.right) / 2, y }, gap: { x: gapX, y } };
+      });
+      await page.mouse.click(points.gap.x, points.gap.y);
+      await expect(heading).not.toBeFocused();
+      await page.touchscreen.tap(points.text.x, points.text.y);
+      await expect(heading).toBeFocused();
+      await page.touchscreen.tap(points.gap.x, points.gap.y);
+      await expect(heading).not.toBeFocused();
+      await expect(page.locator('[data-inline-format-toolbar]')).toHaveCount(0);
+    }
+  });
+});
+
 test('the border panel starts with a contour and applies sliders and numbers immediately', async ({ page }) => {
   await page.goto('/tests/fixtures/template-editor.html?layout');
   const freeText = page.locator('#product-container-text-a');

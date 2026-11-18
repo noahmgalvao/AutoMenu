@@ -84,10 +84,16 @@ test.describe('touch dragging', () => {
 test('a narrow free text keeps its selection buttons in a single row', async ({ page }) => {
   const source = page.locator('#product-container-text-a');
   await source.click();
-  const buttons = source.getByRole('button', { name: /Seleção múltipla|Mais opções/ });
-  await expect(buttons).toHaveCount(2);
+  const buttons = source.getByRole('button', { name: /Editar texto|Seleção múltipla|Remover|Mais opções/ });
+  await expect.poll(() => buttons.evaluateAll(elements => elements.map(element => element.getAttribute('title'))))
+    .toEqual(['Editar texto', 'Seleção múltipla', 'Remover', 'Mais opções']);
   const rows = await buttons.evaluateAll((elements) => elements.map((element) => Math.round(element.getBoundingClientRect().top)));
   expect(new Set(rows).size).toBe(1);
+  await source.getByTitle('Editar texto').click();
+  await expect(page.locator('#product-name-text-a')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await source.getByTitle('Remover', { exact: true }).click();
+  await expect(source).toHaveCount(0);
 });
 
 test('double click places free text at the page coordinate without column handles', async ({ page }) => {
@@ -179,7 +185,7 @@ test('quick controls stay in a usable row with side insertion and a separate col
     return { y: Math.round(rect.top), width: rect.width };
   }));
   expect(new Set(quickRects.map(rect => rect.y)).size).toBe(1);
-  expect(Math.min(...quickRects.map(rect => rect.width))).toBeGreaterThanOrEqual(38);
+  expect(quickRects.every(rect => Math.abs(rect.width - 28) <= 1)).toBe(true);
   const overlap = await product.evaluate(node => {
     const controls = [...node.querySelectorAll('[data-canvas-action-group] button')].map(button => button.getBoundingClientRect());
     const intersects = (a: DOMRect, b: DOMRect) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1
@@ -193,6 +199,79 @@ test('quick controls stay in a usable row with side insertion and a separate col
     return onText || controls.some((rect, i) => controls.slice(i + 1).some(other => intersects(rect, other)));
   });
   expect(overlap).toBe(false);
+});
+
+for (const { width, height, touch, buttonSize } of [
+  { width: 1280, height: 900, touch: false, buttonSize: 28 },
+  { width: 320, height: 720, touch: true, buttonSize: 44 },
+]) {
+  test.describe(`canvas toolbar at ${width}px`, () => {
+    test.use({ viewport: { width, height }, hasTouch: touch, isMobile: touch });
+
+    test('buttons remain compact and reachable for every column combination', async ({ page }) => {
+      for (const lanes of [1, 2, 3]) {
+        for (const cols of [1, 2, 3]) {
+          await test.step(`${lanes} category columns and ${cols} product columns`, async () => {
+            await page.goto(`/tests/fixtures/template-editor.html?photos=cards&cols=${cols}&lanes=${lanes}`);
+            const product = page.locator('#product-container-1');
+            const heading = product.getByRole('heading');
+            if (touch) await heading.tap();
+            else await heading.click();
+            const quick = product.locator('[data-canvas-action-group="quick"] > button');
+            await expect(quick).toHaveCount(4);
+            const checkButtons = () => expect.poll(() => quick.evaluateAll((buttons, targetSize) => buttons.map(button => {
+              const rect = button.getBoundingClientRect();
+              const inset = parseFloat(getComputedStyle(button, '::before').inset);
+              const hit = document.elementFromPoint(rect.left + 2, rect.top + 2);
+              return Math.abs(rect.width - targetSize) <= 1 && Math.abs(rect.height - targetSize) <= 1
+                && Math.abs(rect.width - inset * 2 - 28) <= 1 && hit === button;
+            }), buttonSize)).toEqual([true, true, true, true]);
+            await checkButtons();
+
+            if (lanes === 1 && cols === 1) {
+              const canvas = page.locator('[data-automenu-editor-canvas]');
+              const paper = canvas.locator('[data-menu-print-page]').first();
+              const paperWidth = () => paper.evaluate(element => element.getBoundingClientRect().width);
+              const initialWidth = await paperWidth();
+              await canvas.dispatchEvent('wheel', { ctrlKey: true, deltaY: 130, bubbles: true, cancelable: true });
+              await expect.poll(paperWidth).toBeLessThan(initialWidth * 0.85);
+              await checkButtons();
+            }
+
+            const more = product.getByTitle('Mais opções');
+            if (touch) await more.tap();
+            else await more.click();
+            await expect(page.locator('[data-canvas-object-menu]')).toBeVisible();
+          });
+        }
+      }
+    });
+  });
+}
+
+test.describe('shape toolbar on a narrow touchscreen', () => {
+  test.use({ viewport: { width: 280, height: 720 }, hasTouch: true, isMobile: true });
+
+  test('wraps buttons without shrinking or clipping their touch targets', async ({ page }) => {
+    await page.goto('/tests/fixtures/template-editor.html');
+    await page.getByRole('button', { name: 'Adicionar forma' }).tap();
+    await page.getByRole('button', { name: 'Inserir forma' }).tap();
+    const buttons = page.locator('[data-object-page-index] > button');
+    await expect(buttons).toHaveCount(6);
+    const buttonLayout = () => buttons.evaluateAll(elements => {
+      const rects = elements.map(element => element.getBoundingClientRect());
+      return {
+        rows: new Set(rects.map(rect => Math.round(rect.top))).size,
+        reachable: rects.every((rect, index) => Math.abs(rect.width - 44) <= 1 && rect.left >= 0 && rect.right <= innerWidth
+          && document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2) === elements[index]),
+      };
+    });
+    await expect.poll(buttonLayout).toEqual({ rows: 2, reachable: true });
+    await page.setViewportSize({ width: 430, height: 720 });
+    await expect.poll(buttonLayout).toEqual({ rows: 1, reachable: true });
+    await page.getByTitle('Remover forma', { exact: true }).tap();
+    await expect(page.getByAltText('Forma adicionada')).toHaveCount(0);
+  });
 });
 
 test('a fast drag across detached text at the top swaps the category into its place', async ({ page }) => {

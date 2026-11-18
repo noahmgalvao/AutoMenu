@@ -19,7 +19,7 @@ export const ZoomControls: React.FC<ZoomControlsProps> = ({ scale, updateZoom, s
         </div>
         
         {/* Zoom Buttons */}
-        <div className="absolute top-20 right-4 z-10 hidden gap-2 md:flex">
+        <div data-canvas-control-obstacle className="absolute top-20 right-4 z-10 hidden gap-2 md:flex">
             <button onClick={() => updateZoom(-0.1)} className="p-2 bg-white rounded-full shadow-lg hover:bg-slate-50 text-slate-700"> <ZoomOut size={16} /> </button>
             <button onClick={() => updateZoom(0.1)} className="p-2 bg-white rounded-full shadow-lg hover:bg-slate-50 text-slate-700"> <ZoomIn size={16} /> </button>
         </div>

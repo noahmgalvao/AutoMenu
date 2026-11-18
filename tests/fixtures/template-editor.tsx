@@ -31,7 +31,7 @@ function Fixture() {
   ] : [{
     ...initial, showImages: true,
     layoutMode: photoMode === 'list' ? 'list' : 'cards',
-    columnCount: photoMode === 'list' ? 1 : params.get('cols') === '2' ? 2 : 3,
+    columnCount: photoMode === 'list' || params.get('cols') === '1' ? 1 : params.get('cols') === '2' ? 2 : 3,
     categoryColumnCount: params.get('lanes') === '3' ? 3 : params.get('lanes') === '2' ? 2 : initial.categoryColumnCount,
     pageSetup: params.has('landscape') ? { ...initial.pageSetup!, orientation: 'landscape' } : initial.pageSetup,
     design: {

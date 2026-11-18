@@ -2147,6 +2147,10 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         return handled;
     }, [buildClipboardItems, copyFormatting, copyItems, deleteObjectItems, duplicateClipboardItems, getActiveObjectItems, hideObjectItems, layerObjectItems, pasteClipboard, pasteFormattingClipboard]);
 
+    (handlers as typeof handlers & { removeCanvasObject: (item: ObjectSelectionItem) => void }).removeCanvasObject = (item) => {
+        void runObjectAction('delete', item);
+    };
+
     useEffect(() => {
         if (readOnly) return;
         if (props.externalAction?.type !== 'APPEND_FREE_TEXT') return;
