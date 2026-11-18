@@ -8,6 +8,7 @@ import { useMenuInteractions } from '../hooks/useMenuInteractions';
 import { NUDGE_STEP, type DraftItem, type MoveDirection, type SelectionItem } from '../hooks/interactions/types';
 import { MenuPage } from './MenuPage';
 import { getImageLayerIndexes } from '../utils/imageLayers';
+import { getCanvasViewportFocus } from '../utils/canvasViewport';
 import { toggleBackgroundLayer } from '../utils/canvasShapes';
 import type { FlowDirection } from '../utils/flowControls';
 import { getCollisionSafeFreeTextTop } from '../hooks/interactions/freeTextMovement';
@@ -212,6 +213,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const [clipboardVersion, setClipboardVersion] = useState(0);
     const [nativeClipboardAvailable, setNativeClipboardAvailable] = useState(false);
     const [objectMenu, setObjectMenu] = useState<ObjectMenuState | null>(null);
+    (handlers as any).objectMenuOpen = Boolean(objectMenu);
     const [objectMenuPosition, setObjectMenuPosition] = useState<{ left: number; top: number } | null>(null);
     const [marqueeRect, setMarqueeRect] = useState<MarqueeRect | null>(null);
 
@@ -477,6 +479,17 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     }, [props.onProductEditEnd]);
 
     useEffect(() => {
+        if (readOnly) return;
+        const closeProductEditor = () => {
+            if (!focusedProductRef.current) return;
+            handlers.setEditingId(null);
+            handlers.setFormattingTarget(null);
+        };
+        document.addEventListener('automenu:close-product-editor', closeProductEditor);
+        return () => document.removeEventListener('automenu:close-product-editor', closeProductEditor);
+    }, [handlers.setEditingId, handlers.setFormattingTarget, readOnly]);
+
+    useEffect(() => {
         if (!objectMenu) return;
 
         const closeMenuIfOutside = (event: PointerEvent | MouseEvent) => {
@@ -586,7 +599,8 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         );
     }, [products, props.splitCategoryAcrossPages, style, handlers.groupedProducts, handlers.sortedCategories, handlers.liveCategoryPageAssignments, handlers.liveCategoryPositions, measuredHeights]);
 
-    const pages = useMemo(() => finalizeMenuPages(basePages, style), [basePages, style]);
+    const pages = useMemo(() => finalizeMenuPages(basePages, handlers.liveCategoryPositions
+        ? { ...style, categoryPositions: handlers.liveCategoryPositions } : style), [basePages, handlers.liveCategoryPositions, style]);
 
     React.useLayoutEffect(() => {
         const root = previewRootRef.current;
@@ -684,11 +698,45 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             });
         });
 
-        return (type: 'category' | 'product' | 'freeText', id: string) => {
+        return (type: 'category' | 'product' | 'freeText', id: string, adding = false) => {
             if (type === 'category') {
                 const current = categoryPositions.get(id);
                 const categoryOrder = handlers.sortedCategories.filter((category: string) => categoryPositions.has(category));
                 const index = categoryOrder.indexOf(id);
+                if (adding && index >= 0 && (style.categoryColumnCount || 1) > 1) {
+                    let categoryNumber = 100;
+                    while (handlers.groupedProducts[`Nova categoria ${categoryNumber}`]) categoryNumber++;
+                    const newCategory = `Nova categoria ${categoryNumber}`;
+                    const item: Product = { id: newCategory, name: 'Novo item', description: 'Descrição', category: newCategory, price: 0 };
+                    const assignments = {
+                        ...Object.fromEntries(Object.entries(style.categoryPositions || {}).map(([category, position]) => (
+                            [category, { pageIndex: position.pageIndex, columnIndex: position.columnIndex }]
+                        ))),
+                        ...style.categoryPlacements,
+                    };
+                    const predict = (position: 'before' | 'after'): FlowDirection => {
+                        const order = [...handlers.sortedCategories] as string[];
+                        order.splice(order.indexOf(id) + (position === 'after' ? 1 : 0), 0, newCategory);
+                        const result = calculatePagination(
+                            [...products, item], style, { ...handlers.groupedProducts, [newCategory]: [item] }, order,
+                            Object.keys(assignments).length ? assignments : null, {
+                                splitCategoryAcrossPages: props.splitCategoryAcrossPages, measuredHeights,
+                            },
+                        );
+                        const find = (category: string) => {
+                            for (const [pageIndex, page] of result.entries()) {
+                                for (const column of page.columns) {
+                                    const rowIndex = column.chunks.findIndex(chunk => chunk.startsCategory && chunk.category === category);
+                                    if (rowIndex !== -1) return { pageIndex, columnIndex: column.columnIndex, rowIndex, subColumnIndex: 0 };
+                                }
+                            }
+                        };
+                        const anchor = find(id);
+                        const inserted = find(newCategory);
+                        return anchor && inserted ? getDirectionBetween(anchor, inserted) : position === 'before' ? 'top' : 'bottom';
+                    };
+                    return { before: predict('before'), after: predict('after') };
+                }
                 const previous = index > 0 ? categoryPositions.get(categoryOrder[index - 1]) : undefined;
                 const next = index >= 0 ? categoryPositions.get(categoryOrder[index + 1]) : undefined;
 
@@ -712,15 +760,22 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             const expectedAfter: FlowDirection = current && productColumnCount > 1 && current.subColumnIndex < productColumnCount - 1
                 ? 'right'
                 : 'bottom';
+            if (adding && current && productColumnCount > 1) {
+                return {
+                    before: current.subColumnIndex > 0 || !previous ? 'left' : getDirectionBetween(current, previous),
+                    after: expectedAfter === 'right' || !next ? expectedAfter : getDirectionBetween(current, next),
+                };
+            }
 
             return {
                 before: current && previous ? getDirectionBetween(current, previous) : 'top',
                 after: current && next ? getDirectionBetween(current, next) : expectedAfter,
             };
         };
-    }, [handlers.groupedProducts, handlers.sortedCategories, pages, products, style.columnCount]);
+    }, [handlers.groupedProducts, handlers.sortedCategories, measuredHeights, pages, products, props.splitCategoryAcrossPages, style]);
 
     (handlers as any).getFlowControlDirections = getFlowControlDirections;
+    (handlers as any).getAddControlDirections = (type: 'category' | 'product' | 'freeText', id: string) => getFlowControlDirections(type, id, true);
 
     (handlers as any).handleInlineStyleChange = (target: any, newStyle: ElementStyle) => {
         const nextFontSize = Number(newStyle.fontSize);
@@ -841,7 +896,6 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
             if (pageToDelete.blankPageId) {
                 blankPageIdsToDelete.add(pageToDelete.blankPageId);
-                return;
             }
 
             (pageToDelete.flatItems || []).forEach((item: any) => {
@@ -1194,8 +1248,8 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         }
     };
 
-    const getFreeTextPlacementFromPoint = useCallback((point: { x: number; y: number } | null): DraftItem | null => {
-        const pageEls = Array.from(document.querySelectorAll<HTMLElement>('[data-menu-print-page="true"][data-page-index]'));
+    const getFreeTextPlacementFromPoint = useCallback((point: { x: number; y: number } | null, shiftExistingTexts = true): DraftItem | null => {
+        const pageEls = Array.from(previewRootRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"][data-page-index]') || []);
         if (pageEls.length === 0) return null;
 
         const getRectDistance = (rect: DOMRect) => {
@@ -1289,7 +1343,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         let rippleClientTop: number | null = null;
         let firstShiftedProductId: string | null = null;
         let freeTextPositionUpdates: DraftItem['freeTextPositionUpdates'];
-        if (overlappingFreeTexts.length > 0 && !hasNonFreeTextCollision) {
+        if (shiftExistingTexts && overlappingFreeTexts.length > 0 && !hasNonFreeTextCollision) {
             const updates: NonNullable<DraftItem['freeTextPositionUpdates']> = {};
             let cursorY = ((desiredClientTop - pageRect.top) / currentScale) + 40 + NUDGE_STEP;
             let targetPageIndex = pageIndex;
@@ -1750,6 +1804,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                         pageIndex: placement.pageIndex,
                         columnIndex: placement.columnIndex,
                         y: newItemTop,
+                        pageX: placement.pageX,
                     },
                 },
                 name: 'Custom',
@@ -2097,19 +2152,28 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         if (handledExternalActionIdRef.current === props.externalAction.id) return;
         handledExternalActionIdRef.current = props.externalAction.id;
 
-        window.setTimeout(() => {
-            insertFreeTextProduct({
-                id: '',
-                name: 'Novo texto',
-                description: '',
-                price: 0,
-                category: '',
-                isFreeText: true,
-            }, getFreeTextPlacementFromPoint(lastCanvasPointRef.current)
-                || getFreeTextPlacementBelowSelection()
-                || getLastFreeTextPlacement());
-        }, 0);
-    }, [getLastFreeTextPlacement, getFreeTextPlacementBelowSelection, getFreeTextPlacementFromPoint, insertFreeTextProduct, props.externalAction, readOnly]);
+        const focus = getCanvasViewportFocus(previewRootRef.current?.closest<HTMLElement>('[data-automenu-editor-canvas]'));
+        const nearby = focus ? getFreeTextPlacementFromPoint(focus.point, false) : getLastFreeTextPlacement();
+        const placement = focus ? {
+            pageIndex: focus.pageIndex,
+            columnIndex: nearby?.columnIndex ?? focus.columnIndex,
+            top: nearby && nearby.top >= focus.visibleTop && nearby.top + 26 <= focus.visibleBottom
+                ? nearby.top : clamp(focus.y - 14, 0, pageDimensions.heightPx - 32),
+            pageX: clamp(focus.x - 48, 0, pageDimensions.widthPx - 96),
+            floorId: nearby?.floorId ?? null,
+            floorBottom: nearby?.floorBottom ?? 0,
+            ceilingId: nearby?.ceilingId ?? null,
+            ceilingTop: nearby?.ceilingTop ?? pageDimensions.heightPx,
+        } : nearby;
+        insertFreeTextProduct({
+            id: '',
+            name: 'Novo texto',
+            description: '',
+            price: 0,
+            category: '',
+            isFreeText: true,
+        }, placement);
+    }, [getLastFreeTextPlacement, getFreeTextPlacementFromPoint, insertFreeTextProduct, pageDimensions.heightPx, pageDimensions.widthPx, props.externalAction, readOnly]);
 
     const openObjectMenu = useCallback((event: React.MouseEvent, item: CanvasContextMenuItem) => {
         event.preventDefault();

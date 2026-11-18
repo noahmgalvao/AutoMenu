@@ -49,6 +49,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
             if (target.closest<HTMLElement>('[data-inline-format-target]')?.dataset.inlineFormatTarget === targetElementId) return;
             const editedElement = document.getElementById(targetElementId);
             const editedProduct = editedElement?.closest('[data-drag-type="product"]');
+            if (editedProduct && target.closest('[data-canvas-history-control]')) return;
             if (editedProduct instanceof HTMLElement
                 && target.closest<HTMLElement>('[data-product-image-surface]')?.dataset.productImageSurface === editedProduct.dataset.dragId) return;
             const editedHeader = editedElement?.closest('[data-template-header]');
@@ -135,6 +136,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
             style={position}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
         >
           <div ref={contentRef}>
             {header && (

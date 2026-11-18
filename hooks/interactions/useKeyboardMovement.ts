@@ -5,9 +5,8 @@ import { getCollisionSafeFreeTextTop, moveFreeTextOneStep } from './freeTextMove
 import { resolveMenuPageDimensions } from '../../utils/pageSetup';
 
 const isCanvasObjectOrControlTarget = (target: EventTarget | null, pageEl: HTMLElement) => {
-    if (!(target instanceof HTMLElement)) return false;
+    if (!(target instanceof Element) || !pageEl.contains(target)) return true;
     if (target === pageEl) return false;
-    if (target.closest('[data-canvas-background-layer="true"]')) return false;
 
     return Boolean(target.closest([
         'button',

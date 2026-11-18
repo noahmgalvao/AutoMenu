@@ -82,27 +82,9 @@ body {
   hyphens: none !important;
 }
 
-.automenu-text-limit-exceeded {
-  background-color: rgb(254 242 242) !important;
-  box-shadow: 0 0 0 2px rgb(239 68 68) !important;
-  color: rgb(185 28 28) !important;
-}
-
-.automenu-character-limit-message {
-  position: absolute;
-  left: 50%;
-  top: calc(100% + 4px);
-  z-index: 10030;
-  transform: translateX(-50%);
-  white-space: nowrap;
-  border-radius: 6px;
-  background: rgb(254 242 242);
-  padding: 3px 6px;
-  color: rgb(185 28 28);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1.2;
-  box-shadow: 0 2px 8px rgb(127 29 29 / 0.2);
+.automenu-word-wrap {
+  overflow-wrap: anywhere !important;
+  white-space: pre-wrap !important;
 }
 
 .automenu-limit-feedback {

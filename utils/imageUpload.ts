@@ -45,22 +45,24 @@ export const optimizeImageForUpload = async (file: File, maxDimension = 1400): P
   }
 };
 
-export const preloadImage = (src: string) => new Promise<void>((resolve) => {
+export const preloadImage = (src: string) => new Promise<{ width: number; height: number } | undefined>((resolve) => {
   if (!src) {
-    resolve();
+    resolve(undefined);
     return;
   }
 
   const image = new Image();
   let settled = false;
+  let timeout: number;
   const finish = () => {
     if (settled) return;
     settled = true;
-    resolve();
+    window.clearTimeout(timeout);
+    resolve(image.naturalWidth && image.naturalHeight ? { width: image.naturalWidth, height: image.naturalHeight } : undefined);
   };
   image.onload = finish;
   image.onerror = finish;
   image.decoding = 'async';
+  timeout = window.setTimeout(finish, 5000);
   image.src = src;
-  window.setTimeout(finish, 5000);
 });

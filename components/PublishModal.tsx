@@ -128,7 +128,7 @@ export const PublishModal: React.FC<PublishModalProps> = ({
           {hasPendingChanges && (
             <div className="rounded-2xl border border-red-300 bg-red-50 p-3.5 text-red-800 flex items-start gap-3">
               <AlertCircle size={19} className="mt-0.5 shrink-0" />
-              <div><p className="text-sm font-bold">Link desatualizado</p><p className="mt-0.5 text-xs leading-relaxed">As alterações ainda não estão no cardápio virtual. Publique novamente para sincronizar.</p></div>
+              <div><p className="text-sm font-bold">Link desatualizado</p><p className="mt-0.5 text-xs leading-relaxed">Publique novamente para mostrar as alterações no cardápio virtual.</p></div>
             </div>
           )}
 

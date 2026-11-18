@@ -104,6 +104,86 @@ test('queued favorites sync after reconnect without editing the menu', async ({ 
   await expect(page.getByTestId('editor-state')).toHaveAttribute('data-edits','0');
 });
 
+test('favorites survive a reload during a service failure and save when it recovers', async ({ page }) => {
+  let available = false;
+  const saved = new Set<string>();
+  await page.route('**/rest/v1/template_favorites*', async route => {
+    if (!available) return route.fulfill({ status: 503, json: { message: 'Temporarily unavailable' } });
+    if (route.request().method() === 'POST') saved.add(route.request().postDataJSON().template_id);
+    return route.fulfill({ json: [...saved].map(template_id => ({ template_id })) });
+  });
+  await page.reload();
+  await page.getByRole('button', { name: 'Minimal Editorial', exact: true }).click();
+  const favorite = page.locator('[data-template-option="moderno-limpo"]').getByRole('button', { name: /favoritos/i });
+  await favorite.click();
+  await expect(favorite).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByText(/sincroniza|pendente/i)).toHaveCount(0);
+  await page.reload();
+  await page.getByRole('button', { name: 'Minimal Editorial', exact: true }).click();
+  await expect(favorite).toHaveAttribute('aria-pressed', 'true');
+  available = true;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect.poll(() => saved.has('moderno-limpo')).toBe(true);
+});
+
+test('canvas colors come first and recently picked colors are ordered without duplicates', async ({ page }) => {
+  await page.getByRole('button', { name: 'Cor de fundo', exact: true }).click();
+  const picker = page.getByRole('dialog', { name: 'Cor de fundo' });
+  const hex = picker.getByRole('textbox', { name: 'Valor HEX' });
+  const setColor = async (color: string) => {
+    await hex.fill(color);
+    await hex.press('Enter');
+    await expect(picker.getByRole('group', { name: 'Cores do cardápio' }).getByRole('button', { name: color })).toBeVisible();
+  };
+  for (const color of ['#117abc', '#784edd', '#c54637', '#117abc', '#234856']) await setColor(color);
+  const recent = picker.getByRole('group', { name: 'Cores recentes' });
+  const order = await recent.getByRole('button').evaluateAll(nodes => nodes.map(node => node.getAttribute('aria-label')));
+  expect(order.slice(0, 3)).toEqual(['#117abc', '#c54637', '#784edd']);
+  await expect(recent.getByRole('button', { name: '#234856' })).toHaveCount(0);
+  await expect(picker.getByText('Cores usadas')).toHaveCount(0);
+});
+
+test('adding a shape, free text and an image uses the page in view', async ({ page }) => {
+  await page.goto(`${url}?photos=list`);
+  const canvas = page.locator('[data-automenu-editor-canvas]');
+  const pages = canvas.locator('[data-menu-print-page]');
+  await pages.first().dispatchEvent('click');
+  await page.getByTitle('Adicionar página depois').click();
+  await expect(pages).toHaveCount(2);
+  await pages.last().scrollIntoViewIfNeeded();
+  await canvas.evaluate(node => {
+    const target = node.querySelectorAll('[data-menu-print-page]')[1].getBoundingClientRect();
+    const viewport = node.getBoundingClientRect();
+    node.scrollLeft += target.left + target.width / 2 - (viewport.left + viewport.width / 2);
+  });
+  await page.getByRole('button', { name: 'Adicionar forma' }).click();
+  await page.getByRole('button', { name: 'Inserir forma' }).click();
+  await expect(pages.last().getByAltText('Forma adicionada')).toBeVisible();
+  await pages.nth(1).dispatchEvent('click');
+  await page.getByTitle('Adicionar página depois').click();
+  await expect(pages).toHaveCount(3);
+  await pages.last().scrollIntoViewIfNeeded();
+  await canvas.evaluate(node => {
+    const target = node.querySelectorAll('[data-menu-print-page]')[2].getBoundingClientRect();
+    const viewport = node.getBoundingClientRect();
+    node.scrollLeft += target.left + target.width / 2 - (viewport.left + viewport.width / 2);
+  });
+  await page.getByRole('button', { name: 'Adicionar texto', exact: true }).click();
+  await expect(pages.last().getByText('Novo texto', { exact: true })).toBeVisible();
+  await expect(pages).toHaveCount(3);
+  await expect(pages.nth(1).getByAltText('Forma adicionada')).toBeVisible();
+
+  const photo = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jBXsAAAAASUVORK5CYII=', 'base64');
+  const imageUrl = new URL('/tests/fixtures/uploaded-canvas-image.png', page.url()).href;
+  await page.route('**/storage/v1/object/menu-assets/**', route => route.fulfill({ json: { Key: 'menu-assets/canvas.png' } }));
+  await page.route('**/rest/v1/assets?*', route => route.fulfill({ json: { ...route.request().postDataJSON(), source_url: imageUrl } }));
+  await page.route(imageUrl, route => route.fulfill({ body: photo, contentType: 'image/png' }));
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Adicionar imagem', exact: true }).click();
+  await (await chooser).setFiles({ name: 'canvas.png', mimeType: 'image/png', buffer: photo });
+  await expect(pages.last().getByAltText('Imagem adicionada')).toBeVisible();
+});
+
 test('background color previews during the gesture and saves only on release', async ({ page }) => {
   const canvas = page.locator('[data-menu-print-page]').first();
   const previous = await canvas.evaluate(element => getComputedStyle(element).backgroundColor);
@@ -231,7 +311,7 @@ test('title and subtitle edit the same border and categories share their marker 
   await canvas.getByRole('heading', { name: 'Entradas', exact: true }).click();
   await page.getByRole('button', { name: 'Marcadores das categorias', exact: true }).click();
   await page.getByRole('combobox', { name: 'Marcadores das categorias', exact: true }).selectOption('number-square');
-  const markers = await canvas.locator('[data-template-category] > span[aria-hidden="true"]').allTextContents();
+  const markers = await canvas.locator('[data-template-category] [data-menu-marker]').allTextContents();
   expect(markers).toEqual(['1', '2', '3']);
 });
 

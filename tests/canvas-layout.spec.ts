@@ -165,3 +165,79 @@ test('a category stays in the available gap between positioned categories after 
   await expect(below).toHaveAttribute('data-drag-page-index', '0');
   await expect(page.locator('[data-menu-print-page="true"]')).toHaveCount(1);
 });
+
+test('quick controls stay in a usable row with side insertion and a separate column resize handle', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=cards&cols=2&lanes=2');
+  const product = page.locator('#product-container-1');
+  await product.getByRole('heading').click();
+  const quick = product.locator('[data-canvas-action-group="quick"]');
+  await expect(quick.getByRole('button').first()).toHaveAttribute('title', 'Editar produto');
+  await expect(product.getByTitle('Adicionar item à direita')).toBeVisible();
+  await expect(product.getByTitle('Ajustar largura da coluna pela borda direita')).toBeVisible();
+  const quickRects = await quick.getByRole('button').evaluateAll(nodes => nodes.map(node => {
+    const rect = node.getBoundingClientRect();
+    return { y: Math.round(rect.top), width: rect.width };
+  }));
+  expect(new Set(quickRects.map(rect => rect.y)).size).toBe(1);
+  expect(Math.min(...quickRects.map(rect => rect.width))).toBeGreaterThanOrEqual(38);
+  const overlap = await product.evaluate(node => {
+    const controls = [...node.querySelectorAll('[data-canvas-action-group] button')].map(button => button.getBoundingClientRect());
+    const intersects = (a: DOMRect, b: DOMRect) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1
+      && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
+    const handle = node.querySelector('[data-column-resize-handle]')!.getBoundingClientRect();
+    const range = document.createRange();
+    const onText = [...node.querySelectorAll('[data-word-fit]')].some(element => {
+      range.selectNodeContents(element);
+      return [...range.getClientRects()].some(rect => intersects(handle, rect));
+    });
+    return onText || controls.some((rect, i) => controls.slice(i + 1).some(other => intersects(rect, other)));
+  });
+  expect(overlap).toBe(false);
+});
+
+test('a fast drag across detached text at the top swaps the category into its place', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?layout=top-detached');
+  const category = page.locator('[data-category-chunk="Entradas"]');
+  const text = page.locator('#product-container-text-a');
+  const header = (await category.locator('[data-category-id="Entradas"]').boundingBox())!;
+  const originalText = (await text.boundingBox())!;
+  await page.mouse.move(header.x + header.width / 2, header.y + header.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(header.x + header.width / 2, originalText.y - 10);
+  await page.mouse.move(header.x + header.width / 2 + 1, originalText.y - 9);
+  await page.mouse.up();
+  await expect.poll(async () => (await category.boundingBox())!.y - (await text.boundingBox())!.y).toBeLessThan(-10);
+});
+
+test('detached text swaps with a category even when the pointer skips past the whole heading', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?layout=top-detached');
+  const category = page.locator('[data-category-chunk="Entradas"]');
+  const text = page.locator('#product-container-text-a');
+  const header = (await category.locator('[data-category-id="Entradas"]').boundingBox())!;
+  const start = (await text.boundingBox())!;
+  const x = start.x + start.width / 2;
+  const y = header.y + header.height + 8;
+  await page.mouse.move(x, start.y + start.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(x, y);
+  await page.mouse.move(x + 1, y + 1);
+  await page.mouse.up();
+  await expect.poll(async () => Math.abs((await category.boundingBox())!.y - start.y)).toBeLessThan(5);
+  await expect.poll(async () => (await text.boundingBox())!.y - (await category.boundingBox())!.y).toBeGreaterThan(10);
+});
+
+test('dragging the first free text past its category heading leaves it above the group', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?layout=top-attached');
+  const category = page.locator('[data-category-chunk="Entradas"]');
+  const source = page.locator('#product-container-text-a');
+  const header = (await category.locator('[data-category-id="Entradas"]').boundingBox())!;
+  const start = (await source.boundingBox())!;
+  const left = start.x + start.width / 2;
+  await page.mouse.move(left, start.y + start.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(left, header.y - 2);
+  await page.mouse.move(left + 1, header.y + 1);
+  await page.mouse.up();
+  await expect(source).toHaveAttribute('data-drag-group', /^ft_zone_/);
+  await expect.poll(async () => (await category.boundingBox())!.y - ((await source.boundingBox())!.y + start.height)).toBeGreaterThanOrEqual(0);
+});

@@ -99,14 +99,6 @@ function Filters({ query, setQuery, tab, setTab }: {
   </div>;
 }
 
-function CatalogStatus({ favorites }: { favorites: Favorites }) {
-  if (favorites.status === 'ready') return null;
-  return <p role="status" className="px-1 text-xs text-slate-600">
-    {favorites.status === 'loading' ? 'Carregando favoritos…' : favorites.status === 'offline' ? 'Sincronização dos favoritos pendente.' : 'Um favorito não pôde ser sincronizado.'}
-    {favorites.status !== 'loading' && <button type="button" onClick={favorites.retry} className="ml-1 font-semibold text-indigo-700 underline">Tentar novamente</button>}
-  </p>;
-}
-
 function TemplateOption({ template, active, favorites, choose, discover, gallery }: {
   template: MenuStyle; active: boolean; favorites: Favorites;
   choose: () => void; discover?: boolean; gallery?: boolean;
@@ -250,7 +242,6 @@ function Discover({ current, products, sortOption, splitCategoryAcrossPages, app
         <div className="flex min-h-0 flex-1">
           <aside className={`min-h-0 flex-col gap-2 bg-white p-3 ${gallery ? 'flex w-full' : 'hidden w-[clamp(15rem,26vw,23rem)] border-r border-slate-200 md:flex'}`} aria-label="Catálogo">
             <Filters {...{ query, setQuery, tab, setTab }} />
-            <CatalogStatus favorites={favorites} />
             <div ref={list} className={`min-h-0 flex-1 overflow-auto overscroll-contain p-1 ${gallery ? 'grid grid-cols-2 content-start gap-2 sm:grid-cols-3 lg:grid-cols-5' : 'space-y-1'}`}>
               {results.map((template) => <TemplateOption key={template.id} template={template} active={focused?.id === template.id}
                 favorites={favorites} discover gallery={gallery} choose={() => { setFocusId(template.id); if (gallery) setGallery(false); }} />)}
@@ -381,7 +372,6 @@ export function TemplatePicker(props: Props) {
     </button>
     {pickerOpen && <div id={panel} className="space-y-2 rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
       <Filters {...{ query, setQuery, tab, setTab }} />
-      <CatalogStatus favorites={favorites} />
       <div className="max-h-64 space-y-1 overflow-auto overscroll-contain">
         {results.map((template) => <TemplateOption key={template.id} template={template} active={currentId === template.id}
           favorites={favorites} choose={() => { applyTemplate(template); setPickerOpen(false); trigger.current?.focus(); }} />)}

@@ -84,30 +84,33 @@ export const fitTextToUnbrokenWords = (
   return { fontSize: fittedSize, fits: widthAtMinimum <= safeWidth };
 };
 
-const getElementAvailableWidth = (element: HTMLElement) => {
-  const widthInset = Math.max(0, Number(element.dataset.wordFitWidthInset) || 0);
-  const withInset = (width: number) => Math.max(1, width - widthInset);
-  const containerSelector = element.dataset.wordFitContainer;
-  if (containerSelector) {
-    const container = element.closest<HTMLElement>(containerSelector);
-    if (container) return withInset(container.clientWidth);
-  }
+export const getWordFitWidthContainer = (element: HTMLElement) => {
+  const selector = element.dataset.wordFitContainer;
+  const explicitContainer = selector && element.closest<HTMLElement>(selector);
+  if (explicitContainer) return explicitContainer;
+  return element.dataset.wordFitWidthMode === 'self' ? element : element.parentElement || element;
+};
 
+export const getElementAvailableWidth = (element: HTMLElement) => {
+  const widthInset = Math.max(0, Number(element.dataset.wordFitWidthInset) || 0);
+  const container = getWordFitWidthContainer(element);
+  const computed = getComputedStyle(container);
+  const width = container.clientWidth - (parseFloat(computed.paddingLeft) || 0) - (parseFloat(computed.paddingRight) || 0);
   const mode = element.dataset.wordFitWidthMode;
   const parent = element.parentElement;
-  if (!parent || mode === 'self') return withInset(element.clientWidth);
-  if (mode === 'parent') return withInset(parent.clientWidth);
+  if (!parent || mode !== 'flex') return width > 0 ? Math.max(1, width - widthInset) : 0;
 
   const computedParent = window.getComputedStyle(parent);
   const gap = Number.parseFloat(computedParent.columnGap || computedParent.gap || '0') || 0;
-  const siblings = Array.from(parent.children).filter((child) => child !== element) as HTMLElement[];
-  const reservedWidth = siblings.reduce((total, sibling) => {
-    const computed = window.getComputedStyle(sibling);
-    const flexGrow = Number.parseFloat(computed.flexGrow || '0') || 0;
-    if (flexGrow > 0) return total + (Number.parseFloat(computed.minWidth || '0') || 0);
-    return total + sibling.offsetWidth;
+  const reservedWidth = Array.from(parent.children).reduce((total, child) => {
+    if (!(child instanceof HTMLElement) || child === element || child.hidden) return total;
+    const sibling = getComputedStyle(child);
+    if (sibling.display === 'none' || sibling.position === 'absolute' || sibling.position === 'fixed') return total;
+    const flexGrow = parseFloat(sibling.flexGrow) || 0;
+    const size = flexGrow > 0 ? parseFloat(sibling.minWidth) || 0 : child.offsetWidth;
+    return total + size + gap + (parseFloat(sibling.marginLeft) || 0) + (parseFloat(sibling.marginRight) || 0);
   }, 0);
-  return withInset(parent.clientWidth - reservedWidth - (gap * siblings.length));
+  return width > 0 ? Math.max(1, width - widthInset - reservedWidth) : 0;
 };
 
 const readElementOptions = (element: HTMLElement): MeasureOptions => ({

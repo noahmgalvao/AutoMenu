@@ -1,84 +1,94 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import {
   fetchFavorites, isPermanentFavoriteError, persistFavorite, readFavoriteCache,
   settleFavorite, visibleFavorites, writeFavoriteCache, type FavoriteCache,
 } from '../services/templateCatalogService';
 
 export function useTemplateFavorites(userId: string) {
-  const state = useRef(readFavoriteCache(userId));
-  const [cache, setCache] = useState(state.current);
-  const [status, setStatus] = useState<'loading' | 'ready' | 'offline' | 'error'>('loading');
+  const session = useMemo(() => ({
+    cache: readFavoriteCache(userId),
+    active: false,
+    loaded: false,
+    running: false,
+    refreshRequested: false,
+    retryDelay: 3000,
+    timer: undefined as number | undefined,
+  }), [userId]);
+  const [, refreshView] = useReducer((version) => version + 1, 0);
   const [announcement, setAnnouncement] = useState('');
-  const running = useRef(false);
-  const active = useRef(false);
-  const loaded = useRef(false);
-  const rejected = useRef(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  const update = useCallback((next: FavoriteCache) => {
-    state.current = next;
-    writeFavoriteCache(userId, next);
-    if (active.current) setCache(next);
-  }, [userId]);
+  const update = useCallback((cache: FavoriteCache) => {
+    session.cache = cache;
+    writeFavoriteCache(userId, cache);
+    if (session.active) refreshView();
+  }, [session, userId]);
 
   const sync = useCallback(async (refresh = false) => {
-    if (running.current || !active.current) return;
-    if (!navigator.onLine) { setStatus('offline'); return; }
-    running.current = true;
-    clearTimeout(timer.current);
+    session.refreshRequested ||= refresh;
+    if (!userId || !session.active || session.running || !navigator.onLine) return;
+    session.running = true;
+    window.clearTimeout(session.timer);
+    let needsRetry = false;
     try {
-      if (refresh || !loaded.current) {
-        const confirmed = await fetchFavorites(userId);
-        update({ ...state.current, confirmed });
-        loaded.current = true;
-      }
-      while (active.current) {
-        const entry = Object.entries(state.current.pending)[0];
-        if (!entry) break;
-        const [id, on] = entry;
+      if (session.refreshRequested || !session.loaded) {
+        session.refreshRequested = false;
         try {
-          await persistFavorite(userId, id, on);
-          update(settleFavorite(state.current, id, on, true));
-        } catch (error) {
-          if (!isPermanentFavoriteError(error)) throw error;
-          rejected.current = true;
-          update(settleFavorite(state.current, id, on, false));
-          if (active.current) setAnnouncement('O favorito não pôde ser alterado.');
+          const confirmed = await fetchFavorites(userId);
+          if (!session.active) return;
+          update({ ...session.cache, confirmed });
+          session.loaded = true;
+        } catch {
+          session.loaded = false;
+          needsRetry = true;
         }
       }
-      if (active.current) setStatus(rejected.current ? 'error' : 'ready');
-    } catch {
-      if (active.current) {
-        setStatus('offline');
-        timer.current = setTimeout(() => void sync(true), 15000);
+
+      const failed = new Set<string>();
+      while (session.active && navigator.onLine) {
+        const next = Object.entries(session.cache.pending).find(([id]) => !failed.has(id));
+        if (!next) break;
+        const [id, on] = next;
+        try {
+          await persistFavorite(userId, id, on);
+          if (session.active) update(settleFavorite(session.cache, id, on, true));
+        } catch (error) {
+          failed.add(id);
+          needsRetry = true;
+          if (isPermanentFavoriteError(error)) session.retryDelay = Math.max(30000, session.retryDelay);
+        }
       }
     } finally {
-      running.current = false;
+      session.running = false;
+      if (session.active && navigator.onLine && (needsRetry || session.refreshRequested)) {
+        session.timer = window.setTimeout(() => void sync(), session.refreshRequested ? 0 : session.retryDelay);
+        session.retryDelay = Math.min(60000, session.retryDelay * 2);
+      } else session.retryDelay = 3000;
     }
-  }, [update, userId]);
+  }, [session, update, userId]);
 
   useEffect(() => {
-    active.current = true;
-    const online = () => void sync(true);
-    const offline = () => setStatus('offline');
-    window.addEventListener('online', online);
-    window.addEventListener('offline', offline);
-    online();
-    return () => {
-      active.current = false;
-      clearTimeout(timer.current);
-      window.removeEventListener('online', online);
-      window.removeEventListener('offline', offline);
+    session.active = true;
+    const reconnect = () => {
+      session.retryDelay = 3000;
+      void sync(true);
     };
-  }, [sync]);
+    const focus = () => void sync(true);
+    window.addEventListener('online', reconnect);
+    window.addEventListener('focus', focus);
+    reconnect();
+    return () => {
+      session.active = false;
+      window.clearTimeout(session.timer);
+      window.removeEventListener('online', reconnect);
+      window.removeEventListener('focus', focus);
+    };
+  }, [session, sync]);
 
   return {
-    ids: useMemo(() => visibleFavorites(cache), [cache]), status, announcement,
-    retry: () => { rejected.current = false; void sync(true); },
+    ids: visibleFavorites(session.cache), announcement,
     toggle(id: string, name: string) {
-      const on = !visibleFavorites(state.current).has(id);
-      rejected.current = false;
-      update({ ...state.current, pending: { ...state.current.pending, [id]: on } });
+      const on = !visibleFavorites(session.cache).has(id);
+      update({ ...session.cache, pending: { ...session.cache.pending, [id]: on } });
       setAnnouncement(name + (on ? ' adicionado aos favoritos.' : ' removido dos favoritos.'));
       void sync();
     },

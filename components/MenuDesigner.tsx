@@ -10,7 +10,8 @@ import { MenuSidebar } from './MenuDesigner/MenuSidebar';
 import type { PrintCanvasOptions, PrintPreviewPage } from './MenuDesigner/PrintCanvasModal';
 import { uploadFileAsset } from '../services/storageService';
 import type { MoveDirection, SelectionItem } from '../hooks/interactions/types';
-import { canvasShapeUrl } from '../utils/canvasShapes';
+import { canvasShapeUrl, getCanvasShapeDimensions } from '../utils/canvasShapes';
+import { getCanvasViewportFocus, positionCanvasImage } from '../utils/canvasViewport';
 import { MenuColorContext, getMenuPalette } from './MenuDesigner/ColorPicker';
 import { getImageLayerIndexes } from '../utils/imageLayers';
 import type { PdfDebugEntry, PdfExportResult } from '../utils/pdfExport';
@@ -40,6 +41,7 @@ interface MenuDesignerProps {
     setSortOption: React.Dispatch<React.SetStateAction<SortOption>>;
     undo?: () => void;
     redo?: () => void;
+    onProductEditChange?: (id: string | null) => void;
     canUndo?: boolean;
     canRedo?: boolean;
     isOpen?: boolean;
@@ -180,7 +182,7 @@ const formatLayoutIssueBreakdown = (categories: number, products: number, freeTe
     return `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`;
 };
 
-const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions, onClose, onScrollActivity, workspaceId, currentUserId, splitCategoryAcrossPages = false, productsCanChangeCategory = false }) => {
+const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, onProductEditChange, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions, onClose, onScrollActivity, workspaceId, currentUserId, splitCategoryAcrossPages = false, productsCanChangeCategory = false }) => {
     const [scale, setScale] = useState(DEFAULT_PREVIEW_ZOOM);
     const [isDesktopViewport, setIsDesktopViewport] = useState(() => window.matchMedia('(min-width: 768px)').matches);
     const renderScale = scale * (isDesktopViewport ? DESKTOP_PREVIEW_ZOOM_RENDER_MULTIPLIER : MOBILE_PREVIEW_ZOOM_RENDER_MULTIPLIER);
@@ -1164,6 +1166,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
     const handleMobileProductEditStart = useCallback((productId: string) => {
         editingProductRef.current = productId;
+        onProductEditChange?.(productId);
         if (window.matchMedia('(min-width: 768px)').matches || productEditViewRef.current) return;
         const canvas = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas="true"]');
         if (!canvas) return;
@@ -1187,10 +1190,11 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 behavior: 'smooth',
             });
         }, 240);
-    }, [scale]);
+    }, [onProductEditChange, scale]);
 
     const handleMobileProductEditEnd = useCallback(() => {
         editingProductRef.current = null;
+        onProductEditChange?.(null);
         window.clearTimeout(productFocusTimer.current);
         if (borderFocusFrame.current !== undefined) window.cancelAnimationFrame(borderFocusFrame.current);
         const snapshot = productEditViewRef.current;
@@ -1201,7 +1205,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
             canvas.scrollTo({ left: snapshot.scrollLeft, top: snapshot.scrollTop });
         }));
-    }, []);
+    }, [onProductEditChange]);
 
     useEffect(() => {
         const canvas = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas="true"]');
@@ -1667,16 +1671,15 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
     const handleAddShape = (shape: CanvasShape) => {
         const id = crypto.randomUUID();
+        const focus = getCanvasViewportFocus(containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas]'));
+        const shapeSize = getCanvasShapeDimensions(shape);
         setStyle(previous => {
             const dimensions = resolveMenuPageDimensions(previous);
-            const width = Math.min(180, dimensions.widthPx / 3);
             return {
                 ...previous, name: 'Custom',
                 addedImages: [...(previous.addedImages || []), {
-                    id, shape, width, url: canvasShapeUrl(shape), zIndex: 1,
-                    pageIndex: currentPrintPageIndex ?? 0,
-                    x: Math.round((dimensions.widthPx - width) / 2),
-                    y: Math.round(dimensions.heightPx / 3),
+                    id, shape, url: canvasShapeUrl(shape), zIndex: 1,
+                    ...positionCanvasImage(focus, dimensions, Math.min(180, dimensions.widthPx / 3), shapeSize.height / shapeSize.width),
                 }],
             };
         });
@@ -1686,6 +1689,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const handleAddedImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
+        e.target.value = '';
+        const focus = getCanvasViewportFocus(containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas]'));
 
         try {
             const uploaded = await uploadFileAsset({
@@ -1697,6 +1702,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 metadata: { style_id: style.id }
             });
             const newId = crypto.randomUUID();
+            const size = await preloadImage(uploaded.url);
 
             setStyle(prev => {
                 const currentImages = prev.addedImages || [];
@@ -1705,10 +1711,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                     id: newId,
                     url: uploaded.url,
                     assetId: uploaded.asset.id,
-                    x: 100, // Default position 100px
-                    y: 100, // Default position 100px
-                    width: 300, // Default width
-                    pageIndex: 0, // Default to first page (could be improved to current view)
+                    ...positionCanvasImage(focus, resolveMenuPageDimensions(prev), 300, size ? size.height / size.width : 1),
                     zIndex: maxZ + 1
                 };
 
@@ -1719,16 +1722,11 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 };
             });
 
-            // Automatically select it
-            setTimeout(() => {
-                setSelection({ type: 'addedImage', id: newId });
-            }, 100);
+            setSelection({ type: 'addedImage', id: newId });
 
         } catch (err) {
             console.error("Falha ao adicionar imagem", err);
             alert("Não foi possível carregar a imagem.");
-        } finally {
-            // We can't clear ref here easily as it lives in child, but standard file input behavior is okay
         }
     };
 
@@ -2182,8 +2180,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
                 {/* Undo/Redo Controls - Dynamic Positioning for Bottom Sheet */}
                 <div className={`fixed right-4 z-[70] flex gap-2 transition-all duration-300 md:absolute md:z-10 ${(isOpen || isProductDesignerOpen) ? 'bottom-[calc(var(--automenu-bottom-sheet-height,45vh)+1rem)] md:bottom-24' : 'bottom-[5.25rem] md:bottom-24'}`}>
-                    <button onClick={undo} disabled={!canUndo} className={`p-2 bg-white rounded-full shadow-lg hover:bg-slate-50 text-slate-700 transition-all ${!canUndo ? 'text-slate-300 cursor-not-allowed' : ''}`} title="Desfazer"> <Undo size={16} /> </button>
-                    <button onClick={redo} disabled={!canRedo} className={`p-2 bg-white rounded-full shadow-lg hover:bg-slate-50 text-slate-700 transition-all ${!canRedo ? 'text-slate-300 cursor-not-allowed' : ''}`} title="Refazer"> <Redo size={16} /> </button>
+                    <button data-canvas-history-control onClick={undo} disabled={!canUndo} className={`p-2 bg-white rounded-full shadow-lg hover:bg-slate-50 text-slate-700 transition-all ${!canUndo ? 'text-slate-300 cursor-not-allowed' : ''}`} title="Desfazer"> <Undo size={16} /> </button>
+                    <button data-canvas-history-control onClick={redo} disabled={!canRedo} className={`p-2 bg-white rounded-full shadow-lg hover:bg-slate-50 text-slate-700 transition-all ${!canRedo ? 'text-slate-300 cursor-not-allowed' : ''}`} title="Refazer"> <Redo size={16} /> </button>
                 </div>
 
                 <div
@@ -2217,6 +2215,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                     }}
                 >
                     <div
+                        data-canvas-zoom-layer
                         style={{ transform: `scale(${renderScale})`, transformOrigin: 'top left', width: 'fit-content', minWidth: `${resolveMenuPageDimensions(style).widthPx}px`, }}
                         className="transition-transform duration-200 ease-out"
                         onClick={(e) => e.stopPropagation()}

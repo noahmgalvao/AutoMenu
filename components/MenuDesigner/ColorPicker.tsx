@@ -5,12 +5,18 @@ import { HexColorPicker, HexColorInput } from 'react-colorful';
 import type { MenuStyle } from '../../types';
 
 const palette = ['#ffffff', '#0f172a', '#64748b', '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#2563eb', '#7c3aed', '#ec4899', '#92400e'];
-const usedColors = new Set<string>();
+const recentColorsKey = 'automenu:recent-colors';
+let recentColors: string[] = [];
+let colorContext: CanvasRenderingContext2D | null | undefined;
 const hexByte = (value: number) => Math.round(value).toString(16).padStart(2, '0');
 
 function toHex(color: string) {
-  const context = document.createElement('canvas').getContext('2d');
+  if (/^#[a-f\d]{6}$/i.test(color)) return color.toLowerCase();
+  colorContext ??= document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+  const context = colorContext;
   if (!context) return '#000000';
+  context.clearRect(0, 0, 1, 1);
+  context.fillStyle = '#000000';
   context.fillStyle = color;
   context.fillRect(0, 0, 1, 1);
   const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
@@ -30,17 +36,59 @@ function getChannels(hex: string, mode: 'RGB' | 'HSL') {
   return [Math.round((hue * 60 + 360) % 360), Math.round(delta / (1 - Math.abs(2 * lightness - 1)) * 100), Math.round(lightness * 100)];
 }
 
-export const MenuColorContext = React.createContext<string[]>([]);
+function readRecentColors() {
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(recentColorsKey) || 'null');
+    if (Array.isArray(stored)) recentColors = [...new Set(stored
+      .filter(color => typeof color === 'string' && /^#[a-f\d]{6}$/i.test(color)).map(color => color.toLowerCase()))];
+  } catch { /* Keep the colors from this session. */ }
+  return recentColors;
+}
+
+export const MenuColorContext = React.createContext({ shapes: [] as string[], fallback: [] as string[] });
 
 export function getMenuPalette(style: MenuStyle, freeTextColors: (string | undefined)[]) {
-  return [
+  const shapes = (style.addedImages || []).flatMap(({ shape }) => {
+    if (!shape) return [];
+    return [shape.kind !== 'line' ? shape.fill : '', shape.strokeWidth > 0 ? shape.stroke : ''].filter(Boolean);
+  });
+  const fallback = [
     style.backgroundColor, style.primaryColor, style.textColor, style.cardBackgroundColor,
     ...Object.values(style.elementStyles).map(element => element?.color),
-    ...Object.values(style.borders || {}).map(border => border?.color),
-    ...Object.values(style.freeTextBorders || {}).map(border => border.color),
-    ...(style.addedImages || []).flatMap(image => [image.shape?.fill, image.shape?.stroke]),
+    ...Object.values(style.borders || {}).map(border => border?.sides.length ? border.color : undefined),
+    ...Object.values(style.freeTextBorders || {}).map(border => border.sides.length ? border.color : undefined),
     ...freeTextColors,
   ].filter((color): color is string => Boolean(color));
+  return { shapes, fallback };
+}
+
+function getRenderedColors(trigger: HTMLElement | null, colors: React.ContextType<typeof MenuColorContext>) {
+  const canvas = trigger?.closest('[data-automenu-editor-canvas]') || document.querySelector('[data-automenu-editor-canvas]');
+  const pages = canvas?.querySelectorAll<HTMLElement>('[data-menu-print-page]');
+  if (!pages?.length) return [...colors.fallback, ...colors.shapes];
+  const used = new Set<string>();
+  const add = (color: string) => {
+    if (color && color !== 'transparent' && color !== 'rgba(0, 0, 0, 0)') used.add(color);
+  };
+  pages.forEach(page => {
+    add(getComputedStyle(page).backgroundColor);
+    page.querySelectorAll<HTMLElement>(
+      '[data-word-fit], [data-border-text], [data-menu-marker], [data-menu-border], [data-menu-divider-color], [data-page-number], [data-template-card], [data-template-category], [data-template-price]',
+    ).forEach(element => {
+      const css = getComputedStyle(element);
+      if (css.display === 'none' || css.visibility === 'hidden' || css.opacity === '0') return;
+      if (element.matches('[data-word-fit], [data-border-text], [data-menu-marker], [data-page-number]') && element.textContent?.trim()) add(css.color);
+      if (element.dataset.menuDividerColor && element.offsetWidth > 0) add(element.dataset.menuDividerColor);
+      add(css.backgroundColor);
+      if (element.matches('[data-menu-border], [data-template-card], [data-template-category], [data-template-price]')) {
+        if (parseFloat(css.borderTopWidth)) add(css.borderTopColor);
+        if (parseFloat(css.borderBottomWidth)) add(css.borderBottomColor);
+        if (parseFloat(css.borderLeftWidth)) add(css.borderLeftColor);
+        if (parseFloat(css.borderRightWidth)) add(css.borderRightColor);
+      }
+    });
+  });
+  return [...used, ...colors.shapes];
 }
 
 interface Props {
@@ -59,6 +107,8 @@ export function ColorPicker({ value = '#000000', onChange, label = 'Cor', classN
   const [draft, setDraft] = useState(value);
   const [mode, setMode] = useState<'HEX' | 'RGB' | 'HSL'>('HEX');
   const [position, setPosition] = useState({ top: 8, left: 8 });
+  const [recent, setRecent] = useState(readRecentColors);
+  const [activePalette, setActivePalette] = useState<string[]>([]);
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const pickerId = React.useId();
@@ -90,10 +140,17 @@ export function ColorPicker({ value = '#000000', onChange, label = 'Cor', classN
   };
 
   const commit = (color: string) => {
+    color = toHex(color);
     updateDraft(color);
-    usedColors.add(color);
+    recentColors = [color, ...readRecentColors().filter(current => current !== color)];
+    try { localStorage.setItem(recentColorsKey, JSON.stringify(recentColors)); } catch { /* In-memory colors still work. */ }
+    setRecent(recentColors);
     onChangeRef.current(color);
   };
+
+  useLayoutEffect(() => {
+    if (open && !sampling) setActivePalette([...new Set(getRenderedColors(trigger.current, colors).map(toHex))]);
+  }, [colors, open, sampling]);
 
   useEffect(() => clearPreview, [clearPreview]);
   useEffect(() => { if (!open) clearPreview(); }, [clearPreview, open]);
@@ -198,16 +255,17 @@ export function ColorPicker({ value = '#000000', onChange, label = 'Cor', classN
     }
   };
 
-  const swatches = (items: string[]) => (
-    <div className="grid grid-cols-8 gap-1">
+  const swatches = (items: string[], label: string, active = false) => items.length > 0 && (
+    <div role="group" aria-label={label} className={`grid grid-cols-8 gap-1 ${active ? 'rounded-lg bg-indigo-50 p-1 ring-1 ring-indigo-200' : ''}`}>
       {items.map(color => <button key={color} type="button" title={color} aria-label={color}
+        aria-pressed={draft === color}
         onClick={() => commit(color)} style={{ background: color }}
         className="aspect-square rounded-md border border-black/15 hover:ring-2 hover:ring-indigo-400" />)}
     </div>
   );
 
   const channels = mode === 'HEX' ? [] : getChannels(draft, mode);
-  const activePalette = React.useMemo(() => open ? [...new Set([...colors, ...Array.from(usedColors).reverse()].map(color => toHex(color)))].slice(0, 24) : [], [colors, open]);
+  const recentPalette = recent.filter(color => !activePalette.includes(color));
   return <>
     <button ref={trigger} type="button" title={label} aria-label={label} aria-expanded={open} aria-controls={pickerId}
       data-drag-ignore="true" className={`h-8 w-8 shrink-0 rounded-md border border-black/15 ${className}`}
@@ -216,6 +274,7 @@ export function ColorPicker({ value = '#000000', onChange, label = 'Cor', classN
         if (open) clearPreview();
         else {
           const color = toHex(value);
+          setRecent(readRecentColors());
           draftRef.current = color;
           setDraft(color);
           setMessage('');
@@ -259,8 +318,9 @@ export function ColorPicker({ value = '#000000', onChange, label = 'Cor', classN
               })}
             <button type="button" title="Conta-gotas" aria-label="Conta-gotas" className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-slate-200 text-indigo-700" onClick={() => void pickFromCanvas()}><Pipette size={16} /></button>
           </div>
-          {activePalette.length > 0 && <div className="space-y-1"><p className="font-medium text-slate-600">Cores usadas</p>{swatches(activePalette)}</div>}
-          <div className="space-y-1"><p className="font-medium text-slate-600">Cores básicas</p>{swatches(palette)}</div>
+          {swatches(activePalette, 'Cores do cardápio', true)}
+          {swatches(recentPalette, 'Cores recentes')}
+          {swatches(palette.filter(color => !activePalette.includes(color) && !recentPalette.includes(color)), 'Cores básicas')}
           {message && <p role="status" className="text-rose-700">{message}</p>}
         </>}
       </div>, document.body)}

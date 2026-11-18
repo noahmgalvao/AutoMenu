@@ -699,7 +699,23 @@ export function finalizeMenuPages(basePages: PageLayout[], style: MenuStyle) {
     const pages = [...basePages];
     for (const blankPage of [...(style.blankPages || [])].sort((a, b) => a.index - b.index)) {
         const hasImage = style.addedImages?.some((image) => (image.pageIndex || 0) === blankPage.index);
-        if (!hasImage && blankPage.index < pages.length) continue;
+        const existing = pages[blankPage.index];
+        if (existing) {
+            const belongsToBlankPage = (chunk: CategoryChunkLayout) => chunk.category.startsWith(FREE_TEXT_PREFIX)
+                && style.categoryPositions?.[chunk.category]?.pageIndex === blankPage.index;
+            const remaining = existing.columns.map(column => ({ ...column, chunks: column.chunks.filter(chunk => !belongsToBlankPage(chunk)) }));
+            if (!existing.mainHeader && remaining.every(column => !column.chunks.length)) {
+                pages[blankPage.index] = { ...existing, blankPageId: blankPage.id };
+                continue;
+            }
+            if (!hasImage) continue;
+            const originalPage = { ...existing, columns: remaining };
+            const columns = existing.columns.map(column => ({ ...column, chunks: column.chunks.filter(belongsToBlankPage), estimatedHeight: 0 }));
+            const pageWithText = { ...emptyPage(), columns, blankPageId: blankPage.id };
+            pages[blankPage.index] = { ...originalPage, flatItems: buildPageFlatItems(originalPage) };
+            pages.splice(blankPage.index, 0, { ...pageWithText, flatItems: buildPageFlatItems(pageWithText) });
+            continue;
+        }
         pages.splice(Math.max(0, Math.min(blankPage.index, pages.length)), 0, { ...emptyPage(), blankPageId: blankPage.id });
     }
     const assets = [...(style.pageBackgrounds || []), ...(style.addedImages || []), ...(style.floatingText || [])];

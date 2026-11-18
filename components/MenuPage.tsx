@@ -4,10 +4,11 @@ import React from 'react';
 import { Product, MenuStyle } from '../types';
 import { BringToFront, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CopyCheck, Minus, MoreHorizontal, Plus, SendToBack, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { Resizable } from 're-resizable';
-import { MenuItem, ResponsiveMoveButton } from './MenuItem';
+import { MenuItem } from './MenuItem';
+import { CanvasActionGroup, canvasActionButtonClass } from './CanvasControls';
 import { PageLayout, CategoryChunkLayout, PageItem, FREE_TEXT_PREFIX } from '../utils/menuPagination';
 import { selectionLayerClasses } from './selectionLayers';
-import { getDirectionLabel, getEdgeControlClass, type FlowDirection } from '../utils/flowControls';
+import { getDirectionLabel, type FlowDirection } from '../utils/flowControls';
 import { normalizeTextureUrl } from '../constants';
 import { InlineStyleToolbar } from './MenuDesigner/InlineStyleToolbar';
 import { resolveMenuMargins, resolveMinimumFontSize, roundFontSize } from '../utils/styleRules';
@@ -16,6 +17,7 @@ import { ColumnResizeHandles } from './ColumnResizeHandles';
 import { canvasShapeUrl } from '../utils/canvasShapes';
 import { ShapeSettings } from './MenuDesigner/ShapePicker';
 import { resolveMenuPageDimensions } from '../utils/pageSetup';
+import { BorderDecoration } from './MenuDesigner/Decorations';
 
 const CategoryMoveIcon = ({ direction }: { direction: FlowDirection }) => {
     if (direction === 'left') return <ChevronLeft size={18} />;
@@ -204,8 +206,11 @@ export const MenuPage: React.FC<MenuPageProps> = ({
         const isCategoryDragged = isCategoryTarget && handlers.draggedItem?.type === 'category' && handlers.draggedItem?.id === chunk.category;
         const categoryAddControls = handlers.getSelectionAddControls?.('category', chunk.category) || { top: true, bottom: true };
         const categoryFlowDirections = handlers.getFlowControlDirections?.('category', chunk.category) || { before: 'top', after: 'bottom' };
-        const categoryAddBeforeDirection: FlowDirection = renderedColumnCount > 1 ? 'top' : categoryFlowDirections.before;
-        const categoryAddAfterDirection: FlowDirection = renderedColumnCount > 1 ? 'bottom' : categoryFlowDirections.after;
+        const categoryAddFlow = isCategorySelected
+            ? handlers.getAddControlDirections?.('category', chunk.category) || categoryFlowDirections
+            : categoryFlowDirections;
+        const categoryAddBeforeDirection: FlowDirection = categoryAddFlow.before;
+        const categoryAddAfterDirection: FlowDirection = categoryAddFlow.after;
         const flowIndex = isDragTarget ? handlers.sortedCategories.indexOf(chunk.category) : -1;
         const categoryPosition = handlers.liveCategoryPositions !== null
             && handlers.liveCategoryPositions !== undefined
@@ -218,27 +223,23 @@ export const MenuPage: React.FC<MenuPageProps> = ({
             : undefined;
         const renderCategoryMoveButton = (direction: FlowDirection, enabled: boolean) => {
             if (!enabled) return null;
-            const lane = 'leading';
-
             return (
-                <ResponsiveMoveButton
-                    flowDirection={direction}
-                    controlGroup="category-move"
-                    className={`absolute ${getEdgeControlClass(direction, lane)} p-2.5 md:p-2 bg-white border border-slate-200 shadow-md rounded-full text-slate-500 hover:text-indigo-600 hover:bg-slate-50 ${selectionLayerClasses.controls} transition-all cursor-pointer pointer-events-auto`}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => handlers.handleGlobalMove?.(
-                        event,
-                        'category',
-                        chunk.category,
-                        chunk.category,
-                        getCategoryMoveDirection(direction)
-                    )}
-                    title={`Mover ${getDirectionLabel(direction)}`}
-                >
-                    <CategoryMoveIcon direction={direction} />
-                </ResponsiveMoveButton>
+                <CanvasActionGroup direction={direction} kind="move">
+                    <button type="button" className={canvasActionButtonClass}
+                        onClick={(event) => handlers.handleGlobalMove?.(event, 'category', chunk.category, chunk.category, getCategoryMoveDirection(direction))}
+                        title={`Mover ${getDirectionLabel(direction)}`}>
+                        <CategoryMoveIcon direction={direction} />
+                    </button>
+                </CanvasActionGroup>
             );
         };
+        const renderCategoryAddButton = (position: 'before' | 'after', direction: FlowDirection) => (
+            <CanvasActionGroup direction={direction} kind="add">
+                <button type="button" className={`${canvasActionButtonClass} !border-indigo-600 !bg-indigo-600 !text-white hover:!bg-indigo-700`}
+                    onClick={event => handlers.handleAddClick?.(event, chunk.category, true, position)}
+                    title={`Adicionar categoria ${getDirectionLabel(direction)}`}><Plus size={20} /></button>
+            </CanvasActionGroup>
+        );
 
         return (
             <PositionedCategoryChunk
@@ -253,6 +254,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 layoutKey={`${flowIndex}:${categoryColumnWidths.join(',')}`}
                 data-chunk-id={chunk.chunkId}
                 data-category-chunk={chunk.category}
+                data-menu-border-surface={isFreeTextTarget ? undefined : 'categoryGroup'}
                 data-drag-scope={handlers.dragScope}
                 data-drag-type={isDragTarget ? 'category' : undefined}
                 data-drag-id={isDragTarget ? chunk.category : undefined}
@@ -262,39 +264,18 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 onDragOver={(e) => handlers.handleDragOverItem?.(e, chunk.category, 'category')}
                 className={`relative rounded-xl ${isCategoryDragged || Number.isFinite(desiredPageY) ? 'transition-none' : 'transition-all duration-200'} pointer-events-none ${isCategorySelected ? `ring-2 ring-indigo-500 bg-indigo-50/10 ${selectionLayerClasses.outline}` : ''}`}
             >
-                {isCategorySelected && isCategoryControlAnchor && !isCategoryDragged && (
+                {!isFreeTextTarget && <BorderDecoration style={renderedStyle} scope="categoryGroup" />}
+                {isCategorySelected && isCategoryControlAnchor && !isCategoryDragged && !handlers.editingId && (
                     <ColumnResizeHandles
                         columnIndex={chunk.columnIndex}
                         columnCount={renderedColumnCount}
                         onResizeStart={handlers.startCategoryColumnResize}
                     />
                 )}
-                {isCategorySelected && isCategoryControlAnchor && !isCategoryDragged && !handlers.isResizingCategoryColumns && (
+                {isCategorySelected && isCategoryControlAnchor && !isCategoryDragged && !handlers.isResizingCategoryColumns && !handlers.editingId && (
                     <>
-                        {categoryAddControls.top && (
-                            <ResponsiveMoveButton
-                                flowDirection={categoryAddBeforeDirection}
-                                controlGroup="category-add"
-                                className={`absolute ${getEdgeControlClass(categoryAddBeforeDirection)} bg-indigo-600 text-white p-2 md:p-1 rounded-full ${selectionLayerClasses.controls} shadow-md hover:scale-110 hover:bg-indigo-700 transition-transform cursor-pointer pointer-events-auto`}
-                                onPointerDown={(e) => e.stopPropagation()}
-                                onClick={(e) => handlers.handleAddClick?.(e, chunk.category, true, 'before')}
-                                title={`Adicionar categoria ${getDirectionLabel(categoryAddBeforeDirection)}`}
-                            >
-                                <Plus size={12} className="h-5 w-5 md:h-3 md:w-3" />
-                            </ResponsiveMoveButton>
-                        )}
-                        {categoryAddControls.bottom && (
-                            <ResponsiveMoveButton
-                                flowDirection={categoryAddAfterDirection}
-                                controlGroup="category-add"
-                                className={`absolute ${getEdgeControlClass(categoryAddAfterDirection)} bg-indigo-600 text-white p-2 md:p-1 rounded-full ${selectionLayerClasses.controls} shadow-md hover:scale-110 hover:bg-indigo-700 transition-transform cursor-pointer pointer-events-auto`}
-                                onPointerDown={(e) => e.stopPropagation()}
-                                onClick={(e) => handlers.handleAddClick?.(e, chunk.category, true, 'after')}
-                                title={`Adicionar categoria ${getDirectionLabel(categoryAddAfterDirection)}`}
-                            >
-                                <Plus size={12} className="h-5 w-5 md:h-3 md:w-3" />
-                            </ResponsiveMoveButton>
-                        )}
+                        {categoryAddControls.top && renderCategoryAddButton('before', categoryAddBeforeDirection)}
+                        {categoryAddControls.bottom && renderCategoryAddButton('after', categoryAddAfterDirection)}
                         {renderedColumnCount > 1 ? (
                             <>
                                 {renderCategoryMoveButton('top', flowIndex > 0 && categoryFlowDirections.before === 'top')}
@@ -471,7 +452,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
     };
 
     return (
-        <div className="relative flex-shrink-0">
+        <div data-menu-page-frame className="relative flex-shrink-0">
             <div
                 {...getTemplateDesignAttributes(style)}
                 data-menu-print-page={readOnly ? undefined : "true"}
@@ -740,23 +721,16 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 </div>
             </div>
             {editableImages.filter(img => handlers.selectedId === img.id).map((img) => (
-                <div
+                <CanvasActionGroup
                     key={`controls-${img.id}`}
-                    data-print-control="true"
                     data-object-page-index={pageIndex}
-                    className="absolute shadow-lg rounded-full flex gap-1 p-1 bg-white pointer-events-auto"
-                    style={{
-                        top: `${Math.max(-56, img.y - 56)}px`,
-                        left: `${Math.max(
-                            Math.min(104, pageDimensions.widthPx / 2),
-                            Math.min(Math.max(pageDimensions.widthPx / 2, pageDimensions.widthPx - 104), img.x + (img.width / 2)),
-                        )}px`,
-                        transform: 'translateX(-50%)',
-                        zIndex: 100000,
-                    }}
+                    anchorId={`added-image-${pageIndex}-${img.id}`}
+                    direction="top"
+                    kind="quick"
+                    className="!z-[100000]"
                 >
-                    <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => handlers.handleLayerImage(e, img.id, 'back')} className="p-2.5 hover:bg-slate-100 rounded-l-full rounded-r text-slate-600" title="Enviar para trás"><SendToBack size={24} /></button>
-                    <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => handlers.handleLayerImage(e, img.id, 'front')} className="p-2.5 hover:bg-slate-100 rounded text-slate-600" title="Trazer à frente"><BringToFront size={24} /></button>
+                    <button onClick={(e) => handlers.handleLayerImage(e, img.id, 'back')} className={canvasActionButtonClass} title="Enviar para trás"><SendToBack size={19} /></button>
+                    <button onClick={(e) => handlers.handleLayerImage(e, img.id, 'front')} className={canvasActionButtonClass} title="Trazer à frente"><BringToFront size={19} /></button>
                     {img.shape && (
                         <button type="button" title="Formatar forma" aria-pressed={formattingShapeId === img.id}
                             data-inline-format-target={`added-image-${pageIndex}-${img.id}`}
@@ -765,8 +739,8 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                                 event.stopPropagation();
                                 setFormattingShapeId((current) => current === img.id ? null : img.id);
                             }}
-                            className={`rounded p-2.5 ${formattingShapeId === img.id ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'}`}>
-                            <SlidersHorizontal size={24} />
+                            className={`${canvasActionButtonClass} ${formattingShapeId === img.id ? '!bg-indigo-50 !text-indigo-700' : ''}`}>
+                            <SlidersHorizontal size={19} />
                         </button>
                     )}
                     <button type="button" title="Seleção múltipla" aria-pressed={Boolean(handlers.multiSelectMode)}
@@ -775,10 +749,10 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                             event.stopPropagation();
                             handlers.setMultiSelectMode?.(!handlers.multiSelectMode);
                         }}
-                        className={`rounded p-2.5 ${handlers.multiSelectMode ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'}`}>
-                        <CopyCheck size={24} />
+                        className={`${canvasActionButtonClass} ${handlers.multiSelectMode ? '!bg-indigo-50 !text-indigo-700' : ''}`}>
+                        <CopyCheck size={19} />
                     </button>
-                    <button data-open-object-menu="true" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => handlers.openObjectMenu?.(e, { type: 'addedImage', id: img.id })} className="p-2.5 hover:bg-slate-100 rounded-l rounded-r-full text-slate-600" title="Mais opções"><MoreHorizontal size={24} /></button>
+                    <button data-open-object-menu="true" onClick={(e) => handlers.openObjectMenu?.(e, { type: 'addedImage', id: img.id })} className={canvasActionButtonClass} title="Mais opções"><MoreHorizontal size={20} /></button>
                     {img.shape && formattingShapeId === img.id && (
                         <InlineStyleToolbar compact targetElementId={`added-image-${pageIndex}-${img.id}`}
                             onDismiss={() => setFormattingShapeId(null)}>
@@ -794,7 +768,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                             </div>
                         </InlineStyleToolbar>
                     )}
-                </div>
+                </CanvasActionGroup>
             ))}
             {isPageSelected && (
                 <>

@@ -2,10 +2,10 @@ import { getProductCardCornerRadii, getProductCardRadius, getProductPhotoFrameRa
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { Product, MenuStyle, type ElementStyle, type FontSizeLimitKey, type MenuBorderScope } from '../types';
-import { Repeat2, FlipHorizontal2, FlipVertical2, Minus, MoreHorizontal, Plus, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, CopyCheck } from 'lucide-react';
+import { Edit3, Repeat2, FlipHorizontal2, FlipVertical2, Minus, MoreHorizontal, Plus, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, CopyCheck } from 'lucide-react';
 import { FREE_TEXT_PREFIX, getPaginationItemKey } from '../utils/menuPagination';
 import { selectionLayerClasses } from './selectionLayers';
-import { getDirectionLabel, getEdgeControlClass, type FlowDirection } from '../utils/flowControls';
+import { getDirectionLabel, type FlowDirection } from '../utils/flowControls';
 import { InlineStyleToolbar } from './MenuDesigner/InlineStyleToolbar';
 import { CategoryDividerPicker } from './MenuDesigner/CategoryDividerPicker';
 import type { MoveDirection } from '../hooks/interactions/types';
@@ -16,7 +16,9 @@ import { ColumnResizeHandles } from './ColumnResizeHandles';
 import { AutoFitText } from './AutoFitText';
 import { formatMenuPriceValue } from '../utils/price';
 import { resolveMenuPageDimensions } from '../utils/pageSetup';
-import { getCategoryDividerStyle, resolveCategoryDivider } from '../utils/categoryDividers';
+import { resolveCategoryDivider } from '../utils/categoryDividers';
+import { CanvasTextDivider } from './CanvasTextDivider';
+import { CanvasActionGroup, canvasActionButtonClass } from './CanvasControls';
 
 interface MenuItemProps {
     item: any;
@@ -35,13 +37,6 @@ const DirectionIcon = ({ direction, size, className }: { direction: FlowDirectio
     if (direction === 'right') return <ChevronRight size={size} className={className} />;
     if (direction === 'bottom') return <ChevronDown size={size} className={className} />;
     return <ChevronUp size={size} className={className} />;
-};
-
-const moveDirectionToFlowDirection: Record<MoveDirection, FlowDirection> = {
-    up: 'top',
-    down: 'bottom',
-    left: 'left',
-    right: 'right',
 };
 
 const handleMobileFocusScroll = (element: HTMLElement) => {
@@ -66,37 +61,6 @@ const clearDefaultTextOnFocus = (element: HTMLElement, defaultTexts: string[]) =
             element.innerText = '';
         }
     }, 0);
-};
-
-const rectanglesOverlap = (left: DOMRect, right: DOMRect, gap: number = 3) => (
-    left.left < right.right + gap &&
-    left.right > right.left - gap &&
-    left.top < right.bottom + gap &&
-    left.bottom > right.top - gap
-);
-
-type ResponsiveControlAxis = 'x' | 'y';
-
-interface ResponsiveControlCoordinator {
-    users: number;
-    schedule: () => void;
-    dispose: () => void;
-}
-
-const responsiveControlCoordinators = new WeakMap<HTMLElement, ResponsiveControlCoordinator>();
-
-const getResponsiveControlAxis = (direction: FlowDirection): ResponsiveControlAxis => (
-    direction === 'top' || direction === 'bottom' ? 'x' : 'y'
-);
-
-const getResponsiveControlRenderedScale = (control: HTMLElement, axis: ResponsiveControlAxis) => {
-    const page = control.closest<HTMLElement>('[data-menu-print-page="true"]');
-    const element = page || control;
-    const rect = element.getBoundingClientRect();
-    const layoutSize = axis === 'x' ? element.offsetWidth : element.offsetHeight;
-    const renderedSize = axis === 'x' ? rect.width : rect.height;
-    const scale = layoutSize > 0 ? renderedSize / layoutSize : 1;
-    return Number.isFinite(scale) && scale > 0 ? scale : 1;
 };
 
 const ProductImageToolbar = ({ productId, anchorId, handlers, flips }: {
@@ -245,456 +209,125 @@ const FreeTextResizeHandles = ({ product, style, handlers }: { product: Product;
     </>;
 };
 
-const getResponsiveControlShift = (control: HTMLElement, axis: ResponsiveControlAxis) => {
-    const value = Number(
-        axis === 'x'
-            ? control.dataset.responsiveShiftX
-            : control.dataset.responsiveShiftY
-    );
-    return Number.isFinite(value)
-        ? value * getResponsiveControlRenderedScale(control, axis)
-        : 0;
-};
+interface ProductControlsProps {
+    type: 'product' | 'category';
+    id?: string;
+    catName: string;
+    canMoveUp: boolean;
+    canMoveDown: boolean;
+    canMoveLeft?: boolean;
+    canMoveRight?: boolean;
+    isFreeText?: boolean;
+    handlers: any;
+    isDragging?: boolean;
+    showSelectionOutline?: boolean;
+    showAddControls?: boolean;
+    showTopAddControl?: boolean;
+    showBottomAddControl?: boolean;
+    showGridMoveControls?: boolean;
+}
 
-const getUnshiftedControlRect = (control: HTMLElement) => {
-    const rect = control.getBoundingClientRect();
-    const shiftX = getResponsiveControlShift(control, 'x');
-    const shiftY = getResponsiveControlShift(control, 'y');
-    return DOMRect.fromRect({
-        x: rect.left - shiftX,
-        y: rect.top - shiftY,
-        width: rect.width,
-        height: rect.height,
-    });
-};
-
-const shiftControlRect = (rect: DOMRect, axis: ResponsiveControlAxis, shift: number) => (
-    DOMRect.fromRect({
-        x: rect.left + (axis === 'x' ? shift : 0),
-        y: rect.top + (axis === 'y' ? shift : 0),
-        width: rect.width,
-        height: rect.height,
-    })
-);
-
-const setResponsiveControlShift = (
-    control: HTMLElement,
-    axis: ResponsiveControlAxis,
-    shift: number,
-) => {
-    const renderedScale = getResponsiveControlRenderedScale(control, axis);
-    const layoutShift = Math.round((shift / renderedScale) * 10) / 10;
-    const shiftX = axis === 'x' ? layoutShift : 0;
-    const shiftY = axis === 'y' ? layoutShift : 0;
-    control.dataset.responsiveShiftX = String(shiftX);
-    control.dataset.responsiveShiftY = String(shiftY);
-    control.style.transform = `translate(${shiftX}px, ${shiftY}px)`;
-};
-
-const clearResponsiveControlShift = (control: HTMLElement) => {
-    delete control.dataset.responsiveShiftX;
-    delete control.dataset.responsiveShiftY;
-    control.style.removeProperty('transform');
-};
-
-const registerResponsiveControl = (root: HTMLElement) => {
-    let coordinator = responsiveControlCoordinators.get(root);
-
-    if (!coordinator) {
-        let animationFrame: number | null = null;
-        let disposed = false;
-        const observedElements = new Set<Element>();
-        const resizeObserver = new ResizeObserver(() => schedule());
-        const mutationObserver = new MutationObserver(() => schedule());
-
-        const observeCurrentElements = () => {
-            [
-                root,
-                ...Array.from(root.querySelectorAll<HTMLElement>(
-                    '[data-responsive-edge-control="true"], [data-responsive-control-obstacle="true"]'
-                )),
-            ].forEach((element) => {
-                if (observedElements.has(element)) return;
-                observedElements.add(element);
-                resizeObserver.observe(element);
-            });
-        };
-
-        mutationObserver.observe(root, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['class', 'data-responsive-control-active', 'data-responsive-control-obstacle'],
-        });
-        window.addEventListener('resize', schedule);
-
-        const reposition = () => {
-            animationFrame = null;
-            if (disposed || !root.isConnected) return;
-
-            observeCurrentElements();
-            const controls = Array.from(
-                root.querySelectorAll<HTMLButtonElement>('[data-responsive-edge-control="true"]')
-            ).filter((control) => (
-                control.getClientRects().length > 0
-                && control.dataset.responsiveControlActive === 'true'
-                && control.closest<HTMLElement>('[data-category-chunk], .automenu-drag-item') === root
-            ));
-            if (controls.length === 0) return;
-
-            const page = root.closest<HTMLElement>('[data-menu-print-page="true"]');
-            const bounds = page?.getBoundingClientRect() || root.getBoundingClientRect();
-            const obstacleScope = page || root;
-            const ownControls = new Set<HTMLElement>(controls);
-            const occupiedRects = Array.from(obstacleScope.querySelectorAll<HTMLElement>(
-                '[data-responsive-control-obstacle="true"], [data-responsive-edge-control="true"][data-responsive-control-active="true"]'
-            ))
-                .filter((candidate) => !ownControls.has(candidate))
-                .filter((candidate) => candidate.getClientRects().length > 0)
-                .map((candidate) => candidate.getBoundingClientRect());
-            const groups = new Map<string, { axis: ResponsiveControlAxis; controls: HTMLButtonElement[] }>();
-
-            controls.forEach((control) => {
-                const direction = control.dataset.responsiveFlowDirection as FlowDirection;
-                const axis = getResponsiveControlAxis(direction);
-                const key = `${control.dataset.responsiveControlGroup || 'move'}:${axis}`;
-                const group = groups.get(key) || { axis, controls: [] };
-                group.controls.push(control);
-                groups.set(key, group);
-            });
-
-            [...groups.entries()]
-                .sort(([left], [right]) => left.localeCompare(right))
-                .forEach(([, group]) => {
-                    const baseRects = group.controls.map(getUnshiftedControlRect);
-                    const currentShift = getResponsiveControlShift(group.controls[0], group.axis);
-                    const isValidShift = (shift: number) => baseRects.every((baseRect) => {
-                        const candidate = shiftControlRect(baseRect, group.axis, shift);
-                        const insidePage = group.axis === 'x'
-                            ? candidate.left >= bounds.left && candidate.right <= bounds.right
-                            : candidate.top >= bounds.top && candidate.bottom <= bounds.bottom;
-                        return insidePage
-                            && !occupiedRects.some((obstacle) => rectanglesOverlap(candidate, obstacle));
-                    });
-
-                    let resolvedShift = 0;
-                    if (!isValidShift(0)) {
-                        if (currentShift !== 0 && isValidShift(currentShift)) {
-                            resolvedShift = currentShift;
-                        } else {
-                            const candidates = new Set<number>();
-                            occupiedRects.forEach((obstacle) => {
-                                baseRects.forEach((baseRect) => {
-                                    if (group.axis === 'x') {
-                                        candidates.add(obstacle.left - 4 - baseRect.right);
-                                        candidates.add(obstacle.right + 4 - baseRect.left);
-                                    } else {
-                                        candidates.add(obstacle.top - 4 - baseRect.bottom);
-                                        candidates.add(obstacle.bottom + 4 - baseRect.top);
-                                    }
-                                });
-                            });
-                            resolvedShift = [...candidates]
-                                .filter(isValidShift)
-                                .sort((left, right) => Math.abs(left) - Math.abs(right))[0] ?? currentShift;
-                        }
-                    }
-
-                    group.controls.forEach((control) => {
-                        setResponsiveControlShift(control, group.axis, resolvedShift);
-                    });
-                    baseRects.forEach((baseRect) => {
-                        occupiedRects.push(shiftControlRect(baseRect, group.axis, resolvedShift));
-                    });
-                });
-        };
-
-        function schedule() {
-            if (disposed || animationFrame !== null) return;
-            animationFrame = window.requestAnimationFrame(reposition);
-        }
-
-        coordinator = {
-            users: 0,
-            schedule,
-            dispose: () => {
-                disposed = true;
-                if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
-                resizeObserver.disconnect();
-                mutationObserver.disconnect();
-                window.removeEventListener('resize', schedule);
-                responsiveControlCoordinators.delete(root);
-            },
-        };
-        responsiveControlCoordinators.set(root, coordinator);
-        reposition();
-    }
-
-    coordinator.users += 1;
-    coordinator.schedule();
-    return () => {
-        const current = responsiveControlCoordinators.get(root);
-        if (!current) return;
-        current.users -= 1;
-        if (current.users <= 0) current.dispose();
-        else current.schedule();
-    };
-};
-
-export const ResponsiveMoveButton: React.FC<
-    React.ButtonHTMLAttributes<HTMLButtonElement> & {
-        flowDirection: FlowDirection;
-        controlGroup?: string;
-        responsiveActive?: boolean;
-    }
-> = ({ flowDirection, controlGroup = 'move', responsiveActive = true, children, ...buttonProps }) => {
-    const buttonRef = React.useRef<HTMLButtonElement>(null);
-
-    React.useLayoutEffect(() => {
-        const button = buttonRef.current;
-        const root = button?.closest<HTMLElement>('[data-category-chunk], .automenu-drag-item');
-        if (!button || !root || !responsiveActive) {
-            if (button) clearResponsiveControlShift(button);
-            return;
-        }
-        const unregister = registerResponsiveControl(root);
-        return () => {
-            unregister();
-            clearResponsiveControlShift(button);
-        };
-    }, [controlGroup, flowDirection, responsiveActive]);
-
-    return (
-        <button
-            ref={buttonRef}
-            type="button"
-            data-responsive-edge-control="true"
-            data-responsive-control-active={responsiveActive ? 'true' : 'false'}
-            data-responsive-control-group={controlGroup}
-            data-responsive-flow-direction={flowDirection}
-            {...buttonProps}
-        >
-            {children}
-        </button>
-    );
-};
-
-const ProductControls = ({ type, id, catName, isMobileSelected, canMoveUp, canMoveDown, canMoveLeft, canMoveRight, hideGeneralControls, isFreeText, handlers, isDragging = false, showSelectionOutline = true, showAddControls = true, showTopAddControl = true, showBottomAddControl = true, compactControls = false, mobileExpandedControls = false, denseControls = false, containMobileControls = false, showGridMoveControls = false }: any) => {
+const ProductControls = ({
+    type, id, catName, canMoveUp, canMoveDown, canMoveLeft, canMoveRight, isFreeText, handlers,
+    isDragging, showSelectionOutline = true, showAddControls = true, showTopAddControl = true,
+    showBottomAddControl = true, showGridMoveControls,
+}: ProductControlsProps) => {
     const selectionType = type === 'category' ? 'category' : isFreeText ? 'freeText' : 'product';
-    const selectionId = type === 'category' ? catName : id;
+    const selectionId = id || catName;
     const isSelected = handlers.isSelected?.(selectionType, selectionId) ?? handlers.selectedId === selectionId;
-    const pointerEventsClass = isMobileSelected ? 'pointer-events-auto' : 'pointer-events-none md:group-hover:pointer-events-auto';
-    const flowDirections = handlers.getFlowControlDirections?.(selectionType, selectionId) || { before: 'top', after: 'bottom' };
-    const addBeforeDirection: FlowDirection = showGridMoveControls ? 'top' : flowDirections.before;
-    const addAfterDirection: FlowDirection = showGridMoveControls ? 'bottom' : flowDirections.after;
-    const controlPadding = denseControls ? 'p-2 md:p-0.5' : compactControls ? 'p-2.5 md:p-1.5' : 'p-3 md:p-2.5';
-    const movePadding = denseControls ? 'p-2 md:p-0.5' : compactControls ? 'p-2.5 md:p-1.5' : 'p-2.5 md:p-2';
-    const iconSize = denseControls ? 12 : compactControls ? 15 : 24;
-    const iconClass = denseControls
-        ? 'h-5 w-5 md:h-3 md:w-3'
-        : compactControls
-            ? 'h-6 w-6 md:h-[15px] md:w-[15px]'
-            : 'h-7 w-7 md:h-6 md:w-6';
-    const generalControlsPosition = type === 'product'
-        ? `bottom-full mb-2 ${compactControls ? 'right-8' : 'right-0'}`
-        : compactControls && containMobileControls
-        ? 'bottom-full right-8 mb-2 md:bottom-auto md:mb-0 md:-top-[38px]'
-        : compactControls
-            ? 'top-[-38px] right-8'
-            : 'top-[-10px] right-[-10px]';
-    const generalControlsMaxWidth = compactControls
-        ? 'max-w-[calc(100%_-_2.5rem)]'
-        : 'max-w-[calc(100%_-_0.5rem)]';
-    
-    const hasMultipleSelectedItems = Boolean(handlers.selectedItems && handlers.selectedItems.length > 1);
-    let isActiveSelection = true;
-    let effectiveHideGeneralControls = hideGeneralControls;
-    if (hasMultipleSelectedItems) {
-        const activeItem = handlers.selectedItems.find((item: any) => item.id === handlers.selectedId)
-            || handlers.selectedItems[handlers.selectedItems.length - 1];
-        isActiveSelection = activeItem.type === selectionType && activeItem.id === selectionId;
-        if (!isActiveSelection) {
-            effectiveHideGeneralControls = true;
-        }
-    }
-    const showMoveControls = isActiveSelection && (!effectiveHideGeneralControls || (isFreeText && isSelected));
-    const freeTextControlsRef = React.useRef<HTMLDivElement>(null);
-
-    React.useLayoutEffect(() => {
-        const controls = freeTextControlsRef.current;
-        const page = controls?.closest<HTMLElement>('[data-menu-print-page]');
-        if (!controls || !page) return;
-
-        const positionControls = () => {
-            controls.style.translate = '';
-            const rect = controls.getBoundingClientRect();
-            const pageRect = page.getBoundingClientRect();
-            const scale = pageRect.width / page.offsetWidth || 1;
-            const shift = Math.min(0, pageRect.right - rect.right);
-            controls.style.translate = `${shift / scale}px`;
-        };
-        positionControls();
-        const observer = new ResizeObserver(positionControls);
-        observer.observe(controls);
-        observer.observe(page);
-        return () => observer.disconnect();
-    }, [isSelected, isDragging, handlers.editingId, effectiveHideGeneralControls, canMoveUp, canMoveDown]);
-    
-    const [shakingCategory, setShakingCategory] = React.useState<string | null>(null);
+    const isActive = isSelected && ((handlers.selectedItems?.length || 0) <= 1 || handlers.selectedId === selectionId);
+    const flow = handlers.getFlowControlDirections?.(selectionType, selectionId) || { before: 'top', after: 'bottom' };
+    const addFlow = isActive && showAddControls ? handlers.getAddControlDirections?.(selectionType, selectionId) || flow : flow;
+    const [limitReached, setLimitReached] = React.useState(false);
 
     React.useEffect(() => {
-        const handleLimitReached = (e: Event) => {
-            const customEvent = e as CustomEvent<{ category: string }>;
-            setShakingCategory(customEvent.detail.category);
-            setTimeout(() => setShakingCategory(null), 800);
+        let timeout: number | undefined;
+        const showLimit = (event: Event) => {
+            if ((event as CustomEvent<{ category: string }>).detail.category !== catName) return;
+            setLimitReached(true);
+            window.clearTimeout(timeout);
+            timeout = window.setTimeout(() => setLimitReached(false), 800);
         };
-        window.addEventListener('menu-category-limit-reached', handleLimitReached);
-        return () => window.removeEventListener('menu-category-limit-reached', handleLimitReached);
-    }, []);
+        window.addEventListener('menu-category-limit-reached', showLimit);
+        return () => {
+            window.removeEventListener('menu-category-limit-reached', showLimit);
+            window.clearTimeout(timeout);
+        };
+    }, [catName]);
 
     if (isDragging) return null;
 
-    const isLimitReached = shakingCategory === catName;
-    const addControlClass = isLimitReached ? 'bg-red-500 animate-shake shadow-[0_0_10px_rgba(239,68,68,0.8)]' : 'bg-indigo-600 shadow-md hover:scale-110 hover:bg-indigo-700';
-    const renderMoveButton = (direction: MoveDirection, enabled: boolean) => {
-        if (!enabled) return null;
-
-        const flowDirection = moveDirectionToFlowDirection[direction];
-
-        return (
-            <ResponsiveMoveButton
-                flowDirection={flowDirection}
-                controlGroup="move"
-                responsiveActive={isSelected}
-                onClick={(e) => handlers.handleGlobalMove(e, type, id || catName, catName, direction)}
-                className={`absolute ${getEdgeControlClass(flowDirection, 'leading')} ${movePadding} ${pointerEventsClass} bg-white border border-slate-200 shadow-sm rounded-full text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all cursor-pointer`}
-                onPointerDown={(e) => e.stopPropagation()}
-                title={`Mover ${getDirectionLabel(flowDirection)}`}
-            >
-                <DirectionIcon direction={flowDirection} size={iconSize} className={iconClass} />
-            </ResponsiveMoveButton>
-        );
-    };
+    const renderMove = (direction: MoveDirection, edge: FlowDirection) => (
+        <button key={direction} type="button"
+            className={canvasActionButtonClass}
+            onClick={event => handlers.handleGlobalMove(event, type, selectionId, catName, direction)}
+            title={`Mover ${getDirectionLabel(edge)}`}>
+            <DirectionIcon size={19} direction={edge} />
+        </button>
+    );
+    const renderAdd = (position: 'before' | 'after', direction: FlowDirection) => (
+        <CanvasActionGroup direction={direction} kind="add">
+            <button type="button" className={`${canvasActionButtonClass} !border-indigo-600 !text-white ${limitReached ? '!bg-red-500 animate-shake' : '!bg-indigo-600 hover:!bg-indigo-700'}`}
+                onClick={event => handlers.handleAddClick?.(event, catName, type === 'category', position, id)}
+                title={`${type === 'category' ? 'Adicionar categoria' : 'Adicionar item'} ${getDirectionLabel(direction)}`}>
+                <Plus size={20} />
+            </button>
+        </CanvasActionGroup>
+    );
+    const moves: { direction: MoveDirection; edge: FlowDirection; enabled?: boolean }[] = showGridMoveControls
+        ? [
+            { direction: 'up', edge: 'top', enabled: canMoveUp },
+            { direction: 'down', edge: 'bottom', enabled: canMoveDown },
+            { direction: 'left', edge: 'left', enabled: canMoveLeft },
+            { direction: 'right', edge: 'right', enabled: canMoveRight },
+        ]
+        : [
+            { direction: 'up', edge: flow.before, enabled: canMoveUp },
+            { direction: 'down', edge: flow.after, enabled: canMoveDown },
+        ];
+    const enabledMoves = moves.filter(move => move.enabled);
 
     return (
-    <>
-        {isSelected && showSelectionOutline && (
-             <div className={`absolute inset-0 border-2 border-indigo-500 rounded-lg pointer-events-none ${selectionLayerClasses.outline}`} />
-        )}
-
-        {isSelected && isActiveSelection && !isDragging && !isFreeText && showAddControls && (
-            <>
-                {showTopAddControl && (
-                    <ResponsiveMoveButton
-                        flowDirection={addBeforeDirection}
-                        controlGroup="add"
-                        className={`absolute ${getEdgeControlClass(addBeforeDirection)} text-white p-2 md:p-1 rounded-full ${selectionLayerClasses.controls} transition-transform cursor-pointer ${addControlClass}`}
-                        onPointerDown={e => e.stopPropagation()}
-                        onClick={(e) => handlers.handleAddClick?.(e, catName, type === 'category', 'before', id)}
-                        title={`${type === 'category' ? 'Adicionar categoria' : 'Adicionar item'} ${getDirectionLabel(addBeforeDirection)}`}
-                    >
-                        <Plus size={12} className="h-5 w-5 md:h-3 md:w-3"/>
-                    </ResponsiveMoveButton>
-                )}
-                {showBottomAddControl && (
-                    <ResponsiveMoveButton
-                        flowDirection={addAfterDirection}
-                        controlGroup="add"
-                        className={`absolute ${getEdgeControlClass(addAfterDirection)} text-white p-2 md:p-1 rounded-full ${selectionLayerClasses.controls} transition-transform cursor-pointer ${addControlClass}`}
-                        onPointerDown={e => e.stopPropagation()}
-                        onClick={(e) => handlers.handleAddClick?.(e, catName, type === 'category', 'after', id)}
-                        title={`${type === 'category' ? 'Adicionar categoria' : 'Adicionar item'} ${getDirectionLabel(addAfterDirection)}`}
-                    >
-                        <Plus size={12} className="h-5 w-5 md:h-3 md:w-3"/>
-                    </ResponsiveMoveButton>
-                )}
-            </>
-        )}
-
-        {!isDragging && !handlers.editingId && <div className={`absolute inset-0 pointer-events-none ${selectionLayerClasses.controls} transition-opacity duration-200 ${isMobileSelected ? 'opacity-100' : 'opacity-0 md:group-hover:opacity-100'}`}>
-           {!effectiveHideGeneralControls && (
-               <div
-                    data-responsive-control-obstacle={isSelected ? 'true' : undefined}
-                    ref={isFreeText ? freeTextControlsRef : undefined}
-                    className={`absolute ${isFreeText ? 'bottom-full left-0 mb-2 w-max flex-nowrap items-center [&>button]:shrink-0' : `${generalControlsPosition} ${generalControlsMaxWidth} flex-wrap justify-end`} ${pointerEventsClass} flex gap-1 ${selectionLayerClasses.controls}`}
-               >
-                    <button
-                        className={`${controlPadding} bg-white border shadow-md rounded-full hover:scale-110 transition-transform cursor-pointer ${handlers.multiSelectMode ? 'border-indigo-500 text-indigo-600 bg-indigo-50' : 'border-slate-200 text-slate-500'}`}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => { e.stopPropagation(); handlers.setMultiSelectMode?.(!handlers.multiSelectMode); }}
-                        title="Seleção múltipla"
-                    >
-                        <CopyCheck size={iconSize} className={iconClass} />
-                    </button>
-                    <button
-                        data-open-object-menu="true"
-                        onClick={(e) => handlers.openObjectMenu?.(e, { type: selectionType, id: selectionId })}
-                        className={`${controlPadding} bg-white border border-slate-200 shadow-md rounded-full text-slate-500 hover:text-indigo-600 hover:bg-slate-50 hover:scale-110 transition-transform cursor-pointer`}
-                        title="Mais opções"
-                        onPointerDown={(e) => e.stopPropagation()}
-                    >
-                        <MoreHorizontal size={iconSize} className={iconClass} />
-                    </button>
-                    {isFreeText && showMoveControls && [
-                        { enabled: canMoveUp, direction: 'up' as const, edge: flowDirections.before },
-                        { enabled: canMoveDown, direction: 'down' as const, edge: flowDirections.after },
-                    ].filter(({ enabled }) => enabled).map(({ direction, edge }) => (
-                        <button
-                            key={direction}
-                            onClick={(e) => handlers.handleGlobalMove(e, type, id, catName, direction)}
-                            onPointerDown={(e) => e.stopPropagation()}
-                            className={`${controlPadding} bg-white border border-slate-200 shadow-sm rounded-full text-slate-500 hover:text-indigo-600 hover:bg-slate-50 cursor-pointer`}
-                            title={`Mover ${getDirectionLabel(edge)}`}
-                        >
-                            <DirectionIcon direction={edge} size={iconSize} className={iconClass} />
+        <>
+            {isSelected && showSelectionOutline && (
+                <div className={`pointer-events-none absolute inset-0 rounded-lg border-2 border-indigo-500 ${selectionLayerClasses.outline}`} />
+            )}
+            {isActive && !isFreeText && showAddControls && !handlers.editingId && (
+                <>
+                    {showTopAddControl && renderAdd('before', addFlow.before)}
+                    {showBottomAddControl && renderAdd('after', addFlow.after)}
+                </>
+            )}
+            {!handlers.editingId && (!isSelected || isActive) && (
+                <CanvasActionGroup direction="top" kind="quick" hoverOnly={!isActive}>
+                    {type === 'product' && !isFreeText && (
+                        <button type="button" className={`${canvasActionButtonClass} hidden md:grid`}
+                            aria-hidden={handlers.objectMenuOpen || undefined} tabIndex={handlers.objectMenuOpen ? -1 : undefined}
+                            title="Editar produto"
+                            onClick={event => handlers.startEditing(event, selectionId, `product-name-${selectionId}`)}>
+                            <Edit3 size={19} />
                         </button>
-                    ))}
-               </div>
-           )}
-          {showMoveControls && !isFreeText && (
-              <>
-                  {showGridMoveControls ? (
-                    <>
-                        {renderMoveButton('up', canMoveUp)}
-                        {renderMoveButton('down', canMoveDown)}
-                        {renderMoveButton('left', canMoveLeft ?? canMoveUp)}
-                        {renderMoveButton('right', canMoveRight ?? canMoveDown)}
-                    </>
-                  ) : (
-                    <>
-                    {canMoveUp && (
-                    <ResponsiveMoveButton
-                        flowDirection={flowDirections.before}
-                        controlGroup="move"
-                        responsiveActive={isSelected}
-                        onClick={(e) => handlers.handleGlobalMove(e, type, id || catName, catName, 'up')}
-                        className={`absolute ${getEdgeControlClass(flowDirections.before, 'leading')} ${movePadding} ${pointerEventsClass} bg-white border border-slate-200 shadow-sm rounded-full text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all cursor-pointer`}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        title={`Mover ${getDirectionLabel(flowDirections.before)}`}
-                    >
-                        <DirectionIcon direction={flowDirections.before} size={iconSize} className={iconClass} />
-                    </ResponsiveMoveButton>
-                  )}
-                  {canMoveDown && (
-                    <ResponsiveMoveButton
-                        flowDirection={flowDirections.after}
-                        controlGroup="move"
-                        responsiveActive={isSelected}
-                        onClick={(e) => handlers.handleGlobalMove(e, type, id || catName, catName, 'down')}
-                        className={`absolute ${getEdgeControlClass(flowDirections.after, 'leading')} ${movePadding} ${pointerEventsClass} bg-white border border-slate-200 shadow-sm rounded-full text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition-all cursor-pointer`}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        title={`Mover ${getDirectionLabel(flowDirections.after)}`}
-                    >
-                        <DirectionIcon direction={flowDirections.after} size={iconSize} className={iconClass} />
-                    </ResponsiveMoveButton>
-                  )}
-                    </>
-                  )}
-              </>
-          )}
-        </div>}
-    </>
-  )};
+                    )}
+                    <button type="button" className={`${canvasActionButtonClass} ${handlers.multiSelectMode ? '!border-indigo-500 !bg-indigo-50 !text-indigo-600' : ''}`}
+                        onClick={() => handlers.setMultiSelectMode?.(!handlers.multiSelectMode)}
+                        aria-pressed={Boolean(handlers.multiSelectMode)} title="Seleção múltipla">
+                        <CopyCheck size={19} />
+                    </button>
+                    <button type="button" data-open-object-menu="true" className={canvasActionButtonClass}
+                        onClick={event => handlers.openObjectMenu?.(event, { type: selectionType, id: selectionId })} title="Mais opções">
+                        <MoreHorizontal size={20} />
+                    </button>
+                    {isFreeText && isActive && enabledMoves.map(({ direction, edge }) => renderMove(direction, edge))}
+                </CanvasActionGroup>
+            )}
+            {isActive && !isFreeText && !handlers.editingId && enabledMoves.map(({ direction, edge }) => (
+                <CanvasActionGroup key={direction} direction={edge} kind="move">
+                    {renderMove(direction, edge)}
+                </CanvasActionGroup>
+            ))}
+        </>
+    );
+};
 
 export const MenuItem: React.FC<MenuItemProps> = ({
     item,
@@ -729,7 +362,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const closeImageMenuOutside = (event: PointerEvent) => {
             const target = event.target as HTMLElement | null;
             if (target?.closest<HTMLElement>('[data-product-image-surface]')?.dataset.productImageSurface === imageMenuProductId) return;
-            if (target?.closest('[data-editor-popover="true"]')) return;
+            if (target?.closest('[data-editor-popover="true"], [data-canvas-history-control]')) return;
             if (target?.closest<HTMLElement>('[data-drag-type="product"]')?.dataset.dragId === imageMenuProductId) {
                 setImageMenuProductId(null);
                 return;
@@ -942,7 +575,6 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 allowSameWordBreak={allowSameWordBreak}
                 fitScope="menuTitle"
                 widthMode="parent"
-                showOverflowFeedback
                 id={handlers.readOnly ? undefined : "menu-title-text"}
                 data-menu-heading="title"
                 className={`tracking-tight outline-none focus:bg-blue-50/50 rounded cursor-text ${isTitleSelected ? 'ring-2 ring-indigo-500 bg-indigo-50/20' : ''}`}
@@ -980,7 +612,6 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 allowSameWordBreak={allowSameWordBreak}
                 fitScope="menuSubtitle"
                 widthMode="parent"
-                showOverflowFeedback
                 id={handlers.readOnly ? undefined : "menu-subtitle-text"}
                 data-menu-heading="subtitle"
                 className={`opacity-90 outline-none focus:bg-blue-50/50 rounded cursor-text empty:before:pointer-events-none empty:before:opacity-50 empty:before:content-[attr(data-subtitle-placeholder)] ${isSubtitleSelected ? 'ring-2 ring-indigo-500 bg-indigo-50/20' : ''}`}
@@ -1023,12 +654,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const categoryImageScale = style.categoryImageScale || 1;
         const categoryDividerPreset = resolveCategoryDivider(style, item.data);
         const renderCategoryDivider = (key: 'before' | 'after') => (
-            <div
-                key={key}
-                data-ornamental-divider={categoryDividerPreset === 'ornamental' ? (key === 'before' ? 'right' : 'left') : undefined}
-                aria-hidden="true"
-                style={getCategoryDividerStyle(categoryDividerPreset, 'var(--template-accent)', key === 'before' ? 'right' : 'left')}
-            />
+            <CanvasTextDivider preset={categoryDividerPreset} color="var(--template-accent)" titleEdge={key === 'before' ? 'right' : 'left'} />
         );
         
         return (
@@ -1048,14 +674,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 onClick={(e) => { e.stopPropagation(); if (handlers.editingId !== item.data) { handlers.handleSelection('category', item.data, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey }); handlers.setSelectedPageIndex(null); } }}
                 onDoubleClick={(e) => e.stopPropagation()}
             >
-                <div
-                    aria-hidden="true"
-                    className={`absolute inset-x-0 hidden md:block pointer-events-auto ${
-                        compactControls ? '-top-[38px] h-[46px]' : '-top-3 h-5'
-                    }`}
-                />
                 {renderFormattingToolbar('category', item.data, catStyle)}
-            {!handlers.readOnly && <ProductControls type="category" catName={item.data} isMobileSelected={isSelected} index={idx} total={0} isLastInBlock={false} canMoveUp={false} canMoveDown={false} canMoveLeft={false} canMoveRight={false} hideGeneralControls={false} handlers={handlers} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showSelectionOutline={false} showAddControls={false} compactControls={compactControls} showGridMoveControls={false}/>}
+            {!handlers.readOnly && <ProductControls type="category" catName={item.data} canMoveUp={false} canMoveDown={false} canMoveLeft={false} canMoveRight={false} handlers={handlers} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showSelectionOutline={false} showAddControls={false} showGridMoveControls={false}/>}
                 <div data-template-category data-menu-border-surface="category" data-custom-border={getBorderOverride(style, 'category')} style={{ borderRadius: style.borders?.category?.radius }} className={`relative flex w-full max-w-full min-w-0 items-center gap-1 ${compactControls ? 'px-1' : 'px-2'} ${categoryAlign === 'center' ? 'justify-center' : categoryAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
                     <BorderDecoration style={style} scope="category" />
                     <MenuMarkerGlyph marker={getMarker(style, 'category')} fontSize={clampFontSize(style, 'category', catStyle.fontSize, 24)}
@@ -1081,9 +701,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                         minimumFontSize={minimumFontSize}
                         allowSameWordBreak={allowSameWordBreak}
                         fitScope="category"
+                        data-divider-title="true"
                         widthMode="flex"
-                        availableWidthInset={compactControls ? 8 : 16}
-                        showOverflowFeedback={handlers.editingId === item.data}
                         id={handlers.readOnly ? undefined : elementId}
                         className={`min-w-0 max-w-full shrink whitespace-normal break-words [overflow-wrap:anywhere] [word-break:normal] outline-none rounded ${handlers.editingId === item.data ? 'bg-white ring-2 ring-blue-500 z-10 cursor-text' : ''}`}
                         style={{ 
@@ -1172,7 +791,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     }}
                 >
                 <BorderDecoration style={style} scope={product.isFreeText ? 'freeText' : 'product'} id={product.id} />
-                {isSelected && !isFreeTextGhost && !backgroundText && (
+                {isSelected && handlers.selectedId === product.id && !isFreeTextGhost && !backgroundText && !handlers.editingId && (
                     <ColumnResizeHandles
                         columnIndex={columnIndex}
                         columnCount={renderedCategoryColumnCount || categoryColumnCount}
@@ -1186,7 +805,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     ? renderFormattingToolbar('freeText', product.id, product.styles || {})
                     : renderFormattingToolbar('product', product.id,
                         formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle)}
-                        {!handlers.readOnly && <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={!backgroundText && canMoveUp} canMoveDown={!backgroundText && canMoveDown} canMoveLeft={false} canMoveRight={false} isFreeText={product.isFreeText} handlers={handlers} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>}
+                        {!handlers.readOnly && <ProductControls type="product" id={product.id} catName={item.category} canMoveUp={!backgroundText && canMoveUp} canMoveDown={!backgroundText && canMoveDown} canMoveLeft={false} canMoveRight={false} isFreeText={product.isFreeText} handlers={handlers} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} showGridMoveControls={productColumnCount > 1}/>}
                 
                 <div className={`transition-opacity duration-150 ${isBeingDragged && !product.isFreeText ? 'opacity-40' : ''}`}>
                 {product.isFreeText ? (
@@ -1203,7 +822,6 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             fitScope="freeText"
                             disableAutoFit
                             containerSelector={`#product-container-${product.id}`}
-                            showOverflowFeedback={isEditing}
                             id={handlers.readOnly ? undefined : `product-name-${product.id}`} data-product-edit-id={product.id} className={`whitespace-pre-wrap break-words [overflow-wrap:anywhere] outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
                             style={{ 
                                 color: nameStyle.color || style.textColor,
@@ -1237,8 +855,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 ) : (
                 <div className={`flex items-start justify-between ${stackImage ? 'flex-col gap-2' : compactControls ? 'gap-2' : 'gap-4'}`}>
                     {renderProductPhoto(product, isEditing, templateProductImageHeight(style, imageSizePx), stackImage ? '100%' : `${imageSizePx}px`)}
-                    <div className={`flex-grow min-w-0 ${isNameCentered ? 'text-center' : isNameRight ? 'text-right' : 'text-left'}`}>
+                    <div className={`flex-grow min-w-0 ${stackImage ? 'w-full' : ''} ${isNameCentered ? 'text-center' : isNameRight ? 'text-right' : 'text-left'}`}>
                          <div
+                            data-product-text-row="true"
                             className={`flex min-w-0 flex-wrap ${isNameCentered ? 'items-center' : 'items-start'}`}
                             style={{
                                 marginBottom: contentSpacing.productNameToDescription,
@@ -1246,7 +865,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 rowGap: 2,
                             }}
                          >
-                            <div className={`flex items-center gap-2 ${isNameCentered ? 'justify-center' : isNameRight ? 'justify-end' : ''}`} style={{ flex: showProductDivider ? '0 1 auto' : '1 1 min-content', minWidth: 'min-content' }}>
+                            <div className={`flex min-w-0 items-center gap-2 ${isNameCentered ? 'justify-center' : isNameRight ? 'justify-end' : ''}`} style={{ flex: showProductDivider ? '0 1 auto' : '1 1 auto' }}>
                                 <MenuMarkerGlyph marker={getMarker(style, 'product')} fontSize={clampFontSize(style, 'productName', nameStyle.fontSize, 18)}
                                     index={visibleCatProducts.filter((candidate: Product) => !candidate.isFreeText).findIndex((candidate: Product) => candidate.id === product.id)}
                                     color="var(--template-accent)" />
@@ -1257,8 +876,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                     minimumFontSize={minimumFontSize}
                                     allowSameWordBreak={allowSameWordBreak}
                                     fitScope="productName"
+                                    data-divider-title="true"
                                     widthMode="flex"
-                                    showOverflowFeedback={isEditing}
+                                    containerSelector="[data-product-text-row]"
                                     id={handlers.readOnly ? undefined : `product-name-${product.id}`} data-product-edit-id={product.id} className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
                                     style={{ 
                                         color: nameStyle.color || style.textColor,
@@ -1275,11 +895,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 />
                             </div>
                             {showProductDivider && (
-                                <span
-                                    aria-hidden="true"
-                                    className="min-w-2 self-center" data-ornamental-divider={productDividerPreset === 'ornamental' ? 'right' : undefined}
-                                    style={getCategoryDividerStyle(productDividerPreset, style.textColor, 'right')}
-                                />
+                                <CanvasTextDivider preset={productDividerPreset} color={style.textColor} titleEdge="left" />
                             )}
                             {style.showPrices !== false && <div
                               data-template-price data-menu-border-surface="price" data-custom-border={getBorderOverride(style, 'price')} className="relative ml-auto flex min-w-0 shrink-0 items-center gap-1 whitespace-nowrap"
@@ -1306,8 +922,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                     minimumFontSize={minimumFontSize}
                                     allowSameWordBreak={false}
                                     fitScope="productPrice"
-                                    containerSelector={`#product-container-${product.id}`}
-                                    showOverflowFeedback={isEditing}
+                                    containerSelector="[data-product-text-row]"
                                     id={handlers.readOnly ? undefined : `product-price-${product.id}`} data-product-edit-id={product.id} className={`whitespace-nowrap outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
                                     style={{ 
                                         color: `var(--automenu-preview-text, ${priceStyle.color || style.textColor})`,
@@ -1331,7 +946,6 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             allowSameWordBreak={allowSameWordBreak}
                             fitScope="productDescription"
                             widthMode="parent"
-                            showOverflowFeedback={isEditing}
                             data-template-description id={handlers.readOnly ? undefined : `product-description-${product.id}`} data-product-edit-id={product.id} className={`max-w-full opacity-80 break-words [overflow-wrap:anywhere] [word-break:normal] leading-relaxed outline-none rounded ${isEditing ? 'min-h-[1.5em] bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
                             style={{ 
                                 color: `var(--automenu-preview-text, ${descStyle.color || style.textColor})`,
@@ -1380,8 +994,6 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const cardRadius = getProductCardCornerRadii(style, style.borders?.product?.radius ?? getProductCardRadius(style));
         const cardBackgroundColor = style.cardBackgroundColor || '#ffffff';
         const compactControls = categoryColumnCount > 1 || productColumnCount > 1;
-        const denseControls = categoryColumnCount > 1 && productColumnCount > 1;
-        const mobileExpandedControls = !denseControls && categoryColumnCount === 1 && productColumnCount > 1;
         const cardImageHeight = (
             categoryColumnCount >= 3
                 ? 56
@@ -1448,6 +1060,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 data-template-product={product.isFreeText ? undefined : true}
                                 data-menu-border-surface="product" data-custom-border={getBorderOverride(style, 'product')}
                                 data-product-card-surface={isCardLayout || undefined}
+                                data-product-card-shape={isCardLayout ? style.productCardShape || 'template' : undefined}
                                 data-drag-group={item.category}
                                 onPointerDown={(e) => handlers.handleDragStart(e, 'product', product.id, item.category)}
                                 onDragStart={(e) => e.preventDefault()}
@@ -1457,9 +1070,13 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 style={isCardLayout ? { borderRadius: cardRadius } : undefined}
                             >
                                 <BorderDecoration style={style} scope="product" />
+                                {isSelected && handlers.selectedId === product.id && !handlers.editingId && (
+                                    <ColumnResizeHandles columnIndex={columnIndex} columnCount={categoryColumnCount}
+                                        onResizeStart={handlers.startCategoryColumnResize} />
+                                )}
                                 {renderFormattingToolbar('product', product.id,
                                     formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle)}
-                            {!handlers.readOnly && <ProductControls type="product" id={product.id} catName={item.category} isMobileSelected={isSelected} index={idx} total={0} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={canMoveLeft} canMoveRight={canMoveRight} isFreeText={product.isFreeText} handlers={handlers} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} compactControls={compactControls} mobileExpandedControls={mobileExpandedControls} denseControls={denseControls} containMobileControls showGridMoveControls={productColumnCount > 1}/>}
+                            {!handlers.readOnly && <ProductControls type="product" id={product.id} catName={item.category} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={canMoveLeft} canMoveRight={canMoveRight} isFreeText={product.isFreeText} handlers={handlers} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} showGridMoveControls={productColumnCount > 1}/>}
                                 
                                 <div
                                     data-template-card
@@ -1474,6 +1091,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                         {renderProductPhoto(product, isEditing, templateProductImageHeight(style, cardImageHeight), '100%', true)}
                                         <div data-template-content className={`${isCardLayout ? (categoryColumnCount > 1 || productColumnCount > 2 ? 'p-1.5' : productColumnCount > 1 ? 'p-2' : 'p-4') : 'py-2'} flex min-w-0 flex-col flex-grow ${textAlignClass}`}>
                                             <div
+                                                data-product-text-row="true"
                                                 className={`flex min-w-0 flex-wrap ${showProductDivider ? 'items-center' : 'items-start'}`}
                                                 style={{
                                                     marginBottom: contentSpacing.productNameToDescription,
@@ -1481,7 +1099,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                     rowGap: 2,
                                                 }}
                                             >
-                                                <div className={`flex min-w-0 items-center gap-1 ${nameStyle.textAlign === 'center' ? 'justify-center' : nameStyle.textAlign === 'right' ? 'justify-end' : 'justify-start'}`} style={{ flex: showProductDivider ? '0 1 auto' : '1 1 min-content' }}>
+                                                <div className={`flex min-w-0 items-center gap-1 ${nameStyle.textAlign === 'center' ? 'justify-center' : nameStyle.textAlign === 'right' ? 'justify-end' : 'justify-start'}`} style={{ flex: showProductDivider ? '0 1 auto' : '1 1 auto' }}>
                                                     <MenuMarkerGlyph marker={getMarker(style, 'product')} fontSize={clampFontSize(style, 'productName', nameStyle.fontSize, 18)}
                                                         index={visibleCatProducts.filter((candidate: Product) => !candidate.isFreeText).findIndex((candidate: Product) => candidate.id === product.id)}
                                                         color="var(--template-accent)" />
@@ -1492,8 +1110,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         minimumFontSize={minimumFontSize}
                                                         allowSameWordBreak={allowSameWordBreak}
                                                         fitScope="productName"
+                                                        data-divider-title="true"
                                                         widthMode="flex"
-                                                        showOverflowFeedback={isEditing}
+                                                        containerSelector="[data-product-text-row]"
                                                         id={handlers.readOnly ? undefined : `product-name-${product.id}`}
                                                         data-product-edit-id={product.id}
                                                         className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
@@ -1509,11 +1128,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                     />
                                                 </div>
                                                 {showProductDivider && (
-                                                    <span
-                                                        aria-hidden="true"
-                                                        className="min-w-2 self-center" data-ornamental-divider={productDividerPreset === 'ornamental' ? 'right' : undefined}
-                                                        style={getCategoryDividerStyle(productDividerPreset, style.textColor, 'right')}
-                                                    />
+                                                    <CanvasTextDivider preset={productDividerPreset} color={style.textColor} titleEdge="left" />
                                                 )}
                                                 {style.showPrices !== false && <div
                                                     data-template-price data-menu-border-surface="price" data-custom-border={getBorderOverride(style, 'price')} className={`relative ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap ${isCardLayout ? `rounded-full bg-white/90 border border-black/5 shadow-sm ${compactControls ? 'px-1.5 py-0.5' : 'px-2.5 py-1'}` : ''}`}
@@ -1528,8 +1143,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         minimumFontSize={minimumFontSize}
                                                         allowSameWordBreak={false}
                                                         fitScope="productPrice"
-                                                        containerSelector={`#product-container-${product.id}`}
-                                                        showOverflowFeedback={isEditing}
+                                                        containerSelector="[data-product-text-row]"
                                                         id={handlers.readOnly ? undefined : `product-price-${product.id}`}
                                                         data-product-edit-id={product.id}
                                                         className={`whitespace-nowrap outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
@@ -1557,7 +1171,6 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                 allowSameWordBreak={allowSameWordBreak}
                                                 fitScope="productDescription"
                                                 widthMode="parent"
-                                                showOverflowFeedback={isEditing}
                                                 data-template-description id={handlers.readOnly ? undefined : `product-description-${product.id}`}
                                                 data-product-edit-id={product.id}
                                                 className={`max-w-full opacity-75 break-words [overflow-wrap:anywhere] [word-break:normal] flex-grow outline-none rounded ${isEditing ? 'min-h-[1.5em] bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : 'line-clamp-4'}`}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { GripVertical } from 'lucide-react';
-import { selectionLayerClasses } from './selectionLayers';
+import { CanvasActionGroup, canvasActionButtonClass } from './CanvasControls';
 
 interface ColumnResizeHandlesProps {
     columnIndex: number;
@@ -20,18 +20,14 @@ export const ColumnResizeHandles: React.FC<ColumnResizeHandlesProps> = ({
         if (!enabled) return null;
 
         return (
-            <button
-                type="button"
-                data-drag-ignore="true"
-                data-print-control="true"
-                data-column-resize-handle="true"
-                data-responsive-control-obstacle="true"
-                className={`absolute ${edge === 'left' ? '-left-3' : '-right-3'} top-1/2 -translate-y-1/2 h-16 w-6 touch-none rounded-full border-2 border-rose-500 bg-white text-rose-600 shadow-lg cursor-col-resize pointer-events-auto ${selectionLayerClasses.controls} hover:scale-105 transition-transform flex items-center justify-center`}
-                onPointerDown={(event) => onResizeStart(event, edge)}
-                title={`Ajustar largura da coluna pela borda ${edge === 'left' ? 'esquerda' : 'direita'}`}
-            >
-                <GripVertical size={16} />
-            </button>
+            <CanvasActionGroup direction={edge} kind="resize">
+                <button type="button" data-column-resize-handle="true"
+                    className={`${canvasActionButtonClass} touch-none cursor-col-resize !border-rose-300 !text-rose-600 hover:!bg-rose-50`}
+                    onPointerDown={(event) => onResizeStart(event, edge)}
+                    title={`Ajustar largura da coluna pela borda ${edge === 'left' ? 'esquerda' : 'direita'}`}>
+                    <GripVertical size={19} />
+                </button>
+            </CanvasActionGroup>
         );
     };
 

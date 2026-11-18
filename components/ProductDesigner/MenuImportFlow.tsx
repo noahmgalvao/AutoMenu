@@ -1089,7 +1089,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
             <button type="button" onClick={addAnotherPage} disabled={busy} className="flex h-24 w-20 flex-none flex-col items-center justify-center rounded-xl border border-dashed border-violet-300 bg-violet-50 text-[11px] font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-40"><ImagePlus size={24} />Adicionar Página</button>
           </div>
         </div>
-        {previewStale && previewResult && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-800">Alterações pendentes. Ao concluir, será usado o último scan processado.</div>}
+        {previewStale && previewResult && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-800">Atualize a prévia para incluir as últimas alterações.</div>}
       </section>
     );
 
@@ -1103,7 +1103,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
             {showMenuTab && <button type="button" onClick={() => setPreviewTab('menu')} className={`rounded-full px-5 py-2 text-sm font-bold transition-all ${previewTab === 'menu' ? 'bg-violet-600 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>Ver Cardápio</button>}
             {showItemsTab && <button type="button" onClick={() => setPreviewTab('items')} className={`rounded-full px-5 py-2 text-sm font-bold transition-all ${previewTab === 'items' ? 'bg-violet-600 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>Ver Itens</button>}
           </div>
-          {previewStale && previewResult && !processing && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-800">Preview desatualizado — você pode continuar navegando ou concluir usando o último scan.</div>}
+          {previewStale && previewResult && !processing && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-800">Atualize a prévia para incluir as últimas alterações.</div>}
           <div className="relative h-[58vh] min-h-[420px] lg:h-[calc(100vh-235px)] lg:min-h-[430px]">
             {finalizedPreview && previewTab === 'menu' && <PreviewCanvas products={finalizedPreview.products} style={finalizedPreview.style} sortOption={sortOption} splitCategoryAcrossPages={splitCategoryAcrossPages} productsCanChangeCategory={productsCanChangeCategory} />}
             {previewResult && draftStyle && previewTab === 'items' && (
@@ -1221,7 +1221,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
             {renderScanActions(true)}
             {processingError && <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{processingError}</div>}
             {renderMobileProcessingOptions()}
-            {previewStale && previewResult && mobileViewTab === 'original' && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-800">Alterações pendentes. Ao concluir, será usado o último scan processado.</div>}
+            {previewStale && previewResult && mobileViewTab === 'original' && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-800">Atualize a prévia para incluir as últimas alterações.</div>}
           </div>
         </main>
         <footer className="absolute inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-3 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>

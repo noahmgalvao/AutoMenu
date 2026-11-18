@@ -322,3 +322,109 @@ test('product and category removal is available in More options', async ({ page 
   await page.getByRole('button', { name: 'Remover', exact: true }).click();
   await expect(category).toHaveCount(0);
 });
+
+test('category text and group have independent borders and the formatting panel cannot create free text', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?layout=products');
+  const category = page.locator('[data-category-id="Entradas"]');
+  const group = page.locator('[data-category-chunk="Entradas"]');
+  await category.getByRole('heading').click();
+  await category.getByRole('button', { name: 'Mais opções' }).click();
+  await page.getByRole('button', { name: 'Editar categoria' }).click();
+  const toolbar = page.locator('[data-inline-format-toolbar]');
+  await toolbar.getByRole('button', { name: 'Borda', exact: true }).click();
+  const tabs = toolbar.getByRole('tablist', { name: 'Borda da categoria' });
+  await expect(tabs.getByRole('tab', { name: 'Texto da categoria' })).toHaveAttribute('aria-selected', 'true');
+  await toolbar.getByRole('combobox', { name: 'Lados da borda' }).selectOption('bottom');
+  await tabs.getByRole('tab', { name: 'Grupo' }).click();
+  await expect(toolbar.getByRole('combobox', { name: 'Lados da borda' })).toHaveValue('none');
+  await toolbar.getByRole('combobox', { name: 'Lados da borda' }).selectOption('outline');
+  const groupBorder = group.locator(':scope > [data-menu-border]');
+  await expect(groupBorder).toHaveCSS('border-right-width', '1px');
+  const [outline, product] = await Promise.all([groupBorder.boundingBox(), page.locator('#product-container-3').boundingBox()]);
+  expect(outline!.y + outline!.height).toBeGreaterThanOrEqual(product!.y + product!.height - 1);
+  await toolbar.getByRole('spinbutton', { name: 'Espessura (px)' }).dblclick();
+  await expect(page.getByText('Pressione Enter para salvar')).toHaveCount(0);
+  await tabs.getByRole('tab', { name: 'Grupo' }).press('ArrowLeft');
+  await expect(toolbar.getByRole('combobox', { name: 'Lados da borda' })).toHaveValue('bottom');
+});
+
+test('a narrow two-column card saves a corrected name even after typing an oversized word', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=cards&cols=2&lanes=3&long-name');
+  const product = page.locator('#product-container-1');
+  const title = product.getByRole('heading');
+  await title.click();
+  await product.getByRole('button', { name: 'Editar produto' }).click();
+  await title.fill('Palavra'.repeat(55));
+  await expect(title).toHaveClass(/automenu-word-wrap/);
+  await expect(page.getByText('Limite de caracteres excedido')).toHaveCount(0);
+  await title.fill('X');
+  await title.press('Enter');
+  await expect(title).toHaveText('X');
+  await title.click();
+  await product.getByRole('button', { name: 'Editar produto' }).click();
+  await title.fill('Burrata');
+  await page.locator('[data-automenu-editor-canvas]').click({ position: { x: 8, y: 32 } });
+  await expect(title).toHaveText('Burrata');
+});
+
+test('product text settles at a single font size and position in a three-column landscape grid', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=cards&lanes=3&landscape&long-name');
+  const title = page.locator('#product-name-1');
+  await expect(title).toBeVisible();
+  const sizes = await title.evaluate(async element => {
+    const samples = new Set<string>();
+    for (let frame = 0; frame < 24; frame++) {
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      const rect = element.getBoundingClientRect();
+      samples.add(JSON.stringify([element.isConnected, getComputedStyle(element).fontSize, Math.round(rect.y), Math.round(rect.height)]));
+    }
+    return [...samples];
+  });
+  expect(sizes).toHaveLength(1);
+  expect(JSON.parse(sizes[0])[0]).toBe(true);
+});
+
+test('undo and redo keep product editing open until history reaches an earlier action', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=cards&cols=2');
+  await page.getByRole('combobox', { name: 'Formato dos cartões' }).selectOption('square');
+  const product = page.locator('#product-container-1');
+  const title = product.getByRole('heading');
+  await title.click();
+  await product.getByRole('button', { name: 'Editar produto' }).click();
+  const toolbar = page.locator('[data-inline-format-toolbar]');
+  const size = toolbar.getByRole('spinbutton');
+  const value = Number(await size.inputValue());
+  await size.press('ArrowDown');
+  await expect(size).toHaveValue(String(value - 1));
+  await page.getByTitle('Desfazer', { exact: true }).click();
+  await expect(title).toHaveAttribute('contenteditable', 'true');
+  await expect(size).toHaveValue(String(value));
+  await page.getByTitle('Refazer', { exact: true }).click();
+  await expect(title).toHaveAttribute('contenteditable', 'true');
+  await expect(size).toHaveValue(String(value - 1));
+  await page.getByTitle('Desfazer', { exact: true }).click();
+  await page.getByTitle('Desfazer', { exact: true }).click();
+  await expect(toolbar).toHaveCount(0);
+  await expect(title).toHaveAttribute('contenteditable', 'false');
+});
+
+test('category and product dividers align to the middle of the rendered titles', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=cards&cols=2');
+  const product = page.locator('#product-container-1');
+  const title = product.getByRole('heading');
+  await title.click();
+  await product.getByRole('button', { name: 'Editar produto' }).click();
+  const toolbar = page.locator('[data-inline-format-toolbar]');
+  await toolbar.getByRole('button', { name: 'Linha do produto' }).click();
+  await toolbar.getByRole('combobox', { name: 'Linha do produto' }).selectOption('ornamental');
+  const getCenterDifference = (node: Element) => {
+    const range = document.createRange();
+    range.selectNodeContents(node.parentElement!.querySelector('[data-divider-title]')!);
+    const line = node.getBoundingClientRect();
+    const text = range.getBoundingClientRect();
+    return Math.abs(line.top + line.height / 2 - text.top - text.height / 2);
+  };
+  await expect.poll(() => product.locator('[data-ornamental-divider]').evaluate(getCenterDifference)).toBeLessThan(1);
+  const categoryLine = page.locator('[data-template-category] [data-divider-title] + span').first();
+  await expect.poll(() => categoryLine.evaluate(getCenterDifference)).toBeLessThan(1);
+});

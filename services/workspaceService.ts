@@ -1660,7 +1660,7 @@ const propagateSyncedProducts = async ({
       userId,
       editorState: nextEditorState,
       renderSnapshot: nextSnapshot,
-      actionLabel: `Produtos sincronizados de ${sourceMenuName}`,
+      actionLabel: `Produtos vinculados ao cardápio ${sourceMenuName}`,
     });
     const { error: updateTargetError } = await supabase
       .from('menus')

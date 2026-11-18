@@ -183,7 +183,7 @@ export interface CanvasShape {
   innerRadius: number;
 }
 
-export type MenuBorderScope = 'header' | 'category' | 'product' | 'price' | 'productImage' | 'freeText';
+export type MenuBorderScope = 'header' | 'category' | 'categoryGroup' | 'product' | 'price' | 'productImage' | 'freeText';
 export type MenuBorderSide = 'top' | 'right' | 'bottom' | 'left';
 
 export interface MenuBorder {

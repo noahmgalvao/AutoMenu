@@ -9,6 +9,8 @@ export type BorderGeometry = {
     width: number;
     height: number;
     enclosesSurface: boolean;
+    cardShape?: string;
+    textBounds: BorderBox[];
     space: Record<MenuBorderSide, SideSpace>;
 };
 
@@ -37,11 +39,12 @@ function measureGeometry(surface: HTMLElement, page: HTMLElement, entries: TextB
     const scale = pageBox.width / Number(page.dataset.menuPageWidthPx) || 1;
     const width = Math.round(box.width / scale * 100) / 100;
     const height = Math.round(box.height / scale * 100) / 100;
-    const enclosesSurface = surface.hasAttribute('data-product-card-surface') || surface.dataset.menuBorderSurface === 'productImage';
+    const isCard = surface.hasAttribute('data-product-card-surface');
+    const enclosesSurface = isCard || surface.dataset.menuBorderSurface === 'productImage';
     const maxOutset = Math.min(64, Math.max(4, Math.round(Math.min(width, height) / 2)));
     const ownText = entries.filter(({ element }) => surface.contains(element)).map(({ box }) => box);
     const neighbors = entries.filter(({ element }) => !surface.contains(element)).map(({ box }) => box);
-    if (surface.hasAttribute('data-product-card-surface')) {
+    if (isCard) {
         page.querySelectorAll('[data-product-card-surface]').forEach((card) => {
             if (card !== surface) neighbors.push(card.getBoundingClientRect());
         });
@@ -67,14 +70,22 @@ function measureGeometry(surface: HTMLElement, page: HTMLElement, entries: TextB
             : -Math.min(12, Math.min(width, height) / 8);
         let outer = Math.min(maxOutset, distance(clip[side]));
         for (const neighbor of neighbors) {
-            if (neighbor[crossEnd] <= box[crossStart] - (maxOutset + gap) * scale ||
-                neighbor[crossStart] >= box[crossEnd] + (maxOutset + gap) * scale ||
+            const near = distance(neighbor[nearEdge]);
+            const crossAllowance = (near >= 0 ? maxOutset + gap : gap) * scale;
+            if (neighbor[crossEnd] <= box[crossStart] - crossAllowance ||
+                neighbor[crossStart] >= box[crossEnd] + crossAllowance ||
                 distance(neighbor[farEdge]) + gap <= inner) continue;
-            outer = Math.min(outer, distance(neighbor[nearEdge]) - gap);
+            outer = Math.min(outer, near - gap);
         }
         return { inner: enclosesSurface ? Math.min(-12, Math.floor(outer) - 12) : Math.ceil(inner), outer: Math.floor(outer) };
     };
-    return { width, height, enclosesSurface, space: {
+    const textBounds = ownText.map((rect) => ({
+        top: (rect.top - box.top) / scale,
+        right: (rect.right - box.left) / scale,
+        bottom: (rect.bottom - box.top) / scale,
+        left: (rect.left - box.left) / scale,
+    }));
+    return { width, height, enclosesSurface, cardShape: surface.dataset.productCardShape, textBounds, space: {
         top: getSpace('top', 'left', 'right', 'bottom', 'top', -1),
         right: getSpace('right', 'top', 'bottom', 'left', 'right', 1),
         bottom: getSpace('bottom', 'left', 'right', 'top', 'bottom', 1),
@@ -145,6 +156,50 @@ export function observeBorderGeometry(surface: HTMLElement, listener: GeometryLi
 
 const clamp = (value: number, [min, max]: Limits) => Math.max(min, Math.min(max, value));
 
+function getSafeRadius(
+    geometry: BorderGeometry, sides: MenuBorderSide[], outsets: Record<MenuBorderSide, number>, thickness: number,
+    offset: number, length: number,
+) {
+    const left = -outsets.left;
+    const right = geometry.width + outsets.right;
+    const top = -outsets.top;
+    const bottom = geometry.height + outsets.bottom;
+    const limit = Math.max(0, Math.floor(Math.min(right - left, bottom - top) / 2));
+    if (length < 100 || !sides.length || !geometry.textBounds.length) return limit;
+
+    const corners = (['top', 'bottom'] as const).flatMap(vertical => (['left', 'right'] as const).map(horizontal => ({
+        horizontal,
+        vertical,
+        x: horizontal === 'left' ? left : right,
+        y: vertical === 'top' ? top : bottom,
+        strokeX: sides.includes(horizontal) ? thickness : 0,
+        strokeY: sides.includes(vertical) ? thickness : 0,
+    }))).filter(({ strokeX, strokeY }) => strokeX || strokeY);
+    const text = geometry.textBounds.filter(rect => rect.right > left && rect.left < right && rect.bottom > top && rect.top < bottom);
+    const fits = (radius: number) => corners.every(({ horizontal, vertical, x, y, strokeX, strokeY }) => {
+        // CSS rounds inward only near the corners. The straight edges keep their own clearance.
+        const cardRadius = geometry.cardShape && radius ? Math.max(0, radius + offset) : radius;
+        const outerRadius = Math.min(limit, geometry.cardShape === 'arch' && vertical === 'bottom' ? Math.round(cardRadius / 4) : cardRadius);
+        if (!outerRadius) return true;
+        return text.every(rect => {
+            const dx = horizontal === 'left' ? rect.left - x : x - rect.right;
+            const dy = vertical === 'top' ? rect.top - y : y - rect.bottom;
+            if (dx >= outerRadius || dy >= outerRadius) return true;
+            const arcX = (outerRadius - dx + 0.5) / Math.max(0.5, outerRadius - strokeX);
+            const arcY = (outerRadius - dy + 0.5) / Math.max(0.5, outerRadius - strokeY);
+            return arcX * arcX + arcY * arcY <= 1;
+        });
+    });
+    let low = 0;
+    let high = limit;
+    while (low < high) {
+        const middle = Math.ceil((low + high) / 2);
+        if (fits(middle)) low = middle;
+        else high = middle - 1;
+    }
+    return low;
+}
+
 export function fitBorder(border: MenuBorder, geometry: BorderGeometry) {
     const { width, height, space } = geometry;
     const activeSides = border.sides.length ? border.sides : sideIds;
@@ -161,13 +216,13 @@ export function fitBorder(border: MenuBorder, geometry: BorderGeometry) {
     const outsets = Object.fromEntries(sideIds.map((side) => [side, safeSides.includes(side)
         ? clamp(fittedOffset, [space[side].inner + fittedThickness, space[side].outer])
         : clamp(fittedOffset, [0, Math.max(0, space[side].outer)])])) as Record<MenuBorderSide, number>;
-    const radius: Limits = [0, Math.max(0, Math.min(Math.floor(shortEdge / 2),
-        ...(geometry.enclosesSurface ? [] : safeSides.map((side) => outsets[side] - space[side].inner))))];
     const length: Limits = [Math.min(100, Math.max(5, Math.ceil(300 * fittedThickness / Math.max(1, shortEdge)))), 100];
+    const fittedLength = clamp(border.length, length);
+    const radius: Limits = [0, getSafeRadius(geometry, safeSides, outsets, fittedThickness, fittedOffset, fittedLength)];
     return {
         outsets,
         limits: { thickness, length, radius, offset },
         border: { ...border, sides: border.sides.filter((side) => safeSides.includes(side)),
-            thickness: fittedThickness, length: clamp(border.length, length), radius: clamp(border.radius, radius), offset: fittedOffset },
+            thickness: fittedThickness, length: fittedLength, radius: clamp(border.radius, radius), offset: fittedOffset },
     };
 }

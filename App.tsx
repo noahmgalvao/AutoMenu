@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import QRCode from 'qrcode';
-import { AlertCircle, ChefHat, History, Loader2, Paintbrush, Plus, Save, Send, ShoppingCart, X } from 'lucide-react';
+import { AlertCircle, ChefHat, History, Loader2, Paintbrush, Plus, Send, ShoppingCart, X } from 'lucide-react';
 import MenuDesigner from './components/MenuDesigner';
 import { AuthScreen } from './components/AuthScreen';
 import { ProfileMenu } from './components/ProfileMenu';
@@ -34,7 +34,7 @@ import {
   signUpWithEmail,
   updatePasswordWithNonce,
 } from './services/authService';
-import { getSupabaseConfigError, isSupabaseConfigured } from './services/supabaseClient';
+import { isSupabaseConfigured } from './services/supabaseClient';
 import {
   createWorkspaceMenu,
   deleteWorkspaceMenu,
@@ -63,9 +63,9 @@ const SettingsModal = React.lazy(() => import('./components/SettingsModal').then
 interface HistoryState {
   products: Product[];
   style: MenuStyle;
+  productEditSession?: number;
 }
 
-type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'local' | 'error';
 type PrintRequestMode = 'download' | 'download-direct' | 'share-direct' | 'publish' | 'publish-silent';
 type PublishLinkAction = 'copy-link' | 'share-link' | 'download-qr' | 'share-qr' | 'open-link';
 type PublishAction = PublishLinkAction | 'publish' | 'pdf-options' | 'download-pdf' | 'share-pdf' | 'save-slug' | null;
@@ -308,7 +308,6 @@ const App: React.FC = () => {
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [saveState, setSaveState] = useState<SaveState>('idle');
 
   const [workspaceData, setWorkspaceData] = useState<LoadedWorkspaceData | null>(null);
   const [products, setProductsRaw] = useState<Product[]>([]);
@@ -334,6 +333,11 @@ const App: React.FC = () => {
   const [isMenuImportOpen, setIsMenuImportOpen] = useState(false);
   const [history, setHistory] = useState<HistoryState[]>([]);
   const [future, setFuture] = useState<HistoryState[]>([]);
+  const nextProductEditSession = useRef(0);
+  const productEditSession = useRef<number | undefined>(undefined);
+  const handleProductEditChange = useCallback((id: string | null) => {
+    productEditSession.current = id ? ++nextProductEditSession.current : undefined;
+  }, []);
 
   const skipNextPersistRef = useRef(true);
   const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -383,8 +387,8 @@ const App: React.FC = () => {
   }, [hasOpenedProductDesigner, workspaceData]);
 
   const saveCheckpoint = useCallback(() => {
+    const newEntry = { products, style, productEditSession: productEditSession.current };
     setHistory((prev) => {
-      const newEntry = { products, style };
       const newHistory = [...prev, newEntry];
       return newHistory.length > 50 ? newHistory.slice(1) : newHistory;
     });
@@ -418,7 +422,6 @@ const App: React.FC = () => {
 
     const signature = getPersistSignature(payload);
     if (signature === lastSavedSignatureRef.current) {
-      setSaveState('saved');
       return;
     }
 
@@ -430,7 +433,6 @@ const App: React.FC = () => {
     isSavingRef.current = true;
 
     try {
-      setSaveState('saving');
       const result = await saveWorkspaceStateWithRetry(payload);
 
       setWorkspaceData((prev) => {
@@ -499,19 +501,16 @@ const App: React.FC = () => {
           setSortOption(result.sortOption);
         }
 
-        setSaveState('saved');
         setLoadError(null);
         if (pendingPersistActionLabelRef.current === payload.actionLabel) {
           pendingPersistActionLabelRef.current = null;
         }
       } else {
         queuedSaveRef.current = true;
-        setSaveState('dirty');
       }
     } catch {
       writeLocalPendingSnapshot(payload);
       const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
-      setSaveState(isOffline ? 'local' : 'error');
       if (!isOffline) {
         setLoadError(SAVE_ERROR_MESSAGE);
       }
@@ -545,7 +544,10 @@ const App: React.FC = () => {
     const previous = history[history.length - 1];
     const newHistory = history.slice(0, -1);
 
-    setFuture((prev) => [{ products, style }, ...prev]);
+    if (productEditSession.current !== undefined && previous.productEditSession !== productEditSession.current) {
+      document.dispatchEvent(new Event('automenu:close-product-editor'));
+    }
+    setFuture((prev) => [{ products, style, productEditSession: previous.productEditSession }, ...prev]);
     setProductsRaw(previous.products);
     setStyleRaw(previous.style);
     setHistory(newHistory);
@@ -559,7 +561,10 @@ const App: React.FC = () => {
     const next = future[0];
     const newFuture = future.slice(1);
 
-    setHistory((prev) => [...prev, { products, style }]);
+    if (productEditSession.current !== undefined && next.productEditSession !== productEditSession.current) {
+      document.dispatchEvent(new Event('automenu:close-product-editor'));
+    }
+    setHistory((prev) => [...prev, { products, style, productEditSession: next.productEditSession }]);
     setProductsRaw(next.products);
     setStyleRaw(next.style);
     setFuture(newFuture);
@@ -640,7 +645,6 @@ const App: React.FC = () => {
     });
     setHistory([]);
     setFuture([]);
-    setSaveState(shouldRestorePending ? 'local' : restoredSignature === savedSignature ? 'saved' : 'dirty');
   }, []);
 
   const loadWorkspace = useCallback(async (userId: string, menuId?: string | null) => {
@@ -668,7 +672,7 @@ const App: React.FC = () => {
       hydrateWorkspaceState(data);
     } catch (error) {
       if (requestId !== workspaceLoadRequestRef.current) return;
-      setLoadError(getErrorMessage(error, 'Falha ao carregar dados do ambiente.'));
+      setLoadError(getErrorMessage(error, 'Não foi possível carregar seus cardápios.'));
     } finally {
       if (requestId === workspaceLoadRequestRef.current) {
         setIsWorkspaceLoading(false);
@@ -828,7 +832,6 @@ const App: React.FC = () => {
     }
 
     if (signature === lastSavedSignatureRef.current) {
-      setSaveState('saved');
       return;
     }
 
@@ -838,11 +841,9 @@ const App: React.FC = () => {
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       writeLocalPendingSnapshot(payload);
-      setSaveState('local');
       return;
     }
 
-    setSaveState('dirty');
     persistTimeoutRef.current = setTimeout(() => {
       void persistNowRef.current();
     }, SAVE_DEBOUNCE_MS);
@@ -935,14 +936,12 @@ const App: React.FC = () => {
           getPersistSignature(latestPayload) === signature
         ) {
           lastSavedSignatureRef.current = resultSignature;
-          setSaveState('saved');
           setLoadError(null);
         }
       })
       .catch(() => {
         const latestPayload = latestPersistPayloadRef.current;
         if (latestPayload?.menuId === payload.menuId) {
-          setSaveState('error');
           setLoadError(SAVE_ERROR_MESSAGE);
         }
       })
@@ -1021,7 +1020,6 @@ const App: React.FC = () => {
       const payload = latestPersistPayloadRef.current;
       if (!payload || getPersistSignature(payload) === lastSavedSignatureRef.current) return;
 
-      setSaveState('dirty');
       if (persistTimeoutRef.current) {
         clearTimeout(persistTimeoutRef.current);
       }
@@ -1039,7 +1037,6 @@ const App: React.FC = () => {
         persistTimeoutRef.current = null;
       }
       writeLocalPendingSnapshot(payload);
-      setSaveState('local');
     };
 
     window.addEventListener('online', handleOnline);
@@ -1082,7 +1079,6 @@ const App: React.FC = () => {
       await forceSaveCurrentMenu();
       await signOutCurrentUser();
       setWorkspaceData(null);
-      setSaveState('idle');
       setLoadError(null);
     } catch (error) {
       setLoadError(getErrorMessage(error, 'Falha ao sair da conta.'));
@@ -1682,26 +1678,6 @@ const App: React.FC = () => {
     }
   };
 
-  const saveBadge = useMemo(() => {
-    if (saveState === 'dirty') {
-      return { label: 'Alterações pendentes', className: 'text-slate-600 bg-slate-100' };
-    }
-
-    if (saveState === 'saving') {
-      return { label: 'Salvando...', className: 'text-amber-600 bg-amber-50' };
-    }
-
-    if (saveState === 'local') {
-      return { label: 'Desconectado - salvo localmente', className: 'text-sky-700 bg-sky-50' };
-    }
-
-    if (saveState === 'error') {
-      return { label: 'Não foi possível salvar', className: 'text-red-600 bg-red-50' };
-    }
-
-    return null;
-  }, [saveState]);
-
   if (!isSupabaseConfigured()) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
@@ -1710,10 +1686,7 @@ const App: React.FC = () => {
             <AlertCircle className="w-6 h-6 text-amber-500" />
             <h1 className="text-xl font-semibold">Serviço indisponível</h1>
           </div>
-          <p className="text-slate-600">
-            {getSupabaseConfigError()}
-          </p>
-          <p className="text-sm text-slate-500">A configuração do serviço de dados está incompleta. Contate o suporte.</p>
+          <p className="text-sm text-slate-500">Tente novamente mais tarde.</p>
         </div>
       </div>
     );
@@ -1783,12 +1756,6 @@ const App: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
-            {saveBadge && (
-              <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${saveBadge.className}`}>
-                <Save size={12} />
-                <span>{saveBadge.label}</span>
-              </div>
-            )}
             <button type="button" onClick={() => setIsRevisionHistoryOpen(true)} className="h-10 w-10 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 flex items-center justify-center" title="Histórico de revisões"><History size={18} /></button>
             <button
               type="button"
@@ -1955,6 +1922,7 @@ const App: React.FC = () => {
             setSortOption={setSortOption}
             undo={undo}
             redo={redo}
+            onProductEditChange={handleProductEditChange}
             canUndo={history.length > 0}
             canRedo={future.length > 0}
             isOpen={activePanel === 'style'}

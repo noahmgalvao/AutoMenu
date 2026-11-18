@@ -55,6 +55,7 @@ export const getCollisionSafeFreeTextTop = ({
     excludeProductId,
     excludeProductIds = [],
     excludeCategoryId,
+    additionalObstacles = [],
     minTop = Number.NEGATIVE_INFINITY,
     maxBottom = Number.POSITIVE_INFINITY,
     minLeft = Number.NEGATIVE_INFINITY,
@@ -68,6 +69,7 @@ export const getCollisionSafeFreeTextTop = ({
     excludeProductId?: string;
     excludeProductIds?: string[];
     excludeCategoryId?: string;
+    additionalObstacles?: DOMRect[];
     minTop?: number;
     maxBottom?: number;
     minLeft?: number;
@@ -90,6 +92,7 @@ export const getCollisionSafeFreeTextTop = ({
             !excludedProductElementIds.has(element.id)
         ))
         .map((element) => element.getBoundingClientRect())
+        .concat(additionalObstacles)
         .filter((rect) => rect.right > minLeft && rect.left < maxRight)
         .sort((left, right) => left.top - right.top || left.left - right.left);
 

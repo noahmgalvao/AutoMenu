@@ -1,6 +1,6 @@
 import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type { ElementStyle } from '../types';
-import { measureWordFitElement, type WordFitScope } from '../utils/textFit';
+import { getElementAvailableWidth, getWordFitWidthContainer, measureWordFitElement, type WordFitScope } from '../utils/textFit';
 
 interface AutoFitTextProps extends React.HTMLAttributes<HTMLElement> {
   as: keyof React.JSX.IntrinsicElements;
@@ -12,7 +12,6 @@ interface AutoFitTextProps extends React.HTMLAttributes<HTMLElement> {
   widthMode?: 'self' | 'parent' | 'flex';
   containerSelector?: string;
   availableWidthInset?: number;
-  showOverflowFeedback?: boolean;
   disableAutoFit?: boolean;
 }
 
@@ -26,7 +25,6 @@ export const AutoFitText: React.FC<AutoFitTextProps> = ({
   widthMode = 'flex',
   containerSelector,
   availableWidthInset = 0,
-  showOverflowFeedback = false,
   disableAutoFit = false,
   style,
   className = '',
@@ -60,16 +58,25 @@ export const AutoFitText: React.FC<AutoFitTextProps> = ({
   useLayoutEffect(() => {
     const element = elementRef.current;
     if (!element) return;
-    evaluate(text);
-    const observer = new ResizeObserver(() => evaluate());
-    observer.observe(element);
-    if (element.parentElement) observer.observe(element.parentElement);
-    const fontReady = document.fonts?.ready.then(() => evaluate());
-    void fontReady;
-    return () => observer.disconnect();
-  }, [allowSameWordBreak, availableWidthInset, containerSelector, evaluate, minimumFontSize, text, widthMode, style?.fontFamily, style?.fontWeight, style?.fontStyle, style?.letterSpacing, style?.textTransform]);
+    evaluate();
+    if (disableAutoFit) return;
+    const container = getWordFitWidthContainer(element);
+    let width = getElementAvailableWidth(element);
+    const observer = new ResizeObserver(() => {
+      const nextWidth = getElementAvailableWidth(element);
+      if (Math.abs(nextWidth - width) < 0.5) return;
+      width = nextWidth;
+      evaluate();
+    });
+    observer.observe(container);
+    const fontLoaded = () => evaluate();
+    document.fonts?.addEventListener('loadingdone', fontLoaded);
+    return () => {
+      observer.disconnect();
+      document.fonts?.removeEventListener('loadingdone', fontLoaded);
+    };
+  }, [allowSameWordBreak, availableWidthInset, containerSelector, disableAutoFit, evaluate, minimumFontSize, text, widthMode, style?.fontFamily, style?.fontWeight, style?.fontStyle, style?.letterSpacing, style?.textTransform]);
 
-  const showLimitState = showOverflowFeedback && !fit.fits;
   const editableTextColor = rest.contentEditable && typeof style?.color === 'string'
     ? style.color
     : undefined;
@@ -97,7 +104,7 @@ export const AutoFitText: React.FC<AutoFitTextProps> = ({
     'data-word-fit-font-style': style?.fontStyle,
     'data-word-fit-letter-spacing': style?.letterSpacing,
     'data-word-fit-text-transform': style?.textTransform as ElementStyle['textTransform'],
-    className: `${allowSameWordBreak ? '' : 'automenu-word-safe'} ${showLimitState ? 'automenu-text-limit-exceeded' : ''} ${className}`,
+    className: `${!fit.fits && !disableAutoFit ? 'automenu-word-wrap' : allowSameWordBreak ? '' : 'automenu-word-safe'} ${className}`,
     style: {
       ...style,
       fontSize: `${fit.fontSize}px`,
@@ -109,14 +116,5 @@ export const AutoFitText: React.FC<AutoFitTextProps> = ({
     },
   };
 
-  return (
-    <>
-      {React.createElement(as, componentProps, children ?? text)}
-      {showLimitState && (
-        <span data-character-limit-feedback="true" className="automenu-character-limit-message">
-          Limite de caracteres excedido
-        </span>
-      )}
-    </>
-  );
+  return React.createElement(as, componentProps, children ?? text);
 };

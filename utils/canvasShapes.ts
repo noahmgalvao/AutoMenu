@@ -21,11 +21,16 @@ function polygonPoints(count: number, inner: number) {
   }).join(' ');
 }
 
-export function canvasShapeUrl(shape: CanvasShape) {
-  const hex = (color: string) => /^#[0-9a-f]{6}$/i.test(color) ? color : '#4f46e5';
+export function getCanvasShapeDimensions(shape: CanvasShape) {
   const degrees = shape.rotation * Math.PI / 180;
   const width = 100 * (Math.abs(Math.cos(degrees)) * shape.ratio + Math.abs(Math.sin(degrees)));
   const height = 100 * (Math.abs(Math.sin(degrees)) * shape.ratio + Math.abs(Math.cos(degrees)));
+  return { width, height };
+}
+
+export function canvasShapeUrl(shape: CanvasShape) {
+  const hex = (color: string) => /^#[0-9a-f]{6}$/i.test(color) ? color : '#4f46e5';
+  const { width, height } = getCanvasShapeDimensions(shape);
   const geometry: Record<CanvasShapeKind, () => string> = {
     rectangle: () => `<rect x="6" y="6" width="88" height="88" rx="${shape.corners}"/>`,
     ellipse: () => '<ellipse cx="50" cy="50" rx="44" ry="44"/>',

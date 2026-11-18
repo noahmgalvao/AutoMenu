@@ -219,10 +219,15 @@ const borderValues = [
 export function DecorationControls({ style, setStyle, scope: baseScope, id, showBorder = true, showMarker = true, children, targetElementId, sidebar = false, divider, borderTargets }: DecorationProps) {
   const [panel, setPanel] = React.useState<'line' | 'border' | 'marker' | null>(null);
   const [targetScope, setTargetScope] = React.useState(baseScope);
+  const borderTabId = React.useId();
   const selectedTarget = borderTargets?.find((target) => target.scope === targetScope);
-  const scope = selectedTarget?.scope ?? baseScope;
+  const scope = baseScope === 'category' && targetScope === 'categoryGroup'
+    ? 'categoryGroup'
+    : selectedTarget?.scope ?? baseScope;
   const border = getBorderConfiguration(style, scope, id);
-  const surfaceId = selectedTarget?.elementId || targetElementId || (id ? `product-container-${id}` : undefined);
+  const surfaceId = selectedTarget?.elementId || targetElementId || (id
+    ? baseScope === 'category' ? `category-header-${id}` : `product-container-${id}`
+    : undefined);
   const geometry = useBorderGeometry(panel === 'border', scope, surfaceId);
   const fitted = geometry && fitBorder(border, geometry);
   const activePreset = borderPresets.find((preset) => preset.sides.length === border.sides.length && preset.sides.every((side) => border.sides.includes(side)));
@@ -269,6 +274,27 @@ export function DecorationControls({ style, setStyle, scope: baseScope, id, show
     </div>
     {panel === 'line' && divider?.picker}
     {showBorder && panel === 'border' && <div data-border-panel className="space-y-2 rounded-md border border-slate-200 bg-white p-2">
+      {baseScope === 'category' && (
+        <div role="tablist" aria-label="Borda da categoria" className="flex rounded-md bg-slate-100 p-0.5">
+          {(['category', 'categoryGroup'] as const).map((tab) => (
+            <button key={tab} id={`${borderTabId}-${tab}`} type="button" role="tab"
+              aria-selected={scope === tab} aria-controls={borderTabId} tabIndex={scope === tab ? 0 : -1}
+              onClick={() => setTargetScope(tab)}
+              onKeyDown={(event) => {
+                if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+                event.preventDefault();
+                const next = tab === 'category' ? 'categoryGroup' : 'category';
+                setTargetScope(next);
+                document.getElementById(`${borderTabId}-${next}`)?.focus();
+              }}
+              className={`flex-1 rounded px-2 py-1.5 text-xs font-medium ${scope === tab ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'}`}>
+              {tab === 'category' ? 'Texto da categoria' : 'Grupo'}
+            </button>
+          ))}
+        </div>
+      )}
+      <div id={baseScope === 'category' ? borderTabId : undefined} role={baseScope === 'category' ? 'tabpanel' : undefined}
+        aria-labelledby={baseScope === 'category' ? `${borderTabId}-${scope}` : undefined} className="space-y-2">
       {borderTargets && borderTargets.length > 1 && <select aria-label="Aplicar borda em" value={scope}
         className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
         onChange={(event) => setTargetScope(event.target.value as MenuBorderScope)}>
@@ -318,6 +344,7 @@ export function DecorationControls({ style, setStyle, scope: baseScope, id, show
         onClick={() => setStyle(previous => scope === 'freeText'
           ? { ...previous, freeTextBorders: Object.fromEntries(Object.entries(previous.freeTextBorders || {}).filter(([key]) => key !== id)) }
           : { ...previous, borders: { ...previous.borders, [scope]: undefined } })}>Restaurar borda do modelo</button>}
+      </div>
     </div>}
     {markerScope && showMarker && panel === 'marker' && <select aria-label={markerLabel} value={getMarker(style, markerScope)}
       className="h-8 w-full rounded-md border border-slate-200 bg-white text-xs"
