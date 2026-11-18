@@ -59,6 +59,14 @@ export interface PaginationOptions {
     measuredHeights?: ReadonlyMap<string, number>;
 }
 
+export function getSavedCategoryPlacements(style: MenuStyle): Record<string, CategoryPlacementAssignment> | null {
+    const positions = Object.fromEntries(Object.entries(style.categoryPositions || {}).map(([category, position]) => [
+        category, { pageIndex: position.pageIndex, columnIndex: position.columnIndex },
+    ]));
+    const placements = { ...positions, ...style.categoryPlacements };
+    return Object.keys(placements).length ? placements : null;
+}
+
 export const getPaginationItemKey = (item: PageItem) => {
     if (item.type === 'main-header') return item.type;
     const data = item.type === 'category-header' ? item.data
@@ -165,6 +173,15 @@ const getMainHeaderHeight = (style: MenuStyle, measuredHeights?: PaginationOptio
     const subtitleSize = clampFontSize(style, 'menuSubtitle', style.elementStyles?.menuSubtitle?.fontSize, 18);
     return (titleSize * 1.22) + titleBottom + (subtitleSize * 1.35) + spacing.headerToContent + templateHeaderExtra(style);
 };
+
+const getPaginationContentHeight = (style: MenuStyle) => Math.max(
+    1,
+    resolveMenuPageDimensions(style).heightPx - resolveMenuMargins(style).top - getPaginationBottomInset(style),
+);
+
+export function getPaginationColumnLimit(style: MenuStyle, page: PageLayout, options: PaginationOptions) {
+    return getPaginationContentHeight(style) - (page.mainHeader ? getMainHeaderHeight(style, options.measuredHeights) : 0);
+}
 
 // Helper function to estimate item height dynamically
 export const calculateItemHeight = (
@@ -447,10 +464,7 @@ const buildLockedPagination = (
 ): PageLayout[] => {
     const categoryColumnCount = style.categoryColumnCount || 1;
     const margins = resolveMenuMargins(style);
-    const baseColumnHeight = Math.max(
-        1,
-        resolveMenuPageDimensions(style).heightPx - margins.top - getPaginationBottomInset(style),
-    );
+    const baseColumnHeight = getPaginationContentHeight(style);
     const headerHeight = getMainHeaderHeight(style, options.measuredHeights);
     const normalizePlacement = (placement?: CategoryPlacementAssignment | null): CategoryPlacementAssignment => {
         const pageIndex = Number(placement?.pageIndex);
@@ -735,11 +749,7 @@ export const calculatePagination = (
     options: PaginationOptions = {}
 ): PageLayout[] => {
     const categoryColumnCount = style.categoryColumnCount || 1;
-    const margins = resolveMenuMargins(style);
-    const baseColumnHeight = Math.max(
-        1,
-        resolveMenuPageDimensions(style).heightPx - margins.top - getPaginationBottomInset(style),
-    );
+    const baseColumnHeight = getPaginationContentHeight(style);
     const headerHeight = getMainHeaderHeight(style, options.measuredHeights);
     const pageBreaks = new Set(style.pageBreaks || []);
     const isHidden = (id: string) => style.hiddenProductIds?.includes(id) || Boolean(style.freeTextBackgrounds?.[id]);

@@ -597,6 +597,8 @@ test('category and product dividers align to the middle of the rendered titles',
     return Math.abs(line.top + line.height / 2 - text.top - text.height / 2);
   };
   await expect.poll(() => product.locator('[data-ornamental-divider]').evaluate(getCenterDifference)).toBeLessThan(1);
+  await expect(page.locator('#product-container-2 [data-ornamental-divider]')).toBeVisible();
+  await expect(page.locator('#product-container-3 [data-ornamental-divider]')).toBeVisible();
   const categoryLine = page.locator('[data-template-category] [data-divider-title] + span').first();
   await expect.poll(() => categoryLine.evaluate(getCenterDifference)).toBeLessThan(1);
 });

@@ -96,6 +96,20 @@ test('a narrow free text keeps its selection buttons in a single row', async ({ 
   await expect(source).toHaveCount(0);
 });
 
+test('the layout tip keeps a split category together and fills its former column', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=list&lanes=2&split-category');
+  const category = page.locator('[data-category-chunk="B"]');
+  await expect(category).toHaveCount(2);
+  await page.getByRole('button', { name: 'Abrir dicas do cardápio' }).click();
+  await page.getByRole('button', { name: 'Trocar categorias de lugar' }).click();
+  await expect(category).toHaveCount(1);
+  await expect(category.locator('[data-drag-type="product"]')).toHaveCount(3);
+  const originalColumn = page.locator('[data-drag-column-container="category"][data-drag-column-index="0"]').first();
+  await expect(originalColumn.locator('[data-category-chunk]')).toHaveCount(2);
+  await expect(originalColumn.locator('[data-category-chunk="C"]')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Trocar categorias de lugar' })).toHaveCount(0);
+});
+
 test('the right arrow is absent when the neighboring product cell is empty', async ({ page }) => {
   await page.goto('/tests/fixtures/template-editor.html?photos=cards&cols=2&single-product');
   const product = page.locator('#product-container-1');

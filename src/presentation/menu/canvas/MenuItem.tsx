@@ -2,7 +2,7 @@ import type { MenuStyle, Product, ElementStyle, FontSizeLimitKey, MenuBorderScop
 import React from 'react';
 import { resolveFontSizeLimits, resolveMinimumFontSize, resolveMenuContentSpacing, clampFontSize } from '../../../domain/menu/styleRules';
 import { CategoryDividerPicker } from '../designer/CategoryDividerPicker';
-import { resolveCategoryDivider } from './categoryDividers';
+import { resolveCategoryDivider, resolveProductDivider } from './categoryDividers';
 import { InlineStyleToolbar } from '../designer/InlineStyleToolbar';
 import { DecorationControls, getBorderOverride, BorderDecoration, MenuMarkerGlyph, getMarker } from '../designer/Decorations';
 import type { PriceAdjustmentMode } from '../../../domain/menu/pricePropagation';
@@ -218,12 +218,15 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const divider = type === 'category' || type === 'product' ? {
             label: dividerLabel,
             picker: <CategoryDividerPicker compact label={dividerLabel}
-                value={type === 'category' ? resolveCategoryDivider(style, id) : style.productDividerStyles?.[id] || 'none'}
+                value={type === 'category' ? resolveCategoryDivider(style, id) : resolveProductDivider(style, id)}
                 color={type === 'category' ? style.primaryColor : style.textColor}
-                onChange={(preset) => handlers.updateStyle?.((previous: MenuStyle) => {
-                    const field = type === 'category' ? 'categoryDividerStyles' : 'productDividerStyles';
-                    return { ...previous, [field]: { ...previous[field], [id]: preset }, name: 'Custom' };
-                })}
+                onChange={(preset) => handlers.updateStyle?.((previous: MenuStyle) => ({
+                    ...previous,
+                    ...(type === 'category'
+                        ? { categoryDividerStyles: { ...previous.categoryDividerStyles, [id]: preset } }
+                        : { productDividerStyle: preset }),
+                    name: 'Custom',
+                }))}
             />,
         } : undefined;
         return <InlineStyleToolbar
@@ -532,7 +535,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const nameStyle = product.isFreeText && product.styles ? product.styles : (style.elementStyles?.productName || {});
         const priceStyle = style.elementStyles?.productPrice || {};
         const descStyle = style.elementStyles?.productDescription || {};
-        const productDividerPreset = style.productDividerStyles?.[product.id] || 'none';
+        const productDividerPreset = resolveProductDivider(style, product.id);
         const showProductDivider = style.showPrices !== false && productDividerPreset !== 'none';
         const isNameCentered = nameStyle.textAlign === 'center';
         const isNameRight = nameStyle.textAlign === 'right';
@@ -823,7 +826,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                      const nameStyle = style.elementStyles?.productName || {};
                      const priceStyle = style.elementStyles?.productPrice || {};
                      const descStyle = style.elementStyles?.productDescription || {};
-                     const productDividerPreset = style.productDividerStyles?.[product.id] || 'none';
+                     const productDividerPreset = resolveProductDivider(style, product.id);
                      const showProductDivider = style.showPrices !== false && productDividerPreset !== 'none';
                      const textAlignClass = nameStyle.textAlign === 'left'
                         ? 'text-left'

@@ -203,6 +203,7 @@ export interface MenuStyle {
   categoryColumnCount?: 1 | 2 | 3;
   categoryColumnWidths?: number[];
   categoryDividerStyles?: Record<string, CategoryDividerStyle>;
+  productDividerStyle?: CategoryDividerStyle;
   productDividerStyles?: Record<string, CategoryDividerStyle>;
   categoryPlacements?: Record<string, { pageIndex: number; columnIndex: number }>;
   categoryPositions?: Record<string, CategoryPosition>;
@@ -215,6 +216,19 @@ export interface MenuStyle {
   blankPages?: BlankPageSlot[];
   pageBreaks?: string[];
   pageSetup?: MenuPageSetup;
+  portraitPageLayout?: {
+    setup: MenuPageSetup;
+    categoryColumnCount?: 1 | 2 | 3;
+    columnCount: 1 | 2 | 3;
+    categoryColumnWidths?: number[];
+    positions?: Record<string, { portrait: CategoryPosition; landscape: CategoryPosition }>;
+    margins?: {
+      portrait?: MenuMargins;
+      landscape?: MenuMargins;
+      portraitPadding?: number;
+      landscapePadding?: number;
+    };
+  };
   contentLayer?: 'front' | 'back';
   pagePadding?: number;
   globalRadius?: number;

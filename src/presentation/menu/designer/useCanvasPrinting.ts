@@ -3,6 +3,7 @@ import type { MenuStyle, Product, SortOption } from '../../../domain/menu/model'
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 import type { PdfDebugEntry, PdfExportResult } from '../../../infrastructure/browser/pdfExport';
 import type { PrintCanvasModalProps, PrintCanvasOptions, PrintPreviewPage } from './PrintCanvasModal';
+import { updateCanvasPageSetup } from './updateCanvasPageSetup';
 
 const DEFAULT_PRINT_OPTIONS: PrintCanvasOptions = {
     pageMode: 'all',
@@ -29,7 +30,7 @@ const getCanvasPrintPaperDefaults = (style: MenuStyle): Pick<
 > => {
     const dimensions = resolveMenuPageDimensions(style);
     return {
-        paperSize: dimensions.setup.preset === 'screen' ? 'custom' : dimensions.setup.preset,
+        paperSize: dimensions.setup.preset,
         orientation: dimensions.setup.orientation,
         customPaperWidthMm: dimensions.setup.widthMm,
         customPaperHeightMm: dimensions.setup.heightMm,
@@ -55,6 +56,7 @@ interface CanvasPrintingOptions {
     containerRef: RefObject<HTMLDivElement | null>;
     products: Product[];
     style: MenuStyle;
+    setStyle: React.Dispatch<React.SetStateAction<MenuStyle>>;
     sortOption: SortOption;
     splitCategoryAcrossPages: boolean;
     currentPrintPageIndex: number | null;
@@ -68,13 +70,13 @@ interface CanvasPrintingOptions {
 }
 
 export function useCanvasPrinting({
-    containerRef, products, style, sortOption, splitCategoryAcrossPages, currentPrintPageIndex,
+    containerRef, products, style, setStyle, sortOption, splitCategoryAcrossPages, currentPrintPageIndex,
     printRequestMode, printRequestId, onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions, clearCanvasSelection,
 }: CanvasPrintingOptions) {
     const [showPrintModal, setShowPrintModal] = useState(false);
-    const [printOptions, setPrintOptions] = useState<PrintCanvasOptions>(() => getDefaultPrintOptions(style));
+    const [printSettings, setPrintOptions] = useState<PrintCanvasOptions>(() => getDefaultPrintOptions(style));
     const [lastCompletedPrintOptions, setLastCompletedPrintOptions] = useState<PrintCanvasOptions | null>(null);
-    const [activePrintMode, setActivePrintMode] = useState<'download' | 'publish' | 'publish-silent'>('download');
+    const [activePrintMode, setActivePrintMode] = useState<'download' | 'publish'>('download');
     const [printPageCount, setPrintPageCount] = useState(0);
     const [printPreviewPages, setPrintPreviewPages] = useState<PrintPreviewPage[]>([]);
     const [isPrintPreviewLoading, setIsPrintPreviewLoading] = useState(false);
@@ -82,18 +84,17 @@ export function useCanvasPrinting({
     const printPreviewRevisionRef = useRef(0);
     const printPreviewCachesRef = useRef<Map<string, PrintPreviewCacheEntry>>(new Map());
     const canvasPrintPaperDefaults = getCanvasPrintPaperDefaults(style);
+    const printOptions: PrintCanvasOptions = {
+        ...printSettings,
+        ...canvasPrintPaperDefaults,
+        pageMode: printPageCount <= 1 && printSettings.pageMode === 'range' ? 'all' : printSettings.pageMode,
+    };
 
     useEffect(() => {
-        setPrintOptions((current) => ({ ...current, ...canvasPrintPaperDefaults }));
-        setLastCompletedPrintOptions((current) => current
-            ? { ...current, ...canvasPrintPaperDefaults }
-            : current);
-    }, [
-        canvasPrintPaperDefaults.paperSize,
-        canvasPrintPaperDefaults.orientation,
-        canvasPrintPaperDefaults.customPaperWidthMm,
-        canvasPrintPaperDefaults.customPaperHeightMm,
-    ]);
+        if (printPageCount <= 1 && printSettings.pageMode === 'range') {
+            setPrintOptions(current => ({ ...current, pageMode: 'all' }));
+        }
+    }, [printPageCount, printSettings.pageMode]);
 
     const ensurePrintPreviewPages = useCallback(async ({
         printBackgrounds,
@@ -262,6 +263,7 @@ export function useCanvasPrinting({
         printOptions.printBackgrounds,
         printPageCount,
         showPrintModal,
+        style,
     ]);
 
     const executeCanvasPrint = async (onDebug: (entry: PdfDebugEntry) => void) => {
@@ -276,13 +278,12 @@ export function useCanvasPrinting({
             currentPageIndex: currentPrintPageIndex,
             title: style.menuTitle || 'Cardápio',
             onDebug,
-            download: activePrintMode !== 'publish-silent',
+            download: true,
         });
     };
 
     useEffect(() => {
         if (printRequestId <= 0 || printRequestMode !== 'publish-silent') return;
-        setActivePrintMode('publish-silent');
         clearCanvasSelection();
         document.dispatchEvent(new Event('automenu:close-inline-formatting'));
         void (async () => {
@@ -290,6 +291,7 @@ export function useCanvasPrinting({
                 ...getDefaultPrintOptions(style),
                 ...(silentPrintOptions && Object.keys(silentPrintOptions).length > 0 ? silentPrintOptions : {}),
                 ...(lastCompletedPrintOptions || {}),
+                ...canvasPrintPaperDefaults,
             };
             const options: PrintCanvasOptions = requestedOptions.pageMode === 'current'
                 || (requestedOptions.pageMode === 'range' && !requestedOptions.pageRange.trim())
@@ -322,6 +324,7 @@ export function useCanvasPrinting({
                 ...getDefaultPrintOptions(style),
                 ...(silentPrintOptions && Object.keys(silentPrintOptions).length > 0 ? silentPrintOptions : {}),
                 ...(lastCompletedPrintOptions || {}),
+                ...canvasPrintPaperDefaults,
             };
             const options: PrintCanvasOptions = requestedOptions.pageMode === 'current'
                 || (requestedOptions.pageMode === 'range' && !requestedOptions.pageRange.trim())
@@ -355,6 +358,7 @@ export function useCanvasPrinting({
         previewLoading: isPrintPreviewLoading,
         previewError: printPreviewError,
         onChange: setPrintOptions,
+        onPageSetupChange: setup => updateCanvasPageSetup(setStyle, setup),
         onClose() {
             setShowPrintModal(false);
             if (activePrintMode === 'publish') onPrintCancel?.();
@@ -369,5 +373,5 @@ export function useCanvasPrinting({
         },
         onError: activePrintMode === 'publish' ? onPrintError : undefined,
     } : null;
-    return { handlePrint, printDialog };
+    return { handlePrint, printDialog, onPageCountChange: setPrintPageCount };
 }

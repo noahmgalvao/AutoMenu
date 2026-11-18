@@ -35,9 +35,24 @@ test('the app signs in, keeps the product editor through history, and stores an 
   await page.getByPlaceholder('Mínimo de 6 caracteres').fill('test-password');
   await page.locator('form').getByRole('button', { name: 'Entrar' }).click();
 
-  const product = page.locator('#product-container-suco');
+  const product = page.locator('[data-automenu-editor-canvas] #product-container-suco');
   const title = product.getByRole('heading');
   await expect(title).toHaveText('Suco natural');
+  await page.getByRole('button', { name: 'Publicar', exact: true }).click();
+  const linkCheckbox = page.getByRole('checkbox', { name: /Gerar link virtual/ });
+  const linkSection = linkCheckbox.locator('../..');
+  await expect(linkSection.getByText('Link do cardápio')).toBeVisible();
+  const linkActions = await linkSection.getByRole('button').allTextContents();
+  await page.getByRole('button', { name: 'Fechar', exact: true }).click();
+  await page.getByRole('heading', { name: 'Visual', exact: true }).locator('..')
+    .getByRole('button', { name: 'PDF', exact: true }).click();
+  await expect(linkCheckbox).not.toBeChecked();
+  await expect(linkSection.getByText('Link do cardápio')).toHaveCount(0);
+  await linkCheckbox.check();
+  await expect(linkSection.getByText('QR code', { exact: true })).toBeVisible();
+  expect(await linkSection.getByRole('button').allTextContents()).toEqual(linkActions);
+  await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
+
   await context.setOffline(true);
   await title.click();
   await product.getByRole('button', { name: 'Editar produto' }).click();

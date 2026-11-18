@@ -2,7 +2,8 @@ import React, { useMemo, useEffect, useRef, useCallback, useState } from 'react'
 import { createPortal } from 'react-dom';
 import type { AddedImage, ElementStyle, Product, MenuStyle, SortOption } from '../../../domain/menu/model';
 import { AlertTriangle, BringToFront, Copy, CopyCheck, CopyPlus, Edit3, EyeOff, FlipHorizontal2, FlipVertical2, Layers, Paintbrush, Clipboard, Plus, Scissors, SendToBack, Trash2 } from 'lucide-react';
-import { calculatePagination, finalizeMenuPages, getPaginationHeightKey } from '../../../domain/menu/menuPagination';
+import { calculatePagination, finalizeMenuPages, getPaginationHeightKey, getSavedCategoryPlacements } from '../../../domain/menu/menuPagination';
+import { findSplitCategorySwap, type SplitCategorySwap } from '../../../domain/menu/splitCategorySwap';
 import { FREE_TEXT_PREFIX, SAFETY_BUFFER } from '../../../domain/menu/flow';
 import { isPristineNewCategory, isPristineNewProduct } from '../../../domain/menu/pristineItems';
 import { useMenuInteractions } from '../interactions/useMenuInteractions';
@@ -61,6 +62,7 @@ interface MenuPreviewProps {
     readOnly?: boolean;
     visiblePageIndex?: number;
     onPageCountChange?: (pageCount: number) => void;
+    onSplitCategorySwap?: (suggestion: SplitCategorySwap | null) => void;
     onProductEditStart?: (productId: string) => void;
     onProductEditEnd?: (nextObject?: HTMLElement | null) => void;
     onUploadProductImage?: (productId: string, file: File) => Promise<{ url: string; assetId: string }>;
@@ -582,40 +584,35 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     }, [style]);
 
     // 4. Pagination
+    const paginationOptions = useMemo(() => ({
+        splitCategoryAcrossPages: props.splitCategoryAcrossPages, measuredHeights,
+    }), [props.splitCategoryAcrossPages, measuredHeights]);
     const basePages = useMemo(() => {
         const effectiveCategoryPositions = handlers.liveCategoryPositions || style.categoryPositions;
         const effectiveStyle = effectiveCategoryPositions === style.categoryPositions
             ? style
             : { ...style, categoryPositions: effectiveCategoryPositions };
-        const positionAssignments = Object.entries(effectiveCategoryPositions || {}).reduce<Record<string, { pageIndex: number; columnIndex: number }>>(
-            (assignments, [category, position]) => {
-                assignments[category] = {
-                    pageIndex: position.pageIndex,
-                    columnIndex: position.columnIndex,
-                };
-                return assignments;
-            },
-            {},
-        );
         return calculatePagination(
             products,
             effectiveStyle,
             handlers.groupedProducts,
             handlers.sortedCategories,
-            handlers.liveCategoryPageAssignments
-                || (Object.keys(style.categoryPlacements || {}).length > 0
-                    ? { ...positionAssignments, ...style.categoryPlacements }
-                    : Object.keys(positionAssignments).length > 0
-                        ? positionAssignments
-                        : null),
-            { splitCategoryAcrossPages: props.splitCategoryAcrossPages, measuredHeights }
+            handlers.liveCategoryPageAssignments || getSavedCategoryPlacements(effectiveStyle),
+            paginationOptions,
         );
-    }, [products, props.splitCategoryAcrossPages, style, handlers.groupedProducts, handlers.sortedCategories, handlers.liveCategoryPageAssignments, handlers.liveCategoryPositions, measuredHeights]);
+    }, [products, paginationOptions, style, handlers.groupedProducts, handlers.sortedCategories, handlers.liveCategoryPageAssignments, handlers.liveCategoryPositions]);
 
     const canvasStyle = useMemo(() => handlers.liveCanvasLayers
         ? { ...style, ...handlers.liveCanvasLayers } : style, [handlers.liveCanvasLayers, style]);
     const pages = useMemo(() => finalizeMenuPages(basePages, handlers.liveCategoryPositions
         ? { ...canvasStyle, categoryPositions: handlers.liveCategoryPositions } : canvasStyle), [basePages, canvasStyle, handlers.liveCategoryPositions]);
+
+    useEffect(() => {
+        if (!props.onSplitCategorySwap) return;
+        props.onSplitCategorySwap(handlers.draggedItem || readOnly ? null : findSplitCategorySwap(
+            products, style, handlers.groupedProducts, handlers.sortedCategories, basePages, pages, paginationOptions,
+        ));
+    }, [props.onSplitCategorySwap, handlers.draggedItem, handlers.groupedProducts, handlers.sortedCategories, products, style, basePages, pages, paginationOptions, readOnly]);
 
     React.useLayoutEffect(() => {
         const root = previewRootRef.current;

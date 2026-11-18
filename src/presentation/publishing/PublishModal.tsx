@@ -2,13 +2,9 @@ import React from 'react';
 import {
   AlertCircle,
   Check,
-  Copy,
   Download,
-  ExternalLink,
   FileText,
-  Globe2,
   Loader2,
-  QrCode,
   Send,
   Settings2,
   Share2,
@@ -16,61 +12,18 @@ import {
 } from 'lucide-react';
 import { loadUserPreferences, saveUserPreferences } from '../../infrastructure/browser/userPreferences';
 
-type LinkAction = 'copy-link' | 'share-link' | 'download-qr' | 'share-qr' | 'open-link';
+import { ActionButton, Choice, VirtualLinkSection, type VirtualLinkControls } from './VirtualLinkSection';
+
 type PdfAction = 'options' | 'download' | 'share';
 
-interface PublishModalProps {
+interface PublishModalProps extends VirtualLinkControls {
   open: boolean;
-  loading?: boolean;
   preferenceKey: string;
   hasPendingChanges?: boolean;
-  hasPublication?: boolean;
-  publicUrl?: string | null;
-  publicationMenuSlug?: string | null;
-  activeAction?: string | null;
-  feedback?: string | null;
   onClose: () => void;
   onConfirm: (options: { pdf: boolean; virtualLink: boolean }) => void;
-  onLinkAction: (action: LinkAction) => void;
   onPdfAction: (action: PdfAction) => void;
-  onSaveMenuSlug: (menuSlug: string) => void;
 }
-
-const Choice: React.FC<{
-  checked: boolean;
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-  onChange: (checked: boolean) => void;
-}> = ({ checked, icon, title, description, onChange }) => (
-  <label className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer transition-colors ${checked ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
-    <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="mt-1 h-4 w-4 accent-indigo-600" />
-    <span className={checked ? 'text-indigo-600' : 'text-slate-500'}>{icon}</span>
-    <span className="min-w-0">
-      <span className="block text-sm font-bold text-slate-800">{title}</span>
-      <span className="block text-xs text-slate-500 mt-0.5">{description}</span>
-    </span>
-  </label>
-);
-
-const ActionButton: React.FC<{
-  icon: React.ReactNode;
-  label: string;
-  loading?: boolean;
-  disabled?: boolean;
-  primary?: boolean;
-  onClick: () => void;
-}> = ({ icon, label, loading, disabled, primary, onClick }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    disabled={disabled || loading}
-    className={`h-9 min-w-0 rounded-lg px-1 text-[11px] font-bold flex items-center justify-center gap-1 transition-colors disabled:opacity-50 ${primary ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
-  >
-    {loading ? <Loader2 size={15} className="animate-spin" /> : icon}
-    <span className="min-w-0 whitespace-nowrap overflow-hidden text-ellipsis">{label}</span>
-  </button>
-);
 
 const DEFAULT_PREFERENCES = { pdf: true, virtualLink: true };
 
@@ -92,15 +45,13 @@ export const PublishModal: React.FC<PublishModalProps> = ({
 }) => {
   const [pdf, setPdf] = React.useState(true);
   const [virtualLink, setVirtualLink] = React.useState(true);
-  const [menuSlug, setMenuSlug] = React.useState(publicationMenuSlug || '');
 
   React.useEffect(() => {
     if (!open) return;
     const preferences = loadUserPreferences(preferenceKey, DEFAULT_PREFERENCES);
     setPdf(preferences.pdf);
     setVirtualLink(preferences.virtualLink);
-    setMenuSlug(publicationMenuSlug || '');
-  }, [open, preferenceKey, publicationMenuSlug]);
+  }, [open, preferenceKey]);
 
   const updatePreferences = (preferences: { pdf: boolean; virtualLink: boolean }) => {
     setPdf(preferences.pdf);
@@ -111,7 +62,6 @@ export const PublishModal: React.FC<PublishModalProps> = ({
   if (!open) return null;
   const canConfirm = (pdf || virtualLink) && !loading;
   const actionBusy = Boolean(activeAction);
-  const slugChanged = Boolean(publicationMenuSlug && menuSlug.trim() && menuSlug.trim() !== publicationMenuSlug);
 
   return (
     <div className="fixed inset-0 z-[1200] bg-slate-950/45 backdrop-blur-sm flex items-center justify-center p-3 md:p-4" onMouseDown={(event) => event.target === event.currentTarget && !loading && onClose()}>
@@ -147,41 +97,17 @@ export const PublishModal: React.FC<PublishModalProps> = ({
             )}
           </div>
 
-          <div className="space-y-2">
-            <Choice checked={virtualLink} onChange={(checked) => updatePreferences({ pdf, virtualLink: checked })} icon={<Globe2 size={20} />} title="Gerar link virtual" description="Publica o cardápio e prepara o compartilhamento e o QR code." />
-            {virtualLink && (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3.5 space-y-3">
-                <div>
-                  <div className="text-[10px] uppercase tracking-wide font-bold text-slate-400">Link do cardápio</div>
-                  <div className="mt-1 truncate text-xs text-slate-600">{publicUrl || 'Será criado ao usar uma das ações abaixo.'}</div>
-                </div>
-
-                {hasPublication && publicationMenuSlug && (
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-600">Final do link</label>
-                    <div className="mt-1 flex gap-2">
-                      <input value={menuSlug} onChange={(event) => setMenuSlug(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && slugChanged && onSaveMenuSlug(menuSlug)} className="min-w-0 flex-1 h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm" />
-                      <button type="button" onClick={() => onSaveMenuSlug(menuSlug)} disabled={!slugChanged || loading || actionBusy} className="h-10 px-3 rounded-xl bg-slate-900 text-white text-xs font-bold disabled:opacity-40">{activeAction === 'save-slug' ? <Loader2 size={14} className="animate-spin" /> : 'Salvar'}</button>
-                    </div>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-[1fr_1fr_40px] gap-2">
-                  <ActionButton icon={<Copy size={15} />} label="Copiar" loading={activeAction === 'copy-link'} disabled={loading || actionBusy} primary onClick={() => onLinkAction('copy-link')} />
-                  <ActionButton icon={<Share2 size={15} />} label="Compartilhar" loading={activeAction === 'share-link'} disabled={loading || actionBusy} onClick={() => onLinkAction('share-link')} />
-                  <button type="button" onClick={() => onLinkAction('open-link')} disabled={!hasPublication || loading || actionBusy} className="h-10 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 flex items-center justify-center disabled:opacity-40" title="Abrir link em nova guia"><ExternalLink size={16} /></button>
-                </div>
-
-                <div className="border-t border-slate-200 pt-3">
-                  <div className="mb-2 flex items-center gap-2 text-xs font-bold text-slate-700"><QrCode size={15} /> QR code</div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <ActionButton icon={<Download size={15} />} label="Baixar QR" loading={activeAction === 'download-qr'} disabled={loading || actionBusy} onClick={() => onLinkAction('download-qr')} />
-                    <ActionButton icon={<Share2 size={15} />} label="Compartilhar QR" loading={activeAction === 'share-qr'} disabled={loading || actionBusy} onClick={() => onLinkAction('share-qr')} />
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          <VirtualLinkSection
+            enabled={virtualLink}
+            onChange={checked => updatePreferences({ pdf, virtualLink: checked })}
+            loading={loading}
+            hasPublication={hasPublication}
+            publicUrl={publicUrl}
+            publicationMenuSlug={publicationMenuSlug}
+            activeAction={activeAction}
+            onLinkAction={onLinkAction}
+            onSaveMenuSlug={onSaveMenuSlug}
+          />
 
           {!pdf && !virtualLink && <p className="text-xs text-red-600">Selecione pelo menos uma opção.</p>}
         </div>

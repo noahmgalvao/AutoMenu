@@ -3,6 +3,8 @@ import { AlertTriangle, CheckCircle2, Image as ImageIcon, Loader2, Printer, Scis
 import { getCapturedMenuPageSize, PdfExportError, type PdfDebugEntry, type PdfExportResult } from '../../../infrastructure/browser/pdfExport';
 import { getPaperDimensionsMm, getPrintFrameSizeMm, getPrintMarginMm, type PdfPrintOptions } from '../../../domain/publishing/printOptions';
 import { getErrorMessage } from '../../../application/errorMessages';
+import type { MenuPageSetup } from '../../../domain/menu/pageModel';
+import { VirtualLinkSection, type VirtualLinkControls } from '../../publishing/VirtualLinkSection';
 
 export type PrintCanvasOptions = PdfPrintOptions;
 
@@ -20,6 +22,8 @@ export interface PrintCanvasModalProps {
   previewLoading: boolean;
   previewError: string | null;
   onChange: React.Dispatch<React.SetStateAction<PrintCanvasOptions>>;
+  onPageSetupChange: (setup: MenuPageSetup) => void;
+  virtualLinkControls?: VirtualLinkControls;
   onClose: () => void;
   onPrint: (onDebug: (entry: PdfDebugEntry) => void) => Promise<PdfExportResult>;
   onComplete?: (result: PdfExportResult) => void;
@@ -198,6 +202,8 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
   previewLoading,
   previewError,
   onChange,
+  onPageSetupChange,
+  virtualLinkControls,
   onClose,
   onPrint,
   onComplete,
@@ -207,6 +213,7 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
   const [debugEntries, setDebugEntries] = React.useState<PdfDebugEntry[]>([]);
   const [exportError, setExportError] = React.useState<PdfExportError | null>(null);
   const [exportResult, setExportResult] = React.useState<PdfExportResult | null>(null);
+  const [virtualLinkEnabled, setVirtualLinkEnabled] = React.useState(false);
 
   React.useEffect(() => {
     if (!isOpen) return;
@@ -224,10 +231,15 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
   const updateCustomPaperDimension = (axis: 'width' | 'height', value: number) => {
     if (!Number.isFinite(value)) return;
     const normalizedValue = Math.max(50, Math.min(1000, value));
-    const key = axis === 'width'
-      ? (options.orientation === 'landscape' ? 'customPaperHeightMm' : 'customPaperWidthMm')
-      : (options.orientation === 'landscape' ? 'customPaperWidthMm' : 'customPaperHeightMm');
-    update(key, normalizedValue);
+    const key = (axis === 'width') === (options.orientation === 'portrait') ? 'widthMm' : 'heightMm';
+    if (normalizedValue !== pageSetup[key]) onPageSetupChange({ ...pageSetup, [key]: normalizedValue });
+  };
+
+  const pageSetup: MenuPageSetup = {
+    preset: options.paperSize,
+    orientation: options.orientation,
+    widthMm: options.customPaperWidthMm,
+    heightMm: options.customPaperHeightMm,
   };
 
   const handlePrintClick = async () => {
@@ -296,7 +308,7 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
                 <select value={options.pageMode} onChange={(e) => update('pageMode', e.target.value as PrintCanvasOptions['pageMode'])} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm bg-white text-ellipsis overflow-hidden whitespace-nowrap">
                   <option value="all">Todas as páginas</option>
                   <option value="current" disabled={currentPageIndex === null}>Página atual</option>
-                  <option value="range">Intervalo</option>
+                  <option value="range" disabled={totalPages <= 1}>Intervalo</option>
                 </select>
               </Field>
               <Field label="Intervalo">
@@ -307,7 +319,7 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
                     const selected = Array.from(e.target.selectedOptions).map(opt => opt.value);
                     update('pageRange', selected.join(','));
                   }}
-                  disabled={options.pageMode !== 'range'}
+                  disabled={totalPages <= 1 || options.pageMode !== 'range'}
                   className="w-full h-auto max-h-24 rounded-lg border border-slate-200 px-3 py-1 text-sm bg-white disabled:bg-slate-50 disabled:text-slate-300 custom-scrollbar overflow-y-auto"
                 >
                   {Array.from({ length: totalPages }).map((_, i) => (
@@ -316,17 +328,21 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
                 </select>
               </Field>
               <Field label="Papel">
-                <select value={options.paperSize} onChange={(e) => update('paperSize', e.target.value as PrintCanvasOptions['paperSize'])} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm bg-white text-ellipsis overflow-hidden whitespace-nowrap">
+                <select value={options.paperSize} onChange={(e) => {
+                  const preset = e.target.value as MenuPageSetup['preset'];
+                  onPageSetupChange({ ...pageSetup, preset, orientation: preset === 'screen' ? 'landscape' : pageSetup.orientation });
+                }} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm bg-white text-ellipsis overflow-hidden whitespace-nowrap">
                   <option value="A4">A4</option>
                   <option value="A5">A5</option>
                   <option value="A3">A3</option>
                   <option value="Letter">Carta</option>
+                  <option value="screen">Painel 16:9</option>
                   <option value="Square">Quadrado</option>
                   <option value="custom">Personalizado</option>
                 </select>
               </Field>
-              <Field label="Orientacao">
-                <select value={options.orientation} onChange={(e) => update('orientation', e.target.value as PrintCanvasOptions['orientation'])} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm bg-white text-ellipsis overflow-hidden whitespace-nowrap">
+              <Field label="Orientação">
+                <select value={options.orientation} onChange={(e) => onPageSetupChange({ ...pageSetup, orientation: e.target.value as MenuPageSetup['orientation'] })} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm bg-white text-ellipsis overflow-hidden whitespace-nowrap">
                   <option value="portrait">Retrato</option>
                   <option value="landscape">Paisagem</option>
                 </select>
@@ -440,16 +456,21 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
                     {exportError
                       ? 'Não foi possível gerar o PDF. Tente novamente.'
                       : exportResult
-                        ? `PDF baixado: ${exportResult.filename}`
+                        ? 'PDF baixado'
                         : 'Preparando PDF...'}
                   </div>
-                  {exportResult && (
-                    <div className="text-xs text-emerald-700 mt-1">
-                      {exportResult.pageCount} página(s), {(exportResult.sizeBytes / 1024 / 1024).toFixed(2)} MB, {(exportResult.durationMs / 1000).toFixed(1)} s.
-                    </div>
-                  )}
                 </div>
               </div>
+            </section>
+          )}
+          {virtualLinkControls && (
+            <section className="space-y-2 border-t border-slate-100 pt-4">
+              <VirtualLinkSection {...virtualLinkControls} enabled={virtualLinkEnabled} onChange={setVirtualLinkEnabled} />
+              {virtualLinkEnabled && virtualLinkControls.feedback && (
+                <p role="status" className="flex items-center gap-2 rounded-xl bg-emerald-50 p-3 text-xs font-semibold text-emerald-700">
+                  <CheckCircle2 size={16} /> {virtualLinkControls.feedback}
+                </p>
+              )}
             </section>
           )}
         </div>

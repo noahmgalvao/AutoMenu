@@ -18,6 +18,9 @@ export const CATEGORY_DIVIDER_PRESETS: { value: CategoryDividerStyle; label: str
 export const resolveCategoryDivider = (style: MenuStyle, category: string): CategoryDividerStyle =>
   style.categoryDividerStyles?.[category] || style.design?.divider || 'solid';
 
+export const resolveProductDivider = (style: MenuStyle, id: string): CategoryDividerStyle =>
+  style.productDividerStyle ?? style.productDividerStyles?.[id] ?? 'none';
+
 export const getCategoryDividerStyle = (
   preset: CategoryDividerStyle = 'solid',
   color: string,

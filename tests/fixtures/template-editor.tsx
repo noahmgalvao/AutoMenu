@@ -25,6 +25,7 @@ const samplePhoto = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAA
 function Fixture() {
   const params = new URLSearchParams(location.search);
   const photoMode = params.get('photos');
+  const splitCategory = params.has('split-category');
   const [history, setHistory] = useState<MenuStyle[]>(() => !photoMode ? [
     params.has('added-image') ? {
       ...initial, addedImages: [
@@ -33,19 +34,23 @@ function Fixture() {
       ],
     } : initial,
   ] : [{
-    ...initial, showImages: true,
+    ...initial, showImages: !splitCategory,
     layoutMode: photoMode === 'list' ? 'list' : 'cards',
     columnCount: photoMode === 'list' || params.get('cols') === '1' ? 1 : params.get('cols') === '2' ? 2 : 3,
     categoryColumnCount: params.get('lanes') === '3' ? 3 : params.get('lanes') === '2' ? 2 : initial.categoryColumnCount,
     categoryPlacements: params.has('right-column') ? { Entradas: { pageIndex: 0, columnIndex: 0 }, Sobremesas: { pageIndex: 0, columnIndex: 1 } } : initial.categoryPlacements,
     pageSetup: params.has('landscape') ? { ...initial.pageSetup!, orientation: 'landscape' } : initial.pageSetup,
-    design: {
+    design: splitCategory ? undefined : {
       ...initial.design!,
       card: (params.get('card') as TemplateDesign['card']) || 'flat',
       image: photoMode === 'background' ? 'background' : 'top',
     },
   }]);
-  const [items, setItems] = useState(() => params.has('dense-list') ? Array.from({ length: 22 }, (_, i) => ({
+  const [items, setItems] = useState(() => splitCategory ? [
+    { id: 'a1', category: 'A', name: 'A1', price: 12, description: '', customMarginTop: 350 },
+    ...[1, 2, 3].map(index => ({ id: `b${index}`, category: 'B', name: `B${index}`, price: 12, description: '', customMarginTop: 190 })),
+    { id: 'c1', category: 'C', name: 'C1', price: 12, description: '', customMarginTop: 130 },
+  ] : params.has('dense-list') ? Array.from({ length: 22 }, (_, i) => ({
     id: `side-${i + 1}`, category: 'Acompanhamentos', name: i === 0 ? 'Batata Trufada' : `Novo item ${i}`,
     description: 'Descrição', price: 6.5,
   })) : !photoMode ? products : (params.has('single-product') ? products.slice(0, 1) : products).map(product => ({

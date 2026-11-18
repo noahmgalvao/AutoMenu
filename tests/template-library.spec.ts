@@ -410,9 +410,12 @@ test('exports a landscape screen-sized PDF using the same dimensions as the edit
   await expect(page.locator('[data-menu-print-page]').first()).toHaveAttribute('data-menu-page-width-mm','320');
   await expect(page.locator('[data-menu-print-page]').first()).toHaveAttribute('data-menu-page-height-mm','180');
   await page.getByRole('button',{name:'PDF',exact:true}).click();
+  await expect(page.getByRole('combobox', { name: 'Páginas', exact: true }).getByRole('option', { name: 'Intervalo' })).toBeEnabled();
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button',{name:'Baixar PDF',exact:true}).click();
   const file = await downloadPromise;
+  await expect(page.getByText('PDF baixado', { exact: true })).toBeVisible();
+  await expect(page.getByText(file.suggestedFilename(), { exact: false })).toHaveCount(0);
   const path = testInfo.outputPath('landscape-preview.pdf');
   await file.saveAs(path);
   const pdf = (await readFile(path)).toString('latin1');
@@ -420,4 +423,28 @@ test('exports a landscape screen-sized PDF using the same dimensions as the edit
   expect(Number(width)).toBeCloseTo(320 * 72 / 25.4);
   expect(Number(height)).toBeCloseTo(180 * 72 / 25.4);
   await testInfo.attach('Landscape PDF', {path,contentType:'application/pdf'});
+});
+
+test('PDF page setup updates the editor and restores the portrait columns', async ({ page }) => {
+  await page.goto(`${url}?photos=list&lanes=2&different-categories&right-column`);
+  const canvasPage = page.locator('[data-menu-print-page]').first();
+  const columns = canvasPage.locator('[data-drag-column-container="category"]');
+  const getGroups = () => columns.evaluateAll(lanes => lanes.map(lane => Array.from(
+    lane.querySelectorAll('[data-category-chunk]'), group => group.getAttribute('data-category-chunk'),
+  )));
+  await expect(columns).toHaveCount(2);
+  const portraitGroups = await getGroups();
+  await page.getByRole('button', { name: 'PDF', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: 'Páginas', exact: true }).getByRole('option', { name: 'Intervalo' })).toBeDisabled();
+  const orientation = page.getByRole('combobox', { name: 'Orientação', exact: true });
+  await orientation.selectOption('landscape');
+  await expect(canvasPage).toHaveAttribute('data-menu-page-width-mm', '297');
+  await expect(columns).toHaveCount(3);
+  await orientation.selectOption('portrait');
+  await expect(canvasPage).toHaveAttribute('data-menu-page-width-mm', '210');
+  await expect.poll(getGroups).toEqual(portraitGroups);
+  await page.getByRole('combobox', { name: 'Papel', exact: true }).selectOption('A5');
+  await expect(canvasPage).toHaveAttribute('data-menu-page-width-mm', '148');
+  await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  await expect(page.getByLabel('Tamanho da página')).toHaveValue('A5');
 });

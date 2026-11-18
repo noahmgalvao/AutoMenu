@@ -65,6 +65,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
         newItemDraft,
         formData,
         existingEdits,
+        pendingDivider,
         productImageUpload,
         categoryImageUpload,
         setMenuOpenId,
@@ -73,6 +74,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
         setBulkAdjustmentMode,
         setFormData,
         updateExistingEdit,
+        updateProductDivider,
         productFileInputRef,
         categoryFileInputRef,
         handlers,
@@ -276,7 +278,9 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                         setFormData={setFormData}
                         newItemDraft={newItemDraft}
                         existingEdits={existingEdits}
+                        pendingDivider={pendingDivider}
                         updateExistingEdit={updateExistingEdit}
+                        updateProductDivider={updateProductDivider}
                         startEdit={startEdit}
                         saveEdit={saveEdit}
                         cancelEdit={cancelEdit}

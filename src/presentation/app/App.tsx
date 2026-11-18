@@ -4,6 +4,7 @@ import MenuDesigner from '../menu/MenuDesigner';
 import { AuthScreen } from '../account/AuthScreen';
 import { ProfileMenu } from '../account/ProfileMenu';
 import { PublishModal } from '../publishing/PublishModal';
+import type { VirtualLinkControls } from '../publishing/VirtualLinkSection';
 import { CreateMenuModal } from './CreateMenuModal';
 import { RevisionHistoryModal } from './RevisionHistoryModal';
 import type { PrintCanvasOptions } from '../menu/designer/PrintCanvasModal';
@@ -120,6 +121,17 @@ const App: React.FC = () => {
     );
   }
 
+  const virtualLinkControls: VirtualLinkControls = {
+    loading: isPublishing,
+    hasPublication: Boolean(publication),
+    publicUrl: publication ? getPublicationUrl(publication) : null,
+    publicationMenuSlug: publication?.menuSlug,
+    activeAction: publishAction,
+    feedback: publishFeedback,
+    onLinkAction: action => void handleLinkAction(action),
+    onSaveMenuSlug: menuSlug => void handlePublicationSlugChange(menuSlug),
+  };
+
   return (
     <div className="h-screen bg-slate-50 flex flex-col font-sans text-slate-900 overflow-hidden relative">
       <nav className={`absolute top-0 left-0 right-0 bg-white border-b border-slate-200 h-16 ${isMenuImportOpen ? 'z-[1100]' : 'z-30'} transition-transform duration-300 ${isMenuImportOpen ? 'translate-y-0' : isScrolling ? '-translate-y-full md:translate-y-0' : 'translate-y-0'}`}>
@@ -188,20 +200,13 @@ const App: React.FC = () => {
       </nav>
 
       <PublishModal
+        {...virtualLinkControls}
         open={isPublishOpen}
-        loading={isPublishing}
         preferenceKey={`automenu:publish-options:${session.user.id}`}
         hasPendingChanges={Boolean(publication && hasPublishedChanges)}
-        hasPublication={Boolean(publication)}
-        publicUrl={publication ? getPublicationUrl(publication) : null}
-        publicationMenuSlug={publication?.menuSlug || null}
-        activeAction={publishAction}
-        feedback={publishFeedback}
         onClose={() => setIsPublishOpen(false)}
         onConfirm={(options) => void handlePublishConfirm(options)}
-        onLinkAction={(action) => void handleLinkAction(action)}
         onPdfAction={handlePdfAction}
-        onSaveMenuSlug={(menuSlug) => void handlePublicationSlugChange(menuSlug)}
       />
 
       <CreateMenuModal
@@ -326,6 +331,7 @@ const App: React.FC = () => {
             onPrintError={handlePrintError}
             onPrintCancel={handlePrintCancel}
             silentPrintOptions={(publication?.pdfOptions || {}) as Partial<PrintCanvasOptions>}
+            virtualLinkControls={virtualLinkControls}
             onClose={() => setActivePanel(null)}
             onScrollActivity={setIsScrolling}
             workspaceId={workspaceData.workspace.id}

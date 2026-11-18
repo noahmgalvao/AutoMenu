@@ -8,6 +8,8 @@ import { Undo, Redo, Check, X } from 'lucide-react';
 import { ZoomControls } from './designer/ZoomControls';
 import { MenuSidebar } from './designer/MenuSidebar';
 import type { PrintCanvasOptions } from './designer/PrintCanvasModal';
+import type { VirtualLinkControls } from '../publishing/VirtualLinkSection';
+import type { SplitCategorySwap } from '../../domain/menu/splitCategorySwap';
 import { useAppServices } from '../app/AppServicesProvider';
 import { useCanvasPrinting } from './designer/useCanvasPrinting';
 import type { MoveDirection, SelectionItem } from './interactions/types';
@@ -32,6 +34,7 @@ const PrintCanvasModal = React.lazy(() => import('./designer/PrintCanvasModal').
 })));
 
 interface MenuDesignerProps {
+    virtualLinkControls?: VirtualLinkControls;
     products: Product[];
     style: MenuStyle;
     setStyle: React.Dispatch<React.SetStateAction<MenuStyle>>;
@@ -136,12 +139,13 @@ const formatLayoutIssueBreakdown = (categories: number, products: number, freeTe
     return `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`;
 };
 
-const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, onProductEditChange, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions, onClose, onScrollActivity, workspaceId, currentUserId, splitCategoryAcrossPages = false, productsCanChangeCategory = false }) => {
+const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, onProductEditChange, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions, virtualLinkControls, onClose, onScrollActivity, workspaceId, currentUserId, splitCategoryAcrossPages = false, productsCanChangeCategory = false }) => {
     const { assets: { uploadFileAsset } } = useAppServices();
     const [scale, setScale] = useState(DEFAULT_PREVIEW_ZOOM);
     const [isDesktopViewport, setIsDesktopViewport] = useState(() => window.matchMedia('(min-width: 768px)').matches);
     const renderScale = scale * (isDesktopViewport ? DESKTOP_PREVIEW_ZOOM_RENDER_MULTIPLIER : MOBILE_PREVIEW_ZOOM_RENDER_MULTIPLIER);
     const [tipsOpen, setTipsOpen] = useState(false);
+    const [splitCategorySwap, setSplitCategorySwap] = useState<SplitCategorySwap | null>(null);
     const [fontTips, setFontTips] = useState<FontTip[]>([]);
     const [pendingFontPropagation, setPendingFontPropagation] = useState<FontPropagationRequest | null>(null);
     const [layoutDiagnostics, setLayoutDiagnostics] = useState<LayoutDiagnostics>(EMPTY_LAYOUT_DIAGNOSTICS);
@@ -207,9 +211,11 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const showOffCanvasTip = offCanvasIssueCount > 0 && !dismissedTips.has('off-canvas-elements');
     const showPositionedCategoryTip = (positionedCategoryIds.length > 0 || layoutDiagnostics.hasColumnGap)
         && !dismissedTips.has('free-categories');
+    const splitCategoryTipKey = splitCategorySwap ? `split-category:${splitCategorySwap.category}` : null;
+    const visibleSplitCategorySwap = splitCategoryTipKey && !dismissedTips.has(splitCategoryTipKey) ? splitCategorySwap : null;
     const configuredCanvasFonts = getConfiguredCanvasFonts(style, products);
     const showMixedFontTip = configuredCanvasFonts.length > 1 && !dismissedTips.has('mixed-fonts');
-    const hasVisibleTips = visibleFontTips.length > 0 || showMixedFontTip || showOverlapTip || showOffCanvasTip || showPositionedCategoryTip;
+    const hasVisibleTips = visibleFontTips.length > 0 || showMixedFontTip || showOverlapTip || showOffCanvasTip || showPositionedCategoryTip || Boolean(visibleSplitCategorySwap);
 
     useEffect(() => {
         const mediaQuery = window.matchMedia('(min-width: 768px)');
@@ -448,13 +454,14 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         if (configuredCanvasFonts.length > 1) activeKeys.add('mixed-fonts');
         if (positionedCategoryIds.length > 0) activeKeys.add('free-categories');
         if (layoutDiagnostics.hasColumnGap) activeKeys.add('free-categories');
+        if (splitCategoryTipKey) activeKeys.add(splitCategoryTipKey);
         if (overlapIssueCount > 0) activeKeys.add('overlapping-elements');
         if (offCanvasIssueCount > 0) activeKeys.add('off-canvas-elements');
         setDismissedTips(current => {
             const next = new Set(Array.from(current).filter(key => activeKeys.has(key)));
             return next.size === current.size ? current : next;
         });
-    }, [configuredCanvasFonts.length, fontTips, layoutDiagnostics.hasColumnGap, offCanvasIssueCount, overlapIssueCount, positionedCategorySignature]);
+    }, [configuredCanvasFonts.length, fontTips, layoutDiagnostics.hasColumnGap, offCanvasIssueCount, overlapIssueCount, positionedCategorySignature, splitCategoryTipKey]);
 
     useEffect(() => {
         const root = containerRef.current;
@@ -548,8 +555,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         return () => el.removeEventListener('wheel', handleWheel);
     }, [scale]);
 
-    const { handlePrint, printDialog } = useCanvasPrinting({
-        containerRef, products, style, sortOption, splitCategoryAcrossPages, currentPrintPageIndex,
+    const { handlePrint, printDialog, onPageCountChange } = useCanvasPrinting({
+        containerRef, products, style, setStyle, sortOption, splitCategoryAcrossPages, currentPrintPageIndex,
         printRequestId, printRequestMode, onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions,
         clearCanvasSelection: () => setSelection({ type: null, id: null }),
     });
@@ -1703,6 +1710,9 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             };
         }
 
+        if (visibleSplitCategorySwap && nextProducts === products && nextStyle === style) {
+            nextStyle = { ...style, ...visibleSplitCategorySwap.layout, name: 'Custom' };
+        }
         if (nextProducts !== products || nextStyle !== style) {
             if (setProductsAndStyle) {
                 setProductsAndStyle(nextProducts, nextStyle, 'Ajustes sugeridos aplicados');
@@ -1771,6 +1781,24 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                 </div>
 
                                 <div className="max-h-[min(60vh,32rem)] space-y-4 overflow-y-auto p-4">
+                                    {visibleSplitCategorySwap && (
+                                        <section>
+                                            <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Manter categoria junta</h3>
+                                            <div className="flex items-start gap-3 rounded-xl border border-indigo-200 bg-indigo-50 p-3">
+                                                <p className="min-w-0 flex-1 text-xs leading-relaxed text-slate-700">
+                                                    Troque <strong>{visibleSplitCategorySwap.category}</strong> de lugar com <strong>{visibleSplitCategorySwap.replacement}</strong> para manter os produtos das duas categorias juntos.
+                                                </p>
+                                                <div className="flex shrink-0 gap-1">
+                                                    <button type="button" onClick={() => setStyle(current => ({ ...current, ...visibleSplitCategorySwap.layout, name: 'Custom' }))}
+                                                        className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700"
+                                                        aria-label="Trocar categorias de lugar" title="Trocar categorias de lugar"><Check size={16} /></button>
+                                                    <button type="button" onClick={() => splitCategoryTipKey && dismissTip(splitCategoryTipKey)}
+                                                        className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm transition hover:bg-slate-100 hover:text-slate-700"
+                                                        aria-label="Dispensar dica de categoria" title="Dispensar dica de categoria"><X size={16} /></button>
+                                                </div>
+                                            </div>
+                                        </section>
+                                    )}
                                     {showMixedFontTip && (
                                         <section>
                                             <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Fontes diferentes</h3>
@@ -1963,6 +1991,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                             onUploadProductImage={handleProductImageUpload}
                             onProductEditStart={handleCanvasProductEditStart}
                             onProductEditEnd={handleCanvasProductEditEnd}
+                            onPageCountChange={onPageCountChange}
+                            onSplitCategorySwap={setSplitCategorySwap}
                         />
                     </div>
                     <div style={{ height: '100px', width: '1px' }} />
@@ -2000,7 +2030,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             />
             {printDialog && (
                 <React.Suspense fallback={null}>
-                    <PrintCanvasModal {...printDialog} />
+                    <PrintCanvasModal {...printDialog} virtualLinkControls={virtualLinkControls} />
                 </React.Suspense>
             )}
         </div>

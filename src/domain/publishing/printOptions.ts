@@ -1,7 +1,10 @@
+import type { MenuPagePreset } from '../menu/pageModel';
+import { MENU_PAGE_PRESETS_MM } from '../menu/pageSetup';
+
 export type PdfPrintOptions = {
   pageMode: 'all' | 'current' | 'range';
   pageRange: string;
-  paperSize: 'A4' | 'A5' | 'A3' | 'Letter' | 'Square' | 'custom';
+  paperSize: MenuPagePreset;
   customPaperWidthMm: number;
   customPaperHeightMm: number;
   orientation: 'portrait' | 'landscape';
@@ -24,21 +27,13 @@ export type PdfPageSizePx = {
   heightMm?: number;
 };
 
-const A4_PAGE_MM = { width: 210, height: 297 };
+const A4_PAGE_MM = MENU_PAGE_PRESETS_MM.A4;
 
 const CSS_PIXELS_PER_INCH = 96;
 
 const MIN_CUSTOM_PAPER_MM = 50;
 
 const MAX_CUSTOM_PAPER_MM = 1000;
-
-export const PAPER_SIZES_MM: Record<Exclude<PdfPrintOptions['paperSize'], 'custom'>, { width: number; height: number }> = {
-  A4: A4_PAGE_MM,
-  A5: { width: 148, height: 210 },
-  A3: { width: 297, height: 420 },
-  Letter: { width: 215.9, height: 279.4 },
-  Square: { width: 210, height: 210 },
-};
 
 export const getPrintMarginMm = (options: PdfPrintOptions) => (
   options.marginPreset === 'custom' ? Math.max(0, options.customMarginMm) : Number(options.marginPreset)
@@ -62,7 +57,7 @@ export const getPaperDimensionsMm = (options: PdfPrintOptions) => {
       : source;
   }
 
-  const source = PAPER_SIZES_MM[options.paperSize];
+  const source = MENU_PAGE_PRESETS_MM[options.paperSize];
   return options.orientation === 'landscape'
     ? { width: source.height, height: source.width }
     : { ...source };
@@ -113,7 +108,7 @@ export const resolvePdfPageIndexes = (
   totalPages: number,
   currentPageIndex: number | null
 ) => {
-  if (options.pageMode === 'range') return parsePdfPageRange(options.pageRange, totalPages);
+  if (options.pageMode === 'range' && totalPages > 1) return parsePdfPageRange(options.pageRange, totalPages);
   if (options.pageMode === 'current') {
     return currentPageIndex !== null && currentPageIndex >= 0 && currentPageIndex < totalPages
       ? new Set([currentPageIndex])

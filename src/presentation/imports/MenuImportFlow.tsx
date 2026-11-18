@@ -338,7 +338,9 @@ const ImportedItemsEditor: React.FC<{
           setFormData={logic.setFormData}
           newItemDraft={logic.newItemDraft}
           existingEdits={logic.existingEdits}
+          pendingDivider={logic.pendingDivider}
           updateExistingEdit={logic.updateExistingEdit}
+          updateProductDivider={logic.updateProductDivider}
           startEdit={logic.startEdit}
           saveEdit={logic.saveEdit}
           cancelEdit={logic.cancelEdit}

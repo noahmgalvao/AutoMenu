@@ -15,8 +15,11 @@ import {
     type PricePropagationRequest,
 } from '../../domain/menu/pricePropagation';
 
-export type ProductDesignerEdit = Partial<Product> & { divider?: CategoryDividerStyle };
-type EditSession = { changes: Record<string, ProductDesignerEdit>; closed?: { cancelledId?: string } };
+type EditSession = {
+    changes: Record<string, Partial<Product>>;
+    dividers: { id: string; preset: CategoryDividerStyle }[];
+    closed?: { cancelledId?: string };
+};
 
 interface UseProductDesignerLogicProps {
     products: Product[];
@@ -60,7 +63,8 @@ export const useProductDesignerLogic = ({
 
     // Form State
     const [formData, setFormData] = useState<Partial<Product>>({});
-    const [existingEdits, setExistingEdits] = useState<Record<string, ProductDesignerEdit>>({});
+    const [existingEdits, setExistingEdits] = useState<Record<string, Partial<Product>>>({});
+    const [pendingDivider, setPendingDivider] = useState<CategoryDividerStyle>();
     const editSessionRef = useRef<EditSession | null>(null);
     const [uploadTargetId, setUploadTargetId] = useState<string | null>(null);
     const [categoryUploadTarget, setCategoryUploadTarget] = useState<string | null>(null);
@@ -295,25 +299,30 @@ export const useProductDesignerLogic = ({
             handlers.sortedCategories.includes(id) ? 'category' : getProductSelectionType(product),
             id
         );
-        editSessionRef.current = { changes: {} };
+        editSessionRef.current = { changes: {}, dividers: [] };
         setExistingEdits({});
+        setPendingDivider(undefined);
         setEditModeId(id);
         setMenuOpenId(null);
     };
 
-    const updateExistingEdit = (id: string, update: React.SetStateAction<ProductDesignerEdit>) => {
+    const updateExistingEdit = (id: string, update: React.SetStateAction<Partial<Product>>) => {
         const session = editSessionRef.current;
         if (!session) return;
-        const product = products.find(item => item.id === id);
-        const original: ProductDesignerEdit = product
-            ? { ...product, divider: style.productDividerStyles?.[id] ?? 'none' }
-            : { name: id };
+        const original: Partial<Product> = products.find(product => product.id === id) || { name: id };
         const previous = { ...original, ...session.changes[id] };
         const next = typeof update === 'function' ? update(previous) : update;
         const changes = Object.fromEntries(Object.entries(next).filter(([key, value]) =>
-            original[key as keyof ProductDesignerEdit] !== value));
+            original[key as keyof Product] !== value));
         session.changes = { ...session.changes, [id]: changes };
         setExistingEdits(session.changes);
+    };
+
+    const updateProductDivider = (id: string, preset: CategoryDividerStyle) => {
+        const session = editSessionRef.current;
+        if (!session) return;
+        session.dividers = [...session.dividers.filter(change => change.id !== id), { id, preset }];
+        setPendingDivider(preset);
     };
 
     const initiateAdd = (categoryId: string, type: 'product' | 'category') => {
@@ -375,12 +384,11 @@ export const useProductDesignerLogic = ({
         const productsById = new Map(products.map(product => [product.id, product]));
         const productChanges = new Map<string, Partial<Product>>();
         const renames = new Map<string, string>();
-        const dividers: Record<string, CategoryDividerStyle> = {};
+        const divider = [...session.dividers].reverse().find(change => change.id !== cancelledId)?.preset;
         const newPriceRequests: PricePropagationRequest[] = [];
-        for (const [id, { divider, ...fields }] of changes) {
+        for (const [id, fields] of changes) {
             const product = productsById.get(id);
             if (product) {
-                if (divider !== undefined) dividers[id] = divider;
                 if (!Object.keys(fields).length) continue;
                 if (fields.price !== undefined && !product.isFreeText) {
                     fields.price = roundPrice(fields.price);
@@ -407,7 +415,7 @@ export const useProductDesignerLogic = ({
                 return fields || category ? { ...product, ...fields, category: category ?? product.category } : product;
             }));
         }
-        if (renames.size || Object.keys(dividers).length) {
+        if (renames.size || divider !== undefined) {
             const rename = (category: string) => renames.get(category) ?? category;
             setStyle(previous => {
                 const order = [...new Set([...(previous.customCategoryOrder || []), ...handlers.sortedCategories])];
@@ -418,7 +426,7 @@ export const useProductDesignerLogic = ({
                         .map(([category, order]) => [rename(category), order])) : previous.customProductOrder,
                     categoryImages: renames.size ? Object.fromEntries(Object.entries(previous.categoryImages || {})
                         .map(([category, image]) => [rename(category), image])) : previous.categoryImages,
-                    productDividerStyles: { ...previous.productDividerStyles, ...dividers },
+                    productDividerStyle: divider ?? previous.productDividerStyle,
                     name: 'Custom',
                 };
             });
@@ -433,6 +441,7 @@ export const useProductDesignerLogic = ({
             editSessionRef.current = null;
             saveExistingEdits(session, cancelledId);
             setExistingEdits({});
+            setPendingDivider(undefined);
         } else if (newItemDraft && !cancelledId && (explicit || formData.name || formData.description || formData.price)) {
             saveNewItem();
         }
@@ -563,7 +572,7 @@ export const useProductDesignerLogic = ({
         pendingPricePropagation,
         isUploading,
         newItemDraft,
-        formData, existingEdits,
+        formData, existingEdits, pendingDivider,
         productImageUpload,
         categoryImageUpload,
 
@@ -572,7 +581,7 @@ export const useProductDesignerLogic = ({
         setShowInsights,
         setBulkPercentage,
         setBulkAdjustmentMode,
-        setFormData, updateExistingEdit,
+        setFormData, updateExistingEdit, updateProductDivider,
 
         // Refs
         productFileInputRef,

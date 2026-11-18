@@ -1,12 +1,12 @@
 
 import React from 'react';
-import type { Product, MenuStyle } from '../../domain/menu/model';
+import type { CategoryDividerStyle, Product, MenuStyle } from '../../domain/menu/model';
 import { 
   GripVertical, MoreVertical, ChevronUp, ChevronDown, 
   Plus, Edit3, Trash2, Eye, EyeOff, ImagePlus, Loader2, X
 } from 'lucide-react';
 import { EditForm } from './EditForm';
-import type { ProductDesignerEdit } from './useProductDesignerLogic';
+import { resolveProductDivider } from '../menu/canvas/categoryDividers';
 import { isPristineNewCategory, isPristineNewProduct } from '../../domain/menu/pristineItems';
 import { formatMenuPriceValue } from '../../domain/menu/price';
 
@@ -74,8 +74,10 @@ interface ProductListProps {
   formData: Partial<Product>;
   setFormData: React.Dispatch<React.SetStateAction<Partial<Product>>>;
   newItemDraft: { categoryId: string, type: 'product' | 'category' } | null;
-  existingEdits: Record<string, ProductDesignerEdit>;
-  updateExistingEdit: (id: string, update: React.SetStateAction<ProductDesignerEdit>) => void;
+  existingEdits: Record<string, Partial<Product>>;
+  pendingDivider?: CategoryDividerStyle;
+  updateExistingEdit: (id: string, update: React.SetStateAction<Partial<Product>>) => void;
+  updateProductDivider: (id: string, preset: CategoryDividerStyle) => void;
   
   // Actions
   startEdit: (id: string) => void;
@@ -107,7 +109,9 @@ export const ProductList: React.FC<ProductListProps> = ({
   setFormData,
   newItemDraft,
   existingEdits,
+  pendingDivider,
   updateExistingEdit,
+  updateProductDivider,
   startEdit,
   saveEdit,
   cancelEdit,
@@ -331,11 +335,8 @@ export const ProductList: React.FC<ProductListProps> = ({
                         imageUploading={productImageUpload?.id === product.id}
                         onImageClick={() => onProductImageClick(product.id)}
                         onRemoveImage={() => onRemoveProductImage(product.id)}
-                        productDividerStyle={existingEdits[product.id]?.divider ?? style.productDividerStyles?.[product.id] ?? 'none'}
-                        onProductDividerStyleChange={(preset) => updateExistingEdit(product.id, previous => ({
-                          ...previous,
-                          divider: preset,
-                        }))}
+                        productDividerStyle={pendingDivider ?? resolveProductDivider(style, product.id)}
+                        onProductDividerStyleChange={preset => updateProductDivider(product.id, preset)}
                       />
                     ) : (
                       <div 
