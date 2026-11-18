@@ -76,17 +76,18 @@ test('a detached free text adds no empty gap to the category flow', () => {
 
 test('landscape temporarily widens the category layout and portrait restores it exactly', () => {
     const setup = dimensions.setup;
+    const products = ['A', 'B', 'C'].map(product);
     const original: MenuStyle = {
         ...style, pageSetup: setup, categoryColumnWidths: [0.38, 0.62],
         categoryPositions: { A: { pageIndex: 0, columnIndex: 1, pageX: 480, y: margins.top } },
         categoryPlacements: { A: { pageIndex: 0, columnIndex: 1 } },
         customProductOrder: { A: ['a2', 'a1'] },
     };
-    const landscape = convertMenuPageSetup(original, { ...setup, orientation: 'landscape' }, new Map());
+    const landscape = convertMenuPageSetup(original, { ...setup, orientation: 'landscape' }, new Map(), products);
     assert.equal(landscape.categoryColumnCount, 3);
-    const resized = convertMenuPageSetup(landscape, { ...setup, preset: 'A5', orientation: 'landscape' }, new Map());
+    const resized = convertMenuPageSetup(landscape, { ...setup, preset: 'A5', orientation: 'landscape' }, new Map(), products);
     const reopened = JSON.parse(JSON.stringify(resized)) as MenuStyle;
-    const portrait = convertMenuPageSetup(reopened, setup, new Map());
+    const portrait = convertMenuPageSetup(reopened, setup, new Map(), products);
     assert.equal(portrait.categoryColumnCount, original.categoryColumnCount);
     assert.equal(portrait.columnCount, original.columnCount);
     assert.deepEqual(portrait.categoryColumnWidths, original.categoryColumnWidths);
@@ -95,7 +96,26 @@ test('landscape temporarily widens the category layout and portrait restores it 
     assert.deepEqual(portrait.customProductOrder, original.customProductOrder);
     assert.equal(convertMenuPageSetup({ ...original, columnCount: 3 }, {
         ...setup, orientation: 'landscape',
-    }, new Map()).categoryColumnCount, 2);
+    }, new Map(), products).categoryColumnCount, 2);
+});
+
+test('landscape chooses one column per visible category up to three', () => {
+    const original: MenuStyle = {
+        ...style, pageSetup: dimensions.setup, categoryColumnCount: 3, hiddenProductIds: ['Hidden'],
+        categoryPositions: { A: { pageIndex: 0, columnIndex: 2, y: 150 } },
+    };
+    const ignored = [product('Hidden'), product(`${FREE_TEXT_PREFIX}note`)];
+    const landscape = (categories: string[]) => convertMenuPageSetup(original, {
+        ...dimensions.setup, orientation: 'landscape',
+    }, new Map(), [...categories.map(product), ...ignored]);
+    assert.equal(landscape([]).categoryColumnCount, 1);
+    assert.equal(landscape(['A', 'A']).categoryColumnCount, 1);
+    assert.equal(landscape(['A', 'A', 'B']).categoryColumnCount, 2);
+    assert.equal(landscape(['A', 'B', 'C', 'D']).categoryColumnCount, 3);
+    const singleColumn = landscape(['A']);
+    assert.equal(singleColumn.categoryPositions?.A.columnIndex, 0);
+    assert.deepEqual(convertMenuPageSetup(singleColumn, dimensions.setup, new Map(), [product('A')]).categoryPositions,
+        original.categoryPositions);
 });
 
 for (const columnCount of [1, 2] as const) {
@@ -140,3 +160,39 @@ for (const columnCount of [1, 2] as const) {
         assert.equal(findSplitCategorySwap(products, layoutStyle, groups, noPartner, withoutPartner, withoutPartner, options), null);
     });
 }
+
+test('the swap skips a replacement that would split and looks for another category', () => {
+    const layoutStyle: MenuStyle = { ...style, design: undefined };
+    const groups = {
+        A: [product('A')],
+        B: [1, 2, 3].map(id => ({ ...product('B'), id: `B${id}` })),
+        C: [1, 2].map(id => ({ ...product('C'), id: `C${id}` })),
+        D: [product('D')],
+    };
+    const order = Object.keys(groups);
+    const products = Object.values(groups).flat();
+    const firstLaneCapacity = availableHeight - 100;
+    const heights: Record<string, number> = { A: 0.56, B: 0.20, C: 0.26, D: 0.14 };
+    const measuredHeights = new Map([['main-header', 100]]);
+    for (const category of order) measuredHeights.set(getPaginationHeightKey(getPaginationItemKey(header(category)), columnWidth), 40);
+    for (const entry of products) measuredHeights.set(getPaginationHeightKey(getPaginationItemKey(item(entry)), columnWidth), heights[entry.category] * firstLaneCapacity);
+    const options = { measuredHeights, splitCategoryAcrossPages: true };
+    const layOut = (proposed: string[]) => calculatePagination(products, layoutStyle, groups, proposed, null, options);
+    const locations = (pages: ReturnType<typeof layOut>, category: string) => pages.flatMap((page, pageIndex) => page.columns.flatMap(column =>
+        column.chunks.filter(chunk => chunk.category === category).map(() => [pageIndex, column.columnIndex]),
+    ));
+
+    const initial = layOut(order);
+    assert.equal(locations(initial, 'B').length, 2);
+    assert.equal(locations(initial, 'C').length, 1);
+    assert.equal(locations(layOut(['A', 'C', 'B', 'D']), 'C').length, 2);
+    const swap = findSplitCategorySwap(products, layoutStyle, groups, order, initial, initial, options);
+    assert.equal(swap?.category, 'B');
+    assert.equal(swap?.replacement, 'D');
+    assert.ok(swap);
+    const revisedStyle = { ...layoutStyle, ...swap.layout };
+    const proposed = calculatePagination(products, revisedStyle, groups, swap.layout.customCategoryOrder, getSavedCategoryPlacements(revisedStyle), options);
+    assert.deepEqual(locations(proposed, 'D'), [locations(initial, 'B')[0]]);
+    assert.deepEqual(locations(proposed, 'B'), locations(initial, 'D'));
+    assert.deepEqual(locations(proposed, 'C'), locations(initial, 'C'));
+});

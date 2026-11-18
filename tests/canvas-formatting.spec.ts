@@ -307,8 +307,13 @@ test('the first price saves when selecting another product and selected products
   await second.getByTitle('Seleção múltipla').click();
   await first.getByRole('heading').click();
   await first.getByTitle('Editar produto').click();
+  await expect(second.locator('#product-name-2')).toHaveClass(/bg-indigo-500\/15/);
+  await expect(second.locator('#product-price-2')).toHaveClass(/bg-indigo-500\/15/);
+  await expect(second.locator('#product-description-2')).toHaveClass(/bg-indigo-500\/15/);
+  await expect(second.locator('[data-template-image]').locator('[class*="bg-indigo-500/15"]')).toBeVisible();
   await second.getByRole('heading').click();
   await expect(second.getByRole('heading')).toBeFocused();
+  await expect(first.getByRole('heading')).toHaveClass(/bg-indigo-500\/15/);
   await expect(first.getByRole('heading')).toHaveAttribute('contenteditable', 'true');
 });
 
@@ -321,6 +326,7 @@ test('editing selected categories keeps their products available as the formatti
   await second.getByRole('heading').click();
   await second.getByTitle('Editar categoria').click();
   await expect(second.getByRole('heading')).toBeFocused();
+  await expect(first.getByRole('heading')).toHaveClass(/bg-indigo-500\/15/);
   const price = page.locator('#product-price-1');
   const otherProduct = page.locator('#product-name-3');
   await expect(price).toHaveAttribute('contenteditable', 'true');
@@ -337,6 +343,7 @@ test('editing selected categories keeps their products available as the formatti
   await title.click();
   await expect(title).toBeFocused();
   await expect(price).toHaveAttribute('contenteditable', 'false');
+  await expect(price).not.toHaveClass(/bg-indigo-500\/15/);
 });
 
 test('editing one selected free text keeps the other editable', async ({ page }) => {
@@ -349,6 +356,7 @@ test('editing one selected free text keeps the other editable', async ({ page })
   await second.getByTitle('Editar texto').click();
   const firstText = first.locator('#product-name-text-a');
   await expect(firstText).toHaveAttribute('contenteditable', 'true');
+  await expect(firstText).toHaveClass(/bg-indigo-500\/15/);
   await firstText.click();
   await expect(firstText).toBeFocused();
   await expect(second.locator('#product-name-text-b')).toHaveAttribute('contenteditable', 'true');

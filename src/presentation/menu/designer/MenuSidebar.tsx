@@ -140,6 +140,7 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
           <PageSection
             style={style}
             setStyle={setStyle}
+            products={products}
           />
 
           <hr className="border-slate-100" />

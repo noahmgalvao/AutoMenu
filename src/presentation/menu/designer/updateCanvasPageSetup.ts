@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react';
-import type { MenuStyle } from '../../../domain/menu/model';
+import type { MenuStyle, Product } from '../../../domain/menu/model';
 import type { MenuPageSetup } from '../../../domain/menu/pageModel';
 import { convertMenuPageSetup } from '../../../domain/menu/convertMenuPageSetup';
 
@@ -20,7 +20,7 @@ const getRenderedAddedImageAspectRatios = () => {
   return ratios;
 };
 
-export function updateCanvasPageSetup(setStyle: Dispatch<SetStateAction<MenuStyle>>, nextSetup: MenuPageSetup) {
+export function updateCanvasPageSetup(setStyle: Dispatch<SetStateAction<MenuStyle>>, nextSetup: MenuPageSetup, products: readonly Product[]) {
   const ratios = getRenderedAddedImageAspectRatios();
-  setStyle(previous => convertMenuPageSetup(previous, nextSetup, ratios));
+  setStyle(previous => convertMenuPageSetup(previous, nextSetup, ratios, products));
 }

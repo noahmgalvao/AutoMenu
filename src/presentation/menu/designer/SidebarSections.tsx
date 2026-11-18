@@ -315,6 +315,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
 // --- PAGE SECTION ---
 interface PageSectionProps {
   style: MenuStyle;
+  products: Product[];
   setStyle: React.Dispatch<React.SetStateAction<MenuStyle>>;
 }
 
@@ -328,11 +329,11 @@ const PAGE_PRESET_OPTIONS = [
   { value: 'custom', label: 'Personalizado' },
 ] as const;
 
-export const PageSection: React.FC<PageSectionProps> = ({ style, setStyle }) => {
+export const PageSection: React.FC<PageSectionProps> = ({ style, setStyle, products }) => {
   const setup = normalizeMenuPageSetup(style.pageSetup);
   const dimensions = resolveMenuPageDimensions(setup);
 
-  const updatePageSetup = (nextSetup: typeof setup) => updateCanvasPageSetup(setStyle, nextSetup);
+  const updatePageSetup = (nextSetup: typeof setup) => updateCanvasPageSetup(setStyle, nextSetup, products);
 
   const updateCustomDimension = (axis: 'width' | 'height', value: number) => {
     if (!Number.isFinite(value)) return;

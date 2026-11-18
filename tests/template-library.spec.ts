@@ -439,7 +439,7 @@ test('PDF page setup updates the editor and restores the portrait columns', asyn
   const orientation = page.getByRole('combobox', { name: 'Orientação', exact: true });
   await orientation.selectOption('landscape');
   await expect(canvasPage).toHaveAttribute('data-menu-page-width-mm', '297');
-  await expect(columns).toHaveCount(3);
+  await expect(columns).toHaveCount(2);
   await orientation.selectOption('portrait');
   await expect(canvasPage).toHaveAttribute('data-menu-page-width-mm', '210');
   await expect.poll(getGroups).toEqual(portraitGroups);
@@ -447,4 +447,16 @@ test('PDF page setup updates the editor and restores the portrait columns', asyn
   await expect(canvasPage).toHaveAttribute('data-menu-page-width-mm', '148');
   await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
   await expect(page.getByLabel('Tamanho da página')).toHaveValue('A5');
+});
+
+test('the editor uses one landscape column for a single category and restores portrait settings', async ({ page }) => {
+  await page.goto(`${url}?photos=list&lanes=2`);
+  const canvasPage = page.locator('[data-menu-print-page]').first();
+  const columns = canvasPage.locator('[data-drag-column-container="category"]');
+  await expect(columns).toHaveCount(2);
+  await page.getByRole('button', { name: 'Paisagem', exact: true }).click();
+  await expect(canvasPage).toHaveAttribute('data-menu-page-width-mm', '297');
+  await expect(columns).toHaveCount(1);
+  await page.getByRole('button', { name: 'Retrato', exact: true }).click();
+  await expect(columns).toHaveCount(2);
 });

@@ -14,10 +14,11 @@ export interface SplitCategorySwap {
 }
 
 function readCategorySlots(pages: PageLayout[]) {
-    const slots = new Map<string, { first: CategoryPlacementAssignment; lanes: Set<string>; productLanes: Set<string> }>();
+    const slots = new Map<string, { first: CategoryPlacementAssignment; chunks: number; lanes: Set<string>; productLanes: Set<string> }>();
     pages.forEach((page, pageIndex) => page.columns.forEach(({ columnIndex, chunks }) => chunks.forEach(chunk => {
         const lane = `${pageIndex}:${columnIndex}`;
-        const current = slots.get(chunk.category) ?? { first: { pageIndex, columnIndex }, lanes: new Set<string>(), productLanes: new Set<string>() };
+        const current = slots.get(chunk.category) ?? { first: { pageIndex, columnIndex }, chunks: 0, lanes: new Set<string>(), productLanes: new Set<string>() };
+        current.chunks++;
         current.lanes.add(lane);
         if (chunk.items.some(item => item.type === 'product-item' ? !item.data.isFreeText : item.type === 'product-row')) current.productLanes.add(lane);
         if (chunk.startsCategory) current.first = { pageIndex, columnIndex };
@@ -52,8 +53,8 @@ export function findSplitCategorySwap(
     const categories = order.filter(category => !category.startsWith(FREE_TEXT_PREFIX) && slots.get(category)?.productLanes.size);
     const split = categories.filter(category => slots.get(category)!.productLanes.size > 1);
     if (!split.length) return null;
-    const whole = categories.filter(category => slots.get(category)!.lanes.size === 1);
     const baseSlots = readCategorySlots(basePages);
+    const orderIndexes = new Map(order.map((category, index) => [category, index]));
 
     const fits = (layout: LayoutChange, category: string, replacement: string) => {
         const proposed = { ...style, ...layout };
@@ -74,8 +75,9 @@ export function findSplitCategorySwap(
             if (!after) return false;
             if (id === category || id === replacement) {
                 const destination = slots.get(id === category ? replacement : category)!;
-                if (after.lanes.size !== 1 || !sameSlot(after.first, destination.first)) return false;
-            } else if (!sameSlot(after.first, before.first) || [...after.lanes].some(lane => !before.lanes.has(lane))) {
+                if (after.chunks !== 1 || !sameSlot(after.first, destination.first)) return false;
+            } else if (after.chunks > before.chunks || !sameSlot(after.first, before.first)
+                || [...after.lanes].some(lane => !before.lanes.has(lane))) {
                 return false;
             }
         }
@@ -83,8 +85,11 @@ export function findSplitCategorySwap(
     };
 
     for (const category of split) {
-        const origin = order.indexOf(category);
-        const partners = [...whole].sort((a, b) => Math.abs(order.indexOf(a) - origin) - Math.abs(order.indexOf(b) - origin));
+        const origin = orderIndexes.get(category)!;
+        const partners = categories.filter(candidate => candidate !== category).sort((a, b) => (
+            slots.get(a)!.chunks - slots.get(b)!.chunks
+            || Math.abs(orderIndexes.get(a)! - origin) - Math.abs(orderIndexes.get(b)! - origin)
+        ));
         for (const replacement of partners) {
             const swap = (name: string) => name === category ? replacement : name === replacement ? category : name;
             const layout: LayoutChange = {
@@ -97,7 +102,11 @@ export function findSplitCategorySwap(
 
             // Preserve the rendered lanes when the automatic flow would also move neighboring groups.
             const placements = Object.fromEntries([...baseSlots].map(([id, slot]) => [swap(id), slot.first]));
-            const placedLayout = { ...layout, categoryPlacements: { ...layout.categoryPlacements, ...placements } };
+            const positions = layout.categoryPositions && { ...layout.categoryPositions };
+            for (const id of [category, replacement]) {
+                if (positions?.[id] && placements[id]) positions[id] = { ...positions[id], ...placements[id] };
+            }
+            const placedLayout = { ...layout, categoryPositions: positions, categoryPlacements: { ...layout.categoryPlacements, ...placements } };
             if (fits(placedLayout, category, replacement)) return { category, replacement, layout: placedLayout };
         }
     }

@@ -358,7 +358,7 @@ export function useCanvasPrinting({
         previewLoading: isPrintPreviewLoading,
         previewError: printPreviewError,
         onChange: setPrintOptions,
-        onPageSetupChange: setup => updateCanvasPageSetup(setStyle, setup),
+        onPageSetupChange: setup => updateCanvasPageSetup(setStyle, setup, products),
         onClose() {
             setShowPrintModal(false);
             if (activePrintMode === 'publish') onPrintCancel?.();

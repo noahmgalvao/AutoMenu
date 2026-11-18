@@ -591,7 +591,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         data-image-selection-overlay={img.id}
                         data-active-canvas-drag={handlers.isCanvasObjectDragging?.('addedImage', img.id) || undefined}
                         data-drag-ignore="true"
-                        className="automenu-drag-item absolute cursor-move"
+                        className={`automenu-drag-item absolute ${handlers.isReadyToEdit?.('addedImage', img.id) ? 'cursor-pointer' : 'cursor-move'}`}
                         style={{
                             left: `${img.x}px`,
                             top: `${img.y}px`,
@@ -661,7 +661,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         >
                             <div className="relative w-full">
                                 <img src={img.url} alt="" aria-hidden="true" className="block h-auto w-full opacity-0 pointer-events-none select-none" draggable={false} />
-                                <div className="absolute inset-0 ring-2 ring-indigo-500 pointer-events-none" />
+                                <div className={`absolute inset-0 ring-2 ring-indigo-500 pointer-events-none ${handlers.isReadyToEdit?.('addedImage', img.id) ? 'bg-indigo-500/15' : ''}`} />
                             </div>
                         </Resizable>
                     </div>

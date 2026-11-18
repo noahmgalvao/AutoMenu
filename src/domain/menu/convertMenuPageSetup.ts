@@ -1,4 +1,4 @@
-import type { CategoryPosition, MenuStyle } from './model';
+import type { CategoryPosition, MenuStyle, Product } from './model';
 import type { MenuPageSetup } from './pageModel';
 import { normalizeMenuPageSetup, resolveMenuPageDimensions } from './pageSetup';
 import { resolveMenuMargins } from './styleRules';
@@ -83,7 +83,21 @@ const getSafePageMargins = (
 const samePosition = (first: CategoryPosition, second: CategoryPosition) => first.pageIndex === second.pageIndex
   && first.columnIndex === second.columnIndex && first.y === second.y && first.x === second.x && first.pageX === second.pageX;
 
-export function convertMenuPageSetup(previous: MenuStyle, proposed: MenuPageSetup, renderedImageAspectRatios: ReadonlyMap<string, number>): MenuStyle {
+function getLandscapeCategoryColumns(style: MenuStyle, products: readonly Product[]) {
+    const hiddenIds = new Set(style.hiddenProductIds);
+    const visibleCategories = new Set(products.filter(product => !product.isFreeText && !hiddenIds.has(product.id))
+        .map(product => product.category));
+    const limit = style.columnCount === 3 ? style.categoryColumnCount || 1 : 3;
+    const count = Math.min(limit, visibleCategories.size);
+    return count >= 3 ? 3 : count === 2 ? 2 : 1;
+}
+
+export function convertMenuPageSetup(
+    previous: MenuStyle,
+    proposed: MenuPageSetup,
+    renderedImageAspectRatios: ReadonlyMap<string, number>,
+    products: readonly Product[],
+): MenuStyle {
     const normalizedNextSetup = normalizeMenuPageSetup(proposed);
     const currentDimensions = resolveMenuPageDimensions(previous);
     const nextDimensions = resolveMenuPageDimensions(normalizedNextSetup);
@@ -91,9 +105,10 @@ export function convertMenuPageSetup(previous: MenuStyle, proposed: MenuPageSetu
     const portraitLayout = previous.portraitPageLayout;
     const restore = currentDimensions.setup.orientation === 'landscape' && normalizedNextSetup.orientation === 'portrait'
       ? portraitLayout : undefined;
-    const autoExpandColumns = toLandscape && previous.categoryColumnCount !== 3 && previous.columnCount !== 3;
-    const categoryColumnCount = restore ? restore.categoryColumnCount : autoExpandColumns ? 3 : previous.categoryColumnCount;
-    const categoryColumnWidths = restore ? restore.categoryColumnWidths : autoExpandColumns ? undefined : previous.categoryColumnWidths;
+    const categoryColumnCount = restore ? restore.categoryColumnCount
+      : toLandscape ? getLandscapeCategoryColumns(previous, products) : previous.categoryColumnCount;
+    const changedColumnCount = (categoryColumnCount || 1) !== (previous.categoryColumnCount || 1);
+    const categoryColumnWidths = restore ? restore.categoryColumnWidths : changedColumnCount ? undefined : previous.categoryColumnWidths;
     const lastColumn = (categoryColumnCount || 1) - 1;
     const originalDimensions = restore ? resolveMenuPageDimensions(restore.setup) : currentDimensions;
     const samePortraitSize = originalDimensions.widthPx === nextDimensions.widthPx && originalDimensions.heightPx === nextDimensions.heightPx;
@@ -138,7 +153,7 @@ export function convertMenuPageSetup(previous: MenuStyle, proposed: MenuPageSetu
       const yScale = restore && unchanged ? nextDimensions.heightPx / originalDimensions.heightPx : verticalScale;
       const next = {
         ...from,
-        columnIndex: restore ? Math.min(from.columnIndex, lastColumn) : from.columnIndex,
+        columnIndex: restore || (toLandscape && changedColumnCount) ? Math.min(from.columnIndex, lastColumn) : from.columnIndex,
         pageX: from.pageX === undefined ? undefined
           : clampPageValue(from.pageX * xScale, 0, nextDimensions.widthPx - MIN_POSITIONED_OBJECT_VISIBLE_PX),
         y: clampPageValue(finitePageValue(from.y, minimumCategoryY) * yScale, minimumCategoryY, maximumCategoryY),
