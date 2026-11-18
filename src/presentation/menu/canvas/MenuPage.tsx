@@ -266,14 +266,14 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 className={`relative rounded-xl ${isCategoryDragged || Number.isFinite(desiredPageY) ? 'transition-none' : 'transition-all duration-200'} pointer-events-none ${isCategorySelected ? `ring-2 ring-indigo-500 bg-indigo-50/10 ${selectionLayerClasses.outline}` : ''}`}
             >
                 {!isFreeTextTarget && <BorderDecoration style={renderedStyle} scope="categoryGroup" />}
-                {isCategorySelected && isCategoryControlAnchor && !isCategoryDragged && !handlers.editingId && (
+                {isCategorySelected && isCategoryControlAnchor && !isCategoryDragged && !handlers.editingId && !handlers.multiSelectMode && (
                     <ColumnResizeHandles
                         columnIndex={chunk.columnIndex}
                         columnCount={renderedColumnCount}
                         onResizeStart={handlers.startCategoryColumnResize}
                     />
                 )}
-                {isCategorySelected && isCategoryControlAnchor && !isCategoryDragged && !handlers.isResizingCategoryColumns && !handlers.editingId && (
+                {isCategorySelected && isCategoryControlAnchor && !isCategoryDragged && !handlers.isResizingCategoryColumns && !handlers.editingId && !handlers.multiSelectMode && (
                     <>
                         {categoryAddControls.top && renderCategoryAddButton('before', categoryAddBeforeDirection)}
                         {categoryAddControls.bottom && renderCategoryAddButton('after', categoryAddAfterDirection)}
@@ -583,6 +583,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         key={`resize-controls-${img.id}`}
                         data-print-control="true"
                         data-added-image-drag="true"
+                        data-image-selection-overlay={img.id}
                         data-drag-ignore="true"
                         className="automenu-drag-item absolute cursor-move"
                         style={{
@@ -785,7 +786,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                     >
                         <CheckSquare size={18} />
                     </button>
-                    {pageAddControls.after && (
+                    {pageAddControls.after && !handlers.multiSelectMode && (
                         <button
                             onClick={(e) => { e.stopPropagation(); onAddPage(pageIndex, 'after'); }}
                             className="absolute right-[-32px] top-1/2 -translate-y-1/2 translate-x-1/2 z-30 p-2 bg-blue-600 rounded-full shadow-lg text-white hover:bg-blue-700 hover:scale-110 transition-all border-2 border-white"
@@ -794,7 +795,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                             <Plus size={24} />
                         </button>
                     )}
-                    {pageIndex > 0 && pageAddControls.before && (
+                    {pageIndex > 0 && pageAddControls.before && !handlers.multiSelectMode && (
                         <button
                             onClick={(e) => { e.stopPropagation(); onAddPage(pageIndex, 'before'); }}
                             className="absolute left-[-32px] top-1/2 -translate-y-1/2 -translate-x-1/2 z-30 p-2 bg-blue-600 rounded-full shadow-lg text-white hover:bg-blue-700 hover:scale-110 transition-all border-2 border-white"

@@ -189,7 +189,7 @@ export const ProductControls = ({
             {isSelected && showSelectionOutline && (
                 <div className={`pointer-events-none absolute inset-0 rounded-lg border-2 border-indigo-500 ${selectionLayerClasses.outline}`} />
             )}
-            {isActive && !isFreeText && showAddControls && !handlers.editingId && (
+            {isActive && !isFreeText && showAddControls && !handlers.editingId && !handlers.multiSelectMode && (
                 <>
                     {showTopAddControl && renderAdd('before', addFlow.before)}
                     {showBottomAddControl && renderAdd('after', addFlow.after)}
@@ -219,7 +219,7 @@ export const ProductControls = ({
                     </button>
                 </CanvasActionGroup>
             )}
-            {isActive && !handlers.editingId && enabledMoves.map(({ direction, edge }) => (
+            {isActive && !handlers.editingId && !handlers.multiSelectMode && enabledMoves.map(({ direction, edge }) => (
                 <CanvasActionGroup key={direction} direction={edge} kind="move">
                     {renderMove(direction, edge)}
                 </CanvasActionGroup>

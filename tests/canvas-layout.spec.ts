@@ -96,6 +96,145 @@ test('a narrow free text keeps its selection buttons in a single row', async ({ 
   await expect(source).toHaveCount(0);
 });
 
+test('the right arrow is absent when the neighboring product cell is empty', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=cards&cols=2&single-product');
+  const product = page.locator('#product-container-1');
+  await product.getByRole('heading').click();
+  await expect(product.getByTitle('Adicionar item à direita')).toBeVisible();
+  await expect(product.getByTitle('Mover à direita')).toHaveCount(0);
+});
+
+for (const touch of [false, true]) {
+  test.describe(touch ? 'group drag on touch' : 'group drag with a mouse', () => {
+    test.use({ hasTouch: touch });
+
+    test('selected products move together and keep their selection and order', async ({ page }) => {
+      await page.goto('/tests/fixtures/template-editor.html?photos=list&dense-list&lanes=2');
+      const first = page.locator('#product-container-side-1');
+      const second = page.locator('#product-container-side-2');
+      const target = page.locator('#product-container-side-11');
+      await first.getByRole('heading').click();
+      await expect(first.getByTitle('Ajustar largura da coluna pela borda direita')).toBeVisible();
+      await first.getByTitle('Seleção múltipla').click();
+      await second.getByRole('heading').click();
+      await expect(second.getByTitle('Seleção múltipla')).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.locator('[data-canvas-action-group="add"], [data-canvas-action-group="move"], [data-column-resize-handle]')).toHaveCount(0);
+
+      const start = (await first.boundingBox())!;
+      const destination = (await target.boundingBox())!;
+      const x = start.x + 12;
+      const y = start.y + start.height / 2;
+      const end = destination.y + destination.height * 0.8;
+      const session = touch ? await page.context().newCDPSession(page) : null;
+      expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('[data-drag-id]')?.id, { x, y }))
+        .toBe('product-container-side-1');
+      if (session) {
+        await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+        await page.waitForTimeout(380);
+        await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: end }] });
+      } else {
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        await page.mouse.move(x, end, { steps: 10 });
+      }
+      await expect.poll(async () => {
+        const [a, b] = await Promise.all([first, second].map(item => item.evaluate(element => element.style.translate)));
+        return Boolean(a) && a === b;
+      }).toBe(true);
+      if (session) await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      else await page.mouse.up();
+
+      await expect.poll(() => target.evaluate(element => [element.nextElementSibling?.id, element.nextElementSibling?.nextElementSibling?.id]))
+        .toEqual(['product-container-side-1', 'product-container-side-2']);
+      await expect(second.getByTitle('Seleção múltipla')).toHaveAttribute('aria-pressed', 'true');
+    });
+  });
+}
+
+test('dragging selected products from different categories moves only the pressed one', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=list&different-categories');
+  const first = page.locator('#product-container-1');
+  const next = page.locator('#product-container-2');
+  const other = page.locator('#product-container-3');
+  await first.getByRole('heading').click();
+  await first.getByTitle('Seleção múltipla').click();
+  await other.getByRole('heading').click();
+  const start = (await first.boundingBox())!;
+  const destination = (await next.boundingBox())!;
+  const otherStart = (await other.boundingBox())!;
+  const x = start.x + start.width / 2;
+  await page.mouse.move(x, start.y + start.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(x, destination.y + destination.height * 0.75, { steps: 10 });
+  await page.mouse.up();
+  await expect.poll(() => next.evaluate(element => element.nextElementSibling?.id)).toBe('product-container-1');
+  await expect(first.getByTitle('Seleção múltipla')).toHaveAttribute('aria-pressed', 'false');
+  expect((await other.boundingBox())!.y).toBeCloseTo(otherStart.y, 0);
+});
+
+test('detached free texts keep their spacing after dragging together', async ({ page }) => {
+  const first = page.locator('#product-container-text-a');
+  const second = page.locator('#product-container-text-b');
+  await first.click();
+  await first.getByTitle('Seleção múltipla').click();
+  await second.click();
+  const before = (await first.boundingBox())!;
+  const other = (await second.boundingBox())!;
+  const x = before.x + before.width / 2;
+  const y = before.y + before.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 70, y + 110, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => Math.round((await first.boundingBox())!.y - before.y)).toBe(110);
+  expect((await second.boundingBox())!.y - other.y).toBeCloseTo(110, 0);
+  expect((await second.boundingBox())!.x - other.x).toBeCloseTo(70, 0);
+});
+
+test('selected canvas images retain their relative positions after a group drag', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?added-image&image-pair');
+  const first = page.locator('[data-added-image-id="sample-image"]');
+  const second = page.locator('[data-added-image-id="second-image"]');
+  await first.click();
+  await page.locator('[data-background-prompt]').getByRole('button', { name: 'Não', exact: true }).click();
+  await page.locator('[data-object-page-index]').getByTitle('Seleção múltipla').click();
+  await second.click();
+  await expect(page.locator('[data-image-selection-overlay]')).toHaveCount(2);
+  const firstStart = (await first.boundingBox())!;
+  const secondStart = (await second.boundingBox())!;
+  const x = firstStart.x + firstStart.width / 2;
+  const y = firstStart.y + firstStart.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 35, y + 50, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => Math.round((await first.boundingBox())!.x - firstStart.x)).toBe(35);
+  const secondEnd = (await second.boundingBox())!;
+  expect(secondEnd.x - secondStart.x).toBeCloseTo(35, 0);
+  expect(secondEnd.y - secondStart.y).toBeCloseTo(50, 0);
+});
+
+test('selected category groups keep their relative positions after a group drag', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?layout=categories');
+  const first = page.locator('[data-category-chunk="Principais"]');
+  const second = page.locator('[data-category-chunk="Sobremesas"]');
+  const header = first.getByRole('heading', { name: 'Principais' });
+  await header.click();
+  await first.locator('[data-category-id="Principais"]').getByTitle('Seleção múltipla').click();
+  await second.getByRole('heading', { name: 'Sobremesas' }).click();
+  const before = (await first.boundingBox())!;
+  const other = (await second.boundingBox())!;
+  const text = (await header.boundingBox())!;
+  const x = text.x + 10;
+  const y = text.y + text.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x, y + 56, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => Math.round((await first.boundingBox())!.y - before.y)).toBe(56);
+  expect((await second.boundingBox())!.y - other.y).toBeCloseTo(56, 0);
+});
+
 test('double click places free text at the page coordinate without column handles', async ({ page }) => {
   const canvasPage = page.locator('[data-menu-print-page]').first();
   const bounds = (await canvasPage.boundingBox())!;

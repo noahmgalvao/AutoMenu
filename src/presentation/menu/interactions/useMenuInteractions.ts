@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { InteractionProps, DraftItem, NUDGE_STEP } from './types';
+import React, { useCallback, useMemo, useState } from 'react';
+import { InteractionProps, DraftItem, NUDGE_STEP, SelectionType } from './types';
 
 import { useMenuData } from './useMenuData';
 import { useSelectionState } from './useSelectionState';
@@ -34,6 +34,11 @@ export const useMenuInteractions = (props: InteractionProps) => {
         splitCategoryAcrossPages: props.splitCategoryAcrossPages,
     }), [groupedProductsBase, products, props.splitCategoryAcrossPages, sortedCategoriesBase]);
     const columnResizeInteractions = useCategoryColumnResize(style, props.onStyleUpdate, columnResizeContext);
+    const { clearMultiSelectionTo, setMultiSelectMode } = selectionState;
+    const collapseDragSelection = useCallback((type: SelectionType, id: string) => {
+        clearMultiSelectionTo(type, id);
+        setMultiSelectMode(false);
+    }, [clearMultiSelectionTo, setMultiSelectMode]);
 
     // 4. Draggable Interactions (Heavy Logic)
     // Calculates the *FINAL* sorted/grouped data (Live vs Saved)
@@ -43,7 +48,9 @@ export const useMenuInteractions = (props: InteractionProps) => {
         sortedCategoriesBase, 
         selectionState.handleSelection,
         selectionState.editingId,
-        selectionState.multiSelectMode
+        selectionState.multiSelectMode,
+        selectionState.selectedItems,
+        collapseDragSelection,
     );
 
     // 5. Keyboard & Free Text (Uses final data)
@@ -103,7 +110,15 @@ export const useMenuInteractions = (props: InteractionProps) => {
         imageEditPage: imageInteractions.imageEditPage,
         draggedImageId: imageInteractions.draggedImageId,
         setDraggedImageId: imageInteractions.setDraggedImageId,
-        handleImageDragStart: imageInteractions.handleImageDragStart,
+        handleImageDragStart: (event: React.PointerEvent, id: string, pageIndex?: number) => {
+            const selected = selectionState.selectedItems.some(item => item.type === 'addedImage' && item.id === id);
+            if (selected && !event.shiftKey && !event.ctrlKey && !event.metaKey
+                && (selectionState.multiSelectMode || selectionState.selectedItems.length > 1)) {
+                draggableInteractions.handleDragStart(event, 'addedImage', id);
+            } else {
+                imageInteractions.handleImageDragStart(event, id, pageIndex);
+            }
+        },
         handleResizeImage: imageInteractions.handleResizeImage,
         resizeImageByDelta: imageInteractions.resizeImageByDelta,
         startImageResize: imageInteractions.startImageResize,

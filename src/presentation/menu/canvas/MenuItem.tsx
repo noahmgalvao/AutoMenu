@@ -527,7 +527,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     data-menu-border-surface={product.isFreeText ? 'freeText' : 'product'} data-custom-border={getBorderOverride(style, product.isFreeText ? 'freeText' : 'product', product.id)}
                     data-pagination-item={getPaginationItemKey(item)}
                     data-drag-group={item.category}
-                    onPointerDown={backgroundText ? undefined : (e) => handlers.handleDragStart(e, 'product', product.id, item.category)}
+                    onPointerDown={backgroundText && (!isSelected || (handlers.selectedItems?.length || 0) < 2)
+                        ? undefined : (e) => handlers.handleDragStart(e, 'product', product.id, item.category)}
                     onDragStart={(e) => e.preventDefault()}
                     onContextMenu={(e) => handlers.openObjectMenu?.(e, { type: productSelectionType, id: product.id })} 
                     onClick={(e) => { e.stopPropagation(); if (handlers.editingId !== product.id) { handlers.handleSelection(productSelectionType, product.id, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey }); handlers.setSelectedPageIndex(null); } }}
@@ -548,7 +549,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     }}
                 >
                 <BorderDecoration style={style} scope={product.isFreeText ? 'freeText' : 'product'} id={product.id} />
-                {isSelected && handlers.selectedId === product.id && !isFreeTextGhost && !backgroundText && !handlers.editingId && (
+                {isSelected && handlers.selectedId === product.id && !isFreeTextGhost && !backgroundText && !handlers.editingId && !handlers.multiSelectMode && (
                     <ColumnResizeHandles
                         columnIndex={columnIndex}
                         columnCount={renderedCategoryColumnCount || categoryColumnCount}
@@ -802,8 +803,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                      const canMoveUp = hasMovableSiblings && (productColumnCount > 1 ? pIndex - productColumnCount >= 0 : pIndex > 0);
                      const canMoveDown = hasMovableSiblings && (productColumnCount > 1 ? pIndex + productColumnCount < visibleCatProducts.length : pIndex < visibleCatProducts.length - 1);
                      const renderedProductColumnIndex = productColumnIndex % productColumnCount;
-                     const canMoveLeft = productColumnCount > 1 && renderedProductColumnIndex > 0;
-                     const canMoveRight = productColumnCount > 1 && renderedProductColumnIndex < productColumnCount - 1;
+                     const canMoveLeft = hasMovableSiblings && renderedProductColumnIndex > 0;
+                     const canMoveRight = hasMovableSiblings && renderedProductColumnIndex < productColumnCount - 1 && productColumnIndex + 1 < item.data.length;
                      const isBeingDragged = handlers.draggedItem?.id === product.id;
                      const isEditing = handlers.editingId === product.id;
                      const productAddControls = handlers.getSelectionAddControls?.('product', product.id) || { top: true, bottom: true };
@@ -827,7 +828,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 style={isCardLayout ? { borderRadius: cardRadius } : undefined}
                             >
                                 <BorderDecoration style={style} scope="product" />
-                                {isSelected && handlers.selectedId === product.id && !handlers.editingId && (
+                                {isSelected && handlers.selectedId === product.id && !handlers.editingId && !handlers.multiSelectMode && (
                                     <ColumnResizeHandles columnIndex={columnIndex} columnCount={categoryColumnCount}
                                         onResizeStart={handlers.startCategoryColumnResize} />
                                 )}

@@ -33,6 +33,10 @@ body {
   justify-content: flex-end;
 }
 
+[data-canvas-selection-dragging] [data-canvas-action-group] {
+  visibility: hidden !important;
+}
+
 .automenu-canvas-action > svg {
   position: relative;
   width: 16px;

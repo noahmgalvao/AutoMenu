@@ -1,7 +1,8 @@
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { flushSync } from 'react-dom';
 import type { CategoryPosition, Product } from '../../../domain/menu/model';
-import { InteractionProps, TOUCH_LONG_PRESS_MS } from './types';
+import { InteractionProps, SelectionItem, TOUCH_LONG_PRESS_MS } from './types';
+import { createCanvasSelectionDrag, isDraggableSelectionItem, preventCanvasDragClick, type CanvasSelectionDrag } from './canvasSelectionDrag';
 import { CATEGORY_CHUNK_GAP_PX, FREE_TEXT_PREFIX, STANDARD_GAP } from '../../../domain/menu/flow';
 import { getPaginationBottomInset, type CategoryPlacementAssignment } from '../../../domain/menu/menuPagination';
 import {
@@ -16,7 +17,7 @@ import {
 import { resolveMenuMargins } from '../../../domain/menu/styleRules';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 
-type DragType = 'category' | 'product';
+type DragType = 'category' | 'product' | 'addedImage';
 type DragItem = { type: DragType; id: string; group?: string } | null;
 type FreeTextDragErrorPhase =
     | 'activate-drag'
@@ -42,9 +43,17 @@ interface PendingDrag {
     longPressReady?: boolean;
     scrolling?: boolean;
     freeText?: boolean;
+    canvasSelection?: {
+        canvas: HTMLElement;
+        source: SelectionItem;
+        items: ReturnType<typeof getDraggableSelection>;
+        clear: boolean;
+    };
     lastX?: number;
     lastY?: number;
 }
+
+const getDraggableSelection = (items: SelectionItem[]) => items.filter(isDraggableSelectionItem);
 
 interface CategoryLane {
     element: HTMLElement;
@@ -230,7 +239,9 @@ export const useDraggableInteractions = (
     sortedCategoriesBase: string[],
     handleSelection: (type: 'product' | 'category' | 'freeText' | 'addedImage' | null, id: string | null) => void,
     editingId: string | null,
-    multiSelectMode: boolean = false
+    multiSelectMode: boolean = false,
+    selectedItems: SelectionItem[] = [],
+    collapseSelection?: (type: 'product' | 'category' | 'freeText' | 'addedImage', id: string) => void,
 ) => {
     const { products, style, onCommitCategoryOrder, onCommitProductOrder, onStyleUpdate, onUpdateProduct, onUpdateProducts } = props;
     const { heightPx: pageHeightPx } = resolveMenuPageDimensions(style);
@@ -255,6 +266,8 @@ export const useDraggableInteractions = (
     const [liveProductOrder, setLiveProductOrder] = useState<Record<string, string[]> | null>(null);
 
     const draggedItemRef = useRef<DragItem>(null);
+    const selectionDragRef = useRef<CanvasSelectionDrag | null>(null);
+    const activeSelectionCanvasRef = useRef<HTMLElement | null>(null);
     const activePointerRef = useRef<{ pointerId: number; pointerType: string; freeText: boolean } | null>(null);
     const pointerCaptureRef = useRef<{ element: HTMLElement; pointerId: number } | null>(null);
     const pendingDragRef = useRef<PendingDrag | null>(null);
@@ -684,6 +697,10 @@ export const useDraggableInteractions = (
     }, []);
 
     const resetDragState = useCallback(() => {
+        selectionDragRef.current?.restore();
+        selectionDragRef.current = null;
+        if (activeSelectionCanvasRef.current) preventCanvasDragClick(activeSelectionCanvasRef.current);
+        activeSelectionCanvasRef.current = null;
         if (
             draggedItemRef.current?.type === 'category'
             && activePointerRef.current?.pointerType === 'touch'
@@ -761,6 +778,8 @@ export const useDraggableInteractions = (
     }, [clearInvalidDragTargets, clearPendingActivation, removeNativeTouchBlocker, resetDragState, restoreBodyDragStyles, restoreScrollableAncestors]);
 
     const performCommitAndCleanup = useCallback(() => {
+        selectionDragRef.current?.commit();
+        selectionDragRef.current = null;
         const shouldCommit = isDraggingRef.current && hasDragMutationRef.current;
         const currentDraggedItem = draggedItemRef.current;
         const categoryOrderSnapshot = liveCategoryOrderRef.current;
@@ -2749,14 +2768,27 @@ export const useDraggableInteractions = (
                 }
                 isDraggingRef.current = true;
                 hasDragMutationRef.current = false;
-                setDraggedItem(newItem);
+                const selection = pending.canvasSelection;
+                if (selection && isDraggableSelectionItem(selection.source)) {
+                    activeSelectionCanvasRef.current = selection.canvas;
+                    if (selection.clear) collapseSelection?.(selection.source.type, selection.source.id);
+                    if (selection.items.length > 1 || pending.type === 'addedImage') {
+                        selectionDragRef.current = createCanvasSelectionDrag(
+                            selection.canvas, selection.items, selection.source, pending.element, pointer, props,
+                            groupedProductsRef.current, sortedCategoriesRef.current,
+                        );
+                    }
+                    window.dispatchEvent(new CustomEvent('automenu:canvas-drag-move'));
+                }
+                if (!selectionDragRef.current) setDraggedItem(newItem);
                 draggedItemRef.current = newItem;
-                activePointerRef.current = { pointerId: pending.pointerId, pointerType: pending.pointerType, freeText: Boolean(draggedProduct?.isFreeText) };
+                activePointerRef.current = { pointerId: pending.pointerId, pointerType: pending.pointerType, freeText: !selectionDragRef.current && Boolean(draggedProduct?.isFreeText) };
                 lastPointerRef.current = { x: pointer.x, y: pointer.y };
                 dragStartPointerRef.current = { x: pointer.x, y: pointer.y };
                 dragSourceContextRef.current = pending.element.dataset.dragContext || null;
                 productDesignerScrollContainerRef.current = pending.element.closest<HTMLElement>('[data-product-designer-scroll-container="true"]');
-                handleSelection(pending.type === 'product' && draggedProduct?.isFreeText ? 'freeText' : pending.type, pending.id);
+                if (selectionDragRef.current) return;
+                if (!selection) handleSelection(pending.type === 'product' && draggedProduct?.isFreeText ? 'freeText' : pending.type, pending.id);
 
                 if (pending.type === 'category') {
                     initializeCategoryDragState(pending.id, pointer);
@@ -2776,12 +2808,16 @@ export const useDraggableInteractions = (
                 cancelAndCleanup();
             }
         },
-        [applyBodyDragStyles, attachNativeTouchBlocker, cancelAndCleanup, clearPendingActivation, handleSelection, initializeCategoryDragState, initializeFreeTextDragState, initializeProductDragState, keepScrollLocked, lockScrollableAncestors, products, reportFreeTextDragError]
+        [applyBodyDragStyles, attachNativeTouchBlocker, cancelAndCleanup, clearPendingActivation, collapseSelection, handleSelection, initializeCategoryDragState, initializeFreeTextDragState, initializeProductDragState, keepScrollLocked, lockScrollableAncestors, products, props, reportFreeTextDragError]
     );
 
     const handlePointerReorder = useCallback(
         (pointer: { x: number; y: number }) => {
             try {
+            if (selectionDragRef.current) {
+                selectionDragRef.current.move(pointer);
+                return;
+            }
             const currentDragItem = draggedItemRef.current;
             const previousPointer = lastPointerRef.current;
             if (!currentDragItem || !previousPointer) {
@@ -3467,6 +3503,10 @@ export const useDraggableInteractions = (
     );
 
     const updateDragAtReleasePointer = useCallback((pointer: { x: number; y: number }) => {
+        if (selectionDragRef.current) {
+            selectionDragRef.current.move(pointer);
+            return;
+        }
         const currentDragItem = draggedItemRef.current;
         if (currentDragItem?.type === 'product') {
             const draggedProduct = getLatestProductById(currentDragItem.id);
@@ -3513,10 +3553,11 @@ export const useDraggableInteractions = (
 
             const pending = pendingDragRef.current;
             if (pending && event.pointerId === pending.pointerId) {
+                if (pending.type === 'addedImage' && !pending.longPressReady) handleSelection('addedImage', pending.id);
                 cancelAndCleanup();
             }
         },
-        [cancelAndCleanup, performCommitAndCleanup, updateDragAtReleasePointer]
+        [cancelAndCleanup, handleSelection, performCommitAndCleanup, updateDragAtReleasePointer]
     );
 
     const handleGlobalPointerCancel = useCallback(
@@ -3759,15 +3800,28 @@ export const useDraggableInteractions = (
 
     const handleDragStart = useCallback(
         (event: React.PointerEvent, type: DragType, id: string, group?: string) => {
-            if (editingId || multiSelectMode || isInteractiveTarget(event.target)) return;
+            if (editingId || (type !== 'addedImage' && isInteractiveTarget(event.target))) return;
             if (event.shiftKey || event.ctrlKey || event.metaKey) return;
             if (event.button !== 0) return;
 
-            event.stopPropagation();
-
             const pointerType = event.pointerType || 'mouse';
-
             const draggedProduct = type === 'product' ? products.find((product) => product.id === id) : null;
+            const sourceType = draggedProduct?.isFreeText ? 'freeText' : type;
+            const element = event.currentTarget as HTMLElement;
+            const canvas = element.closest<HTMLElement>('[data-automenu-editor-canvas="true"]');
+            const items = getDraggableSelection(selectedItems);
+            const source = items.find(item => item.type === sourceType && item.id === id);
+            let canvasSelection: PendingDrag['canvasSelection'];
+            if (canvas && source && (multiSelectMode || items.length > 1)) {
+                const productCategories = new Set(products.filter(product =>
+                    !product.isFreeText && items.some(item => item.type === 'product' && item.id === product.id)
+                ).map(product => product.category));
+                const clear = productCategories.size > 1;
+                canvasSelection = { canvas, source, items: clear ? [source] : items, clear };
+            }
+            if (!canvasSelection && (multiSelectMode || type === 'addedImage')) return;
+
+            event.stopPropagation();
 
             if (isDraggingRef.current || activePointerRef.current) {
                 cancelAndCleanup();
@@ -3780,13 +3834,14 @@ export const useDraggableInteractions = (
                 type,
                 id,
                 group,
-                element: event.currentTarget as HTMLElement,
+                element,
                 pointerId: event.pointerId,
                 pointerType,
                 startX: event.clientX,
                 startY: event.clientY,
                 activationTimeoutId: null,
                 freeText: draggedProduct?.isFreeText,
+                canvasSelection,
             };
 
             if (pending.pointerType === 'touch') {
@@ -3795,7 +3850,8 @@ export const useDraggableInteractions = (
                     if (pending.element.dataset.dragContext !== 'product-designer') {
                         pending.longPressReady = true;
                         pending.activationTimeoutId = null;
-                        handleSelection(pending.type === 'product' && draggedProduct?.isFreeText ? 'freeText' : pending.type, pending.id);
+                        if (pending.canvasSelection) return;
+                        handleSelection(sourceType, pending.id);
                         window.dispatchEvent(new CustomEvent('automenu:canvas-drag-ready', {
                             detail: {
                                 type: pending.type === 'product' && draggedProduct?.isFreeText ? 'freeText' : pending.type,
@@ -3812,11 +3868,11 @@ export const useDraggableInteractions = (
 
             pendingDragRef.current = pending;
 
-            if (pointerType !== 'touch') {
-                handleSelection(type === 'product' && draggedProduct?.isFreeText ? 'freeText' : type, id);
+            if (pointerType !== 'touch' && !canvasSelection) {
+                handleSelection(sourceType, id);
             }
         },
-        [activateDrag, attachGlobalListeners, cancelAndCleanup, clearPendingActivation, editingId, handleSelection, multiSelectMode, products]
+        [activateDrag, attachGlobalListeners, cancelAndCleanup, clearPendingActivation, editingId, handleSelection, multiSelectMode, products, selectedItems]
     );
 
     const handleNativeDragStart = useCallback(

@@ -26,7 +26,10 @@ function Fixture() {
   const photoMode = params.get('photos');
   const [history, setHistory] = useState<MenuStyle[]>(() => !photoMode ? [
     params.has('added-image') ? {
-      ...initial, addedImages: [{ id: 'sample-image', url: samplePhoto, x: 290, y: 360, width: 128, pageIndex: 0 }],
+      ...initial, addedImages: [
+        { id: 'sample-image', url: samplePhoto, x: 290, y: 360, width: 128, pageIndex: 0 },
+        ...(params.has('image-pair') ? [{ id: 'second-image', url: samplePhoto, x: 470, y: 460, width: 128, pageIndex: 0 }] : []),
+      ],
     } : initial,
   ] : [{
     ...initial, showImages: true,
@@ -43,10 +46,10 @@ function Fixture() {
   const [items, setItems] = useState(() => params.has('dense-list') ? Array.from({ length: 22 }, (_, i) => ({
     id: `side-${i + 1}`, category: 'Acompanhamentos', name: i === 0 ? 'Batata Trufada' : `Novo item ${i}`,
     description: 'Descrição', price: 6.5,
-  })) : !photoMode ? products : products.map(product => ({
+  })) : !photoMode ? products : (params.has('single-product') ? products.slice(0, 1) : products).map(product => ({
     ...product,
     name: params.has('long-name') && product.id === '1' ? 'Burratacomtomatemarinado'.repeat(4) : product.name,
-    category: 'Entradas', image: samplePhoto,
+    category: params.has('different-categories') && product.id === '3' ? product.category : 'Entradas', image: samplePhoto,
   })));
   const [future, setFuture] = useState<MenuStyle[]>([]);
   const editSession = useRef(0);
