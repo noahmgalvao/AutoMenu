@@ -148,9 +148,17 @@ for (const touch of [false, true]) {
         await page.waitForTimeout(380);
         await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: end }] });
       } else {
+        const initial = ['side-1', 'side-2', 'side-11', 'side-12'];
+        const expected = ['side-2', 'side-1', 'side-12', 'side-11'];
         await page.mouse.move(x, y);
         await page.mouse.down();
-        await page.mouse.move(x, end, { steps: 10 });
+        for (let step = y + 2; step < end; step += 2) {
+          await page.mouse.move(x, step);
+          const current = await first.evaluate((element, ids) => Array.from(element.parentElement!.children)
+            .map(child => child.getAttribute('data-drag-id')).filter(id => id && ids.includes(id)), initial);
+          expect([initial, expected]).toContainEqual(current);
+        }
+        await page.mouse.move(x, end);
       }
       await expect.poll(() => between.evaluate(element => [element.nextElementSibling?.id, element.nextElementSibling?.nextElementSibling?.id,
         element.nextElementSibling?.nextElementSibling?.nextElementSibling?.id]))
@@ -240,7 +248,7 @@ test('selected canvas images retain their relative positions after a group drag'
 });
 
 test('selected category groups keep their relative positions after a group drag', async ({ page }) => {
-  await page.goto('/tests/fixtures/template-editor.html?layout=categories');
+  await page.goto('/tests/fixtures/template-editor.html?layout=categories&adjacent');
   const first = page.locator('[data-category-chunk="Principais"]');
   const second = page.locator('[data-category-chunk="Sobremesas"]');
   const header = first.getByRole('heading', { name: 'Principais' });
@@ -254,13 +262,48 @@ test('selected category groups keep their relative positions after a group drag'
   const y = text.y + text.height / 2;
   await page.mouse.move(x, y);
   await page.mouse.down();
-  await page.mouse.move(x, y + 56, { steps: 8 });
+  const distance = Math.ceil(other.y - before.y) + 20;
+  for (let offset = 12; offset < distance; offset += 8) {
+    await page.mouse.move(x, y + offset);
+    const positions = await Promise.all([first.boundingBox(), second.boundingBox()]);
+    expect(positions[1]!.y - positions[0]!.y).toBeCloseTo(other.y - before.y, 0);
+  }
+  await page.mouse.move(x, y + distance);
   await expect(first).toHaveClass(/ring-indigo-500/);
   await expect(second).toHaveClass(/ring-indigo-500/);
-  await expect.poll(async () => Math.round((await second.boundingBox())!.y - other.y)).toBe(56);
+  await expect.poll(async () => Math.round((await second.boundingBox())!.y - other.y)).toBe(distance);
   await page.mouse.up();
-  await expect.poll(async () => Math.round((await first.boundingBox())!.y - before.y)).toBe(56);
-  expect((await second.boundingBox())!.y - other.y).toBeCloseTo(56, 0);
+  await expect.poll(async () => Math.round((await first.boundingBox())!.y - before.y)).toBe(distance);
+  expect((await second.boundingBox())!.y - other.y).toBeCloseTo(distance, 0);
+});
+
+test.describe('quick touch group drag from canvas layers', () => {
+  test.use({ hasTouch: true });
+
+  for (const layerType of ['image', 'shape']) {
+    test(`a selected ${layerType} immediately drags a selected category with it`, async ({ page }) => {
+      await page.goto(`/tests/fixtures/template-editor.html?layout=categories&${layerType}`);
+      const category = page.locator('[data-category-chunk="Sobremesas"]');
+      const layer = page.locator('[data-added-image-id="test-layer"]');
+      await category.getByRole('heading', { name: 'Sobremesas' }).tap();
+      await category.locator('[data-category-id="Sobremesas"]').getByTitle('Seleção múltipla').tap();
+      await layer.tap();
+      const overlay = page.locator('[data-image-selection-overlay]');
+      await expect(overlay).toBeVisible();
+      const categoryStart = (await category.boundingBox())!;
+      const layerStart = (await overlay.boundingBox())!;
+      const x = layerStart.x + layerStart.width / 2;
+      const y = layerStart.y + layerStart.height / 2;
+      const session = await page.context().newCDPSession(page);
+      await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+      await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y + 35 }] });
+      await expect(overlay).toHaveAttribute('data-active-canvas-drag', 'true');
+      await expect(category).toHaveClass(/ring-indigo-500/);
+      await expect.poll(async () => Math.round((await category.boundingBox())!.y - categoryStart.y)).toBe(35);
+      await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await expect.poll(async () => Math.round((await layer.boundingBox())!.y - layerStart.y)).toBe(35);
+    });
+  }
 });
 
 test('double click places free text at the page coordinate without column handles', async ({ page }) => {

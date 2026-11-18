@@ -396,6 +396,42 @@ test('the product designer saves other forms on cancel and saves edits on the sa
   await expect(page.locator('[data-product-designer-edit-form]')).toHaveCount(0);
 });
 
+test('the first insertion replaces default names and descriptions in the canvas', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=list&default-fields');
+  const category = page.locator('[data-category-id="Nova categoria 12"]');
+  const title = category.getByRole('heading');
+  await title.click();
+  await category.getByTitle('Editar categoria').click();
+  const name = page.locator('#product-name-1');
+  const description = page.locator('#product-description-1');
+
+  for (const [field, value] of [[name, 'Café'], [description, 'Com leite'], [title, 'Bebidas']] as const) {
+    await field.click();
+    await field.evaluate(element => element.ownerDocument.getSelection()?.collapse(element.firstChild, 3));
+    await page.keyboard.insertText(value);
+    await expect(field).toHaveText(value);
+  }
+  await page.keyboard.press('Enter');
+  await expect(page.locator('[data-category-id="Bebidas"]')).toBeVisible();
+  await expect(name).toHaveText('Café');
+  await expect(description).toHaveText('Com leite');
+});
+
+test('typing in the middle of a product designer placeholder replaces it', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=list&product-designer&default-fields');
+  const product = page.locator('#product-container-1');
+  await product.hover();
+  await product.getByRole('button').last().click();
+  await product.getByRole('button', { name: 'Editar' }).click();
+  const name = product.getByPlaceholder('Nome do produto');
+  await name.focus();
+  await name.evaluate(input => (input as HTMLInputElement).setSelectionRange(3, 3));
+  await page.keyboard.insertText('Café');
+  await expect(name).toHaveValue('Café');
+  await product.getByRole('button', { name: 'Salvar' }).click();
+  await expect(product.getByRole('heading')).toHaveText('Café');
+});
+
 for (const mobile of [false, true]) {
   test.describe(`${mobile ? 'mobile' : 'desktop'} product focus in the second column`, () => {
     if (mobile) test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });

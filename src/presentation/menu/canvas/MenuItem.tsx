@@ -501,6 +501,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                         data-divider-title="true"
                         widthMode="flex"
                         id={handlers.readOnly ? undefined : elementId}
+                        data-placeholder-field="category-name"
                         className={`min-w-0 max-w-full shrink whitespace-normal break-words [overflow-wrap:anywhere] [word-break:normal] outline-none rounded ${isEditable ? `${editableTextClassName} z-10` : ''}`}
                         style={{ 
                             color: `var(--automenu-preview-primary, ${catStyle.color || style.primaryColor})`,
@@ -678,7 +679,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                     data-divider-title="true"
                                     widthMode="flex"
                                     containerSelector="[data-product-text-row]"
-                                    id={handlers.readOnly ? undefined : `product-name-${product.id}`} data-product-edit-id={product.id} className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditable ? editableTextClassName : ''}`}
+                                    id={handlers.readOnly ? undefined : `product-name-${product.id}`} data-product-edit-id={product.id} data-placeholder-field="product-name" className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditable ? editableTextClassName : ''}`}
                                     style={{ 
                                         color: nameStyle.color || style.textColor,
                                         fontFamily: nameStyle.fontFamily,
@@ -745,7 +746,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             allowSameWordBreak={allowSameWordBreak}
                             fitScope="productDescription"
                             widthMode="parent"
-                            data-template-description id={handlers.readOnly ? undefined : `product-description-${product.id}`} data-product-edit-id={product.id} className={`max-w-full opacity-80 break-words [overflow-wrap:anywhere] [word-break:normal] leading-relaxed outline-none rounded ${isEditable ? `min-h-[1.5em] ${editableTextClassName}` : ''}`}
+                            data-template-description id={handlers.readOnly ? undefined : `product-description-${product.id}`} data-product-edit-id={product.id} data-placeholder-field="product-description" className={`max-w-full opacity-80 break-words [overflow-wrap:anywhere] [word-break:normal] leading-relaxed outline-none rounded ${isEditable ? `min-h-[1.5em] ${editableTextClassName}` : ''}`}
                             style={{ 
                                 color: `var(--automenu-preview-text, ${descStyle.color || style.textColor})`,
                                 fontFamily: descStyle.fontFamily,
@@ -915,6 +916,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         widthMode="flex"
                                                         containerSelector="[data-product-text-row]"
                                                         id={handlers.readOnly ? undefined : `product-name-${product.id}`}
+                                                        data-placeholder-field="product-name"
                                                         data-product-edit-id={product.id}
                                                         className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditable ? editableTextClassName : ''}`}
                                                         style={{ color: `var(--automenu-preview-text, ${nameStyle.color || style.textColor})`, fontFamily: nameStyle.fontFamily, fontSize: clampFontSize(style, 'productName', nameStyle.fontSize, 18), fontWeight: nameStyle.fontWeight, fontStyle: nameStyle.italic ? 'italic' : 'normal', textDecoration: nameStyle.underline ? 'underline' : 'none', textAlign: nameStyle.textAlign, textTransform: nameStyle.textTransform }}
@@ -973,6 +975,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                 fitScope="productDescription"
                                                 widthMode="parent"
                                                 data-template-description id={handlers.readOnly ? undefined : `product-description-${product.id}`}
+                                                data-placeholder-field="product-description"
                                                 data-product-edit-id={product.id}
                                                 className={`max-w-full opacity-75 break-words [overflow-wrap:anywhere] [word-break:normal] flex-grow outline-none rounded ${isEditable ? `min-h-[1.5em] ${editableTextClassName}` : 'line-clamp-4'}`}
                                                 style={{ color: `var(--automenu-preview-text, ${descStyle.color || style.textColor})`, fontFamily: descStyle.fontFamily, fontSize: clampFontSize(style, 'productDescription', descStyle.fontSize, 14), fontWeight: descStyle.fontWeight, fontStyle: descStyle.italic ? 'italic' : 'normal', textDecoration: descStyle.underline ? 'underline' : 'none', textAlign: descStyle.textAlign }}

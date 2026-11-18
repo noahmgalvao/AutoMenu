@@ -2,6 +2,7 @@ import type { MenuStyle } from '../../../domain/menu/model';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 
 const NEW_PAGE_SWITCH_THRESHOLD_PX = 96;
+export const IMAGE_DRAG_THRESHOLD_PX = 6;
 type Point = { x: number; y: number };
 
 export const getRenderedImageDragPages = () => {

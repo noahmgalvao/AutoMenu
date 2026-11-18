@@ -6,6 +6,7 @@ import MenuDesigner from '../../src/presentation/menu/MenuDesigner';
 import { ProductDesigner } from '../../src/presentation/products/ProductDesigner';
 import { MenuPreview } from '../../src/presentation/menu/canvas/MenuPreview';
 import { PRESET_TEMPLATES } from '../../src/domain/templates/templateCatalog';
+import { canvasShapeUrl, createCanvasShape } from '../../src/domain/menu/canvasShapes';
 import type { MenuStyle, Product, SortOption } from '../../src/domain/menu/model';
 import type { TemplateDesign } from '../../src/domain/templates/model';
 import '../../src/presentation/styles.css';
@@ -25,6 +26,7 @@ const samplePhoto = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAA
 function Fixture() {
   const params = new URLSearchParams(location.search);
   const photoMode = params.get('photos');
+  const defaultFields = params.has('default-fields');
   const splitCategory = params.has('split-category');
   const [history, setHistory] = useState<MenuStyle[]>(() => !photoMode ? [
     params.has('added-image') ? {
@@ -55,9 +57,10 @@ function Fixture() {
     description: 'Descrição', price: 6.5,
   })) : !photoMode ? products : (params.has('single-product') ? products.slice(0, 1) : products).map(product => ({
     ...product,
-    name: params.has('long-name') && product.id === '1' ? 'Burratacomtomatemarinado'.repeat(4) : product.name,
+    name: defaultFields ? 'Novo item' : params.has('long-name') && product.id === '1' ? 'Burratacomtomatemarinado'.repeat(4) : product.name,
+    description: defaultFields ? 'Descrição' : product.description,
     price: params.has('zero-price') && product.id === '1' ? 0 : product.price,
-    category: params.has('different-categories') && product.id === '3' ? product.category : 'Entradas', image: samplePhoto,
+    category: defaultFields ? 'Nova categoria 12' : params.has('different-categories') && product.id === '3' ? product.category : 'Entradas', image: samplePhoto,
   })));
   const [future, setFuture] = useState<MenuStyle[]>([]);
   const editSession = useRef(0);
@@ -105,25 +108,30 @@ function Fixture() {
   </>;
 }
 
-function LayoutFixture({ categories, productsInCategory, closeTexts, topText }: {
-  categories: boolean; productsInCategory: boolean; closeTexts: boolean; topText?: 'detached' | 'attached';
+function LayoutFixture({ categories, adjacent, productsInCategory, closeTexts, topText, layer }: {
+  categories: boolean; adjacent: boolean; productsInCategory: boolean; closeTexts: boolean; topText?: 'detached' | 'attached';
+  layer?: 'image' | 'shape';
 }) {
-  const [style, setStyle] = useState<MenuStyle>({
-    ...initial, categoryColumnCount: 2,
-    customCategoryOrder: categories ? ['Principais', 'Sobremesas', 'Entradas'] : topText === 'detached'
-      ? ['ft_zone_a', 'Entradas'] : ['Entradas', 'ft_zone_a', 'ft_zone_b'],
-    customProductOrder: topText === 'attached' ? { Entradas: ['text-a', '1'] } : undefined,
-    categoryPositions: categories ? {
-      Principais: { pageIndex: 0, columnIndex: 1, y: 210 },
-      Sobremesas: { pageIndex: 0, columnIndex: 1, y: 690 },
-      Entradas: { pageIndex: 0, columnIndex: 0, y: 210 },
-    } : topText ? {
-      Entradas: { pageIndex: 0, columnIndex: 0, y: topText === 'detached' ? 245 : 0 },
-      ...(topText === 'detached' ? { ft_zone_a: { pageIndex: 0, columnIndex: 0, x: 30, y: 175 } } : {}),
-    } : {
-      ft_zone_a: { pageIndex: 0, columnIndex: 1, x: 20, y: 220 },
-      ft_zone_b: { pageIndex: 0, columnIndex: 1, x: 20, y: closeTexts ? 259 : 310 },
-    },
+  const [style, setStyle] = useState<MenuStyle>((): MenuStyle => {
+    const shape = layer === 'shape' ? createCanvasShape('rectangle', '#4f46e5') : undefined;
+    return {
+      ...initial, categoryColumnCount: 2,
+      addedImages: layer ? [{ id: 'test-layer', url: shape ? canvasShapeUrl(shape) : samplePhoto, shape, x: 105, y: 410, width: 128, pageIndex: 0 }] : undefined,
+      customCategoryOrder: categories ? ['Principais', 'Sobremesas', 'Entradas'] : topText === 'detached'
+        ? ['ft_zone_a', 'Entradas'] : ['Entradas', 'ft_zone_a', 'ft_zone_b'],
+      customProductOrder: topText === 'attached' ? { Entradas: ['text-a', '1'] } : undefined,
+      categoryPositions: categories ? {
+        Principais: { pageIndex: 0, columnIndex: 1, y: 210 },
+        Sobremesas: { pageIndex: 0, columnIndex: 1, y: adjacent ? 330 : 690 },
+        Entradas: { pageIndex: 0, columnIndex: 0, y: 210 },
+      } : topText ? {
+        Entradas: { pageIndex: 0, columnIndex: 0, y: topText === 'detached' ? 245 : 0 },
+        ...(topText === 'detached' ? { ft_zone_a: { pageIndex: 0, columnIndex: 0, x: 30, y: 175 } } : {}),
+      } : {
+        ft_zone_a: { pageIndex: 0, columnIndex: 1, x: 20, y: 220 },
+        ft_zone_b: { pageIndex: 0, columnIndex: 1, x: 20, y: closeTexts ? 259 : 310 },
+      },
+    };
   });
   const [items, setItems] = useState<Product[]>(categories ? products : [
     ...(productsInCategory ? products.map(product => ({ ...product, category: 'Entradas' })) : [products[0]]),
@@ -148,10 +156,12 @@ function LayoutFixture({ categories, productsInCategory, closeTexts, topText }: 
   </main>;
 }
 
-const layout = new URLSearchParams(location.search).get('layout');
+const params = new URLSearchParams(location.search);
+const layout = params.get('layout');
 createRoot(document.getElementById('root')!).render(<React.StrictMode>
   <AppServicesProvider services={browserServices}>
-    {layout !== null ? <LayoutFixture categories={layout === 'categories'} productsInCategory={layout === 'products'} closeTexts={layout === 'borders'}
+    {layout !== null ? <LayoutFixture categories={layout === 'categories'} adjacent={params.has('adjacent')} productsInCategory={layout === 'products'} closeTexts={layout === 'borders'}
+      layer={params.has('shape') ? 'shape' : params.has('image') ? 'image' : undefined}
       topText={layout === 'top-detached' ? 'detached' : layout === 'top-attached' ? 'attached' : undefined} /> : <Fixture />}
   </AppServicesProvider>
 </React.StrictMode>);

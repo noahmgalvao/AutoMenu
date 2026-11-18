@@ -4,6 +4,7 @@ import type { MenuStyle, Product, CategoryDividerStyle } from '../../domain/menu
 import { AlignCenter, AlignLeft, AlignRight, Check, ImagePlus, Loader2, X } from 'lucide-react';
 import { formatMenuPriceValue, parseAndRoundPrice } from '../../domain/menu/price';
 import { CategoryDividerPicker } from '../menu/designer/CategoryDividerPicker';
+import { useReplacePlaceholderOnInput } from '../menu/interactions/useReplacePlaceholderOnInput';
 
 interface EditFormProps {
   type: 'product' | 'category';
@@ -36,6 +37,8 @@ export const EditForm: React.FC<EditFormProps> = ({
   productDividerStyle,
   onProductDividerStyleChange,
 }) => {
+  const formRef = React.useRef<HTMLDivElement>(null);
+  useReplacePlaceholderOnInput(formRef);
   const priceInputFocusedRef = React.useRef(false);
   const priceAtFocusRef = React.useRef<number | undefined>(undefined);
   const replacePriceOnNextInputRef = React.useRef(false);
@@ -57,7 +60,7 @@ export const EditForm: React.FC<EditFormProps> = ({
   }, [formData.price, style.priceDecimalPlaces, style.priceDecimalSeparator]);
 
   return (
-    <div data-product-designer-edit-form
+    <div ref={formRef} data-product-designer-edit-form
       className="flex flex-col gap-2 p-3 bg-white border-2 border-indigo-500 rounded-lg shadow-lg animate-in fade-in zoom-in-95" 
       onKeyDown={event => {
         if (event.key === 'Escape') cancelEdit();
@@ -66,6 +69,7 @@ export const EditForm: React.FC<EditFormProps> = ({
     >
       <input 
         autoFocus={autoFocus}
+        data-placeholder-field={type === 'category' ? 'category-name' : 'product-name'}
         className="w-full bg-white text-slate-900 [color-scheme:light] font-bold text-sm border-b border-slate-200 focus:border-indigo-500 outline-none pb-1"
         placeholder={type === 'category' ? "Nome da categoria" : "Nome do produto"}
         value={formData.name || ''}
@@ -95,6 +99,7 @@ export const EditForm: React.FC<EditFormProps> = ({
           <input 
             className="w-full bg-white text-slate-900 [color-scheme:light] text-xs border-b border-slate-200 focus:border-indigo-500 outline-none pb-1"
             placeholder="Descrição"
+            data-placeholder-field="product-description"
             value={formData.description || ''}
             onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
           />

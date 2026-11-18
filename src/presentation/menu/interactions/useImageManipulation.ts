@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { getImageLayerIndexes } from '../../../domain/menu/imageLayers';
 import { InteractionProps, SelectionItem, TOUCH_LONG_PRESS_MS } from './types';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
-import { captureImageDrag, getRenderedImageDragPages, moveDraggedLayers } from './imageDragMotion';
+import { captureImageDrag, getRenderedImageDragPages, IMAGE_DRAG_THRESHOLD_PX, moveDraggedLayers } from './imageDragMotion';
 
 type ImageResizeDirection = 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight';
 type ImageResizeSnapshot = {
@@ -90,7 +90,7 @@ export const useImageManipulation = (
             const moveX = Number(moveEvent.clientX);
             const moveY = Number(moveEvent.clientY);
             if (!moved) {
-                if (Math.hypot(moveX - startX, moveY - startY) < 6) return;
+                if (Math.hypot(moveX - startX, moveY - startY) < IMAGE_DRAG_THRESHOLD_PX) return;
                 moved = true;
                 window.clearTimeout(longPress);
                 window.dispatchEvent(new CustomEvent('automenu:canvas-drag-move'));
