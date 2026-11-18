@@ -217,10 +217,9 @@ export const ProductControls = ({
                         onClick={event => handlers.openObjectMenu?.(event, { type: selectionType, id: selectionId })} title="Mais opções">
                         <MoreHorizontal size={20} />
                     </button>
-                    {isFreeText && isActive && enabledMoves.map(({ direction, edge }) => renderMove(direction, edge))}
                 </CanvasActionGroup>
             )}
-            {isActive && !isFreeText && !handlers.editingId && enabledMoves.map(({ direction, edge }) => (
+            {isActive && !handlers.editingId && enabledMoves.map(({ direction, edge }) => (
                 <CanvasActionGroup key={direction} direction={edge} kind="move">
                     {renderMove(direction, edge)}
                 </CanvasActionGroup>

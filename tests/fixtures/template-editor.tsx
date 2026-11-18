@@ -40,7 +40,10 @@ function Fixture() {
       image: photoMode === 'background' ? 'background' : 'top',
     },
   }]);
-  const [items, setItems] = useState(() => !photoMode ? products : products.map(product => ({
+  const [items, setItems] = useState(() => params.has('dense-list') ? Array.from({ length: 22 }, (_, i) => ({
+    id: `side-${i + 1}`, category: 'Acompanhamentos', name: i === 0 ? 'Batata Trufada' : `Novo item ${i}`,
+    description: 'Descrição', price: 6.5,
+  })) : !photoMode ? products : products.map(product => ({
     ...product,
     name: params.has('long-name') && product.id === '1' ? 'Burratacomtomatemarinado'.repeat(4) : product.name,
     category: 'Entradas', image: samplePhoto,

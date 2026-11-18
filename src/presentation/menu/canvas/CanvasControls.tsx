@@ -14,7 +14,7 @@ type Control = {
 };
 
 const margin = 4;
-const priority: Record<ControlKind, number> = { add: 0, quick: 1, resize: 2, move: 3 };
+const priority: Record<ControlKind, number> = { add: 0, move: 1, quick: 2, resize: 3 };
 const pageControlObservers = new WeakMap<HTMLElement, ReturnType<typeof observeControls>>();
 
 export const canvasActionButtonClass = 'automenu-canvas-action relative grid shrink-0 place-items-center text-slate-600 before:pointer-events-none before:absolute before:rounded-full before:border before:border-slate-200 before:bg-white before:shadow-sm hover:before:border-indigo-300 hover:before:bg-indigo-50 hover:text-indigo-700 focus-visible:outline-none focus-visible:before:outline-2 focus-visible:before:outline-indigo-600';
@@ -39,12 +39,6 @@ function placeControls(
         canvas.bottom = Math.min(canvas.bottom, canvasRect.top + canvasElement.clientTop + canvasElement.clientHeight - margin);
     }
     const pageBounds = insetBounds(pageRect);
-    const visible = canvas && {
-        left: Math.max(pageBounds.left, canvas.left),
-        right: Math.min(pageBounds.right, canvas.right),
-        top: Math.max(pageBounds.top, canvas.top),
-        bottom: Math.min(pageBounds.bottom, canvas.bottom),
-    };
     const hoverEnabled = matchMedia('(hover: hover) and (min-width: 768px)').matches;
     const time = performance.now();
     const active = [...controls].filter(control => {
@@ -65,95 +59,103 @@ function placeControls(
             blockers.push(element.getBoundingClientRect());
         }
     });
-    const range = document.createRange();
-    page.querySelectorAll<HTMLElement>(
-        '[data-word-fit], [data-menu-marker], [data-border-text], [data-page-number], .automenu-image-resize-handle, [data-free-text-resize-handle]',
-    ).forEach(element => {
-        if (!element.getClientRects().length || getComputedStyle(element).opacity === '0') return;
-        if (element.textContent?.trim()) {
-            range.selectNodeContents(element);
-            blockers.push(...Array.from(range.getClientRects()).filter(rect => rect.width && rect.height));
-        } else {
-            const rect = element.getBoundingClientRect();
-            if (rect.width && rect.height) blockers.push(rect);
-        }
+    page.querySelectorAll('.automenu-image-resize-handle, [data-free-text-resize-handle]').forEach(handle => {
+        blockers.push(handle.getBoundingClientRect());
     });
 
-    const neighboringPages = Array.from(page.parentElement?.parentElement?.children || [])
-        .filter(element => element !== page.parentElement && element.hasAttribute('data-menu-page-frame'))
-        .map(element => element.getBoundingClientRect());
-    let dockedHeight = 0;
-    for (const { node, anchor, direction, kind } of active) {
+    for (const { node, anchor, direction, kind, hoverOnly } of active) {
         const target = anchor.getBoundingClientRect();
-        const targetVisible = canvas && target.right >= canvas.left && target.left <= canvas.right
-            && target.bottom >= canvas.top && target.top <= canvas.bottom;
-        const bounds = targetVisible ? visible : pageBounds;
-        const available = targetVisible ? canvas : pageBounds;
-        node.style.maxWidth = `${Math.max(0, available.right - available.left)}px`;
+        const bounds = canvas || pageBounds;
+        if (target.bottom < bounds.top || target.top > bounds.bottom || target.right < bounds.left || target.left > bounds.right) {
+            node.style.visibility = 'hidden';
+            continue;
+        }
+        node.style.maxWidth = `${Math.max(0, bounds.right - bounds.left)}px`;
         const width = node.offsetWidth;
         const height = node.offsetHeight;
         const centerX = (target.left + target.right) / 2;
         const centerY = (target.top + target.bottom) / 2;
         const side = direction === 'left' || direction === 'right';
-        const preferred = {
-            x: direction === 'left' ? target.left - width - margin : direction === 'right' ? target.right + margin
-                : kind === 'quick' ? target.right - width : centerX - width / 2,
-            y: direction === 'top' ? target.top - height - margin : direction === 'bottom' ? target.bottom + margin : centerY - height / 2,
-        };
-        if (kind === 'resize') {
+        let x = centerX - width / 2;
+        let y = centerY - height / 2;
+        if (kind === 'quick') {
+            if (target.width >= width) x = target.right - width;
+            y = target.top - height - margin;
+        } else if (kind === 'resize') {
             const column = anchor.closest('[data-drag-column-container]')?.getBoundingClientRect() || target;
-            preferred.x = (direction === 'left' ? column.left : column.right) - width / 2;
-            preferred.y = target.top - height - margin;
+            x = (direction === 'left' ? column.left : column.right) - width / 2;
+            y = target.top - height - margin;
+        } else if (side) {
+            x = (direction === 'left' ? target.left : target.right) - width / 2;
+        } else {
+            y = (direction === 'top' ? target.top : target.bottom) - height / 2;
+        }
+        if (kind === 'add' || kind === 'move') {
+            const paired = active.some(control => control.anchor === anchor && control.direction === direction
+                && control.kind === (kind === 'add' ? 'move' : 'add'));
+            if (paired) {
+                const sign = kind === 'add' ? 1 : -1;
+                if (side) y += sign * (height + margin) / 2;
+                else x += sign * (width + margin) / 2;
+            }
+            if (direction === 'top') {
+                const shortcuts = active.find(control => control.kind === 'quick' && control.anchor === anchor);
+                if (shortcuts) {
+                    const toolbarLeft = Math.min(target.right, bounds.right) - shortcuts.node.offsetWidth;
+                    const lastSlot = toolbarLeft - margin - width;
+                    const firstSlot = paired ? lastSlot - width - margin : lastSlot;
+                    if (firstSlot >= Math.max(target.left, bounds.left)) {
+                        x = Math.min(x, kind === 'move' ? firstSlot : lastSlot);
+                        y = target.top - height / 2 - margin * 2;
+                    }
+                }
+            }
+            if (side ? x + width < bounds.left || x > bounds.right : y + height < bounds.top || y > bounds.bottom) {
+                node.style.visibility = 'hidden';
+                continue;
+            }
         }
 
-        const coordinates = (values: number[], center: number, min: number, max: number) => (
-            [...new Set([center, min, max, ...values].map(value => clamp(value, min, max)))]
-                .sort((a, b) => Math.abs(a - center) - Math.abs(b - center))
-        );
-        const findSpace = (area: Box, obstacles: Box[], origin = preferred) => {
-            if (area.right - area.left < width || area.bottom - area.top < height) return;
-            const xPositions = coordinates(obstacles.flatMap(box => [box.left - width - margin, box.right + margin]),
-                origin.x, area.left, area.right - width);
-            const yPositions = coordinates(obstacles.flatMap(box => [box.top - height - margin, box.bottom + margin]),
-                origin.y, area.top, area.bottom - height);
-            let best: { left: number; top: number; score: number } | undefined;
-            for (const left of xPositions) {
-                const horizontalDistance = Math.abs(left - origin.x);
-                if (best && horizontalDistance >= best.score) break;
-                const horizontalBlockers = obstacles.filter(box => left < box.right + 1 && left + width > box.left - 1);
-                for (const top of yPositions) {
-                    const distance = horizontalDistance + Math.abs(top - origin.y);
-                    if (best && distance >= best.score) break;
-                    if (horizontalBlockers.some(box => top < box.bottom + 1 && top + height > box.top - 1)) continue;
-                    const atPreferredEdge = side
-                        ? (direction === 'left' ? left + width <= target.left + margin : left >= target.right - margin)
-                        : (direction === 'top' ? top + height <= target.top + margin : top >= target.bottom - margin);
-                    const score = distance + (kind === 'add' && !atPreferredEdge ? 80 : 0);
-                    if (!best || score < best.score) best = { left, top, score };
+        // Only controls compete for space. Text in another row must never push a toolbar away from its object.
+        const occupied = [...blockers];
+        if (kind === 'resize') {
+            const range = document.createRange();
+            anchor.querySelectorAll('[data-word-fit]').forEach(text => {
+                range.selectNodeContents(text);
+                occupied.push(...Array.from(range.getClientRects()));
+            });
+        }
+        const preferredLeft = clamp(x, bounds.left, bounds.right - width);
+        const preferredTop = clamp(y, bounds.top, bounds.bottom - height);
+        const xs = [preferredLeft, ...occupied.flatMap(box => [box.left - width - margin, box.right + margin])];
+        const ys = [preferredTop, ...occupied.flatMap(box => [box.top - height - margin, box.bottom + margin])];
+        let left = preferredLeft;
+        let top = preferredTop;
+        let bestScore = Infinity;
+        for (const candidateX of xs) {
+            const nextLeft = clamp(candidateX, bounds.left, bounds.right - width);
+            for (const candidateY of ys) {
+                const nextTop = clamp(candidateY, bounds.top, bounds.bottom - height);
+                if (occupied.some(box => nextLeft < box.right && nextLeft + width > box.left
+                    && nextTop < box.bottom && nextTop + height > box.top)) continue;
+                const dx = nextLeft - preferredLeft;
+                const dy = nextTop - preferredTop;
+                const wrongEdge = kind === 'quick' ? nextTop > preferredTop + 1 || nextLeft > target.right || nextLeft + width < target.left
+                    : direction === 'top' ? nextTop + height / 2 > centerY
+                    : direction === 'bottom' ? nextTop + height / 2 < centerY
+                    : direction === 'left' ? nextLeft + width / 2 > centerX : nextLeft + width / 2 < centerX;
+                const score = dx * dx * (side ? 3 : 1) + dy * dy * (side ? 1 : 3) + (wrongEdge ? 10000 : 0);
+                if (score < bestScore) {
+                    bestScore = score;
+                    left = nextLeft;
+                    top = nextTop;
                 }
             }
-            return best;
-        };
-        const findNearbySpace = (area: Box, obstacles: Box[]) => {
-            let best = findSpace(area, obstacles);
-            if (kind !== 'quick' || !best || Math.abs(best.top - preferred.y) <= height) return best;
-
-            for (const x of [target.right + margin, target.left - width - margin]) {
-                const beside = findSpace(area, obstacles, { x, y: target.top });
-                if (beside && beside.score + height / 2 < best.score) {
-                    best = { ...beside, score: beside.score + height / 2 };
-                }
-            }
-            return best;
-        };
-        const best = (bounds && findNearbySpace(bounds, blockers))
-            || (targetVisible ? findNearbySpace(canvas, [...blockers, ...neighboringPages]) : undefined);
-        const dockLeft = clamp(preferred.x, available.left, available.right - width);
-        const left = best?.left ?? dockLeft;
-        const top = best?.top ?? (targetVisible
-            ? Math.max(available.top, available.bottom - dockedHeight - height)
-            : pageRect.bottom + margin + dockedHeight);
-        if (!best) dockedHeight += height + margin;
+        }
+        if (hoverOnly && (Math.abs(top - preferredTop) > margin || Math.abs(left - preferredLeft) > width / 2)) {
+            node.style.visibility = 'hidden';
+            continue;
+        }
         blockers.push({ left, top, right: left + width, bottom: top + height });
         // Fixed positioning escapes the paper clip when controls need space around the page.
         const inPaper = left >= pageRect.left && left + width <= pageRect.right
@@ -264,7 +266,7 @@ export function CanvasActionGroup({ direction, kind, anchorId, anchorSelector, h
         return coordinator.add({ node, anchor, direction, kind, hoverOnly });
     }, [anchorId, anchorSelector, direction, hoverOnly, kind]);
     return (
-        <div {...props} ref={ref} data-canvas-action-group={kind} data-canvas-action-direction={direction}
+        <div {...props} ref={ref} data-canvas-action-group={kind} data-canvas-action-direction={direction} data-selected-control={hoverOnly ? undefined : 'true'}
             data-drag-ignore="true" data-print-control="true"
             className={`pointer-events-auto absolute z-[80] flex w-max min-w-min origin-top-left flex-wrap items-center gap-1 ${className}`}
             style={{ visibility: 'hidden' }}

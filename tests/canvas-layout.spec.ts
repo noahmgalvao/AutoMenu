@@ -208,6 +208,33 @@ for (const { width, height, touch, buttonSize } of [
   test.describe(`canvas toolbar at ${width}px`, () => {
     test.use({ viewport: { width, height }, hasTouch: touch, isMobile: touch });
 
+    test('the shortcut bar and directional controls stay attached in a dense product list', async ({ page }) => {
+      await page.goto('/tests/fixtures/template-editor.html?photos=list&dense-list');
+      const product = page.locator('#product-container-side-1');
+      const select = product.getByRole('heading');
+      if (touch) await select.tap();
+      else await select.click();
+      const toolbar = product.locator('[data-canvas-action-group="quick"]');
+      await expect(toolbar).toBeVisible();
+      await expect.poll(() => product.evaluate(item => {
+        const box = item.getBoundingClientRect();
+        const bar = item.querySelector('[data-canvas-action-group="quick"]')!.getBoundingClientRect();
+        const edges = [...item.querySelectorAll<HTMLElement>('[data-canvas-action-group="add"], [data-canvas-action-group="move"]')];
+        return bar.bottom <= box.top + 1 && box.top - bar.bottom <= 30
+          && bar.left < box.right && bar.right > box.left && edges.length >= 3 && edges.every(control => {
+            const rect = control.getBoundingClientRect();
+            const edge = control.dataset.canvasActionDirection === 'top' ? box.top : box.bottom;
+            return Math.abs(rect.top + rect.height / 2 - edge) <= rect.height / 2 + 4
+              && document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)?.closest('button') === control.firstElementChild;
+          });
+      })).toBe(true);
+      const down = product.getByTitle('Mover abaixo');
+      const before = (await product.boundingBox())!.y;
+      if (touch) await down.tap();
+      else await down.click();
+      await expect.poll(async () => (await product.boundingBox())!.y).toBeGreaterThan(before + 1);
+    });
+
     test('buttons remain compact and reachable for every column combination', async ({ page }) => {
       for (const lanes of [1, 2, 3]) {
         for (const cols of [1, 2, 3]) {
@@ -227,6 +254,14 @@ for (const { width, height, touch, buttonSize } of [
                 && Math.abs(rect.width - inset * 2 - 28) <= 1 && hit === button;
             }), buttonSize)).toEqual([true, true, true, true]);
             await checkButtons();
+
+            await expect.poll(() => product.evaluate(element => {
+              const item = element.getBoundingClientRect();
+              const toolbar = element.querySelector('[data-canvas-action-group="quick"]')!.getBoundingClientRect();
+              const horizontalOverlap = Math.min(item.right, toolbar.right) - Math.max(item.left, toolbar.left);
+              return horizontalOverlap >= Math.min(item.width, toolbar.width) / 2
+                && toolbar.bottom <= item.top + 1 && item.top - toolbar.bottom <= 30;
+            })).toBe(true);
 
             if (lanes === 1 && cols === 1) {
               const canvas = page.locator('[data-automenu-editor-canvas]');
