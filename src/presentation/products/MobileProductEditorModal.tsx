@@ -205,7 +205,7 @@ export const MobileProductEditorModal: React.FC<MobileProductEditorModalProps> =
         finalOperations.push(inferManualPriceOperation(reproducedPrice, changedReference.price));
       }
     }
-    const propagation = changedReference && initialReference && finalOperations.length > 0
+    const propagation = changedReference && initialReference && roundPrice(initialReference.price) !== 0 && finalOperations.length > 0
       ? {
           ...createPricePropagationRequest({
             productId: referenceProductId,

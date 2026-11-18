@@ -161,7 +161,12 @@ export const MenuPage: React.FC<MenuPageProps> = ({
     );
 
     const visibleImages = (style.addedImages || []).filter(image => image?.id && (image.repeatAsBackground || (image.pageIndex || 0) === pageIndex));
-    const [formattingShapeId, setFormattingShapeId] = React.useState<string | null>(null);
+    const formattingShapeId = style.addedImages?.some(image => image.id === handlers.editingId && image.shape)
+        ? handlers.editingId : null;
+    const handleImageClick = (event: React.MouseEvent, id: string) => {
+        event.stopPropagation();
+        if (handlers.isReadyToEdit?.('addedImage', id)) handlers.startImageEditing(id);
+    };
     const editableImages = readOnly ? [] : visibleImages.filter(image => (
         ((handlers.imageEditPage?.id === image.id && image.repeatAsBackground ? handlers.imageEditPage.pageIndex : image.pageIndex) || 0) === pageIndex
     ));
@@ -474,7 +479,6 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 className={`shadow-2xl ${isImportedMenu ? '' : 'bg-white'} print:shadow-none print:mb-0 print:break-after-page group/page transition-shadow md:cursor-default ${isPageSelected ? 'ring-4 ring-blue-500' : ''}`}
                 onClick={readOnly ? undefined : (e) => {
                     e.stopPropagation();
-                    if (products.some(product => product.id === handlers.editingId && !product.isFreeText)) return;
                     handlers.setSelectedPageIndex(pageIndex);
                     handlers.setSelectedId(null);
                     handlers.handleSelection('page', pageIndex.toString(), { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey });
@@ -535,7 +539,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                                 if ((e.target as HTMLElement).closest('.automenu-image-resize-handle')) return;
                                 if (!readOnly) handlers.handleImageDragStart(e, img.id, pageIndex);
                             }}
-                            onClick={(e) => e.stopPropagation()}
+                            onClick={(e) => handleImageClick(e, img.id)}
                             onContextMenu={(e) => handlers.openObjectMenu?.(e, { type: 'addedImage', id: img.id })}
                         >
                             <img src={img.url} alt={img.shape ? 'Forma adicionada' : 'Imagem adicionada'} className="w-full h-auto pointer-events-none select-none" draggable={false}
@@ -599,7 +603,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                             if ((event.target as HTMLElement).closest('.automenu-image-resize-handle')) return;
                             handlers.handleImageDragStart(event, img.id, pageIndex);
                         }}
-                        onClick={(event) => event.stopPropagation()}
+                        onClick={(event) => handleImageClick(event, img.id)}
                         onContextMenu={(event) => handlers.openObjectMenu?.(event, { type: 'addedImage', id: img.id })}
                     >
                         <Resizable
@@ -712,6 +716,9 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         onPointerDown={(event) => event.stopPropagation()}
                         onClick={(event) => {
                             event.stopPropagation();
+                            if (handlers.editingId) {
+                                handlers.handleSelection('page', String(pageIndex));
+                            }
                             handlers.setFormattingTarget?.({
                                 type: 'pageNumber',
                                 id: 'pageNumber',
@@ -741,7 +748,8 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                             onPointerDown={(event) => event.stopPropagation()}
                             onClick={(event) => {
                                 event.stopPropagation();
-                                setFormattingShapeId((current) => current === img.id ? null : img.id);
+                                if (formattingShapeId === img.id) handlers.setEditingId(null);
+                                else handlers.startImageEditing(img.id);
                             }}
                             className={`${canvasActionButtonClass} ${formattingShapeId === img.id ? 'before:!bg-indigo-50 !text-indigo-700' : ''}`}>
                             <SlidersHorizontal size={19} />
@@ -763,8 +771,8 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         <Trash2 size={19} />
                     </button>
                     {img.shape && formattingShapeId === img.id && (
-                        <InlineStyleToolbar compact targetElementId={`added-image-${pageIndex}-${img.id}`}
-                            onDismiss={() => setFormattingShapeId(null)}>
+                        <InlineStyleToolbar compact dismissOnClickInCanvas targetElementId={`added-image-${pageIndex}-${img.id}`}
+                            onDismiss={() => handlers.setEditingId(null)}>
                             <div className="p-1.5">
                                 <ShapeSettings shape={img.shape}
                                     onChange={(shape) => handlers.updateStyle?.((previous: MenuStyle) => ({

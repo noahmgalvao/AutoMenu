@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import type { Product, MenuStyle, SortOption } from '../../domain/menu/model';
+import type { CategoryDividerStyle, Product, MenuStyle, SortOption } from '../../domain/menu/model';
 import type { MenuImportMode } from '../../domain/imports/model';
 import { useMenuInteractions } from '../menu/interactions/useMenuInteractions';
 import type { FinalizedMenuImport, ProcessedMenuImport } from '../../application/imports/importReview';
@@ -12,9 +12,11 @@ import {
     applyPriceOperations,
     createPricePropagationRequest,
     getPricePropagationSourceIds,
-    mergePricePropagationRequest,
     type PricePropagationRequest,
 } from '../../domain/menu/pricePropagation';
+
+export type ProductDesignerEdit = Partial<Product> & { divider?: CategoryDividerStyle };
+type EditSession = { changes: Record<string, ProductDesignerEdit>; closed?: { cancelledId?: string } };
 
 interface UseProductDesignerLogicProps {
     products: Product[];
@@ -49,14 +51,17 @@ export const useProductDesignerLogic = ({
     const [showInsights, setShowInsights] = useState(false);
     const [bulkPercentage, setBulkPercentage] = useState<number | string>(10);
     const [bulkAdjustmentMode, setBulkAdjustmentMode] = useState<'percentage' | 'integer'>('percentage');
-    const [pendingPricePropagation, setPendingPricePropagation] = useState<PricePropagationRequest | null>(null);
+    const [priceRequests, setPriceRequests] = useState<PricePropagationRequest[]>([]);
+    const pendingPricePropagation = priceRequests[0] || null;
     const [isUploading, setIsUploading] = useState(false);
 
     // Draft State
-    const [newItemDraft, setNewItemDraft] = useState<{ categoryId: string, type: 'product' | 'category', value: Partial<Product> } | null>(null);
+    const [newItemDraft, setNewItemDraft] = useState<{ categoryId: string, type: 'product' | 'category' } | null>(null);
 
     // Form State
     const [formData, setFormData] = useState<Partial<Product>>({});
+    const [existingEdits, setExistingEdits] = useState<Record<string, ProductDesignerEdit>>({});
+    const editSessionRef = useRef<EditSession | null>(null);
     const [uploadTargetId, setUploadTargetId] = useState<string | null>(null);
     const [categoryUploadTarget, setCategoryUploadTarget] = useState<string | null>(null);
     const [productImageUpload, setProductImageUpload] = useState<{ id: string; previewUrl: string } | null>(null);
@@ -180,6 +185,7 @@ export const useProductDesignerLogic = ({
         const file = e.target.files?.[0];
         if (!file || !uploadTargetId) return;
         const targetId = uploadTargetId;
+        const session = editSessionRef.current;
         const previewUrl = URL.createObjectURL(file);
         setProductImageUpload({ id: targetId, previewUrl });
         try {
@@ -192,9 +198,11 @@ export const useProductDesignerLogic = ({
                 file: optimizedFile,
                 metadata: { product_id: targetId }
             });
-            setProducts(prev => prev.map(p => p.id === targetId ? { ...p, image: url, imageAssetId: asset.id } : p));
-            if (editModeId === targetId) {
-                setFormData(previous => ({ ...previous, image: url, imageAssetId: asset.id }));
+            const image = { image: url, imageAssetId: asset.id };
+            if (session && !session.closed) {
+                updateExistingEdit(targetId, previous => ({ ...previous, ...image }));
+            } else if (session?.closed?.cancelledId !== targetId) {
+                setProducts(prev => prev.map(p => p.id === targetId ? { ...p, ...image } : p));
             }
             await preloadImage(url);
         } catch (err) {
@@ -213,10 +221,9 @@ export const useProductDesignerLogic = ({
     };
 
     const onRemoveProductImage = (id: string) => {
-        setProducts(prev => prev.map(p => p.id === id ? { ...p, image: '', imageAssetId: null } : p));
-        if (editModeId === id) {
-            setFormData(previous => ({ ...previous, image: '', imageAssetId: null }));
-        }
+        const image = { image: '', imageAssetId: null };
+        if (editSessionRef.current) updateExistingEdit(id, previous => ({ ...previous, ...image }));
+        else setProducts(prev => prev.map(p => p.id === id ? { ...p, ...image } : p));
     };
 
     const handleCategoryImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -282,129 +289,161 @@ export const useProductDesignerLogic = ({
         });
     };
 
-    const startEdit = (id: string, initialData: Partial<Product>) => {
+    const startEdit = (id: string) => {
         const product = products.find(candidate => candidate.id === id);
         handlers.handleSelection(
             handlers.sortedCategories.includes(id) ? 'category' : getProductSelectionType(product),
             id
         );
+        editSessionRef.current = { changes: {} };
+        setExistingEdits({});
         setEditModeId(id);
-        setFormData(initialData);
         setMenuOpenId(null);
     };
 
-    const cancelEdit = () => {
+    const updateExistingEdit = (id: string, update: React.SetStateAction<ProductDesignerEdit>) => {
+        const session = editSessionRef.current;
+        if (!session) return;
+        const product = products.find(item => item.id === id);
+        const original: ProductDesignerEdit = product
+            ? { ...product, divider: style.productDividerStyles?.[id] ?? 'none' }
+            : { name: id };
+        const previous = { ...original, ...session.changes[id] };
+        const next = typeof update === 'function' ? update(previous) : update;
+        const changes = Object.fromEntries(Object.entries(next).filter(([key, value]) =>
+            original[key as keyof ProductDesignerEdit] !== value));
+        session.changes = { ...session.changes, [id]: changes };
+        setExistingEdits(session.changes);
+    };
+
+    const initiateAdd = (categoryId: string, type: 'product' | 'category') => {
+        setNewItemDraft({ categoryId, type });
+        setEditModeId('DRAFT');
+        setFormData({ name: '', price: 0, description: '' });
+    };
+
+    const saveNewItem = () => {
+        if (!newItemDraft) return;
+        if (newItemDraft.type === 'product') {
+            const newProd: Product = {
+                id: crypto.randomUUID(),
+                name: formData.name || 'Novo item',
+                price: roundPrice(formData.price),
+                description: formData.description || '',
+                category: newItemDraft.categoryId,
+                categoryId: resolveCategoryId(newItemDraft.categoryId),
+                image: ''
+            };
+            setProducts(prev => [...prev, newProd]);
+            setStyle(prev => {
+                const current = prev.customProductOrder?.[newProd.category] || (handlers.groupedProducts[newProd.category] || []).map(p => p.id);
+                return {
+                    ...prev,
+                    customProductOrder: { ...prev.customProductOrder, [newProd.category]: [...current, newProd.id] },
+                    name: 'Custom'
+                };
+            });
+        } else if (newItemDraft.type === 'category') {
+            const newCatName = formData.name || 'Nova categoria';
+            if (!newCatName) return;
+
+            // Add to custom order
+            setStyle(prev => {
+                const currentOrder = prev.customCategoryOrder && prev.customCategoryOrder.length > 0 ? [...prev.customCategoryOrder] : [...handlers.sortedCategories];
+                const refIdx = currentOrder.indexOf(newItemDraft.categoryId);
+                if (refIdx !== -1) currentOrder.splice(refIdx + 1, 0, newCatName);
+                else currentOrder.push(newCatName);
+                return { ...prev, customCategoryOrder: currentOrder, name: 'Custom' };
+            });
+
+            const newId = crypto.randomUUID();
+            const placeholderProd: Product = {
+                id: newId,
+                name: 'Novo item',
+                price: 0,
+                description: 'Descrição',
+                category: newCatName,
+                categoryId: crypto.randomUUID(),
+                image: ''
+            };
+            setProducts(prev => [...prev, placeholderProd]);
+        }
+    };
+
+    const saveExistingEdits = (session: EditSession, cancelledId?: string) => {
+        const changes = Object.entries(session.changes).filter(([id]) => id !== cancelledId);
+        const productsById = new Map(products.map(product => [product.id, product]));
+        const productChanges = new Map<string, Partial<Product>>();
+        const renames = new Map<string, string>();
+        const dividers: Record<string, CategoryDividerStyle> = {};
+        const newPriceRequests: PricePropagationRequest[] = [];
+        for (const [id, { divider, ...fields }] of changes) {
+            const product = productsById.get(id);
+            if (product) {
+                if (divider !== undefined) dividers[id] = divider;
+                if (!Object.keys(fields).length) continue;
+                if (fields.price !== undefined && !product.isFreeText) {
+                    fields.price = roundPrice(fields.price);
+                    const previousPrice = roundPrice(product.price);
+                    if (previousPrice !== 0 && fields.price !== previousPrice) {
+                        newPriceRequests.push(createPricePropagationRequest({
+                            productId: id,
+                            productName: fields.name || product.name,
+                            previousPrice,
+                            nextPrice: fields.price,
+                        }));
+                    }
+                }
+                productChanges.set(id, fields);
+            } else if (fields.name && fields.name !== id && handlers.sortedCategories.includes(id)) {
+                renames.set(id, fields.name);
+            }
+        }
+
+        if (productChanges.size || renames.size) {
+            setProducts(previous => previous.map(product => {
+                const fields = productChanges.get(product.id);
+                const category = renames.get(product.category);
+                return fields || category ? { ...product, ...fields, category: category ?? product.category } : product;
+            }));
+        }
+        if (renames.size || Object.keys(dividers).length) {
+            const rename = (category: string) => renames.get(category) ?? category;
+            setStyle(previous => {
+                const order = [...new Set([...(previous.customCategoryOrder || []), ...handlers.sortedCategories])];
+                return {
+                    ...previous,
+                    customCategoryOrder: renames.size ? [...new Set(order.map(rename))] : previous.customCategoryOrder,
+                    customProductOrder: renames.size ? Object.fromEntries(Object.entries(previous.customProductOrder || {})
+                        .map(([category, order]) => [rename(category), order])) : previous.customProductOrder,
+                    categoryImages: renames.size ? Object.fromEntries(Object.entries(previous.categoryImages || {})
+                        .map(([category, image]) => [rename(category), image])) : previous.categoryImages,
+                    productDividerStyles: { ...previous.productDividerStyles, ...dividers },
+                    name: 'Custom',
+                };
+            });
+        }
+        if (newPriceRequests.length) setPriceRequests(previous => [...previous, ...newPriceRequests]);
+    };
+
+    const finishEditing = (cancelledId?: string, explicit = false) => {
+        const session = editSessionRef.current;
+        if (session) {
+            session.closed = { cancelledId };
+            editSessionRef.current = null;
+            saveExistingEdits(session, cancelledId);
+            setExistingEdits({});
+        } else if (newItemDraft && !cancelledId && (explicit || formData.name || formData.description || formData.price)) {
+            saveNewItem();
+        }
         setEditModeId(null);
         setNewItemDraft(null);
         setFormData({});
     };
 
-    const initiateAdd = (categoryId: string, type: 'product' | 'category') => {
-        setNewItemDraft({ categoryId, type, value: {} });
-        setEditModeId('DRAFT');
-        setFormData({ name: type === 'category' ? '' : '', price: 0, description: '' });
-    };
-
-    const saveEdit = () => {
-        if (!editModeId) return;
-
-        if (newItemDraft) {
-            if (newItemDraft.type === 'product') {
-                const newProd: Product = {
-                    id: crypto.randomUUID(),
-                    name: formData.name || 'Novo item',
-                    price: roundPrice(formData.price),
-                    description: formData.description || '',
-                    category: newItemDraft.categoryId,
-                    categoryId: resolveCategoryId(newItemDraft.categoryId),
-                    image: ''
-                };
-                setProducts(prev => [...prev, newProd]);
-                setStyle(prev => {
-                    const current = prev.customProductOrder?.[newProd.category] || (handlers.groupedProducts[newProd.category] || []).map(p => p.id);
-                    return {
-                        ...prev,
-                        customProductOrder: { ...prev.customProductOrder, [newProd.category]: [...current, newProd.id] },
-                        name: 'Custom'
-                    };
-                });
-            } else if (newItemDraft.type === 'category') {
-                const newCatName = formData.name || 'Nova categoria';
-                if (!newCatName) return;
-
-                // Add to custom order
-                setStyle(prev => {
-                    const currentOrder = prev.customCategoryOrder && prev.customCategoryOrder.length > 0 ? [...prev.customCategoryOrder] : [...handlers.sortedCategories];
-                    const refIdx = currentOrder.indexOf(newItemDraft.categoryId);
-                    if (refIdx !== -1) currentOrder.splice(refIdx + 1, 0, newCatName);
-                    else currentOrder.push(newCatName);
-                    return { ...prev, customCategoryOrder: currentOrder, name: 'Custom' };
-                });
-
-                const newId = crypto.randomUUID();
-                const placeholderProd: Product = {
-                    id: newId,
-                    name: 'Novo item',
-                    price: 0,
-                    description: 'Descrição',
-                    category: newCatName,
-                    categoryId: crypto.randomUUID(),
-                    image: ''
-                };
-                setProducts(prev => [...prev, placeholderProd]);
-            }
-            setNewItemDraft(null);
-        } else {
-            const editedProduct = products.find((product) => product.id === editModeId && !product.isFreeText);
-            const nextEditedPrice = roundPrice(formData.price ?? editedProduct?.price ?? 0);
-            setProducts(prev => prev.map(p => {
-                if (p.id === editModeId) {
-                    return editedProduct
-                        ? { ...p, ...formData, price: nextEditedPrice } as Product
-                        : { ...p, ...formData } as Product;
-                }
-                return p;
-            }));
-            if (editedProduct && editedProduct.price !== nextEditedPrice) {
-                const request = createPricePropagationRequest({
-                    productId: editedProduct.id,
-                    productName: editedProduct.name,
-                    previousPrice: editedProduct.price,
-                    nextPrice: nextEditedPrice,
-                });
-                setPendingPricePropagation((current) => mergePricePropagationRequest(current, request));
-            }
-            if (handlers.sortedCategories.includes(editModeId)) {
-                const oldName = editModeId;
-                const newName = formData.name;
-                if (newName && newName !== oldName) {
-                    setProducts(prev => prev.map(p => p.category === oldName ? { ...p, category: newName } : p));
-                    setStyle(prev => {
-                        const currentOrder = prev.customCategoryOrder && prev.customCategoryOrder.length > 0
-                            ? [...prev.customCategoryOrder]
-                            : [...handlers.sortedCategories];
-                        handlers.sortedCategories.forEach(category => {
-                            if (!currentOrder.includes(category)) currentOrder.push(category);
-                        });
-                        const newOrder = currentOrder.map(c => c === oldName ? newName : c);
-                        const newProdOrder = { ...prev.customProductOrder };
-                        if (newProdOrder[oldName]) {
-                            newProdOrder[newName] = newProdOrder[oldName];
-                            delete newProdOrder[oldName];
-                        }
-                        const categoryImages = { ...(prev.categoryImages || {}) };
-                        if (categoryImages[oldName]) {
-                            categoryImages[newName] = categoryImages[oldName];
-                            delete categoryImages[oldName];
-                        }
-                        return { ...prev, customCategoryOrder: newOrder, customProductOrder: newProdOrder, categoryImages, name: 'Custom' };
-                    });
-                }
-            }
-        }
-        setEditModeId(null);
-        setFormData({});
-    };
+    const saveEdit = () => finishEditing(undefined, true);
+    const saveOnExit = () => finishEditing();
+    const cancelEdit = (id: string) => finishEditing(id);
 
     const applyPricePropagation = () => {
         if (!pendingPricePropagation) return;
@@ -413,7 +452,7 @@ export const useProductDesignerLogic = ({
             if (product.isFreeText || sourceIds.has(product.id)) return product;
             return { ...product, price: applyPriceOperations(product.price, pendingPricePropagation.operations) };
         }));
-        setPendingPricePropagation(null);
+        setPriceRequests(previous => previous.slice(1));
     };
 
     const remove = (id: string, type: 'product' | 'category') => {
@@ -524,7 +563,7 @@ export const useProductDesignerLogic = ({
         pendingPricePropagation,
         isUploading,
         newItemDraft,
-        formData,
+        formData, existingEdits,
         productImageUpload,
         categoryImageUpload,
 
@@ -533,7 +572,7 @@ export const useProductDesignerLogic = ({
         setShowInsights,
         setBulkPercentage,
         setBulkAdjustmentMode,
-        setFormData,
+        setFormData, updateExistingEdit,
 
         // Refs
         productFileInputRef,
@@ -544,7 +583,7 @@ export const useProductDesignerLogic = ({
         toggleCollapse,
         handleBulkAdjust,
         applyPricePropagation,
-        dismissPricePropagation: () => setPendingPricePropagation(null),
+        dismissPricePropagation: () => setPriceRequests(previous => previous.slice(1)),
         handleProductImageUpload,
         onProductImageClick,
         onRemoveProductImage,
@@ -554,7 +593,7 @@ export const useProductDesignerLogic = ({
         startEdit,
         cancelEdit,
         initiateAdd,
-        saveEdit,
+        saveEdit, saveOnExit,
         remove,
         handleToggleVisibility,
         prepareAIImport,

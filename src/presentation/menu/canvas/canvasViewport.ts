@@ -51,6 +51,33 @@ export function getCanvasViewportFocus(canvas: HTMLElement | null | undefined) {
     };
 }
 
+export function getCanvasProduct(canvas: HTMLElement, id: string) {
+    return Array.from(canvas.querySelectorAll<HTMLElement>('[data-drag-type="product"][data-drag-id]'))
+        .find(element => element.dataset.dragId === id);
+}
+
+export function getCanvasProductBounds(product: HTMLElement) {
+    const fields = product.querySelectorAll('[data-product-edit-id]');
+    const rects = [product, ...fields].map(element => element.getBoundingClientRect());
+    return {
+        left: Math.min(...rects.map(rect => rect.left)),
+        right: Math.max(...rects.map(rect => rect.right)),
+        top: Math.min(...rects.map(rect => rect.top)),
+        bottom: Math.max(...rects.map(rect => rect.bottom)),
+    };
+}
+
+export function centerCanvasProduct(canvas: HTMLElement, id: string) {
+    const product = getCanvasProduct(canvas, id);
+    if (!product) return;
+    const bounds = getCanvasProductBounds(product);
+    const visible = getCanvasViewportBounds(canvas);
+    canvas.scrollTo({
+        left: canvas.scrollLeft + (bounds.left + bounds.right - visible.left - visible.right) / 2,
+        top: canvas.scrollTop + (bounds.top + bounds.bottom - visible.top - visible.bottom) / 2,
+    });
+}
+
 export function positionCanvasImage(
     focus: ReturnType<typeof getCanvasViewportFocus>, page: { widthPx: number; heightPx: number }, width: number, aspect: number,
 ) {

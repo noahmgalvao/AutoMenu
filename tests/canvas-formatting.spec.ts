@@ -291,6 +291,131 @@ test('the price prompt shows only the amount in the selected adjustment mode', a
   await expect(prompt).not.toContainText('%');
 });
 
+test('the first price saves when selecting another product and selected products can be edited together', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=list&zero-price');
+  const first = page.locator('#product-container-1');
+  const second = page.locator('#product-container-2');
+  await first.getByRole('heading').click();
+  await first.getByTitle('Editar produto').click();
+  await first.locator('#product-price-1').fill('12,50');
+  await second.getByRole('heading').click();
+  await expect(second.getByTitle('Editar produto')).toBeVisible();
+  await expect(first.locator('#product-price-1')).toHaveText('12,50');
+  await expect(first.locator('#product-price-1')).toHaveAttribute('contenteditable', 'false');
+  await expect(page.getByText('Reajustar os outros produtos?')).toHaveCount(0);
+
+  await second.getByTitle('Seleção múltipla').click();
+  await first.getByRole('heading').click();
+  await first.getByTitle('Editar produto').click();
+  await second.getByRole('heading').click();
+  await expect(second.getByRole('heading')).toBeFocused();
+  await expect(first.getByRole('heading')).toHaveAttribute('contenteditable', 'true');
+});
+
+test('editing selected categories keeps their products available as the formatting toolbar follows focus', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=list&different-categories');
+  const first = page.locator('[data-category-id="Entradas"]');
+  const second = page.locator('[data-category-id="Sobremesas"]');
+  await first.getByRole('heading').click();
+  await first.getByTitle('Seleção múltipla').click();
+  await second.getByRole('heading').click();
+  await second.getByTitle('Editar categoria').click();
+  await expect(second.getByRole('heading')).toBeFocused();
+  const price = page.locator('#product-price-1');
+  const otherProduct = page.locator('#product-name-3');
+  await expect(price).toHaveAttribute('contenteditable', 'true');
+  await expect(otherProduct).toHaveAttribute('contenteditable', 'true');
+  await price.click();
+  await expect(price).toBeFocused();
+  const toolbar = page.locator('[data-inline-format-toolbar]');
+  await expect(toolbar.getByRole('button', { name: 'Aumentar preço' })).toBeVisible();
+  await otherProduct.click();
+  await expect(otherProduct).toBeFocused();
+  await expect(toolbar.getByRole('button', { name: 'Aumentar preço' })).toHaveCount(0);
+  await expect(price).toHaveAttribute('contenteditable', 'true');
+  const title = page.locator('#menu-title-text');
+  await title.click();
+  await expect(title).toBeFocused();
+  await expect(price).toHaveAttribute('contenteditable', 'false');
+});
+
+test('editing one selected free text keeps the other editable', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?layout');
+  const first = page.locator('#product-container-text-a');
+  const second = page.locator('#product-container-text-b');
+  await first.click();
+  await first.getByTitle('Seleção múltipla').click();
+  await second.click();
+  await second.getByTitle('Editar texto').click();
+  const firstText = first.locator('#product-name-text-a');
+  await expect(firstText).toHaveAttribute('contenteditable', 'true');
+  await firstText.click();
+  await expect(firstText).toBeFocused();
+  await expect(second.locator('#product-name-text-b')).toHaveAttribute('contenteditable', 'true');
+});
+
+test('the product designer saves other forms on cancel and saves edits on the same outside click', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=list&product-designer&zero-price');
+  const first = page.locator('#product-container-1');
+  const second = page.locator('#product-container-2');
+  const startEditing = async () => {
+    await first.hover();
+    await first.getByRole('button').last().click();
+    await first.getByRole('button', { name: 'Editar' }).click();
+  };
+  await startEditing();
+  await first.getByPlaceholder('Nome do produto').fill('Burrata fresca');
+  await second.getByPlaceholder('Nome do produto').fill('Cancelar este nome');
+  await second.getByRole('button', { name: 'Cancelar' }).click();
+  await expect(first.getByRole('heading')).toHaveText('Burrata fresca');
+  await expect(second.getByRole('heading')).toHaveText('Risoto de abóbora');
+  await expect(page.locator('[data-product-designer-edit-form]')).toHaveCount(0);
+
+  await startEditing();
+  await first.locator('input[inputmode="decimal"]').fill('12,50');
+  await page.getByRole('button', { name: 'Ordenar produtos' }).click();
+  await expect(first).toContainText('12,50');
+  await expect(page.locator('[data-product-designer-edit-form]')).toHaveCount(0);
+  await expect(page.locator('[data-drag-type="product"]').first()).toHaveAttribute('data-drag-id', '3');
+  await expect(page.getByText('Reajustar os outros produtos?')).toHaveCount(0);
+
+  await startEditing();
+  await page.getByPlaceholder('Nome da categoria').fill('Cardápio da casa');
+  await second.getByPlaceholder('Descrição').fill('Feito na hora');
+  await first.getByRole('button', { name: 'Salvar' }).click();
+  await expect(page.locator('[data-drag-type="category"]')).toContainText('Cardápio da casa');
+  await expect(second).toContainText('Feito na hora');
+  await expect(page.locator('[data-product-designer-edit-form]')).toHaveCount(0);
+});
+
+for (const mobile of [false, true]) {
+  test.describe(`${mobile ? 'mobile' : 'desktop'} product focus in the second column`, () => {
+    if (mobile) test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+    test('editing brings the full product and price into view', async ({ page }) => {
+      await page.goto('/tests/fixtures/template-editor.html?photos=list&lanes=2&different-categories&right-column');
+      const product = page.locator('#product-container-3');
+      await expect(product.locator('xpath=ancestor::*[@data-drag-column-index][1]')).toHaveAttribute('data-drag-column-index', '1');
+      if (mobile) {
+        await product.getByRole('heading').tap();
+        await product.getByTitle('Editar produto').tap();
+      } else {
+        await product.getByRole('heading').click();
+        await product.getByTitle('Editar produto').click();
+      }
+      await expect(product.getByRole('heading')).toBeFocused();
+      await expect.poll(() => product.evaluate((element, checkCenter) => {
+        const canvas = element.closest('[data-automenu-editor-canvas]')!;
+        const viewport = canvas.getBoundingClientRect();
+        const product = element.getBoundingClientRect();
+        const price = element.querySelector('#product-price-3')!.getBoundingClientRect();
+        return product.left >= viewport.left && product.right <= viewport.right && price.right <= viewport.right
+          && (!checkCenter || Math.abs((product.left + product.right - viewport.left - viewport.right) / 2) < 12);
+      }, mobile)).toBe(true);
+    });
+  });
+}
+
 test('the card contour stays complete with a photo frame and adjustable border values', async ({ page }) => {
   await page.goto('/tests/fixtures/template-editor.html?photos=cards&card=bordered');
   await page.getByRole('combobox', { name: 'Formato dos cartões' }).selectOption('arch');

@@ -6,6 +6,7 @@ import {
   Plus, Edit3, Trash2, Eye, EyeOff, ImagePlus, Loader2, X
 } from 'lucide-react';
 import { EditForm } from './EditForm';
+import type { ProductDesignerEdit } from './useProductDesignerLogic';
 import { isPristineNewCategory, isPristineNewProduct } from '../../domain/menu/pristineItems';
 import { formatMenuPriceValue } from '../../domain/menu/price';
 
@@ -67,16 +68,19 @@ interface ProductListProps {
   collapsedCategories: Set<string>;
   toggleCollapse: (cat: string) => void;
   editModeId: string | null;
+  editTogether?: boolean;
   menuOpenId: string | null;
   setMenuOpenId: (id: string | null) => void;
   formData: Partial<Product>;
   setFormData: React.Dispatch<React.SetStateAction<Partial<Product>>>;
-  newItemDraft: { categoryId: string, type: 'product' | 'category', value: Partial<Product> } | null;
+  newItemDraft: { categoryId: string, type: 'product' | 'category' } | null;
+  existingEdits: Record<string, ProductDesignerEdit>;
+  updateExistingEdit: (id: string, update: React.SetStateAction<ProductDesignerEdit>) => void;
   
   // Actions
-  startEdit: (id: string, initialData: Partial<Product>) => void;
+  startEdit: (id: string) => void;
   saveEdit: () => void;
-  cancelEdit: () => void;
+  cancelEdit: (id: string) => void;
   remove: (id: string, type: 'product' | 'category') => void;
   handleToggleVisibility: (id: string, visible: boolean) => void;
   initiateAdd: (categoryId: string, type: 'product' | 'category') => void;
@@ -96,11 +100,14 @@ export const ProductList: React.FC<ProductListProps> = ({
   collapsedCategories,
   toggleCollapse,
   editModeId,
+  editTogether = false,
   menuOpenId,
   setMenuOpenId,
   formData,
   setFormData,
   newItemDraft,
+  existingEdits,
+  updateExistingEdit,
   startEdit,
   saveEdit,
   cancelEdit,
@@ -116,6 +123,7 @@ export const ProductList: React.FC<ProductListProps> = ({
 }) => {
   const [shakingCategory, setShakingCategory] = React.useState<string | null>(null);
   const categoryOptionsPointerDownRef = React.useRef<{ category: string; startedAt: number } | null>(null);
+  const editAllItems = editTogether && Boolean(editModeId && !newItemDraft);
 
   React.useEffect(() => {
     const handleLimitReached = (e: Event) => {
@@ -142,7 +150,7 @@ export const ProductList: React.FC<ProductListProps> = ({
     >
       {categories.map((cat, catIndex) => {
         const isCollapsed = collapsedCategories.has(cat);
-        const isEditing = editModeId === cat;
+        const isEditing = editAllItems || editModeId === cat;
         const isSelected = handlers.isSelected?.('category', cat) ?? handlers.selectedId === cat;
         const isBeingDragged = handlers.draggedItem?.type === 'category' && handlers.draggedItem?.id === cat;
         
@@ -178,10 +186,11 @@ export const ProductList: React.FC<ProductListProps> = ({
                   <EditForm 
                     type="category" 
                     style={style}
-                    formData={formData} 
-                    setFormData={setFormData} 
+                    autoFocus={editModeId === cat}
+                    formData={{ name: cat, ...existingEdits[cat] }}
+                    setFormData={update => updateExistingEdit(cat, update)}
                     saveEdit={saveEdit} 
-                    cancelEdit={cancelEdit} 
+                    cancelEdit={() => cancelEdit(cat)}
                   />
                 ) : (
                   <div
@@ -255,7 +264,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                       {menuOpenId === cat && (
                         <>
                           <div data-product-designer-options-menu="true" className="absolute right-0 top-8 z-50 bg-white shadow-xl border border-slate-100 rounded-lg py-1 w-32 animate-in fade-in zoom-in-95 flex flex-col">
-                            <button onPointerDown={(e) => e.stopPropagation()} onClick={() => { handlers.handleSelection('category', cat); startEdit(cat, { name: cat }); }} className="px-4 py-2 text-xs text-left hover:bg-slate-50 flex items-center gap-2"> <Edit3 size={14}/> Editar </button>
+                            <button onPointerDown={(e) => e.stopPropagation()} onClick={() => startEdit(cat)} className="px-4 py-2 text-xs text-left hover:bg-slate-50 flex items-center gap-2"> <Edit3 size={14}/> Editar </button>
                             {!isPristineCategory && (
                               <button 
                                   onPointerDown={(e) => e.stopPropagation()} 
@@ -295,10 +304,9 @@ export const ProductList: React.FC<ProductListProps> = ({
             </div>
 
             {/* Products List */}
-            <div className={`space-y-2 pl-8 border-l-2 border-slate-100 ml-3 transition-all duration-300 ${isCollapsed ? 'max-h-0 overflow-hidden opacity-0' : 'max-h-[2000px] opacity-100'}`}>
+            <div className={`space-y-2 pl-8 border-l-2 border-slate-100 ml-3 transition-all duration-300 ${isCollapsed ? 'max-h-0 overflow-hidden opacity-0' : editAllItems ? 'opacity-100' : 'max-h-[2000px] opacity-100'}`} inert={isCollapsed || undefined}>
               {(grouped[cat] || []).filter(product => !product.isFreeText).map(product => {
                 const pIsHidden = style.hiddenProductIds?.includes(product.id);
-                const pIsEditing = editModeId === product.id;
                 const productSelectionType = 'product';
                 const pIsSelected = handlers.isSelected?.(productSelectionType, product.id) ?? handlers.selectedId === product.id;
                 const isBeingDragged = handlers.draggedItem?.id === product.id;
@@ -310,23 +318,23 @@ export const ProductList: React.FC<ProductListProps> = ({
                     id={`product-container-${product.id}`}
                     className={`relative select-none ${menuOpenId === product.id ? 'z-[130]' : 'z-0'}`}
                   >
-                    {pIsEditing ? (
+                    {editAllItems || editModeId === product.id ? (
                       <EditForm 
                         type="product" 
                         style={style}
-                        formData={formData} 
-                        setFormData={setFormData} 
+                        autoFocus={editModeId === product.id}
+                        formData={{ ...product, ...existingEdits[product.id] }}
+                        setFormData={update => updateExistingEdit(product.id, update)}
                         saveEdit={saveEdit} 
-                        cancelEdit={cancelEdit} 
-                        imageSource={productImageUpload?.id === product.id ? productImageUpload.previewUrl : formData.image || product.image}
+                        cancelEdit={() => cancelEdit(product.id)}
+                        imageSource={productImageUpload?.id === product.id ? productImageUpload.previewUrl : existingEdits[product.id]?.image ?? product.image}
                         imageUploading={productImageUpload?.id === product.id}
                         onImageClick={() => onProductImageClick(product.id)}
                         onRemoveImage={() => onRemoveProductImage(product.id)}
-                        productDividerStyle={style.productDividerStyles?.[product.id] || 'none'}
-                        onProductDividerStyleChange={(preset) => handlers.updateStyle?.((previous: MenuStyle) => ({
+                        productDividerStyle={existingEdits[product.id]?.divider ?? style.productDividerStyles?.[product.id] ?? 'none'}
+                        onProductDividerStyleChange={(preset) => updateExistingEdit(product.id, previous => ({
                           ...previous,
-                          productDividerStyles: { ...(previous.productDividerStyles || {}), [product.id]: preset },
-                          name: 'Custom',
+                          divider: preset,
                         }))}
                       />
                     ) : (
@@ -395,7 +403,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                           {menuOpenId === product.id && (
                             <>
                               <div data-product-designer-options-menu="true" className="absolute right-0 top-8 z-[140] bg-white shadow-xl border border-slate-100 rounded-lg py-1 w-32 animate-in fade-in zoom-in-95 flex flex-col">
-                                <button onPointerDown={(e) => e.stopPropagation()} onClick={() => { handlers.handleSelection(productSelectionType, product.id); startEdit(product.id, product); }} className="px-4 py-2 text-xs text-left hover:bg-slate-50 flex items-center gap-2"> <Edit3 size={14}/> Editar </button>
+                                <button onPointerDown={(e) => e.stopPropagation()} onClick={() => startEdit(product.id)} className="px-4 py-2 text-xs text-left hover:bg-slate-50 flex items-center gap-2"> <Edit3 size={14}/> Editar </button>
                                 {!isPristineProduct && (
                                   <button 
                                       onPointerDown={(e) => e.stopPropagation()} 
@@ -433,7 +441,8 @@ export const ProductList: React.FC<ProductListProps> = ({
                   formData={formData} 
                   setFormData={setFormData} 
                   saveEdit={saveEdit} 
-                  cancelEdit={cancelEdit} 
+                  cancelEdit={() => cancelEdit('DRAFT')}
+                  autoFocus
                 />
               )}
             
@@ -455,7 +464,8 @@ export const ProductList: React.FC<ProductListProps> = ({
                   formData={formData} 
                   setFormData={setFormData} 
                   saveEdit={saveEdit} 
-                  cancelEdit={cancelEdit} 
+                  cancelEdit={() => cancelEdit('DRAFT')}
+                  autoFocus
                 />
               </div>
             )}

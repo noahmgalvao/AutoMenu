@@ -12,7 +12,7 @@ import { useAppServices } from '../app/AppServicesProvider';
 import { useCanvasPrinting } from './designer/useCanvasPrinting';
 import type { MoveDirection, SelectionItem } from './interactions/types';
 import { canvasShapeUrl, getCanvasShapeDimensions } from '../../domain/menu/canvasShapes';
-import { getCanvasViewportFocus, positionCanvasImage } from './canvas/canvasViewport';
+import { centerCanvasProduct, getCanvasProduct, getCanvasProductBounds, getCanvasViewportBounds, getCanvasViewportFocus, positionCanvasImage } from './canvas/canvasViewport';
 import { MenuColorContext, getMenuPalette } from './designer/ColorPicker';
 import { getImageLayerIndexes } from '../../domain/menu/imageLayers';
 import type { PdfExportResult } from '../../infrastructure/browser/pdfExport';
@@ -167,6 +167,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const editingProductRef = useRef<string | null>(null);
     const productFocusTimer = useRef<number | undefined>(undefined);
     const borderFocusFrame = useRef<number | undefined>(undefined);
+    const [productToCenter, setProductToCenter] = useState<string | null>(null);
 
     useEffect(() => {
         if (!tipsOpen) return;
@@ -848,35 +849,48 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         });
     };
 
-    const handleMobileProductEditStart = useCallback((productId: string) => {
+    const handleCanvasProductEditStart = useCallback((productId: string) => {
         editingProductRef.current = productId;
         onProductEditChange?.(productId);
-        if (window.matchMedia('(min-width: 768px)').matches || productEditViewRef.current) return;
+        window.clearTimeout(productFocusTimer.current);
         const canvas = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas="true"]');
         if (!canvas) return;
-        const snapshot = {
-            scale,
-            scrollLeft: canvas.scrollLeft,
-            scrollTop: canvas.scrollTop,
-        };
-        productEditViewRef.current = snapshot;
-        setScale(1.6);
-        productFocusTimer.current = window.setTimeout(() => {
-            if (productEditViewRef.current !== snapshot) return;
-            const target = Array.from(canvas.querySelectorAll<HTMLElement>('[data-drag-type="product"][data-drag-id]'))
-                .find((element) => element.dataset.dragId === productId);
-            if (!target) return;
-            const canvasRect = canvas.getBoundingClientRect();
-            const targetRect = target.getBoundingClientRect();
-            canvas.scrollTo({
-                left: canvas.scrollLeft + targetRect.left + (targetRect.width / 2) - canvasRect.left - (canvasRect.width / 2),
-                top: canvas.scrollTop + targetRect.top + (targetRect.height / 2) - canvasRect.top - (canvasRect.height / 2),
-                behavior: 'smooth',
-            });
-        }, 240);
-    }, [onProductEditChange, scale]);
+        const target = getCanvasProduct(canvas, productId);
+        const layer = canvas.querySelector<HTMLElement>('[data-canvas-zoom-layer]');
+        if (!target || !layer) return;
+        const viewport = getCanvasViewportBounds(canvas);
+        const bounds = getCanvasProductBounds(target);
+        const renderMultiplier = isDesktopViewport ? DESKTOP_PREVIEW_ZOOM_RENDER_MULTIPLIER : MOBILE_PREVIEW_ZOOM_RENDER_MULTIPLIER;
+        const currentScale = (layer.getBoundingClientRect().width / Math.max(1, layer.offsetWidth)) / renderMultiplier;
+        const usableWidth = Math.max(1, viewport.right - viewport.left - 20);
+        const usableHeight = Math.max(1, viewport.bottom - viewport.top - 20);
+        const preferredScale = isDesktopViewport ? productEditViewRef.current?.scale ?? scale : 1.6;
+        const nextScale = Math.max(0.3, Math.min(
+            preferredScale,
+            currentScale * usableWidth / Math.max(1, bounds.right - bounds.left),
+            currentScale * usableHeight / Math.max(1, bounds.bottom - bounds.top),
+        ));
+        const changeScale = Math.abs(nextScale - scale) > 0.001;
+        if (changeScale) {
+            productEditViewRef.current ??= { scale, scrollLeft: canvas.scrollLeft, scrollTop: canvas.scrollTop };
+            setScale(nextScale);
+        }
+        setProductToCenter(productId);
+    }, [isDesktopViewport, onProductEditChange, scale]);
 
-    const handleMobileProductEditEnd = useCallback(() => {
+    React.useLayoutEffect(() => {
+        if (!productToCenter) return;
+        const canvas = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas="true"]');
+        const layer = canvas?.querySelector<HTMLElement>('[data-canvas-zoom-layer]');
+        if (canvas && layer && editingProductRef.current === productToCenter) {
+            layer.style.transitionProperty = 'none';
+            centerCanvasProduct(canvas, productToCenter);
+            layer.style.removeProperty('transition-property');
+        }
+        setProductToCenter(null);
+    }, [productToCenter]);
+
+    const handleCanvasProductEditEnd = useCallback((nextObject?: HTMLElement | null) => {
         editingProductRef.current = null;
         onProductEditChange?.(null);
         window.clearTimeout(productFocusTimer.current);
@@ -887,8 +901,22 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         productEditViewRef.current = null;
         setScale(snapshot.scale);
         window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+            if (editingProductRef.current) return;
             canvas.scrollTo({ left: snapshot.scrollLeft, top: snapshot.scrollTop });
         }));
+        if (nextObject) {
+            productFocusTimer.current = window.setTimeout(() => {
+                if (!nextObject.isConnected || editingProductRef.current) return;
+                const visible = getCanvasViewportBounds(canvas);
+                const rect = nextObject.getBoundingClientRect();
+                const outsideHorizontally = rect.left < visible.left || rect.right > visible.right;
+                const outsideVertically = rect.top < visible.top || rect.bottom > visible.bottom;
+                canvas.scrollBy({
+                    left: outsideHorizontally ? (rect.left + rect.right - visible.left - visible.right) / 2 : 0,
+                    top: outsideVertically ? (rect.top + rect.bottom - visible.top - visible.bottom) / 2 : 0,
+                });
+            }, 220);
+        }
     }, [onProductEditChange]);
 
     useEffect(() => {
@@ -1933,8 +1961,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                             scale={renderScale}
                             splitCategoryAcrossPages={splitCategoryAcrossPages}
                             onUploadProductImage={handleProductImageUpload}
-                            onProductEditStart={handleMobileProductEditStart}
-                            onProductEditEnd={handleMobileProductEditEnd}
+                            onProductEditStart={handleCanvasProductEditStart}
+                            onProductEditEnd={handleCanvasProductEditEnd}
                         />
                     </div>
                     <div style={{ height: '100px', width: '1px' }} />

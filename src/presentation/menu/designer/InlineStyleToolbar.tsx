@@ -12,6 +12,7 @@ type InlineStyleToolbarProps = {
     targetElementId: string;
     positionTargetElementId?: string;
     onDismiss: () => void;
+    dismissOnClickInCanvas?: boolean;
     controls?: 'all' | 'sizeColor';
     maxFontSize?: number;
     minFontSize?: number;
@@ -26,7 +27,7 @@ type InlineStyleToolbarProps = {
     | { value?: never; onChange?: never; children: React.ReactNode }
 );
 
-export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, positionTargetElementId, value, onChange, onDismiss, controls = 'all', maxFontSize, minFontSize, header, compact = false, onAdjustPrice, fallbackFontFamily, decoration, borderOffset, children }) => {
+export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, positionTargetElementId, value, onChange, onDismiss, dismissOnClickInCanvas = false, controls = 'all', maxFontSize, minFontSize, header, compact = false, onAdjustPrice, fallbackFontFamily, decoration, borderOffset, children }) => {
     const toolbarRef = useRef<HTMLDivElement>(null);
     const contentRef = useRef<HTMLDivElement>(null);
     const [position, setPosition] = useState<React.CSSProperties>({ left: 8, top: 8, width: 270 });
@@ -50,6 +51,9 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
             if (!(target instanceof Element) || toolbarRef.current?.contains(target) || target.closest('[data-editor-popover="true"]')) return;
             if (target.closest<HTMLElement>('[data-inline-format-target]')?.dataset.inlineFormatTarget === targetElementId) return;
             const editedElement = document.getElementById(targetElementId);
+            const canvas = editedElement?.closest('[data-automenu-editor-canvas]');
+            if (dismissOnClickInCanvas && canvas?.contains(target)
+                && !target.closest('button, input, textarea, select, [data-inline-format-toolbar]')) return;
             const editedProduct = editedElement?.closest('[data-drag-type="product"]');
             if (editedProduct && target.closest('[data-canvas-history-control]')) return;
             if (editedProduct instanceof HTMLElement
@@ -67,7 +71,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
             document.removeEventListener('pointerdown', dismissOnOutsidePointer, true);
             document.removeEventListener('automenu:close-inline-formatting', dismissOnPdf);
         };
-    }, [onDismiss, targetElementId]);
+    }, [dismissOnClickInCanvas, onDismiss, targetElementId]);
 
     useLayoutEffect(() => {
         const target = document.getElementById(positionTargetElementId || targetElementId);

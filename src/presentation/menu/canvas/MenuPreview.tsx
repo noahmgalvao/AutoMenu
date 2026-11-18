@@ -62,7 +62,7 @@ interface MenuPreviewProps {
     visiblePageIndex?: number;
     onPageCountChange?: (pageCount: number) => void;
     onProductEditStart?: (productId: string) => void;
-    onProductEditEnd?: () => void;
+    onProductEditEnd?: (nextObject?: HTMLElement | null) => void;
     onUploadProductImage?: (productId: string, file: File) => Promise<{ url: string; assetId: string }>;
 }
 
@@ -176,7 +176,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         const product = props.products.find((candidate) => candidate.id === id);
         const nextPrice = roundPrice(value);
         props.onUpdateProduct?.(id, field, nextPrice);
-        if (!product || product.isFreeText || product.price === nextPrice) return;
+        if (!product || product.isFreeText || roundPrice(product.price) === 0 || product.price === nextPrice) return;
 
         const request = createPricePropagationRequest({
             productId: id,
@@ -362,6 +362,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         );
         if (nextPrice === product.price) return;
         props.onUpdateProduct?.(productId, 'price', nextPrice);
+        if (roundPrice(product.price) === 0) return;
         const request = createPricePropagationRequest({
             productId,
             productName: product.name,
@@ -458,6 +459,15 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         onSelectedItemsChange?.(handlers.selectedItems || []);
     }, [handlers.selectedItems, onSelectedItemsChange]);
 
+    const getObjectElement = useCallback((item: ObjectSelectionItem): HTMLElement | null => {
+        const root = previewRootRef.current;
+        if (!root) return null;
+        if (item.type === 'category') return root.querySelector(`#${CSS.escape(`category-header-${item.id}`)}`);
+        if (item.type === 'product' || item.type === 'freeText') return root.querySelector(`#${CSS.escape(`product-container-${item.id}`)}`);
+        return Array.from(root.querySelectorAll<HTMLElement>('[data-added-image-id]'))
+            .find((element) => element.dataset.addedImageId === item.id) || null;
+    }, []);
+
     const focusedProductRef = useRef<string | null>(null);
     useEffect(() => {
         if (readOnly) return;
@@ -470,10 +480,12 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             focusedProductRef.current = editingProductId;
             props.onProductEditStart?.(editingProductId);
         } else if (!editingProductId && focusedProductRef.current) {
+            const clicked = handlers.selectedItems.find(item => item.id === handlers.selectedId && item.id !== focusedProductRef.current);
+            const target = clicked && isObjectItem(clicked) ? getObjectElement(clicked) : null;
             focusedProductRef.current = null;
-            props.onProductEditEnd?.();
+            props.onProductEditEnd?.(target);
         }
-    }, [handlers.editingId, products, props.onProductEditEnd, props.onProductEditStart, readOnly]);
+    }, [getObjectElement, handlers.editingId, handlers.selectedId, handlers.selectedItems, products, props.onProductEditEnd, props.onProductEditStart, readOnly]);
 
     useEffect(() => () => {
         if (focusedProductRef.current) props.onProductEditEnd?.();
@@ -1048,13 +1060,6 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         return isTargetSelected && objectItems.length > 1 ? objectItems : [targetItem];
     }, [handlers.selectedItems]);
 
-    const getObjectElement = useCallback((item: ObjectSelectionItem): HTMLElement | null => {
-        if (item.type === 'category') return document.getElementById(`category-header-${item.id}`);
-        if (item.type === 'product' || item.type === 'freeText') return document.getElementById(`product-container-${item.id}`);
-        return Array.from(document.querySelectorAll<HTMLElement>('[data-added-image-id]'))
-            .find((element) => element.dataset.addedImageId === item.id) || null;
-    }, []);
-
     const getMarqueeItems = useCallback((rect: MarqueeRect): ObjectSelectionItem[] => {
         const root = previewRootRef.current;
         if (!root) return [];
@@ -1134,6 +1139,15 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         const pageElement = target?.closest<HTMLElement>('[data-menu-print-page="true"][data-page-index]');
         if (pageElement) {
             lastCanvasPointRef.current = { x: event.clientX, y: event.clientY };
+        }
+        if (handlers.editingId && event.button === 0 && pageElement
+            && target?.closest('[data-drag-id], [data-category-id], [data-added-image-drag], [data-menu-heading]')
+            && !target.closest('button, input, textarea, select')) {
+            const field = target.closest<HTMLElement>('[contenteditable="true"]');
+            const isCurrentObject = field?.dataset.productEditId === handlers.editingId
+                || field?.id === `text-${handlers.editingId}`;
+            // A focus change can scroll or reflow the canvas before the pointer is released.
+            if (!isCurrentObject) event.preventDefault();
         }
 
         const isBlankTouchTarget = Boolean(
@@ -2312,13 +2326,10 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const restoreProduct = (id: string) => { onToggleProductVisibility?.(id, true); handlers.setShowAddModal(null); };
     const createNewInModal = () => { if (handlers.showAddModal) { onAddProduct?.(handlers.showAddModal.category); handlers.setShowAddModal(null); } };
 
-    // FIX: GLOBAL DESELECTION
     const handleBackgroundClick = (e: React.MouseEvent) => {
         setObjectMenu(null);
-        if (products.some(product => product.id === handlers.editingId && !product.isFreeText)) return;
-        // Se o alvo do clique não for uma página, um produto ou um controle, limpe.
         const target = e.target as HTMLElement;
-        if (target.closest('[data-page-index]') || target.closest('button') || target.closest('[contenteditable="true"]')) {
+        if (target.closest('[data-page-index], button, input, textarea, select, [contenteditable="true"]')) {
             return;
         }
 

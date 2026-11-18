@@ -30,20 +30,6 @@ interface MenuItemProps {
     backgroundText?: boolean;
 }
 
-const handleMobileFocusScroll = (element: HTMLElement) => {
-    if (window.matchMedia('(min-width: 768px)').matches) return;
-    window.setTimeout(() => {
-        if (!element.isConnected) return;
-        const rect = element.getBoundingClientRect();
-        const viewportHeight = window.visualViewport?.height || window.innerHeight;
-        const safeTop = 12;
-        const safeBottom = viewportHeight - 12;
-        if (rect.top < safeTop || rect.bottom > safeBottom) {
-            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-    }, 250);
-};
-
 const clearDefaultTextOnFocus = (element: HTMLElement, defaultTexts: string[]) => {
     window.setTimeout(() => {
         if (document.activeElement !== element) return;
@@ -52,6 +38,26 @@ const clearDefaultTextOnFocus = (element: HTMLElement, defaultTexts: string[]) =
             element.innerText = '';
         }
     }, 0);
+};
+
+const focusCanvasFieldAtClick = (event: React.MouseEvent<HTMLElement>) => {
+    const field = event.currentTarget;
+    if (!field.isContentEditable || field === document.activeElement) return;
+
+    const position = document.caretPositionFromPoint?.(event.clientX, event.clientY);
+    const pointerRange = document.caretRangeFromPoint?.(event.clientX, event.clientY);
+    const node = position?.offsetNode ?? pointerRange?.startContainer;
+    const offset = position?.offset ?? pointerRange?.startOffset ?? 0;
+    field.focus({ preventScroll: true });
+    if (field.inputMode !== 'decimal' && node && field.contains(node)) {
+        window.getSelection()?.collapse(node, offset);
+    }
+};
+
+const handleEditableFieldClick = (event: React.MouseEvent<HTMLElement>) => {
+    if (!event.currentTarget.isContentEditable) return;
+    event.stopPropagation();
+    focusCanvasFieldAtClick(event);
 };
 
 const isMenuHeadingTextHit = (event: React.MouseEvent<HTMLElement>) => {
@@ -111,7 +117,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             const target = event.target as HTMLElement | null;
             if (target?.closest<HTMLElement>('[data-product-image-surface]')?.dataset.productImageSurface === imageMenuProductId) return;
             if (target?.closest('[data-editor-popover="true"], [data-canvas-history-control]')) return;
-            if (target?.closest<HTMLElement>('[data-drag-type="product"]')?.dataset.dragId === imageMenuProductId) {
+            if (target?.closest('[data-automenu-editor-canvas]')
+                && !target.closest('button, input, textarea, select')) {
                 setImageMenuProductId(null);
                 return;
             }
@@ -144,14 +151,14 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         selection?.addRange(range);
     };
     const handlePriceFocus = (event: React.FocusEvent<HTMLElement>, productId: string) => {
-        if (handlers.editingId !== productId) return;
-        handlers.setProductEditingField?.(productId, 'price', `product-price-${productId}`);
+        if (!handlers.isReadyToEdit?.('product', productId)) return;
+        handlers.setEditingField?.('product', productId, 'price', `product-price-${productId}`);
         replacePriceOnNextInputRef.current.add(productId);
-        handleMobileFocusScroll(event.currentTarget);
+        const field = event.currentTarget;
         window.setTimeout(() => {
-            if (document.activeElement !== event.currentTarget || !replacePriceOnNextInputRef.current.has(productId)) return;
+            if (document.activeElement !== field || !replacePriceOnNextInputRef.current.has(productId)) return;
             const range = document.createRange();
-            range.selectNodeContents(event.currentTarget);
+            range.selectNodeContents(field);
             const selection = window.getSelection();
             selection?.removeAllRanges();
             selection?.addRange(range);
@@ -188,6 +195,16 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         event.preventDefault();
         replacePriceText(event.currentTarget, productId, nextText);
     };
+    const handleItemClick = (event: React.MouseEvent, type: 'product' | 'category' | 'freeText', id: string) => {
+        event.stopPropagation();
+        if (handlers.editingId === id) return;
+        if (handlers.isReadyToEdit?.(type, id)) {
+            handlers.startEditing(event, id, type === 'category' ? `text-${id}` : `product-name-${id}`);
+        } else {
+            handlers.handleSelection(type, id, { shiftKey: event.shiftKey, ctrlKey: event.ctrlKey || event.metaKey });
+        }
+    };
+
     const renderFormattingToolbar = (type: 'product' | 'category' | 'freeText' | 'menuTitle' | 'menuSubtitle', id: string, value: ElementStyle) => {
         if (formattingTarget?.type !== type || formattingTarget.id !== id) return null;
         const fontKey: FontSizeLimitKey = type !== 'product' ? type : formattingTarget.field === 'price' ? 'productPrice'
@@ -217,8 +234,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 minFontSize={minimumFontSize}
                 fallbackFontFamily={style.fontFamily}
                 onChange={(newStyle) => handlers.handleInlineStyleChange?.(formattingTarget, newStyle)}
+                dismissOnClickInCanvas
                 onDismiss={() => {
-                    if (type === 'product' && handlers.editingId === id) handlers.setEditingId(null);
+                    if (handlers.editingId === id) handlers.setEditingId(null);
                     handlers.setFormattingTarget?.(null);
                 }}
                 borderOffset={border?.offset}
@@ -270,7 +288,13 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 }}
                 title={isEditing ? 'Opções da imagem' : undefined}
                 onPointerDown={(event) => { if (isEditing) event.stopPropagation(); }}
-                onClick={(event) => openProductImageMenu(event, product.id, isEditing)}
+                onClick={(event) => {
+                    const isEditable = handlers.isReadyToEdit?.('product', product.id);
+                    if (!isEditing && isEditable) {
+                        document.getElementById(`product-name-${product.id}`)?.focus({ preventScroll: true });
+                    }
+                    openProductImageMenu(event, product.id, isEditing || isEditable);
+                }}
             >
                 <span className="absolute inset-0 block overflow-hidden" style={{ borderRadius: 'inherit' }}>
                     <img key={product.image} src={product.image} alt={product.name} draggable={false}
@@ -348,6 +372,10 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 onClick={(e) => {
                     if (!isMenuHeadingTextHit(e)) return;
                     e.stopPropagation();
+                    if (handlers.editingId && document.activeElement !== e.currentTarget) {
+                        focusCanvasFieldAtClick(e);
+                        return;
+                    }
                     handlers.handleSelection('menuTitle', 'menuTitle', { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey });
                     handlers.setSelectedPageIndex(null);
                 }}
@@ -387,6 +415,10 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 onClick={(e) => {
                     if (!isMenuHeadingTextHit(e)) return;
                     e.stopPropagation();
+                    if (handlers.editingId && document.activeElement !== e.currentTarget) {
+                        focusCanvasFieldAtClick(e);
+                        return;
+                    }
                     handlers.handleSelection('menuSubtitle', 'menuSubtitle', { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey });
                     handlers.setSelectedPageIndex(null);
                 }}
@@ -404,6 +436,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
     if (item.type === 'category-header') {
         const isSelected = handlers.isSelected?.('category', item.data) ?? handlers.selectedId === item.data;
         const catStyle = style.elementStyles?.category || {};
+        const isEditable = !handlers.readOnly && handlers.isReadyToEdit?.('category', item.data);
         const elementId = `text-${item.data}`;
         const isBeingDragged = handlers.isCanvasObjectDragging?.('category', item.data);
         const compactControls = (style.categoryColumnCount || 1) > 1;
@@ -429,7 +462,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     touchAction: handlers.editingId === item.data ? undefined : 'none'
                 }}
                 onContextMenu={(e) => handlers.openObjectMenu?.(e, { type: 'category', id: item.data })} 
-                onClick={(e) => { e.stopPropagation(); if (handlers.editingId !== item.data) { handlers.handleSelection('category', item.data, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey }); handlers.setSelectedPageIndex(null); } }}
+                onClick={(e) => handleItemClick(e, 'category', item.data)}
                 onDoubleClick={(e) => e.stopPropagation()}
             >
                 {renderFormattingToolbar('category', item.data, catStyle)}
@@ -474,7 +507,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             textTransform: catStyle.textTransform,
                             letterSpacing: catStyle.letterSpacing ? `${catStyle.letterSpacing}px` : undefined
                         }}
-                        contentEditable={handlers.editingId === item.data} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'category', item.data)} onKeyDown={handlers.handleKeyDown} onMouseDown={(e) => { if(handlers.editingId !== item.data) e.preventDefault(); }} onPointerDown={(e) => { if (handlers.editingId === item.data) e.stopPropagation(); }}
+                        contentEditable={Boolean(isEditable)} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'category', item.data)} onKeyDown={handlers.handleKeyDown} onFocus={() => handlers.setEditingField?.('category', item.data, 'category', elementId)} onMouseDown={(e) => { if (!isEditable) e.preventDefault(); }} onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }} onClick={handleEditableFieldClick}
                     />
                     {(categoryAlign === 'left' || categoryAlign === 'center') && renderCategoryDivider('after')}
                 </div>
@@ -487,6 +520,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const productSelectionType = product.isFreeText ? 'freeText' : 'product';
         const isSelected = handlers.isSelected?.(productSelectionType, product.id) ?? handlers.selectedId === product.id;
         const isEditing = handlers.editingId === product.id;
+        const isEditable = !handlers.readOnly && handlers.isReadyToEdit?.(productSelectionType, product.id);
         const hiddenProductIds = new Set(style.hiddenProductIds || []);
         const visibleCatProducts = (handlers.groupedProducts[item.category] || [])
             .filter((candidate: Product) => !hiddenProductIds.has(candidate.id));
@@ -532,7 +566,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                         ? undefined : (e) => handlers.handleDragStart(e, 'product', product.id, item.category)}
                     onDragStart={(e) => e.preventDefault()}
                     onContextMenu={(e) => handlers.openObjectMenu?.(e, { type: productSelectionType, id: product.id })} 
-                    onClick={(e) => { e.stopPropagation(); if (handlers.editingId !== product.id) { handlers.handleSelection(productSelectionType, product.id, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey }); handlers.setSelectedPageIndex(null); } }}
+                    onClick={(e) => handleItemClick(e, productSelectionType, product.id)}
                     onDoubleClick={(e) => e.stopPropagation()} 
                     className={`automenu-drag-item relative group rounded-lg transition-all duration-200 ${handlers.readOnly && backgroundText ? 'pointer-events-none' : 'pointer-events-auto'} ${product.isFreeText ? 'p-1' : 'p-2'} ${isEditing ? 'select-text touch-auto cursor-text' : backgroundText ? 'select-none touch-auto cursor-pointer' : 'select-none touch-auto cursor-grab'} ${isSelected || isEditing ? 'z-[60]' : 'z-[1]'} ${inGroup ? 'ml-0 mb-0' : '-ml-2 mb-2 hover:bg-black/5'} ${isSelected && !isEditing ? 'bg-indigo-50/30' : ''} ${product.isFreeText ? 'transition-none flex-none' : ''}`}
                     style={{
@@ -592,7 +626,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 textTransform: nameStyle.textTransform,
                                 letterSpacing: nameStyle.letterSpacing ? `${nameStyle.letterSpacing}px` : undefined
                             }}
-                            contentEditable={isEditing} suppressContentEditableWarning onBlur={(e) => {
+                            contentEditable={Boolean(isEditable)} suppressContentEditableWarning onBlur={(e) => {
                                 const container = document.getElementById(`product-container-${product.id}`);
                                 const pendingWidth = Number(container?.dataset.pendingFreeTextWidth);
                                 if (Number.isFinite(pendingWidth) && pendingWidth > 0) {
@@ -608,7 +642,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 const nextWidth = getFreeTextContentWidth(e.currentTarget, maximumWidth);
                                 container.style.width = `${nextWidth}px`;
                                 container.dataset.pendingFreeTextWidth = String(nextWidth);
-                            }} onFocus={(e) => clearDefaultTextOnFocus(e.currentTarget, ['Novo texto'])} onMouseDown={(e) => { if(!isEditing) e.preventDefault(); }} onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }}
+                            }} onFocus={(e) => { handlers.setEditingField?.('freeText', product.id, 'freeText', `product-name-${product.id}`); clearDefaultTextOnFocus(e.currentTarget, ['Novo texto']); }} onMouseDown={(e) => { if (!isEditable) e.preventDefault(); }} onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }} onClick={handleEditableFieldClick}
                             />
                     </div>
                 ) : (
@@ -650,7 +684,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                         textTransform: nameStyle.textTransform,
                                         letterSpacing: nameStyle.letterSpacing ? `${nameStyle.letterSpacing}px` : undefined
                                     }}
-                                    contentEditable={isEditing} tabIndex={isEditing ? 0 : undefined} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'name')} onKeyDown={handlers.handleKeyDown} onFocus={(e) => { if (!isEditing) return; handlers.setProductEditingField?.(product.id, 'name', `product-name-${product.id}`); handleMobileFocusScroll(e.currentTarget); }} onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }} onClick={(e) => { if (isEditing) e.stopPropagation(); }}
+                                    contentEditable={Boolean(isEditable)} tabIndex={isEditable ? 0 : undefined} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'name')} onKeyDown={handlers.handleKeyDown} onFocus={() => handlers.setEditingField?.('product', product.id, 'name', `product-name-${product.id}`)} onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }} onClick={handleEditableFieldClick}
                                 />
                             </div>
                             {showProductDivider && (
@@ -693,7 +727,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                         textAlign: priceStyle.textAlign,
                                         display: 'inline-block'
                                     }}
-                                    contentEditable={isEditing} tabIndex={isEditing ? 0 : undefined} inputMode="decimal" enterKeyHint="done" suppressContentEditableWarning onBlur={(e) => { replacePriceOnNextInputRef.current.delete(product.id); handlers.handleBlur(e, 'product', product.id, 'price'); }} onKeyDown={(e) => handlePriceKeyDown(e, product.id)} onBeforeInput={(e) => handlePriceBeforeInput(e, product.id)} onPaste={(e) => handlePricePaste(e, product.id)} onFocus={(e) => handlePriceFocus(e, product.id)} onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }} onClick={(e) => { if (isEditing) e.stopPropagation(); }}
+                                    contentEditable={Boolean(isEditable)} tabIndex={isEditable ? 0 : undefined} inputMode="decimal" enterKeyHint="done" suppressContentEditableWarning onBlur={(e) => { replacePriceOnNextInputRef.current.delete(product.id); handlers.handleBlur(e, 'product', product.id, 'price'); }} onKeyDown={(e) => handlePriceKeyDown(e, product.id)} onBeforeInput={(e) => handlePriceBeforeInput(e, product.id)} onPaste={(e) => handlePricePaste(e, product.id)} onFocus={(e) => handlePriceFocus(e, product.id)} onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }} onClick={handleEditableFieldClick}
                                 />
                             </div>}
                         </div>
@@ -715,7 +749,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 fontStyle: descStyle.italic ? 'italic' : 'normal',
                                 textDecoration: descStyle.underline ? 'underline' : 'none'
                             }}
-                            contentEditable={isEditing} tabIndex={isEditing ? 0 : undefined} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'description')} onKeyDown={handlers.handleKeyDown} onFocus={(e) => { if (!isEditing) return; handlers.setProductEditingField?.(product.id, 'description', `product-description-${product.id}`); handleMobileFocusScroll(e.currentTarget); }} onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }} onClick={(e) => { if (isEditing) e.stopPropagation(); }}
+                            contentEditable={Boolean(isEditable)} tabIndex={isEditable ? 0 : undefined} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'description')} onKeyDown={handlers.handleKeyDown} onFocus={() => handlers.setEditingField?.('product', product.id, 'description', `product-description-${product.id}`)} onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }} onClick={handleEditableFieldClick}
                         />
                     </div>
                     </div>
@@ -808,6 +842,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                      const canMoveRight = hasMovableSiblings && renderedProductColumnIndex < productColumnCount - 1 && productColumnIndex + 1 < item.data.length;
                      const isBeingDragged = handlers.isCanvasObjectDragging?.('product', product.id);
                      const isEditing = handlers.editingId === product.id;
+                     const isEditable = !handlers.readOnly && handlers.isReadyToEdit?.('product', product.id);
                      const productAddControls = handlers.getSelectionAddControls?.('product', product.id) || { top: true, bottom: true };
                      return (
                             <div 
@@ -825,7 +860,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 onPointerDown={(e) => handlers.handleDragStart(e, 'product', product.id, item.category)}
                                 onDragStart={(e) => e.preventDefault()}
                                 onContextMenu={(e) => handlers.openObjectMenu?.(e, { type: 'product', id: product.id })} 
-                                onClick={(e) => { e.stopPropagation(); handlers.handleSelection('product', product.id, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey }); handlers.setSelectedPageIndex(null); }}
+                                onClick={(e) => handleItemClick(e, 'product', product.id)}
                                 className={`automenu-drag-item relative group min-w-0 transition-all pointer-events-auto p-0 ${isEditing ? 'select-text touch-auto cursor-text' : 'select-none touch-auto cursor-grab'} ${isCardLayout ? 'rounded-xl' : 'rounded-lg'} ${isSelected || isEditing ? 'z-[60] bg-indigo-50/30' : 'z-[1] hover:bg-black/5'}`}
                                 style={isCardLayout ? { borderRadius: cardRadius } : undefined}
                             >
@@ -877,14 +912,14 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         data-product-edit-id={product.id}
                                                         className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
                                                         style={{ color: `var(--automenu-preview-text, ${nameStyle.color || style.textColor})`, fontFamily: nameStyle.fontFamily, fontSize: clampFontSize(style, 'productName', nameStyle.fontSize, 18), fontWeight: nameStyle.fontWeight, fontStyle: nameStyle.italic ? 'italic' : 'normal', textDecoration: nameStyle.underline ? 'underline' : 'none', textAlign: nameStyle.textAlign, textTransform: nameStyle.textTransform }}
-                                                        contentEditable={isEditing}
+                                                        contentEditable={Boolean(isEditable)}
                                                         suppressContentEditableWarning
                                                         onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'name')}
                                                         onKeyDown={handlers.handleKeyDown}
-                                                        onFocus={(e) => { if (!isEditing) return; handlers.setProductEditingField?.(product.id, 'name', `product-name-${product.id}`); handleMobileFocusScroll(e.currentTarget); }}
-                                                        tabIndex={isEditing ? 0 : undefined}
-                                                        onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }}
-                                                        onClick={(e) => { if (isEditing) e.stopPropagation(); }}
+                                                        onFocus={() => handlers.setEditingField?.('product', product.id, 'name', `product-name-${product.id}`)}
+                                                        tabIndex={isEditable ? 0 : undefined}
+                                                        onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }}
+                                                        onClick={handleEditableFieldClick}
                                                     />
                                                 </div>
                                                 {showProductDivider && (
@@ -908,8 +943,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         data-product-edit-id={product.id}
                                                         className={`whitespace-nowrap outline-none rounded ${isEditing ? 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : ''}`}
                                                         style={{ textAlign: priceStyle.textAlign }}
-                                                        contentEditable={isEditing}
-                                                        tabIndex={isEditing ? 0 : undefined}
+                                                        contentEditable={Boolean(isEditable)}
+                                                        tabIndex={isEditable ? 0 : undefined}
                                                         inputMode="decimal"
                                                         enterKeyHint="done"
                                                         suppressContentEditableWarning
@@ -918,8 +953,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         onBeforeInput={(e) => handlePriceBeforeInput(e, product.id)}
                                                         onPaste={(e) => handlePricePaste(e, product.id)}
                                                         onFocus={(e) => handlePriceFocus(e, product.id)}
-                                                        onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }}
-                                                        onClick={(e) => { if (isEditing) e.stopPropagation(); }}
+                                                        onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }}
+                                                        onClick={handleEditableFieldClick}
                                                     />
                                                 </div>}
                                             </div>
@@ -935,14 +970,14 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                 data-product-edit-id={product.id}
                                                 className={`max-w-full opacity-75 break-words [overflow-wrap:anywhere] [word-break:normal] flex-grow outline-none rounded ${isEditing ? 'min-h-[1.5em] bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto' : 'line-clamp-4'}`}
                                                 style={{ color: `var(--automenu-preview-text, ${descStyle.color || style.textColor})`, fontFamily: descStyle.fontFamily, fontSize: clampFontSize(style, 'productDescription', descStyle.fontSize, 14), fontWeight: descStyle.fontWeight, fontStyle: descStyle.italic ? 'italic' : 'normal', textDecoration: descStyle.underline ? 'underline' : 'none', textAlign: descStyle.textAlign }}
-                                                contentEditable={isEditing}
-                                                tabIndex={isEditing ? 0 : undefined}
+                                                contentEditable={Boolean(isEditable)}
+                                                tabIndex={isEditable ? 0 : undefined}
                                                 suppressContentEditableWarning
                                                 onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'description')}
                                                 onKeyDown={handlers.handleKeyDown}
-                                                onFocus={(e) => { if (!isEditing) return; handlers.setProductEditingField?.(product.id, 'description', `product-description-${product.id}`); handleMobileFocusScroll(e.currentTarget); }}
-                                                onPointerDown={(e) => { if (isEditing) e.stopPropagation(); }}
-                                                onClick={(e) => { if (isEditing) e.stopPropagation(); }}
+                                                onFocus={() => handlers.setEditingField?.('product', product.id, 'description', `product-description-${product.id}`)}
+                                                onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }}
+                                                onClick={handleEditableFieldClick}
                                             />
                                         </div>
                                     </div>

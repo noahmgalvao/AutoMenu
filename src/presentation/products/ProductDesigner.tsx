@@ -64,6 +64,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
         isUploading,
         newItemDraft,
         formData,
+        existingEdits,
         productImageUpload,
         categoryImageUpload,
         setMenuOpenId,
@@ -71,6 +72,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
         setBulkPercentage,
         setBulkAdjustmentMode,
         setFormData,
+        updateExistingEdit,
         productFileInputRef,
         categoryFileInputRef,
         handlers,
@@ -88,6 +90,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
         cancelEdit,
         initiateAdd,
         saveEdit,
+        saveOnExit,
         remove,
         handleToggleVisibility,
         prepareAIImport,
@@ -145,6 +148,21 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
     const categories = handlers.sortedCategories.filter((category) => (
         !category.startsWith(FREE_TEXT_PREFIX) && (grouped[category]?.length || 0) > 0
     ));
+
+    React.useEffect(() => {
+        if (!editModeId) return;
+        if (!isOpen) {
+            saveOnExit();
+            return;
+        }
+        const saveOnOutsideClick = (event: MouseEvent) => {
+            if (event.target instanceof Element && !event.target.closest('[data-product-designer-edit-form], [data-product-designer-file]')) {
+                saveOnExit();
+            }
+        };
+        document.addEventListener('click', saveOnOutsideClick, true);
+        return () => document.removeEventListener('click', saveOnOutsideClick, true);
+    }, [editModeId, isOpen, saveOnExit]);
 
     React.useEffect(() => {
         if (!isOpen) return;
@@ -251,11 +269,14 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                         collapsedCategories={collapsedCategories}
                         toggleCollapse={toggleCollapse}
                         editModeId={editModeId}
+                        editTogether
                         menuOpenId={menuOpenId}
                         setMenuOpenId={setMenuOpenId}
                         formData={formData}
                         setFormData={setFormData}
                         newItemDraft={newItemDraft}
+                        existingEdits={existingEdits}
+                        updateExistingEdit={updateExistingEdit}
                         startEdit={startEdit}
                         saveEdit={saveEdit}
                         cancelEdit={cancelEdit}
@@ -289,7 +310,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                 onDismiss={dismissPricePropagation}
             />
 
-            <input type="file" ref={productFileInputRef} className="hidden" onChange={handleProductImageUpload} accept="image/*" />
+            <input type="file" ref={productFileInputRef} data-product-designer-file className="hidden" onChange={handleProductImageUpload} accept="image/*" />
             <input type="file" ref={categoryFileInputRef} className="hidden" onChange={handleCategoryImageUpload} accept="image/*" />
             <MenuImportFlow
                 ref={importFlowRef}

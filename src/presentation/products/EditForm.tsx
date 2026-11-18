@@ -12,6 +12,7 @@ interface EditFormProps {
   setFormData: React.Dispatch<React.SetStateAction<Partial<Product>>>;
   saveEdit: () => void;
   cancelEdit: () => void;
+  autoFocus?: boolean;
   imageSource?: string;
   imageUploading?: boolean;
   onImageClick?: () => void;
@@ -27,6 +28,7 @@ export const EditForm: React.FC<EditFormProps> = ({
   setFormData,
   saveEdit,
   cancelEdit,
+  autoFocus = false,
   imageSource,
   imageUploading = false,
   onImageClick,
@@ -55,12 +57,15 @@ export const EditForm: React.FC<EditFormProps> = ({
   }, [formData.price, style.priceDecimalPlaces, style.priceDecimalSeparator]);
 
   return (
-    <div 
+    <div data-product-designer-edit-form
       className="flex flex-col gap-2 p-3 bg-white border-2 border-indigo-500 rounded-lg shadow-lg animate-in fade-in zoom-in-95" 
-      onKeyDown={e => { if (e.key === 'Enter') saveEdit(); }}
+      onKeyDown={event => {
+        if (event.key === 'Escape') cancelEdit();
+        if (event.key === 'Enter' && event.target instanceof HTMLInputElement) saveEdit();
+      }}
     >
       <input 
-        autoFocus
+        autoFocus={autoFocus}
         className="w-full bg-white text-slate-900 [color-scheme:light] font-bold text-sm border-b border-slate-200 focus:border-indigo-500 outline-none pb-1"
         placeholder={type === 'category' ? "Nome da categoria" : "Nome do produto"}
         value={formData.name || ''}
@@ -173,8 +178,8 @@ export const EditForm: React.FC<EditFormProps> = ({
         </>
       )}
       <div className="flex justify-end gap-2 mt-1">
-        <button onClick={cancelEdit} className="p-1 text-red-500 hover:bg-red-50 rounded"><X size={14}/></button>
-        <button onClick={saveEdit} className="p-1 text-green-600 hover:bg-green-50 rounded"><Check size={14}/></button>
+        <button type="button" onClick={cancelEdit} className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 text-xs font-semibold text-red-700 hover:bg-red-100"><X size={16} /> Cancelar</button>
+        <button type="button" onClick={saveEdit} className="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-emerald-700 px-3 text-xs font-semibold text-white shadow-sm hover:bg-emerald-800"><Check size={16} /> Salvar</button>
       </div>
     </div>
   );

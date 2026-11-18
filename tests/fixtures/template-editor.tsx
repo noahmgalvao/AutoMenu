@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { browserServices } from '../../src/composition/browserServices';
 import { AppServicesProvider } from '../../src/presentation/app/AppServicesProvider';
 import MenuDesigner from '../../src/presentation/menu/MenuDesigner';
+import { ProductDesigner } from '../../src/presentation/products/ProductDesigner';
 import { MenuPreview } from '../../src/presentation/menu/canvas/MenuPreview';
 import { PRESET_TEMPLATES } from '../../src/domain/templates/templateCatalog';
 import type { MenuStyle, Product, SortOption } from '../../src/domain/menu/model';
@@ -36,6 +37,7 @@ function Fixture() {
     layoutMode: photoMode === 'list' ? 'list' : 'cards',
     columnCount: photoMode === 'list' || params.get('cols') === '1' ? 1 : params.get('cols') === '2' ? 2 : 3,
     categoryColumnCount: params.get('lanes') === '3' ? 3 : params.get('lanes') === '2' ? 2 : initial.categoryColumnCount,
+    categoryPlacements: params.has('right-column') ? { Entradas: { pageIndex: 0, columnIndex: 0 }, Sobremesas: { pageIndex: 0, columnIndex: 1 } } : initial.categoryPlacements,
     pageSetup: params.has('landscape') ? { ...initial.pageSetup!, orientation: 'landscape' } : initial.pageSetup,
     design: {
       ...initial.design!,
@@ -49,6 +51,7 @@ function Fixture() {
   })) : !photoMode ? products : (params.has('single-product') ? products.slice(0, 1) : products).map(product => ({
     ...product,
     name: params.has('long-name') && product.id === '1' ? 'Burratacomtomatemarinado'.repeat(4) : product.name,
+    price: params.has('zero-price') && product.id === '1' ? 0 : product.price,
     category: params.has('different-categories') && product.id === '3' ? product.category : 'Entradas', image: samplePhoto,
   })));
   const [future, setFuture] = useState<MenuStyle[]>([]);
@@ -61,6 +64,12 @@ function Fixture() {
   }, []);
   const style = history[history.length - 1];
   const [sortOption, setSortOption] = useState<SortOption>({ field:'name', direction:'asc' });
+  if (params.has('product-designer')) return <main className="flex h-screen items-start">
+    <ProductDesigner products={items} setProducts={setItems} style={style} setStyle={(patch) => setHistory(current => [...current,
+      typeof patch === 'function' ? patch(current[current.length - 1]) : patch])} sortOption={sortOption}
+      workspaceId="test-workspace" currentUserId="test-user" currentMenuId="test-menu" />
+    <button type="button" className="mt-24" onClick={() => setSortOption({ field: 'name', direction: 'desc' })}>Ordenar produtos</button>
+  </main>;
   return <>
     <output hidden data-testid="editor-state" data-edits={history.length - 1} data-applied={style.appliedTemplateId || style.id} />
     <MenuDesigner style={style} setStyle={(patch) => {

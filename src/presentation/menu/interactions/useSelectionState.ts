@@ -20,6 +20,7 @@ const uniqueSelectionItems = (items: SelectionItem[]) => {
         return true;
     });
 };
+type EditableItemType = 'product' | 'category' | 'freeText' | 'addedImage';
 
 export const useSelectionState = (
     props: InteractionProps,
@@ -31,13 +32,22 @@ export const useSelectionState = (
     // Selection & Editing State
     const [selectedId, setSelectedId] = useState<string | null>(null); 
     const [selectedItems, setSelectedItems] = useState<SelectionItem[]>([]);
-    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editingId, setActiveEditingId] = useState<string | null>(null);
+    const [editingItems, setEditingItems] = useState<SelectionItem[]>([]);
     const [formattingTarget, setFormattingTarget] = useState<FormattingTarget | null>(null);
     const [multiSelectMode, setMultiSelectModeState] = useState(false);
     const [showAddModal, setShowAddModal] = useState<{category: string, rect: DOMRect} | null>(null);
     const [selectedPageIndex, setSelectedPageIndex] = useState<number | null>(null);
     const lastRangeAnchorRef = useRef<SelectionItem | null>(null);
     const lastEmittedSelectionRef = useRef<string | null>(null);
+    const setEditingId = useCallback((id: string | null) => {
+        setActiveEditingId(id);
+        if (id === null) setEditingItems([]);
+    }, []);
+
+    const editingKeys = useMemo(() => new Set(editingItems.map(item => getSelectionKey(item.type, item.id))), [editingItems]);
+    const isReadyToEdit = (type: EditableItemType, id: string) => editingKeys.has(getSelectionKey(type, id));
+
     const setMultiSelectMode = useCallback((enabled: boolean) => {
         setMultiSelectModeState(Boolean(enabled && selectedItems.length > 0));
     }, [selectedItems.length]);
@@ -97,9 +107,10 @@ export const useSelectionState = (
     const getCategorySelectionsFor = useCallback((items: SelectionItem[]) => (
         uniqueSelectionItems(
             items
-                .map((item) => getItemCategory(item))
-                .filter((category): category is string => Boolean(category))
-                .map((category) => ({ type: 'category' as const, id: category }))
+                .map((item) => {
+                    const category = getItemCategory(item);
+                    return category ? { type: 'category' as const, id: category } : item;
+                })
         )
     ), [getItemCategory]);
 
@@ -196,10 +207,13 @@ export const useSelectionState = (
                 lastRangeAnchorRef.current = item;
             }
         }
-    }, [getSingleSelectionItem, props.selection]);
+    }, [getSingleSelectionItem, props.selection, setEditingId, setMultiSelectMode]);
 
     const handleSelection = useCallback((type: SelectionType, id: string | null, options?: { shiftKey?: boolean; ctrlKey?: boolean }) => {
-        setEditingId(current => current === id ? current : null);
+        if (editingId && (editingId !== id || !editingKeys.has(getSelectionKey(type, id)))) {
+            blurEditingField(editingId);
+            setEditingId(null);
+        }
         if (!type || !id) {
             setFormattingTarget(null);
             setSelectedId(null);
@@ -336,12 +350,16 @@ export const useSelectionState = (
         emitSelection(type, id);
     }, [
         emitSelection,
+        editingId,
+        editingKeys,
         getCategorySelectionsFor,
         getPageRange,
         getSingleSelectionItem,
         multiSelectMode,
         selectableItems,
         selectedItems,
+        setEditingId,
+        setMultiSelectMode,
         visibleCategories,
     ]);
 
@@ -379,18 +397,17 @@ export const useSelectionState = (
 
     const isSelected = useCallback((type: SelectionType, id: string | null) => {
         if (!id) return false;
+        if (selectedItems.some((item) => item.id === id && item.type === type)) return true;
         if (
             selectedItems.some((item) => item.type === 'category') &&
             type !== 'category'
         ) {
             return false;
         }
-        if (selectedItems.some((item) => item.id === id && item.type === type)) return true;
         return selectedId === id;
     }, [selectedId, selectedItems]);
 
     const handleBlur = useCallback((e: React.FocusEvent<HTMLElement>, type: string, id: string, field?: string) => {
-        if (type !== 'product' && type !== 'floating') setEditingId(null);
         const newVal = e.currentTarget.innerText;
         if (type === 'product' && field && onUpdateProduct) {
             const product = products.find(candidate => candidate.id === id);
@@ -452,12 +469,22 @@ export const useSelectionState = (
             } else if (newVal !== product?.[field as keyof Product]) {
                 onUpdateProduct(id, field as keyof Product, newVal);
             }
-        } else if (type === 'category' && onUpdateCategoryName) {
-            onUpdateCategoryName(id, newVal); 
+        } else if (type === 'category' && onUpdateCategoryName && id !== newVal) {
+            const rename = (item: SelectionItem) => item.type === 'category' && item.id === id ? { ...item, id: newVal } : item;
+            setEditingItems(items => items.map(rename));
+            setSelectedItems(items => items.map(rename));
+            setActiveEditingId(current => current === id ? newVal : current);
+            setFormattingTarget(current => current?.type === 'category' && current.id === id
+                ? { ...current, id: newVal, elementId: `text-${newVal}` } : current);
+            if (selectedId === id) {
+                setSelectedId(newVal);
+                emitSelection('category', newVal);
+            }
+            onUpdateCategoryName(id, newVal);
         } else if (type === 'menu' && onUpdateMenuText && field) {
             onUpdateMenuText(field as any, newVal);
         }
-    }, [emitSelection, onDeleteProduct, onStyleUpdate, onUpdateProduct, onUpdateCategoryName, onUpdateMenuText, products, style]);
+    }, [emitSelection, onDeleteProduct, onStyleUpdate, onUpdateProduct, onUpdateCategoryName, onUpdateMenuText, products, selectedId, style]);
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
         if (e.key === 'Escape' && editingId) {
@@ -477,22 +504,28 @@ export const useSelectionState = (
         }
     };
 
+    const activateEditingItem = (type: EditableItemType, id: string, field?: FormattingField, elementId?: string) => {
+        setActiveEditingId(id);
+        setFormattingTarget(type !== 'addedImage' && field && elementId ? { type, id, field, elementId } : null);
+        if (selectedId !== id) {
+            setSelectedId(id);
+            setSelectedPageIndex(null);
+            emitSelection(type, id);
+        }
+    };
+
     const startEditing = (e: React.MouseEvent, id: string, elementIdToFocus?: string, field: FormattingField = 'name') => {
         e.stopPropagation();
         const product = products.find(p => p.id === id);
-        const type: SelectionType = product ? (product.isFreeText ? 'freeText' : 'product') : 'category';
+        const type = elementIdToFocus?.startsWith('text-') ? 'category' : product ? (product.isFreeText ? 'freeText' : 'product') : 'category';
         const targetField: FormattingField = product?.isFreeText ? 'freeText' : type === 'category' ? 'category' : field;
         const focusElementId = elementIdToFocus || `product-name-${id}`;
 
+        if (editingId && editingId !== id) blurEditingField(editingId);
+
         flushSync(() => {
-            setEditingId(id);
-            setFormattingTarget({
-                type: type as FormattingTarget['type'],
-                id,
-                field: targetField,
-                elementId: focusElementId,
-            });
-            clearMultiSelectionTo(type, id);
+            prepareEditing({ type, id });
+            activateEditingItem(type, id, targetField, focusElementId);
         });
 
         const el = document.getElementById(focusElementId);
@@ -505,8 +538,27 @@ export const useSelectionState = (
         selection?.addRange(range);
     };
 
-    const setProductEditingField = (id: string, field: 'name' | 'price' | 'description', elementId: string) => {
-        setFormattingTarget({ type: 'product', id, field, elementId });
+    const prepareEditing = (item: { type: EditableItemType; id: string }) => {
+        if (isReadyToEdit(item.type, item.id)) return;
+        const selected = selectedItems.some(selected => isSameSelectionItem(selected, item));
+        const current = selected ? selectedItems : [item];
+        if (!selected) setSelectedItems(current);
+        const categoryIds = new Set(current.filter(selected => selected.type === 'category').map(selected => selected.id));
+        const categoryContents = products.filter(product => categoryIds.has(product.category)).map(product => ({
+            type: product.isFreeText ? 'freeText' as const : 'product' as const, id: product.id,
+        }));
+        setEditingItems(uniqueSelectionItems([...current, ...categoryContents]));
+        setMultiSelectModeState(false);
+    };
+
+    const startImageEditing = (id: string) => {
+        if (editingId) blurEditingField(editingId);
+        prepareEditing({ type: 'addedImage', id });
+        activateEditingItem('addedImage', id);
+    };
+
+    const setEditingField = (type: 'product' | 'category' | 'freeText', id: string, field: FormattingField, elementId: string) => {
+        if (isReadyToEdit(type, id)) activateEditingItem(type, id, field, elementId);
     };
 
     const startMenuTextEditing = (type: 'menuTitle' | 'menuSubtitle', elementId: string) => {
@@ -532,7 +584,13 @@ export const useSelectionState = (
         handleBlur,
         handleKeyDown,
         startEditing,
-        setProductEditingField,
+        isReadyToEdit, startImageEditing, setEditingField,
         startMenuTextEditing
     };
 };
+
+function blurEditingField(id: string) {
+    const element = document.activeElement;
+    if (element instanceof HTMLElement && element.isContentEditable
+        && (element.dataset.productEditId === id || element.id === `text-${id}`)) element.blur();
+}

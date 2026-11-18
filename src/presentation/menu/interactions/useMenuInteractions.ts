@@ -103,7 +103,9 @@ export const useMenuInteractions = (props: InteractionProps) => {
         handleBlur: selectionState.handleBlur,
         handleKeyDown: selectionState.handleKeyDown,
         startEditing: selectionState.startEditing,
-        setProductEditingField: selectionState.setProductEditingField,
+        isReadyToEdit: selectionState.isReadyToEdit,
+        startImageEditing: selectionState.startImageEditing,
+        setEditingField: selectionState.setEditingField,
         startMenuTextEditing: selectionState.startMenuTextEditing,
 
         // ...imageInteractions
@@ -111,6 +113,10 @@ export const useMenuInteractions = (props: InteractionProps) => {
         draggedImageId: imageInteractions.draggedImageId,
         setDraggedImageId: imageInteractions.setDraggedImageId,
         handleImageDragStart: (event: React.PointerEvent, id: string, pageIndex?: number) => {
+            if (selectionState.isReadyToEdit('addedImage', id)) {
+                event.stopPropagation();
+                return;
+            }
             const selected = selectionState.selectedItems.some(item => item.type === 'addedImage' && item.id === id);
             if (selected && !event.shiftKey && !event.ctrlKey && !event.metaKey
                 && (selectionState.multiSelectMode || selectionState.selectedItems.length > 1)) {
