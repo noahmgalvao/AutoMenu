@@ -172,20 +172,30 @@ test('a category stays in the available gap between positioned categories after 
   await expect(page.locator('[data-menu-print-page="true"]')).toHaveCount(1);
 });
 
-test('quick controls stay in a usable row with side insertion and a separate column resize handle', async ({ page }) => {
+test('quick controls touch, grid insertion stays lateral and resizing starts at the column divider', async ({ page }) => {
   await page.goto('/tests/fixtures/template-editor.html?photos=cards&cols=2&lanes=2');
   const product = page.locator('#product-container-1');
   await product.getByRole('heading').click();
   const quick = product.locator('[data-canvas-action-group="quick"]');
   await expect(quick.getByRole('button').first()).toHaveAttribute('title', 'Editar produto');
+  await expect(product.getByTitle('Adicionar item à esquerda')).toBeVisible();
   await expect(product.getByTitle('Adicionar item à direita')).toBeVisible();
   await expect(product.getByTitle('Ajustar largura da coluna pela borda direita')).toBeVisible();
   const quickRects = await quick.getByRole('button').evaluateAll(nodes => nodes.map(node => {
     const rect = node.getBoundingClientRect();
-    return { y: Math.round(rect.top), width: rect.width };
+    return { y: Math.round(rect.top), width: rect.width, left: rect.left, right: rect.right };
   }));
   expect(new Set(quickRects.map(rect => rect.y)).size).toBe(1);
   expect(quickRects.every(rect => Math.abs(rect.width - 28) <= 1)).toBe(true);
+  expect(quickRects.slice(1).every((rect, index) => Math.abs(rect.left - quickRects[index].right) <= 1)).toBe(true);
+  expect(await quick.evaluate(element => getComputedStyle(element, '::before').content)).toBe('none');
+  const dividerError = await product.evaluate(element => {
+    const lane = element.closest('[data-drag-column-container="category"]')!;
+    const divider = (lane.getBoundingClientRect().right + lane.nextElementSibling!.getBoundingClientRect().left) / 2;
+    const handle = element.querySelector('[data-column-resize-handle]')!.getBoundingClientRect();
+    return Math.abs(handle.left + handle.width / 2 - divider);
+  });
+  expect(dividerError).toBeLessThan(1);
   const overlap = await product.evaluate(node => {
     const controls = [...node.querySelectorAll('[data-canvas-action-group] button')].map(button => button.getBoundingClientRect());
     const intersects = (a: DOMRect, b: DOMRect) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1
@@ -199,11 +209,24 @@ test('quick controls stay in a usable row with side insertion and a separate col
     return onText || controls.some((rect, i) => controls.slice(i + 1).some(other => intersects(rect, other)));
   });
   expect(overlap).toBe(false);
+  const handle = product.getByTitle('Ajustar largura da coluna pela borda direita');
+  const grip = (await handle.boundingBox())!;
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2 + 24, grip.y + grip.height / 2, { steps: 8 });
+  const guide = page.getByText(/^(Centro|Largura da coluna)$/).locator('..');
+  await expect(guide).toBeVisible();
+  await expect.poll(() => guide.evaluate(line => {
+    const [first, second] = [...line.closest('[data-menu-print-page]')!.querySelectorAll('[data-drag-column-container="category"]')];
+    const divider = (first.getBoundingClientRect().right + second.getBoundingClientRect().left) / 2;
+    return Math.abs(line.getBoundingClientRect().left - divider);
+  })).toBeLessThan(1);
+  await page.mouse.up();
 });
 
 for (const { width, height, touch, buttonSize } of [
   { width: 1280, height: 900, touch: false, buttonSize: 28 },
-  { width: 320, height: 720, touch: true, buttonSize: 44 },
+  { width: 320, height: 720, touch: true, buttonSize: 36 },
 ]) {
   test.describe(`canvas toolbar at ${width}px`, () => {
     test.use({ viewport: { width, height }, hasTouch: touch, isMobile: touch });
@@ -220,8 +243,8 @@ for (const { width, height, touch, buttonSize } of [
         const box = item.getBoundingClientRect();
         const bar = item.querySelector('[data-canvas-action-group="quick"]')!.getBoundingClientRect();
         const edges = [...item.querySelectorAll<HTMLElement>('[data-canvas-action-group="add"], [data-canvas-action-group="move"]')];
-        return bar.bottom <= box.top + 1 && box.top - bar.bottom <= 30
-          && bar.left < box.right && bar.right > box.left && edges.length >= 3 && edges.every(control => {
+        return bar.bottom <= box.top + 1 && box.top - bar.bottom <= 6 && Math.abs(bar.right - box.right) < 1
+          && edges.length >= 3 && edges.every(control => {
             const rect = control.getBoundingClientRect();
             const edge = control.dataset.canvasActionDirection === 'top' ? box.top : box.bottom;
             return Math.abs(rect.top + rect.height / 2 - edge) <= rect.height / 2 + 4
@@ -248,10 +271,9 @@ for (const { width, height, touch, buttonSize } of [
             await expect(quick).toHaveCount(4);
             const checkButtons = () => expect.poll(() => quick.evaluateAll((buttons, targetSize) => buttons.map(button => {
               const rect = button.getBoundingClientRect();
-              const inset = parseFloat(getComputedStyle(button, '::before').inset);
               const hit = document.elementFromPoint(rect.left + 2, rect.top + 2);
-              return Math.abs(rect.width - targetSize) <= 1 && Math.abs(rect.height - targetSize) <= 1
-                && Math.abs(rect.width - inset * 2 - 28) <= 1 && hit === button;
+              return Math.abs(rect.width - targetSize) <= 1 && rect.height >= rect.width - 1
+                && getComputedStyle(button, '::before').left === '0px' && hit === button;
             }), buttonSize)).toEqual([true, true, true, true]);
             await checkButtons();
 
@@ -260,8 +282,36 @@ for (const { width, height, touch, buttonSize } of [
               const toolbar = element.querySelector('[data-canvas-action-group="quick"]')!.getBoundingClientRect();
               const horizontalOverlap = Math.min(item.right, toolbar.right) - Math.max(item.left, toolbar.left);
               return horizontalOverlap >= Math.min(item.width, toolbar.width) / 2
-                && toolbar.bottom <= item.top + 1 && item.top - toolbar.bottom <= 30;
+                && toolbar.bottom <= item.top + 1 && item.top - toolbar.bottom <= 36;
             })).toBe(true);
+
+            await expect.poll(() => product.evaluate(element => {
+              const item = element.getBoundingClientRect();
+              const controls = [...element.querySelectorAll<HTMLElement>('[data-canvas-action-group="add"], [data-canvas-action-group="move"]')];
+              return controls.flatMap(control => {
+                if (getComputedStyle(control).visibility === 'hidden') return [];
+                const rect = control.getBoundingClientRect();
+                const x = rect.left + rect.width / 2;
+                const y = rect.top + rect.height / 2;
+                const distances = { top: item.top - y, bottom: y - item.bottom, left: item.left - x, right: x - item.right };
+                const direction = control.dataset.canvasActionDirection as keyof typeof distances;
+                const distance = distances[direction];
+                const button = control.querySelector('button');
+                return distance < -1 || distance > 21 || document.elementFromPoint(x, y)?.closest('button') !== button
+                  ? [{ title: button?.title, distance: Math.round(distance) }] : [];
+              });
+            })).toEqual([]);
+
+            if (lanes > 1) {
+              const handle = product.getByTitle('Ajustar largura da coluna pela borda direita');
+              await expect.poll(() => handle.evaluate(button => {
+                const lane = button.closest('[data-drag-column-container="category"]')!;
+                const divider = (lane.getBoundingClientRect().right + lane.nextElementSibling!.getBoundingClientRect().left) / 2;
+                const rect = button.getBoundingClientRect();
+                const x = rect.left + rect.width / 2;
+                return Math.abs(divider - x) < 1 && document.elementFromPoint(x, rect.top + rect.height / 2) === button;
+              })).toBe(true);
+            }
 
             if (lanes === 1 && cols === 1) {
               const canvas = page.locator('[data-automenu-editor-canvas]');
@@ -270,12 +320,17 @@ for (const { width, height, touch, buttonSize } of [
               const initialWidth = await paperWidth();
               await canvas.dispatchEvent('wheel', { ctrlKey: true, deltaY: 130, bubbles: true, cancelable: true });
               await expect.poll(paperWidth).toBeLessThan(initialWidth * 0.85);
+              await expect.poll(() => canvas.locator('[data-canvas-zoom-layer]').evaluate(element =>
+                element.getAnimations().some(animation => animation.playState === 'running'))).toBe(false);
               await checkButtons();
             }
 
             const more = product.getByTitle('Mais opções');
-            if (touch) await more.tap();
-            else await more.click();
+            if (touch) {
+              // A physical tap uses the painted coordinates without a programmatic scroll.
+              const rect = (await more.boundingBox())!;
+              await page.touchscreen.tap(rect.x + rect.width / 2, rect.y + rect.height / 2);
+            } else await more.click();
             await expect(page.locator('[data-canvas-object-menu]')).toBeVisible();
           });
         }
@@ -297,10 +352,12 @@ test.describe('shape toolbar on a narrow touchscreen', () => {
       const rects = elements.map(element => element.getBoundingClientRect());
       return {
         rows: new Set(rects.map(rect => Math.round(rect.top))).size,
-        reachable: rects.every((rect, index) => Math.abs(rect.width - 44) <= 1 && rect.left >= 0 && rect.right <= innerWidth
+        reachable: rects.every((rect, index) => Math.abs(rect.width - 36) <= 1 && rect.left >= 0 && rect.right <= innerWidth
           && document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2) === elements[index]),
       };
     });
+    await expect.poll(buttonLayout).toEqual({ rows: 1, reachable: true });
+    await page.setViewportSize({ width: 210, height: 720 });
     await expect.poll(buttonLayout).toEqual({ rows: 2, reachable: true });
     await page.setViewportSize({ width: 430, height: 720 });
     await expect.poll(buttonLayout).toEqual({ rows: 1, reachable: true });

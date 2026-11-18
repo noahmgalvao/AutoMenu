@@ -145,6 +145,7 @@ export const useCategoryColumnResize = (
             const scale = Math.max(0.001, pageRect.width / Math.max(1, session.page.offsetWidth));
             const margins = resolveMenuMargins(style);
             const gap = Math.max(0, margins.columnGap * scale);
+            const dividerOrigin = gridRect.left + gap / 2;
             const usableColumnsWidth = Math.max(1, gridRect.width - (gap * (session.columnCount - 1)));
             const initialPixelWidths = session.initialWidths.map((width) => width * usableColumnsWidth);
             const leftPairStart = initialPixelWidths
@@ -155,7 +156,7 @@ export const useCategoryColumnResize = (
                 + initialPixelWidths[session.boundaryIndex + 1];
             const pageCenterClientX = pageRect.left + (pageRect.width / 2);
             const getBoundaryForWidths = (widths: number[]) => (
-                gridRect.left
+                dividerOrigin
                 + (widths.slice(0, session.boundaryIndex + 1).reduce((sum, width) => sum + width, 0) * usableColumnsWidth)
                 + (gap * session.boundaryIndex)
             );
@@ -167,13 +168,13 @@ export const useCategoryColumnResize = (
             if (snappedToCenter) boundaryClientX = pageCenterClientX;
 
             const minimumWidth = Math.min(MIN_COLUMN_WIDTH_PX * scale, pairWidth * 0.42);
-            const minimumBoundary = gridRect.left + leftPairStart + minimumWidth;
-            const maximumBoundary = gridRect.left + leftPairStart + pairWidth - minimumWidth;
+            const minimumBoundary = dividerOrigin + leftPairStart + minimumWidth;
+            const maximumBoundary = dividerOrigin + leftPairStart + pairWidth - minimumWidth;
             const boundaryBeforeGeometricLimit = boundaryClientX;
             boundaryClientX = Math.max(minimumBoundary, Math.min(maximumBoundary, boundaryClientX));
             const reachedGeometricLimit = Math.abs(boundaryClientX - boundaryBeforeGeometricLimit) > 0.5;
 
-            const nextLeftWidth = boundaryClientX - gridRect.left - leftPairStart;
+            const nextLeftWidth = boundaryClientX - dividerOrigin - leftPairStart;
             const nextRightWidth = pairWidth - nextLeftWidth;
             const nextWidths = [...initialPixelWidths];
             nextWidths[session.boundaryIndex] = nextLeftWidth;
@@ -226,7 +227,8 @@ export const useCategoryColumnResize = (
                 return;
             }
 
-            applyWidths(normalized, boundaryClientX, snappedToCenter);
+            const actualBoundary = getBoundaryForWidths(normalized);
+            applyWidths(normalized, actualBoundary, snappedToCenter && Math.abs(actualBoundary - pageCenterClientX) < 1);
             if (reachedGeometricLimit) {
                 const now = performance.now();
                 if (now >= session.feedbackUntil) {
@@ -303,7 +305,7 @@ export const useCategoryColumnResize = (
         const margins = resolveMenuMargins(style);
         const gap = Math.max(0, margins.columnGap * scale);
         const usableColumnsWidth = Math.max(1, gridRect.width - (gap * (columnCount - 1)));
-        const initialBoundaryClientX = gridRect.left
+        const initialBoundaryClientX = gridRect.left + gap / 2
             + (initialWidths.slice(0, boundaryIndex + 1).reduce((sum, width) => sum + width, 0) * usableColumnsWidth)
             + (gap * boundaryIndex);
 

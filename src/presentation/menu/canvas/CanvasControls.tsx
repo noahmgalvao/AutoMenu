@@ -14,6 +14,7 @@ type Control = {
 };
 
 const margin = 4;
+const edgeOffset = 10;
 const priority: Record<ControlKind, number> = { add: 0, move: 1, quick: 2, resize: 3 };
 const pageControlObservers = new WeakMap<HTMLElement, ReturnType<typeof observeControls>>();
 
@@ -76,21 +77,40 @@ function placeControls(
         const centerX = (target.left + target.right) / 2;
         const centerY = (target.top + target.bottom) / 2;
         const side = direction === 'left' || direction === 'right';
+        const leading = direction === 'left' || direction === 'top';
+        const edge = side ? (leading ? target.left : target.right) : (leading ? target.top : target.bottom);
         let x = centerX - width / 2;
         let y = centerY - height / 2;
+
         if (kind === 'quick') {
-            if (target.width >= width) x = target.right - width;
+            x = target.right - width;
             y = target.top - height - margin;
         } else if (kind === 'resize') {
-            const column = anchor.closest('[data-drag-column-container]')?.getBoundingClientRect() || target;
-            x = (direction === 'left' ? column.left : column.right) - width / 2;
-            y = target.top - height - margin;
-        } else if (side) {
-            x = (direction === 'left' ? target.left : target.right) - width / 2;
+            const column = anchor.closest('[data-drag-column-container="category"]');
+            const neighbor = leading ? column?.previousElementSibling : column?.nextElementSibling;
+            if (!column || !neighbor?.matches('[data-drag-column-container="category"]')) {
+                node.style.visibility = 'hidden';
+                continue;
+            }
+            const columnRect = column.getBoundingClientRect();
+            const neighborRect = neighbor.getBoundingClientRect();
+            const divider = leading ? (neighborRect.right + columnRect.left) / 2 : (columnRect.right + neighborRect.left) / 2;
+            if (divider < bounds.left - margin || divider > bounds.right + margin) {
+                node.style.visibility = 'hidden';
+                continue;
+            }
+            x = divider - width / 2;
+            y = Math.min(centerY - height / 2, target.top);
         } else {
-            y = (direction === 'top' ? target.top : target.bottom) - height / 2;
-        }
-        if (kind === 'add' || kind === 'move') {
+            const edgeMin = side ? bounds.left : bounds.top;
+            const edgeMax = side ? bounds.right : bounds.bottom;
+            if (edge < edgeMin - margin || edge > edgeMax + margin) {
+                node.style.visibility = 'hidden';
+                continue;
+            }
+            const center = edge + (leading ? -edgeOffset : edgeOffset);
+            if (side) x = center - width / 2;
+            else y = center - height / 2;
             const paired = active.some(control => control.anchor === anchor && control.direction === direction
                 && control.kind === (kind === 'add' ? 'move' : 'add'));
             if (paired) {
@@ -99,24 +119,40 @@ function placeControls(
                 else x += sign * (width + margin) / 2;
             }
             if (direction === 'top') {
-                const shortcuts = active.find(control => control.kind === 'quick' && control.anchor === anchor);
+                const shortcuts = active.find(control => control.kind === 'quick' && !control.hoverOnly
+                    && (control.anchor === anchor || anchor.contains(control.anchor)));
                 if (shortcuts) {
-                    const toolbarLeft = Math.min(target.right, bounds.right) - shortcuts.node.offsetWidth;
-                    const lastSlot = toolbarLeft - margin - width;
+                    const lastSlot = Math.min(target.right, bounds.right) - shortcuts.node.offsetWidth - width - margin;
                     const firstSlot = paired ? lastSlot - width - margin : lastSlot;
                     if (firstSlot >= Math.max(target.left, bounds.left)) {
-                        x = Math.min(x, kind === 'move' ? firstSlot : lastSlot);
-                        y = target.top - height / 2 - margin * 2;
+                        x = kind === 'move' ? firstSlot : lastSlot;
                     }
                 }
             }
-            if (side ? x + width < bounds.left || x > bounds.right : y + height < bounds.top || y > bounds.bottom) {
-                node.style.visibility = 'hidden';
-                continue;
-            }
         }
 
-        // Only controls compete for space. Text in another row must never push a toolbar away from its object.
+        // Resolve collisions along the same edge first. A narrow target can borrow the space immediately beside it.
+        const directional = kind === 'add' || kind === 'move';
+        const edgeLeft = side && directional && !leading ? edge - width / 2 : bounds.left;
+        const edgeRight = side && directional && leading ? edge + width / 2 : bounds.right;
+        const edgeTop = !side && directional && !leading ? edge - height / 2 : bounds.top;
+        const edgeBottom = !side && directional && leading ? edge + height / 2 : bounds.bottom;
+        // At the viewport rim the button can be clipped, but its center stays on the intended side.
+        const minimumLeft = Math.min(bounds.left, edgeRight - width);
+        const maximumLeft = Math.max(bounds.right - width, edgeLeft);
+        const minimumTop = Math.min(bounds.top, edgeBottom - height);
+        const maximumTop = Math.max(bounds.bottom - height, edgeTop);
+        const preferredLeft = kind === 'resize' ? x : clamp(x, minimumLeft, maximumLeft);
+        const preferredTop = clamp(y, minimumTop, maximumTop);
+        const slidesHorizontally = !side || kind === 'quick';
+        const minLeft = Math.max(minimumLeft, slidesHorizontally ? Math.min(preferredLeft, target.left - width) - width / 2
+            : preferredLeft - (leading ? edgeOffset : 0));
+        const maxLeft = Math.min(maximumLeft, slidesHorizontally ? Math.max(preferredLeft, target.right) + width / 2
+            : preferredLeft + (leading ? 0 : edgeOffset));
+        const minTop = Math.max(minimumTop, side ? Math.min(preferredTop, target.top - height) - height / 2
+            : preferredTop - (kind === 'quick' ? height + margin : leading ? edgeOffset : 0));
+        const maxTop = Math.min(maximumTop, side ? Math.max(preferredTop, target.bottom) + height / 2
+            : preferredTop + (kind !== 'quick' && !leading ? edgeOffset : 0));
         const occupied = [...blockers];
         if (kind === 'resize') {
             const range = document.createRange();
@@ -125,34 +161,32 @@ function placeControls(
                 occupied.push(...Array.from(range.getClientRects()));
             });
         }
-        const preferredLeft = clamp(x, bounds.left, bounds.right - width);
-        const preferredTop = clamp(y, bounds.top, bounds.bottom - height);
-        const xs = [preferredLeft, ...occupied.flatMap(box => [box.left - width - margin, box.right + margin])];
-        const ys = [preferredTop, ...occupied.flatMap(box => [box.top - height - margin, box.bottom + margin])];
+        const xs = kind === 'resize' ? [preferredLeft] : [
+            preferredLeft, ...occupied.flatMap(box => [box.left - width, box.right]),
+        ].map(value => clamp(value, minLeft, maxLeft));
+        const ys = [preferredTop, ...occupied.flatMap(box => [box.top - height, box.bottom])]
+            .map(value => clamp(value, minTop, maxTop));
         let left = preferredLeft;
         let top = preferredTop;
-        let bestScore = Infinity;
-        for (const candidateX of xs) {
-            const nextLeft = clamp(candidateX, bounds.left, bounds.right - width);
-            for (const candidateY of ys) {
-                const nextTop = clamp(candidateY, bounds.top, bounds.bottom - height);
-                if (occupied.some(box => nextLeft < box.right && nextLeft + width > box.left
-                    && nextTop < box.bottom && nextTop + height > box.top)) continue;
+        let bestOverlap = Infinity;
+        let bestDistance = Infinity;
+        for (const nextLeft of xs) {
+            for (const nextTop of ys) {
+                const overlap = occupied.reduce((total, box) => total
+                    + Math.max(0, Math.min(nextLeft + width, box.right) - Math.max(nextLeft, box.left))
+                    * Math.max(0, Math.min(nextTop + height, box.bottom) - Math.max(nextTop, box.top)), 0);
                 const dx = nextLeft - preferredLeft;
                 const dy = nextTop - preferredTop;
-                const wrongEdge = kind === 'quick' ? nextTop > preferredTop + 1 || nextLeft > target.right || nextLeft + width < target.left
-                    : direction === 'top' ? nextTop + height / 2 > centerY
-                    : direction === 'bottom' ? nextTop + height / 2 < centerY
-                    : direction === 'left' ? nextLeft + width / 2 > centerX : nextLeft + width / 2 < centerX;
-                const score = dx * dx * (side ? 3 : 1) + dy * dy * (side ? 1 : 3) + (wrongEdge ? 10000 : 0);
-                if (score < bestScore) {
-                    bestScore = score;
+                const distance = dx * dx * (side ? 16 : 1) + dy * dy * (side ? 1 : kind === 'quick' ? 4 : 16);
+                if (overlap < bestOverlap || (overlap === bestOverlap && distance < bestDistance)) {
+                    bestOverlap = overlap;
+                    bestDistance = distance;
                     left = nextLeft;
                     top = nextTop;
                 }
             }
         }
-        if (hoverOnly && (Math.abs(top - preferredTop) > margin || Math.abs(left - preferredLeft) > width / 2)) {
+        if (hoverOnly && (bestOverlap > 0 || Math.abs(top - preferredTop) > margin || Math.abs(left - preferredLeft) > width / 2)) {
             node.style.visibility = 'hidden';
             continue;
         }

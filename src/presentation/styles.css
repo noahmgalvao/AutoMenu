@@ -28,14 +28,9 @@ body {
   z-index: 1;
 }
 
-[data-canvas-action-group="quick"]::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 14px;
-  background: white;
-  box-shadow: 0 1px 4px #0f172a33;
-  pointer-events: none;
+[data-canvas-action-group="quick"] {
+  gap: 0;
+  justify-content: flex-end;
 }
 
 .automenu-canvas-action > svg {
@@ -55,8 +50,12 @@ body {
     inset: 8px;
   }
 
-  [data-canvas-action-group="quick"]::before {
-    inset: 8px;
+  [data-canvas-action-group="quick"] > .automenu-canvas-action {
+    width: 36px;
+  }
+
+  [data-canvas-action-group="quick"] > .automenu-canvas-action::before {
+    inset: 4px 0;
   }
 }
 
