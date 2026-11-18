@@ -1,10 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { MenuStyle, Product } from '../types';
-import { calculatePagination, FREE_TEXT_PREFIX, getPaginationBottomInset, getPaginationHeightKey, getPaginationItemKey, type PageItem } from '../utils/menuPagination';
-import { resolveMenuPageDimensions } from '../utils/pageSetup';
-import { resolveMenuMargins } from '../utils/styleRules';
-import { PRESET_TEMPLATES } from '../utils/templateCatalog';
+import type { MenuStyle, Product } from '../src/domain/menu/model';
+import {
+  calculatePagination,
+  getPaginationBottomInset,
+  getPaginationHeightKey,
+  getPaginationItemKey,
+  type PageItem,
+} from '../src/domain/menu/menuPagination';
+import { FREE_TEXT_PREFIX } from '../src/domain/menu/flow';
+import { resolveMenuPageDimensions } from '../src/domain/menu/pageSetup';
+import { resolveMenuMargins } from '../src/domain/menu/styleRules';
+import { PRESET_TEMPLATES } from '../src/domain/templates/templateCatalog';
 
 const style: MenuStyle = { ...PRESET_TEMPLATES[0], categoryColumnCount: 2, columnCount: 1, layoutMode: 'list' };
 const margins = resolveMenuMargins(style);

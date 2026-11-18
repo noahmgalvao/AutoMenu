@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { PRESET_TEMPLATES, LEGACY_TEMPLATE_IDS } from '../utils/templateCatalog';
-import { applyTemplateToCurrentStyle, getAppliedTemplateId } from '../utils/templateApplication';
-import { filterTemplates, stepTemplate, swipeDirection } from '../utils/templateBrowse';
-import { normalizeMenuPageSetup, resolveMenuPageDimensions } from '../utils/pageSetup';
-import { calculatePagination, finalizeMenuPages } from '../utils/menuPagination';
-import { getPaperDimensionsMm, getPrintFrameSizeMm, type PdfPrintOptions } from '../utils/pdfExport';
-import { settleFavorite, visibleFavorites, isPermanentFavoriteError } from '../services/templateCatalogService';
-import { normalizeTemplateDesign } from '../utils/templateDesign';
-import type { Product } from '../types';
+import { PRESET_TEMPLATES, LEGACY_TEMPLATE_IDS } from '../src/domain/templates/templateCatalog';
+import { applyTemplateToCurrentStyle, getAppliedTemplateId } from '../src/application/templates/templateApplication';
+import { filterTemplates, stepTemplate, swipeDirection } from '../src/domain/templates/templateBrowse';
+import { normalizeMenuPageSetup, resolveMenuPageDimensions } from '../src/domain/menu/pageSetup';
+import { calculatePagination, finalizeMenuPages } from '../src/domain/menu/menuPagination';
+import { getPaperDimensionsMm, getPrintFrameSizeMm, type PdfPrintOptions } from '../src/domain/publishing/printOptions';
+import { settleFavorite, visibleFavorites } from '../src/application/templates/favoriteQueue';
+import { isPermanentFavoriteError } from '../src/infrastructure/supabase/templateFavorites';
+import { normalizeTemplateDesign } from '../src/domain/templates/templateDesign';
+import type { Product } from '../src/domain/menu/model';
 
 test('50 canonical designs have distinct composition and complete metadata', () => {
   assert.equal(PRESET_TEMPLATES.length, 50);

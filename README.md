@@ -11,7 +11,17 @@ AutoMenu agora usa `Supabase Auth + Postgres + Storage` como fonte principal de 
 - `Supabase Storage`
 - `Gemini` no frontend
 
-## Arquitetura implementada
+## Estrutura do código
+
+- `src/domain` contém os modelos e as regras de cardápio, modelos visuais, importação e impressão.
+- `src/application` coordena os fluxos e define os contratos usados para acessar dados e serviços.
+- `src/infrastructure` implementa os contratos com Supabase, Gemini, navegador e HTTP.
+- `src/presentation` contém as telas, os componentes e os hooks de interface.
+- `src/composition/browserServices.ts` conecta os serviços às telas. O navegador inicia em `src/main.tsx` e o servidor em `server.ts`.
+
+As dependências apontam para as regras e os contratos. `npm test` verifica essas fronteiras e detecta ciclos de importação. Rode `npm run typecheck`, `npm test`, `npm run test:e2e` e `npm run build` para validar a aplicação.
+
+## Dados no Supabase
 
 - `profiles`: perfil do usuário autenticado
 - `workspaces`: isolamento por negócio

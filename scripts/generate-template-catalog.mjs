@@ -1,4 +1,4 @@
-import { PRESET_TEMPLATES, CATALOG_VERSION } from '../utils/templateCatalog.ts';
+import { PRESET_TEMPLATES, CATALOG_VERSION } from '../src/domain/templates/templateCatalog.ts';
 
 // Regenerate the seed after changing the manifest and add a migration for the new version.
 const literal = (value) => "'" + value.replaceAll("'", "''") + "'";

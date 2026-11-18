@@ -1,0 +1,2609 @@
+import React, { useMemo, useEffect, useRef, useCallback, useState } from 'react';
+import { createPortal } from 'react-dom';
+import type { AddedImage, ElementStyle, Product, MenuStyle, SortOption } from '../../../domain/menu/model';
+import { AlertTriangle, BringToFront, Copy, CopyCheck, CopyPlus, Edit3, EyeOff, FlipHorizontal2, FlipVertical2, Layers, Paintbrush, Clipboard, Plus, Scissors, SendToBack, Trash2 } from 'lucide-react';
+import { calculatePagination, finalizeMenuPages, getPaginationHeightKey } from '../../../domain/menu/menuPagination';
+import { FREE_TEXT_PREFIX, SAFETY_BUFFER } from '../../../domain/menu/flow';
+import { isPristineNewCategory, isPristineNewProduct } from '../../../domain/menu/pristineItems';
+import { useMenuInteractions } from '../interactions/useMenuInteractions';
+import { NUDGE_STEP, type DraftItem, type MoveDirection, type SelectionItem } from '../interactions/types';
+import { MenuPage } from './MenuPage';
+import { getImageLayerIndexes } from '../../../domain/menu/imageLayers';
+import { getCanvasViewportFocus } from './canvasViewport';
+import { toggleBackgroundLayer } from '../../../domain/menu/canvasShapes';
+import type { FlowDirection } from './flowControls';
+import { getCollisionSafeFreeTextTop } from '../interactions/freeTextMovement';
+import { resolveMenuMargins } from '../../../domain/menu/styleRules';
+import { canIncreaseCanvasFontSize } from './textFit';
+import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
+import { roundPrice } from '../../../domain/menu/price';
+import { PricePropagationPrompt } from '../PricePropagationPrompt';
+import {
+    applyPriceOperations,
+    createPricePropagationRequest,
+    getPricePropagationSourceIds,
+    mergePricePropagationRequest,
+    type PriceAdjustmentMode,
+    type PricePropagationRequest,
+} from '../../../domain/menu/pricePropagation';
+import { FontPropagationPrompt, type FontPropagationRequest } from '../FontPropagationPrompt';
+import { applyFontToMenuStyle } from '../../../domain/menu/fontPropagation';
+
+
+interface MenuPreviewProps {
+    products: Product[];
+    style: MenuStyle;
+    sortOption: SortOption;
+    onMoveCategory?: (category: string, direction: MoveDirection) => void;
+    onMoveProduct?: (productId: string, category: string, direction: MoveDirection) => void;
+    onUpdateProduct?: (id: string, field: keyof Product, value: any) => void;
+    onUpdateProducts?: (updates: { id: string, field: keyof Product, value: any }[]) => void;
+    onUpdateCategoryName?: (oldName: string, newName: string) => void;
+    onUpdateMenuText?: (field: 'menuTitle' | 'menuSubtitle', value: string) => void;
+    onCommitCategoryOrder?: (newOrder: string[]) => void;
+    onCommitProductOrder?: (category: string, newOrder: string[]) => void;
+    onToggleProductVisibility?: (productId: string, visible: boolean) => void;
+    onAddProduct?: (category: string, productId?: string, isFreeText?: boolean, specificId?: string, initialData?: Partial<Product>, options?: { index?: number }) => void;
+    onAddCategory?: (nearCategory: string, position: 'before' | 'after') => void;
+    onDeleteProduct?: (productId: string) => void;
+    onStyleUpdate?: React.Dispatch<React.SetStateAction<MenuStyle>>;
+    externalAction?: { type: string, id: number };
+    onSelectionChange?: (selection: { type: 'product' | 'category' | 'freeText' | 'addedImage' | 'page' | 'menuTitle' | 'menuSubtitle' | null, id: string | null }) => void;
+    onSelectedItemsChange?: (items: SelectionItem[]) => void;
+    selection?: { type: 'product' | 'category' | 'freeText' | 'addedImage' | 'page' | 'menuTitle' | 'menuSubtitle' | null, id: string | null };
+    undo?: () => void;
+    redo?: () => void;
+    canUndo?: boolean;
+    canRedo?: boolean;
+    scale?: number;
+    splitCategoryAcrossPages?: boolean;
+    productsCanChangeCategory?: boolean;
+    readOnly?: boolean;
+    visiblePageIndex?: number;
+    onPageCountChange?: (pageCount: number) => void;
+    onProductEditStart?: (productId: string) => void;
+    onProductEditEnd?: () => void;
+    onUploadProductImage?: (productId: string, file: File) => Promise<{ url: string; assetId: string }>;
+}
+
+type ObjectSelectionItem = SelectionItem & { type: 'product' | 'category' | 'freeText' | 'addedImage' };
+type CanvasContextMenuItem = ObjectSelectionItem | { type: 'menuTitle'; id: 'menuTitle' };
+
+type ClipboardItem =
+    | { type: 'product'; product: Product }
+    | { type: 'freeText'; product: Product }
+    | { type: 'category'; category: string; products: Product[] }
+    | { type: 'addedImage'; image: AddedImage };
+
+type FormatClipboard =
+    | { type: 'category'; style: ElementStyle }
+    | { type: 'product'; styles: Pick<MenuStyle['elementStyles'], 'productName' | 'productPrice' | 'productDescription'> }
+    | { type: 'freeText'; style: ElementStyle }
+    | { type: 'addedImage'; width: number };
+
+type CanvasClipboard =
+    | { mode: 'items'; items: ClipboardItem[] }
+    | { mode: 'format'; format: FormatClipboard };
+
+type NativeClipboardPayload =
+    | { type: 'text'; text: string }
+    | { type: 'image'; blob: Blob };
+
+type ObjectMenuState = {
+    x: number;
+    y: number;
+    item: CanvasContextMenuItem | null;
+    pageIndex?: number;
+};
+
+type MarqueeRect = {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+};
+
+type MarqueeDragState = {
+    pointerId: number;
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+    isSelecting: boolean;
+    additive: boolean;
+    initialItems: ObjectSelectionItem[];
+};
+
+type FlowPosition = {
+    pageIndex: number;
+    columnIndex: number;
+    rowIndex: number;
+    subColumnIndex: number;
+};
+
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+
+const getDirectionBetween = (from: FlowPosition, to: FlowPosition): FlowDirection => {
+    if (from.pageIndex !== to.pageIndex) return to.pageIndex > from.pageIndex ? 'right' : 'left';
+    if (from.columnIndex !== to.columnIndex) return to.columnIndex > from.columnIndex ? 'right' : 'left';
+    if (from.rowIndex === to.rowIndex && from.subColumnIndex !== to.subColumnIndex) {
+        return to.subColumnIndex > from.subColumnIndex ? 'right' : 'left';
+    }
+    return to.rowIndex >= from.rowIndex ? 'bottom' : 'top';
+};
+
+const blobToDataUrl = (blob: Blob) => new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+});
+
+// --- FONT LOADER COMPONENT ---
+export const DynamicFontLoader: React.FC<{ fonts: string[] }> = ({ fonts }) => {
+    useEffect(() => {
+        const uniqueFonts = Array.from(new Set(fonts)).filter(f => f && f !== 'Inherit');
+        uniqueFonts.forEach((font: string) => {
+            const linkId = `font-loader-${font.replace(/\s+/g, '-').toLowerCase()}`;
+            if (!document.getElementById(linkId)) {
+                const link = document.createElement('link');
+                link.id = linkId;
+                link.href = `https://fonts.googleapis.com/css2?family=${font.replace(/\s+/g, '+')}&display=swap`;
+                link.rel = 'stylesheet';
+                document.head.appendChild(link);
+            }
+        });
+    }, [fonts]);
+    return null;
+};
+
+export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
+    // 1. Hook for all interactions and state
+    const [pendingPricePropagation, setPendingPricePropagation] = useState<PricePropagationRequest | null>(null);
+    const [pendingFontPropagation, setPendingFontPropagation] = useState<FontPropagationRequest | null>(null);
+    const [backgroundPromptId, setBackgroundPromptId] = useState<string | null>(null);
+    const [backgroundPromptPosition, setBackgroundPromptPosition] = useState<{ left: number; top: number }>();
+    const backgroundPromptRef = useRef<HTMLDivElement | null>(null);
+    const skipBackgroundDismissClickRef = useRef(false);
+    const productImageInputRef = useRef<HTMLInputElement | null>(null);
+    const pendingProductImageIdRef = useRef<string | null>(null);
+    const handleProductUpdateWithPricePrompt = useCallback((id: string, field: keyof Product, value: any) => {
+        if (field !== 'price') {
+            props.onUpdateProduct?.(id, field, value);
+            return;
+        }
+
+        const product = props.products.find((candidate) => candidate.id === id);
+        const nextPrice = roundPrice(value);
+        props.onUpdateProduct?.(id, field, nextPrice);
+        if (!product || product.isFreeText || product.price === nextPrice) return;
+
+        const request = createPricePropagationRequest({
+            productId: id,
+            productName: product.name,
+            previousPrice: product.price,
+            nextPrice,
+        });
+        setPendingPricePropagation((current) => mergePricePropagationRequest(current, request));
+    }, [props.onUpdateProduct, props.products]);
+    const finishImageEdit = useCallback((id: string) => {
+        const image = props.style.addedImages?.find((candidate) => candidate.id === id);
+        if (!props.readOnly && image && !image.repeatAsBackground && !image.backgroundPromptDismissed) {
+            setBackgroundPromptId(id);
+        }
+    }, [props.readOnly, props.style.addedImages]);
+    const handlers = useMenuInteractions({ ...props, onUpdateProduct: handleProductUpdateWithPricePrompt, onImageEditEnd: finishImageEdit });
+    const clipboardRef = useRef<CanvasClipboard | null>(null);
+    const previewRootRef = useRef<HTMLDivElement | null>(null);
+    const [measuredHeights, setMeasuredHeights] = useState<ReadonlyMap<string, number>>(() => new Map());
+    const objectMenuRef = useRef<HTMLDivElement | null>(null);
+    const lastCanvasPointRef = useRef<{ x: number; y: number } | null>(null);
+    const handledExternalActionIdRef = useRef<number | null>(null);
+    const marqueeDragRef = useRef<MarqueeDragState | null>(null);
+    const suppressMarqueeClickRef = useRef(false);
+    const suppressBackgroundPressClickRef = useRef(false);
+    const backgroundPressRef = useRef<{
+        pointerId: number;
+        startX: number;
+        startY: number;
+        timeoutId: number;
+    } | null>(null);
+    const lastPreviewPointerTypeRef = useRef<string | null>(null);
+    const suppressTouchObjectMenuUntilRef = useRef(0);
+    const touchStartedOnObjectMenuButtonRef = useRef(false);
+    const [clipboardVersion, setClipboardVersion] = useState(0);
+    const [nativeClipboardAvailable, setNativeClipboardAvailable] = useState(false);
+    const [objectMenu, setObjectMenu] = useState<ObjectMenuState | null>(null);
+    (handlers as any).objectMenuOpen = Boolean(objectMenu);
+    const [objectMenuPosition, setObjectMenuPosition] = useState<{ left: number; top: number } | null>(null);
+    const [marqueeRect, setMarqueeRect] = useState<MarqueeRect | null>(null);
+
+    useEffect(() => {
+        const openTouchMenu = (event: Event) => {
+            const detail = (event as CustomEvent<{ type: ObjectSelectionItem['type']; id: string; x: number; y: number }>).detail;
+            if (!detail || !['product', 'category', 'freeText', 'addedImage'].includes(detail.type)) return;
+            setObjectMenuPosition(null);
+            const page = previewRootRef.current && document.elementFromPoint(detail.x, detail.y)?.closest<HTMLElement>('[data-page-index]');
+            setObjectMenu({ x: detail.x, y: detail.y, item: { type: detail.type, id: detail.id }, pageIndex: page ? Number(page.dataset.pageIndex) : undefined });
+        };
+        const closeTouchMenu = () => setObjectMenu(null);
+        window.addEventListener('automenu:canvas-drag-ready', openTouchMenu);
+        window.addEventListener('automenu:canvas-drag-move', closeTouchMenu);
+        return () => {
+            window.removeEventListener('automenu:canvas-drag-ready', openTouchMenu);
+            window.removeEventListener('automenu:canvas-drag-move', closeTouchMenu);
+        };
+    }, []);
+    const {
+        products, style, onAddProduct, onStyleUpdate, onDeleteProduct, onToggleProductVisibility, onSelectedItemsChange,
+        readOnly = false, visiblePageIndex, onPageCountChange,
+    } = props;
+    const pageDimensions = resolveMenuPageDimensions(style);
+    const promptedImage = style.addedImages?.find((image) => image.id === backgroundPromptId && !image.repeatAsBackground && !image.backgroundPromptDismissed);
+    const promptOpen = Boolean(promptedImage);
+
+    useEffect(() => {
+        if (readOnly) return;
+        const finishSidebarImageEdit = (event: Event) => finishImageEdit((event as CustomEvent<string>).detail);
+        window.addEventListener('automenu:image-edit-end', finishSidebarImageEdit);
+        return () => window.removeEventListener('automenu:image-edit-end', finishSidebarImageEdit);
+    }, [finishImageEdit, readOnly]);
+
+    React.useLayoutEffect(() => {
+        if (!promptedImage) return;
+        const anchor = document.getElementById(`added-image-${promptedImage.pageIndex || 0}-${promptedImage.id}`);
+        const prompt = backgroundPromptRef.current;
+        if (!anchor || !prompt) return;
+        const position = () => {
+            const rect = anchor.getBoundingClientRect();
+            const width = prompt.offsetWidth;
+            setBackgroundPromptPosition({
+                left: clamp((rect.left + rect.right - width) / 2, 8, Math.max(8, window.innerWidth - width - 8)),
+                top: rect.bottom + 6,
+            });
+        };
+        position();
+        const observer = new ResizeObserver(position);
+        observer.observe(anchor);
+        window.addEventListener('scroll', position, true);
+        window.addEventListener('resize', position);
+        return () => {
+            observer.disconnect();
+            window.removeEventListener('scroll', position, true);
+            window.removeEventListener('resize', position);
+        };
+    }, [promptedImage, props.scale]);
+
+    useEffect(() => {
+        if (readOnly) return;
+        const dismissOutside = (event: PointerEvent) => {
+            skipBackgroundDismissClickRef.current = false;
+            if (!promptOpen || backgroundPromptRef.current?.contains(event.target as Node)) return;
+            skipBackgroundDismissClickRef.current = true;
+            event.preventDefault();
+            event.stopPropagation();
+            setBackgroundPromptId(null);
+        };
+        const skipDismissClick = (event: MouseEvent) => {
+            if (!skipBackgroundDismissClickRef.current) return;
+            skipBackgroundDismissClickRef.current = false;
+            event.preventDefault();
+            event.stopPropagation();
+        };
+        window.addEventListener('pointerdown', dismissOutside, true);
+        window.addEventListener('click', skipDismissClick, true);
+        window.addEventListener('contextmenu', skipDismissClick, true);
+        return () => {
+            window.removeEventListener('pointerdown', dismissOutside, true);
+            window.removeEventListener('click', skipDismissClick, true);
+            window.removeEventListener('contextmenu', skipDismissClick, true);
+        };
+    }, [promptOpen, readOnly]);
+
+    const setImageBackground = (id: string, pageIndex?: number) => {
+        onStyleUpdate?.((previous) => ({
+            ...previous,
+            addedImages: previous.addedImages?.map((image) => image.id === id ? toggleBackgroundLayer(image, pageIndex) : image),
+            name: 'Custom',
+        }));
+        setBackgroundPromptId(null);
+        setObjectMenu(null);
+    };
+
+    const toggleFreeTextBackground = (id: string) => {
+        const text = document.getElementById(`product-container-${id}`);
+        const page = text?.closest<HTMLElement>('[data-menu-print-page][data-page-index]');
+        if (!text || !page) return;
+        const rect = text.getBoundingClientRect();
+        const pageRect = page.getBoundingClientRect();
+        const scale = pageRect.width / page.offsetWidth || 1;
+        const position = {
+            x: (rect.left - pageRect.left) / scale,
+            y: (rect.top - pageRect.top) / scale,
+            width: text.offsetWidth,
+            pageIndex: Number(page.dataset.pageIndex),
+        };
+        onStyleUpdate?.((previous) => {
+            const backgrounds = { ...previous.freeTextBackgrounds };
+            if (backgrounds[id]) delete backgrounds[id];
+            else backgrounds[id] = position;
+            return { ...previous, freeTextBackgrounds: backgrounds, name: 'Custom' };
+        });
+        handlers.setEditingId(null);
+        handlers.setFormattingTarget(null);
+        setObjectMenu(null);
+    };
+
+    const flipImage = (id: string, axis: 'flipHorizontal' | 'flipVertical') => {
+        onStyleUpdate?.((previous) => ({
+            ...previous,
+            addedImages: previous.addedImages?.map((image) => image.id === id ? { ...image, [axis]: !image[axis] } : image),
+            name: 'Custom',
+        }));
+        setObjectMenu(null);
+        finishImageEdit(id);
+    };
+
+    (handlers as any).finishImageEdit = finishImageEdit;
+
+    const adjustProductPrice = useCallback((
+        productId: string,
+        direction: 1 | -1,
+        amount: number,
+        mode: PriceAdjustmentMode,
+    ) => {
+        const product = products.find((candidate) => candidate.id === productId);
+        if (!product || product.isFreeText || !Number.isFinite(amount) || amount <= 0) return;
+        const signedAmount = direction * amount;
+        const nextPrice = roundPrice(
+            mode === 'percentage'
+                ? product.price * (1 + (signedAmount / 100))
+                : product.price + signedAmount,
+        );
+        if (nextPrice === product.price) return;
+        props.onUpdateProduct?.(productId, 'price', nextPrice);
+        const request = createPricePropagationRequest({
+            productId,
+            productName: product.name,
+            previousPrice: product.price,
+            nextPrice,
+            operation: { mode, signedAmount },
+        });
+        setPendingPricePropagation((current) => mergePricePropagationRequest(current, request));
+    }, [products, props.onUpdateProduct]);
+
+    const applyPricePropagation = useCallback(() => {
+        if (!pendingPricePropagation) return;
+        const sourceIds = getPricePropagationSourceIds(pendingPricePropagation);
+        const updates = products
+            .filter((product) => !product.isFreeText && !sourceIds.has(product.id))
+            .map((product) => ({
+                id: product.id,
+                field: 'price' as keyof Product,
+                value: applyPriceOperations(product.price, pendingPricePropagation.operations),
+            }));
+
+        if (updates.length > 0) {
+            if (props.onUpdateProducts) props.onUpdateProducts(updates);
+            else updates.forEach((update) => props.onUpdateProduct?.(update.id, update.field, update.value));
+        }
+        setPendingPricePropagation(null);
+    }, [pendingPricePropagation, products, props.onUpdateProduct, props.onUpdateProducts]);
+
+    (handlers as any).adjustProductPrice = adjustProductPrice;
+    (handlers as any).editProductImage = (productId: string) => {
+        if (!props.onUploadProductImage) return;
+        pendingProductImageIdRef.current = productId;
+        productImageInputRef.current?.click();
+    };
+    (handlers as any).removeProductImage = (productId: string) => {
+        const updates = [
+            { id: productId, field: 'image' as keyof Product, value: '' },
+            { id: productId, field: 'imageAssetId' as keyof Product, value: null },
+        ];
+        if (props.onUpdateProducts) props.onUpdateProducts(updates);
+        else updates.forEach(update => props.onUpdateProduct?.(update.id, update.field, update.value));
+    };
+    (handlers as any).adjustProductImageScale = (delta: number) => {
+        props.onStyleUpdate?.((current) => ({
+            ...current,
+            imageScale: Math.max(0.5, Math.min(2.5, Number(((current.imageScale || 1) + delta).toFixed(1)))),
+            name: 'Custom',
+        }));
+    };
+    (handlers as any).flipProductImage = (id: string, axis: 'horizontal' | 'vertical') => {
+        onStyleUpdate?.((previous) => ({
+            ...previous,
+            productImageFlips: {
+                ...previous.productImageFlips,
+                [id]: { ...previous.productImageFlips?.[id], [axis]: !previous.productImageFlips?.[id]?.[axis] },
+            },
+            name: 'Custom',
+        }));
+    };
+
+    const handleProductImageInput = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const productId = pendingProductImageIdRef.current;
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        pendingProductImageIdRef.current = null;
+        if (!productId || !file || !props.onUploadProductImage) return;
+        try {
+            const uploaded = await props.onUploadProductImage(productId, file);
+            const updates = [
+                { id: productId, field: 'image' as keyof Product, value: uploaded.url },
+                { id: productId, field: 'imageAssetId' as keyof Product, value: uploaded.assetId },
+            ];
+            if (props.onUpdateProducts) props.onUpdateProducts(updates);
+            else updates.forEach(update => props.onUpdateProduct?.(update.id, update.field, update.value));
+        } catch {
+            window.alert('Não foi possível alterar a imagem. Tente novamente.');
+        }
+    };
+
+    useEffect(() => () => {
+        if (backgroundPressRef.current) {
+            window.clearTimeout(backgroundPressRef.current.timeoutId);
+            backgroundPressRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => () => {
+        if (backgroundPressRef.current) {
+            window.clearTimeout(backgroundPressRef.current.timeoutId);
+        }
+    }, []);
+
+    useEffect(() => {
+        onSelectedItemsChange?.(handlers.selectedItems || []);
+    }, [handlers.selectedItems, onSelectedItemsChange]);
+
+    const focusedProductRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (readOnly) return;
+        const editingProductId = handlers.editingId
+            && products.some((product) => product.id === handlers.editingId && !product.isFreeText)
+            ? handlers.editingId
+            : null;
+
+        if (editingProductId && editingProductId !== focusedProductRef.current) {
+            focusedProductRef.current = editingProductId;
+            props.onProductEditStart?.(editingProductId);
+        } else if (!editingProductId && focusedProductRef.current) {
+            focusedProductRef.current = null;
+            props.onProductEditEnd?.();
+        }
+    }, [handlers.editingId, products, props.onProductEditEnd, props.onProductEditStart, readOnly]);
+
+    useEffect(() => () => {
+        if (focusedProductRef.current) props.onProductEditEnd?.();
+    }, [props.onProductEditEnd]);
+
+    useEffect(() => {
+        if (readOnly) return;
+        const closeProductEditor = () => {
+            if (!focusedProductRef.current) return;
+            handlers.setEditingId(null);
+            handlers.setFormattingTarget(null);
+        };
+        document.addEventListener('automenu:close-product-editor', closeProductEditor);
+        return () => document.removeEventListener('automenu:close-product-editor', closeProductEditor);
+    }, [handlers.setEditingId, handlers.setFormattingTarget, readOnly]);
+
+    useEffect(() => {
+        if (!objectMenu) return;
+
+        const closeMenuIfOutside = (event: PointerEvent | MouseEvent) => {
+            if (event.type === 'contextmenu' && lastPreviewPointerTypeRef.current === 'touch') {
+                event.preventDefault();
+                return;
+            }
+            const target = event.target as Node | null;
+            if (target && objectMenuRef.current?.contains(target)) return;
+            setObjectMenu(null);
+        };
+
+        document.addEventListener('pointerdown', closeMenuIfOutside, true);
+        document.addEventListener('contextmenu', closeMenuIfOutside, true);
+        return () => {
+            document.removeEventListener('pointerdown', closeMenuIfOutside, true);
+            document.removeEventListener('contextmenu', closeMenuIfOutside, true);
+        };
+    }, [objectMenu]);
+
+    React.useLayoutEffect(() => {
+        if (!objectMenu) return;
+
+        const reposition = () => {
+            const menu = objectMenuRef.current;
+            if (!menu) return;
+
+            const rect = menu.getBoundingClientRect();
+            const nextPosition = {
+                left: clamp(objectMenu.x, 8, Math.max(8, window.innerWidth - rect.width - 8)),
+                top: clamp(objectMenu.y, 8, Math.max(8, window.innerHeight - rect.height - 8)),
+            };
+            setObjectMenuPosition((current) => (
+                current?.left === nextPosition.left && current?.top === nextPosition.top
+                    ? current
+                    : nextPosition
+            ));
+        };
+
+        reposition();
+        const resizeObserver = new ResizeObserver(reposition);
+        if (objectMenuRef.current) resizeObserver.observe(objectMenuRef.current);
+        window.addEventListener('resize', reposition);
+
+        return () => {
+            resizeObserver.disconnect();
+            window.removeEventListener('resize', reposition);
+        };
+    }, [objectMenu]);
+
+    // 2. Add wrapper handlers for clicking actions that need direct props access
+    // This allows MenuItem to call handlers.handleAddClick
+    (handlers as any).handleAddClick = (e: React.MouseEvent, category: string, isCategoryAdd: boolean, position: 'before' | 'after', itemId?: string) => {
+        e.stopPropagation();
+        if (isCategoryAdd) {
+            props.onAddCategory?.(category, position);
+        } else {
+            const categoryProducts = handlers.groupedProducts[category] || [];
+            const anchorIndex = itemId
+                ? categoryProducts.findIndex((product: Product) => product.id === itemId)
+                : -1;
+            const insertIndex = anchorIndex === -1
+                ? categoryProducts.length
+                : anchorIndex + (position === 'after' ? 1 : 0);
+            props.onAddProduct?.(category, undefined, false, undefined, undefined, { index: insertIndex });
+        }
+    };
+
+    // 3. Font Loading
+    const usedFonts = useMemo(() => {
+        const fonts = new Set<string>();
+        if (style.fontFamily) fonts.add(style.fontFamily);
+        Object.values(style.elementStyles || {}).forEach((es: any) => {
+            if (es && es.fontFamily) fonts.add(es.fontFamily);
+        });
+        return Array.from(fonts);
+    }, [style]);
+
+    // 4. Pagination
+    const basePages = useMemo(() => {
+        const effectiveCategoryPositions = handlers.liveCategoryPositions || style.categoryPositions;
+        const effectiveStyle = effectiveCategoryPositions === style.categoryPositions
+            ? style
+            : { ...style, categoryPositions: effectiveCategoryPositions };
+        const positionAssignments = Object.entries(effectiveCategoryPositions || {}).reduce<Record<string, { pageIndex: number; columnIndex: number }>>(
+            (assignments, [category, position]) => {
+                assignments[category] = {
+                    pageIndex: position.pageIndex,
+                    columnIndex: position.columnIndex,
+                };
+                return assignments;
+            },
+            {},
+        );
+        return calculatePagination(
+            products,
+            effectiveStyle,
+            handlers.groupedProducts,
+            handlers.sortedCategories,
+            handlers.liveCategoryPageAssignments
+                || (Object.keys(style.categoryPlacements || {}).length > 0
+                    ? { ...positionAssignments, ...style.categoryPlacements }
+                    : Object.keys(positionAssignments).length > 0
+                        ? positionAssignments
+                        : null),
+            { splitCategoryAcrossPages: props.splitCategoryAcrossPages, measuredHeights }
+        );
+    }, [products, props.splitCategoryAcrossPages, style, handlers.groupedProducts, handlers.sortedCategories, handlers.liveCategoryPageAssignments, handlers.liveCategoryPositions, measuredHeights]);
+
+    const pages = useMemo(() => finalizeMenuPages(basePages, handlers.liveCategoryPositions
+        ? { ...style, categoryPositions: handlers.liveCategoryPositions } : style), [basePages, handlers.liveCategoryPositions, style]);
+
+    React.useLayoutEffect(() => {
+        const root = previewRootRef.current;
+        if (!root) return;
+        const header = root.querySelector<HTMLElement>('[data-pagination-item="main-header"]');
+        const items = Array.from(root.querySelectorAll<HTMLElement>(
+            '[data-pagination-chunk-content] > [data-pagination-item], [data-pagination-chunk-content] > [data-pagination-grid]'
+        ));
+        let frame = 0;
+        const measure = () => {
+            const next = new Map<string, number>();
+            if (header?.offsetWidth) next.set('main-header', parseFloat(getComputedStyle(header).height));
+            for (const item of items) {
+                const column = item.closest<HTMLElement>('[data-drag-column-container="category"]');
+                if (!column?.offsetWidth) continue;
+                const width = parseFloat(getComputedStyle(column).width);
+                const css = getComputedStyle(item);
+                const bottomMargin = parseFloat(css.marginBottom) || 0;
+                const itemKey = item.dataset.paginationItem;
+                if (itemKey) {
+                    next.set(getPaginationHeightKey(itemKey, width), parseFloat(css.height) + (parseFloat(css.marginTop) || 0) + bottomMargin);
+                    continue;
+                }
+
+                // The grid renders consecutive pagination rows as one element.
+                const columnCount = style.columnCount || 1;
+                const tracks = css.gridTemplateRows.split(' ').map(parseFloat);
+                const children = Array.from(item.children) as HTMLElement[];
+                tracks.forEach((height, row) => {
+                    const ids = children.slice(row * columnCount, (row + 1) * columnCount).map((child) => child.dataset.dragId);
+                    if (!ids.length || !Number.isFinite(height)) return;
+                    const key = getPaginationHeightKey(JSON.stringify(['product-row', ids]), width);
+                    const gap = row === tracks.length - 1 ? bottomMargin : parseFloat(css.rowGap) || 0;
+                    next.set(key, height + gap);
+                });
+            }
+            setMeasuredHeights((current) => {
+                const changes = [...next].filter(([key, height]) => Number.isFinite(height) && Math.abs((current.get(key) ?? -1) - height) >= 0.25);
+                return changes.length ? new Map([...current, ...changes]) : current;
+            });
+        };
+        const observer = new ResizeObserver(() => {
+            cancelAnimationFrame(frame);
+            frame = requestAnimationFrame(measure);
+        });
+        if (header) observer.observe(header);
+        items.forEach((item) => observer.observe(item));
+        measure();
+        return () => {
+            observer.disconnect();
+            cancelAnimationFrame(frame);
+        };
+    }, [pages, style.columnCount]);
+
+    useEffect(() => {
+        onPageCountChange?.(pages.length);
+    }, [onPageCountChange, pages.length]);
+
+    const getFlowControlDirections = useMemo(() => {
+        const categoryPositions = new Map<string, FlowPosition>();
+        const productPositions = new Map<string, FlowPosition>();
+
+        pages.forEach((page, pageIndex) => {
+            page.columns.forEach((column) => {
+                let rowIndex = 0;
+                column.chunks.forEach((chunk) => {
+                    chunk.items.forEach((item) => {
+                        if (item.type === 'category-header') {
+                            categoryPositions.set(item.data, {
+                                pageIndex,
+                                columnIndex: column.columnIndex,
+                                rowIndex,
+                                subColumnIndex: 0,
+                            });
+                        } else if (item.type === 'product-item') {
+                            productPositions.set(item.data.id, {
+                                pageIndex,
+                                columnIndex: column.columnIndex,
+                                rowIndex,
+                                subColumnIndex: 0,
+                            });
+                        } else if (item.type === 'product-row') {
+                            item.data.forEach((product, productColumnIndex) => {
+                                productPositions.set(product.id, {
+                                    pageIndex,
+                                    columnIndex: column.columnIndex,
+                                    rowIndex,
+                                    subColumnIndex: productColumnIndex,
+                                });
+                            });
+                        }
+                        rowIndex += 1;
+                    });
+                });
+            });
+        });
+
+        return (type: 'category' | 'product' | 'freeText', id: string, adding = false) => {
+            if (type === 'category') {
+                const current = categoryPositions.get(id);
+                const categoryOrder = handlers.sortedCategories.filter((category: string) => categoryPositions.has(category));
+                const index = categoryOrder.indexOf(id);
+                if (adding && index >= 0 && (style.categoryColumnCount || 1) > 1) {
+                    let categoryNumber = 100;
+                    while (handlers.groupedProducts[`Nova categoria ${categoryNumber}`]) categoryNumber++;
+                    const newCategory = `Nova categoria ${categoryNumber}`;
+                    const item: Product = { id: newCategory, name: 'Novo item', description: 'Descrição', category: newCategory, price: 0 };
+                    const assignments = {
+                        ...Object.fromEntries(Object.entries(style.categoryPositions || {}).map(([category, position]) => (
+                            [category, { pageIndex: position.pageIndex, columnIndex: position.columnIndex }]
+                        ))),
+                        ...style.categoryPlacements,
+                    };
+                    const predict = (position: 'before' | 'after'): FlowDirection => {
+                        const order = [...handlers.sortedCategories] as string[];
+                        order.splice(order.indexOf(id) + (position === 'after' ? 1 : 0), 0, newCategory);
+                        const result = calculatePagination(
+                            [...products, item], style, { ...handlers.groupedProducts, [newCategory]: [item] }, order,
+                            Object.keys(assignments).length ? assignments : null, {
+                                splitCategoryAcrossPages: props.splitCategoryAcrossPages, measuredHeights,
+                            },
+                        );
+                        const find = (category: string) => {
+                            for (const [pageIndex, page] of result.entries()) {
+                                for (const column of page.columns) {
+                                    const rowIndex = column.chunks.findIndex(chunk => chunk.startsCategory && chunk.category === category);
+                                    if (rowIndex !== -1) return { pageIndex, columnIndex: column.columnIndex, rowIndex, subColumnIndex: 0 };
+                                }
+                            }
+                        };
+                        const anchor = find(id);
+                        const inserted = find(newCategory);
+                        return anchor && inserted ? getDirectionBetween(anchor, inserted) : position === 'before' ? 'top' : 'bottom';
+                    };
+                    return { before: predict('before'), after: predict('after') };
+                }
+                const previous = index > 0 ? categoryPositions.get(categoryOrder[index - 1]) : undefined;
+                const next = index >= 0 ? categoryPositions.get(categoryOrder[index + 1]) : undefined;
+
+                return {
+                    before: current && previous ? getDirectionBetween(current, previous) : 'top',
+                    after: current && next ? getDirectionBetween(current, next) : 'bottom',
+                };
+            }
+
+            const current = productPositions.get(id);
+            const product = products.find((candidate) => candidate.id === id);
+            const productOrder = product
+                ? (handlers.groupedProducts[product.category] || [])
+                    .map((candidate: Product) => candidate.id)
+                    .filter((productId: string) => productPositions.has(productId))
+                : [];
+            const index = productOrder.indexOf(id);
+            const previous = index > 0 ? productPositions.get(productOrder[index - 1]) : undefined;
+            const next = index >= 0 ? productPositions.get(productOrder[index + 1]) : undefined;
+            const productColumnCount = style.columnCount || 1;
+            const expectedAfter: FlowDirection = current && productColumnCount > 1 && current.subColumnIndex < productColumnCount - 1
+                ? 'right'
+                : 'bottom';
+            if (adding && current && productColumnCount > 1) {
+                return {
+                    before: current.subColumnIndex > 0 || !previous ? 'left' : getDirectionBetween(current, previous),
+                    after: expectedAfter === 'right' || !next ? expectedAfter : getDirectionBetween(current, next),
+                };
+            }
+
+            return {
+                before: current && previous ? getDirectionBetween(current, previous) : 'top',
+                after: current && next ? getDirectionBetween(current, next) : expectedAfter,
+            };
+        };
+    }, [handlers.groupedProducts, handlers.sortedCategories, measuredHeights, pages, products, props.splitCategoryAcrossPages, style]);
+
+    (handlers as any).getFlowControlDirections = getFlowControlDirections;
+    (handlers as any).getAddControlDirections = (type: 'category' | 'product' | 'freeText', id: string) => getFlowControlDirections(type, id, true);
+
+    (handlers as any).handleInlineStyleChange = (target: any, newStyle: ElementStyle) => {
+        const nextFontSize = Number(newStyle.fontSize);
+        if (target.type === 'freeText') {
+            const currentProduct = products.find(product => product.id === target.id);
+            const previousFontFamily = currentProduct?.styles?.fontFamily || style.fontFamily;
+            const currentFontSize = Number(
+                currentProduct?.styles?.fontSize
+                || style.elementStyles.productName?.fontSize
+                || 18,
+            );
+            if (
+                !style.allowSameWordBreak
+                && Number.isFinite(nextFontSize)
+                && nextFontSize > currentFontSize
+                && !canIncreaseCanvasFontSize('freeText', nextFontSize, target.elementId)
+            ) return false;
+            const fontSizeReduced = Number(newStyle.fontSize) > 0
+                && Number(currentProduct?.styles?.fontSize) > 0
+                && Number(newStyle.fontSize) < Number(currentProduct?.styles?.fontSize);
+            props.onUpdateProduct?.(target.id, 'styles', newStyle);
+            if (newStyle.fontFamily && newStyle.fontFamily !== previousFontFamily) {
+                setPendingFontPropagation({ sourceId: target.id, fontFamily: newStyle.fontFamily });
+            }
+            if (fontSizeReduced) {
+                onStyleUpdate?.(prev => ({ ...prev, pageBreaks: [] }));
+            }
+            return true;
+        }
+
+        const elementType: keyof MenuStyle['elementStyles'] =
+            target.type === 'pageNumber' ? 'pageNumber' :
+            target.type === 'category' ? 'category' :
+                target.type === 'menuTitle' ? 'menuTitle' :
+                    target.type === 'menuSubtitle' ? 'menuSubtitle' :
+                        target.field === 'price' ? 'productPrice' :
+                            target.field === 'description' ? 'productDescription' :
+                                'productName';
+
+        onStyleUpdate?.(prev => {
+            const previousStyle = prev.elementStyles[elementType] || {};
+            const colorChanged = newStyle.color !== previousStyle.color;
+            const fontSizeReduced = target.type !== 'pageNumber'
+                && Number(newStyle.fontSize) > 0
+                && Number(previousStyle.fontSize) > 0
+                && Number(newStyle.fontSize) < Number(previousStyle.fontSize);
+            return {
+                ...prev,
+                elementStyles: { ...prev.elementStyles, [elementType]: newStyle },
+                elementColorOverrides: colorChanged
+                    ? { ...(prev.elementColorOverrides || {}), [elementType]: true }
+                    : prev.elementColorOverrides,
+                pageBreaks: fontSizeReduced ? [] : prev.pageBreaks,
+                name: 'Custom',
+            };
+        });
+        return true;
+    };
+
+    const selectedPageIndexes = useMemo(() => (
+        (handlers.selectedItems || [])
+            .filter((item: any) => item.type === 'page')
+            .map((item: any) => Number(item.id))
+            .filter((index: number) => Number.isFinite(index) && index >= 0 && index < pages.length)
+    ), [handlers.selectedItems, pages.length]);
+
+    const getPageIndexesForDeletion = useCallback(() => {
+        if (handlers.pageToDelete === null) return [];
+        if (selectedPageIndexes.length > 1 && selectedPageIndexes.includes(handlers.pageToDelete)) {
+            return Array.from(new Set(selectedPageIndexes)).sort((left, right) => left - right);
+        }
+        return [handlers.pageToDelete].filter((index) => index >= 0 && index < pages.length);
+    }, [handlers.pageToDelete, pages.length, selectedPageIndexes]);
+
+    // 5. Page Management Handlers
+    const handleAddPage = (index: number, position: 'before' | 'after' = 'after') => {
+        const insertIndex = position === 'after' ? index + 1 : index;
+
+        onStyleUpdate?.(prev => {
+            const blankPages = (prev.blankPages || []).map((blankPage) => (
+                blankPage.index >= insertIndex
+                    ? { ...blankPage, index: blankPage.index + 1 }
+                    : blankPage
+            ));
+
+            return {
+                ...prev,
+                blankPages: [...blankPages, {
+                    id: crypto.randomUUID(),
+                    index: insertIndex,
+                    fixedPosition: insertIndex < basePages.length,
+                }],
+                name: 'Custom',
+            };
+        });
+
+        handlers.setSelectedPageIndex(insertIndex);
+        handlers.handleSelection('page', String(insertIndex));
+        window.setTimeout(() => {
+            document
+                .querySelector<HTMLElement>(`[data-page-index="${insertIndex}"]`)
+                ?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        }, 80);
+    };
+
+    const handleDeletePage = useCallback(() => {
+        const pageIndexesToDelete = getPageIndexesForDeletion();
+        if (pageIndexesToDelete.length === 0) return;
+
+        const blankPageIdsToDelete = new Set<string>();
+        const prodIdsToHide = new Set<string>();
+        const freeTextIdsToDelete = new Set<string>();
+        const categoriesOnDeletedPages = new Set<string>();
+
+        pageIndexesToDelete.forEach((pageIndex) => {
+            const pageToDelete = pages[pageIndex];
+            if (!pageToDelete) return;
+
+            if (pageToDelete.blankPageId) {
+                blankPageIdsToDelete.add(pageToDelete.blankPageId);
+            }
+
+            (pageToDelete.flatItems || []).forEach((item: any) => {
+                if (item.category) categoriesOnDeletedPages.add(item.category);
+
+                if (item.type === 'product-item' || item.type === 'product-row') {
+                    const data = Array.isArray(item.data) ? item.data : [item.data];
+                    data.forEach((p: Product) => {
+                        if (p.isFreeText) freeTextIdsToDelete.add(p.id);
+                        else prodIdsToHide.add(p.id);
+                    });
+                }
+            });
+        });
+
+        if (onStyleUpdate) {
+            onStyleUpdate(prev => {
+                const currentHidden = new Set(prev.hiddenProductIds || []);
+                prodIdsToHide.forEach(id => currentHidden.add(id));
+
+                const newPageBreaks = (prev.pageBreaks || []).filter(c => !categoriesOnDeletedPages.has(c));
+                const blankPages = (prev.blankPages || [])
+                    .filter((blankPage) => !blankPageIdsToDelete.has(blankPage.id))
+                    .map((blankPage) => {
+                        const deletedBefore = pageIndexesToDelete.filter((pageIndex) => pageIndex < blankPage.index).length;
+                        return deletedBefore > 0
+                            ? { ...blankPage, index: Math.max(0, blankPage.index - deletedBefore) }
+                            : blankPage;
+                    });
+
+                return { ...prev, hiddenProductIds: Array.from(currentHidden), pageBreaks: newPageBreaks, blankPages, name: 'Custom' };
+            });
+        }
+
+        freeTextIdsToDelete.forEach(id => onDeleteProduct?.(id));
+
+        handlers.setShowDeletePageConfirm(false);
+        handlers.setPageToDelete(null);
+        handlers.handleSelection(null, null);
+    }, [getPageIndexesForDeletion, handlers, onDeleteProduct, onStyleUpdate, pages]);
+
+    const handleDeleteSelectedCanvasItems = useCallback(() => {
+        const selectedItems = handlers.selectedItems || [];
+        if (selectedItems.length === 0) return false;
+
+        const pageItems = selectedItems.filter((item: any) => item.type === 'page');
+        if (pageItems.length > 0) {
+            const firstPageIndex = Number(pageItems[0].id);
+            if (Number.isFinite(firstPageIndex)) {
+                handlers.setPageToDelete(firstPageIndex);
+                handlers.setShowDeletePageConfirm(true);
+                return true;
+            }
+        }
+
+        const productIdsToDelete = new Set<string>();
+        const categoriesToDelete = new Set<string>();
+        const freeTextCategoriesToDelete = new Set<string>();
+        const addedImageIdsToDelete = new Set<string>();
+
+        selectedItems.forEach((item: any) => {
+            if (item.type === 'category') {
+                categoriesToDelete.add(item.id);
+                return;
+            }
+
+            if (item.type === 'product' || item.type === 'freeText') {
+                const product = products.find(candidate => candidate.id === item.id);
+                productIdsToDelete.add(item.id);
+                if (product?.isFreeText || item.type === 'freeText') {
+                    if (product?.category.startsWith(FREE_TEXT_PREFIX)) {
+                        freeTextCategoriesToDelete.add(product.category);
+                    }
+                }
+                return;
+            }
+
+            if (item.type === 'addedImage') {
+                addedImageIdsToDelete.add(item.id);
+            }
+        });
+
+        categoriesToDelete.forEach(category => {
+            (handlers.groupedProducts[category] || products.filter(product => product.category === category)).forEach((product: Product) => {
+                productIdsToDelete.add(product.id);
+            });
+        });
+
+        if (productIdsToDelete.size === 0 && categoriesToDelete.size === 0 && addedImageIdsToDelete.size === 0) {
+            return false;
+        }
+
+        onStyleUpdate?.(prev => {
+            const currentHidden = new Set(prev.hiddenProductIds || []);
+            productIdsToDelete.forEach(productId => currentHidden.delete(productId));
+
+            const nextProductOrder = { ...(prev.customProductOrder || {}) };
+            Object.keys(nextProductOrder).forEach(category => {
+                if (categoriesToDelete.has(category) || freeTextCategoriesToDelete.has(category)) {
+                    delete nextProductOrder[category];
+                    return;
+                }
+                nextProductOrder[category] = nextProductOrder[category].filter(productId => !productIdsToDelete.has(productId));
+            });
+            const nextCategoryPlacements = { ...(prev.categoryPlacements || {}) };
+            const nextCategoryPositions = { ...(prev.categoryPositions || {}) };
+            [...categoriesToDelete, ...freeTextCategoriesToDelete].forEach((category) => {
+                delete nextCategoryPlacements[category];
+                delete nextCategoryPositions[category];
+            });
+
+            return {
+                ...prev,
+                hiddenProductIds: Array.from(currentHidden),
+                customCategoryOrder: (prev.customCategoryOrder || []).filter(category => (
+                    !categoriesToDelete.has(category) && !freeTextCategoriesToDelete.has(category)
+                )),
+                customProductOrder: nextProductOrder,
+                categoryPlacements: nextCategoryPlacements,
+                categoryPositions: nextCategoryPositions,
+                freeTextBackgrounds: prev.freeTextBackgrounds && Object.fromEntries(
+                    Object.entries(prev.freeTextBackgrounds).filter(([id]) => !productIdsToDelete.has(id)),
+                ),
+                addedImages: addedImageIdsToDelete.size > 0
+                    ? (prev.addedImages || []).filter((img) => !addedImageIdsToDelete.has(img.id))
+                    : prev.addedImages,
+                name: 'Custom'
+            };
+        });
+
+        productIdsToDelete.forEach(productId => onDeleteProduct?.(productId));
+        handlers.handleSelection(null, null);
+        return true;
+    }, [handlers, onDeleteProduct, onStyleUpdate, products]);
+
+    const isObjectItem = (item: SelectionItem): item is ObjectSelectionItem =>
+        item.type === 'product' ||
+        item.type === 'category' ||
+        item.type === 'freeText' ||
+        item.type === 'addedImage';
+
+    const getActiveObjectItems = useCallback((targetItem?: ObjectSelectionItem | null): ObjectSelectionItem[] => {
+        const objectItems = (handlers.selectedItems || []).filter(isObjectItem);
+        if (!targetItem) return objectItems;
+
+        const isTargetSelected = objectItems.some((item) => item.type === targetItem.type && item.id === targetItem.id);
+        return isTargetSelected && objectItems.length > 1 ? objectItems : [targetItem];
+    }, [handlers.selectedItems]);
+
+    const getObjectElement = useCallback((item: ObjectSelectionItem): HTMLElement | null => {
+        if (item.type === 'category') return document.getElementById(`category-header-${item.id}`);
+        if (item.type === 'product' || item.type === 'freeText') return document.getElementById(`product-container-${item.id}`);
+        return Array.from(document.querySelectorAll<HTMLElement>('[data-added-image-id]'))
+            .find((element) => element.dataset.addedImageId === item.id) || null;
+    }, []);
+
+    const getMarqueeItems = useCallback((rect: MarqueeRect): ObjectSelectionItem[] => {
+        const root = previewRootRef.current;
+        if (!root) return [];
+
+        const right = rect.left + rect.width;
+        const bottom = rect.top + rect.height;
+        const productsById = new Map(products.map((product) => [product.id, product]));
+        const seen = new Set<string>();
+
+        return Array.from(root.querySelectorAll<HTMLElement>(
+            '[data-category-id], [data-drag-type="product"][data-drag-id], [data-added-image-id]'
+        )).reduce<ObjectSelectionItem[]>((items, element) => {
+            if (!element.isConnected || element.getClientRects().length === 0) return items;
+
+            const elementRect = element.getBoundingClientRect();
+            const intersects = elementRect.right >= rect.left
+                && elementRect.left <= right
+                && elementRect.bottom >= rect.top
+                && elementRect.top <= bottom;
+            if (!intersects) return items;
+
+            let item: ObjectSelectionItem | null = null;
+            const addedImageId = element.dataset.addedImageId;
+            const categoryId = element.dataset.categoryId;
+            const productId = element.dataset.dragType === 'product' ? element.dataset.dragId : undefined;
+
+            if (addedImageId) {
+                item = { type: 'addedImage', id: addedImageId };
+            } else if (categoryId) {
+                item = { type: 'category', id: categoryId };
+            } else if (productId) {
+                const product = productsById.get(productId);
+                if (product) item = { type: product.isFreeText ? 'freeText' : 'product', id: productId };
+            }
+
+            if (!item) return items;
+            const key = `${item.type}:${item.id}`;
+            if (seen.has(key)) return items;
+            seen.add(key);
+            items.push(item);
+            return items;
+        }, []);
+    }, [products]);
+
+    const updateMarqueeSelection = useCallback((rect: MarqueeRect, drag: MarqueeDragState) => {
+        const intersectedItems = getMarqueeItems(rect);
+        const baseItems = drag.additive ? drag.initialItems : [];
+        const combinedItems = [...baseItems, ...intersectedItems];
+        const objectMode = combinedItems.some((item) => item.type !== 'category');
+        const candidates = objectMode
+            ? combinedItems.filter((item) => item.type !== 'category')
+            : combinedItems;
+        const seen = new Set<string>();
+        const nextItems = candidates.filter((item) => {
+            const key = `${item.type}:${item.id}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+
+        handlers.replaceSelectedItems(nextItems);
+        handlers.setEditingId(null);
+    }, [getMarqueeItems, handlers]);
+
+  const handlePreviewPointerDownCapture = (event: React.PointerEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('[data-canvas-object-menu="true"]')) return;
+
+    document.body.dataset.automenuDeleteContext = 'canvas';
+    lastPreviewPointerTypeRef.current = event.pointerType;
+    if (event.pointerType === 'touch') {
+      const startedOnObjectMenuButton = Boolean(target?.closest('[data-open-object-menu="true"]'));
+      touchStartedOnObjectMenuButtonRef.current = startedOnObjectMenuButton;
+      suppressTouchObjectMenuUntilRef.current = startedOnObjectMenuButton ? 0 : Date.now() + 1400;
+      setObjectMenu(null);
+    }
+        const pageElement = target?.closest<HTMLElement>('[data-menu-print-page="true"][data-page-index]');
+        if (pageElement) {
+            lastCanvasPointRef.current = { x: event.clientX, y: event.clientY };
+        }
+
+        const isBlankTouchTarget = Boolean(
+            pageElement
+            && event.pointerType === 'touch'
+            && !target?.closest(
+                '[data-drag-type], [data-added-image-drag="true"], #menu-title-text, #menu-subtitle-text, button, input, textarea, select, [contenteditable="true"], [data-drag-ignore="true"], [data-inline-format-toolbar="true"]'
+            )
+        );
+        if (isBlankTouchTarget) {
+            if (backgroundPressRef.current) window.clearTimeout(backgroundPressRef.current.timeoutId);
+            const pointerId = event.pointerId;
+            const startX = event.clientX;
+            const startY = event.clientY;
+            const timeoutId = window.setTimeout(() => {
+                const press = backgroundPressRef.current;
+                if (!press || press.pointerId !== pointerId) return;
+                backgroundPressRef.current = null;
+                suppressBackgroundPressClickRef.current = true;
+                handlers.handleSelection(null, null);
+                handlers.setEditingId(null);
+                handlers.setSelectedPageIndex(null);
+                setObjectMenuPosition(null);
+                setObjectMenu({ x: startX, y: startY, item: null });
+                window.setTimeout(() => { suppressBackgroundPressClickRef.current = false; }, 800);
+            }, 480);
+            backgroundPressRef.current = { pointerId, startX, startY, timeoutId };
+        }
+
+        if (
+            !pageElement
+            || event.pointerType !== 'mouse'
+            || event.button !== 0
+            || Boolean(document.body.dataset.automenuImageInteraction)
+            || target?.closest(
+                '[data-drag-type], [data-added-image-drag="true"], #menu-title-text, #menu-subtitle-text, button, input, textarea, select, [contenteditable="true"], [data-drag-ignore="true"], [data-inline-format-toolbar="true"]'
+            )
+        ) {
+            return;
+        }
+
+        const additive = event.ctrlKey || event.metaKey || event.shiftKey;
+        marqueeDragRef.current = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            currentX: event.clientX,
+            currentY: event.clientY,
+            isSelecting: false,
+            additive,
+            initialItems: additive ? (handlers.selectedItems || []).filter(isObjectItem) : [],
+        };
+    };
+
+    const handlePreviewPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+        const backgroundPress = backgroundPressRef.current;
+        if (
+            backgroundPress
+            && backgroundPress.pointerId === event.pointerId
+            && Math.hypot(event.clientX - backgroundPress.startX, event.clientY - backgroundPress.startY) >= 8
+        ) {
+            window.clearTimeout(backgroundPress.timeoutId);
+            backgroundPressRef.current = null;
+        }
+        const drag = marqueeDragRef.current;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        if (document.body.dataset.automenuImageInteraction) {
+            marqueeDragRef.current = null;
+            setMarqueeRect(null);
+            return;
+        }
+
+        drag.currentX = event.clientX;
+        drag.currentY = event.clientY;
+        if (!drag.isSelecting) {
+            if (Math.hypot(drag.currentX - drag.startX, drag.currentY - drag.startY) < 5) return;
+            drag.isSelecting = true;
+            suppressMarqueeClickRef.current = true;
+            event.currentTarget.setPointerCapture(event.pointerId);
+        }
+
+        const rect = {
+            left: Math.min(drag.startX, drag.currentX),
+            top: Math.min(drag.startY, drag.currentY),
+            width: Math.abs(drag.currentX - drag.startX),
+            height: Math.abs(drag.currentY - drag.startY),
+        };
+        setMarqueeRect(rect);
+        updateMarqueeSelection(rect, drag);
+        event.preventDefault();
+        event.stopPropagation();
+    };
+
+    const handlePreviewPointerEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+        const backgroundPress = backgroundPressRef.current;
+        if (backgroundPress?.pointerId === event.pointerId) {
+            window.clearTimeout(backgroundPress.timeoutId);
+            backgroundPressRef.current = null;
+        }
+        const drag = marqueeDragRef.current;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+
+        if (drag.isSelecting) {
+            event.preventDefault();
+            event.stopPropagation();
+            window.setTimeout(() => {
+                suppressMarqueeClickRef.current = false;
+            }, 0);
+        }
+
+        marqueeDragRef.current = null;
+        setMarqueeRect(null);
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+        }
+    };
+
+    const getFreeTextPlacementFromPoint = useCallback((point: { x: number; y: number } | null, shiftExistingTexts = true): DraftItem | null => {
+        const pageEls = Array.from(previewRootRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"][data-page-index]') || []);
+        if (pageEls.length === 0) return null;
+
+        const getRectDistance = (rect: DOMRect) => {
+            if (!point) return 0;
+            const dx = point.x < rect.left ? rect.left - point.x : point.x > rect.right ? point.x - rect.right : 0;
+            const dy = point.y < rect.top ? rect.top - point.y : point.y > rect.bottom ? point.y - rect.bottom : 0;
+            return dx + dy;
+        };
+
+        const pageEl = point
+            ? pageEls.find((element) => {
+                const rect = element.getBoundingClientRect();
+                return point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom;
+            }) || pageEls.reduce((best, element) => (
+                getRectDistance(element.getBoundingClientRect()) < getRectDistance(best.getBoundingClientRect()) ? element : best
+            ), pageEls[0])
+            : pageEls[0];
+
+        const pageRect = pageEl.getBoundingClientRect();
+        const currentScale = (typeof props.scale === 'number' && props.scale > 0) ? props.scale : 1;
+        const pageIndex = Number(pageEl.dataset.pageIndex ?? 0);
+        const menuMargins = resolveMenuMargins(style);
+        const targetX = point?.x ?? pageRect.left + menuMargins.left;
+        let clickY = clamp(((point?.y ?? pageRect.top + menuMargins.top) - pageRect.top) / currentScale, 0, pageDimensions.heightPx);
+
+        const columnEls = Array.from(
+            pageEl.querySelectorAll<HTMLElement>('[data-drag-column-container="category"][data-drag-column-index]')
+        );
+        const clickedColumnEl = columnEls.find((columnEl) => {
+            const rect = columnEl.getBoundingClientRect();
+            return targetX >= rect.left && targetX <= rect.right;
+        }) || columnEls.reduce<HTMLElement | null>((best, columnEl) => {
+            if (!best) return columnEl;
+            const rect = columnEl.getBoundingClientRect();
+            const bestRect = best.getBoundingClientRect();
+            const distance = Math.abs(targetX - (rect.left + rect.width / 2));
+            const bestDistance = Math.abs(targetX - (bestRect.left + bestRect.width / 2));
+            return distance < bestDistance ? columnEl : best;
+        }, null);
+        const columnIndex = Number(clickedColumnEl?.dataset.dragColumnIndex ?? 0);
+        const columnRect = clickedColumnEl?.getBoundingClientRect();
+
+        let floorId: string | null = null;
+        let floorBottom = ((columnRect?.top ?? (pageRect.top + (menuMargins.top * currentScale))) - pageRect.top) / currentScale;
+        let ceilingId: string | null = null;
+        let ceilingTop = pageDimensions.heightPx;
+        let minDistAbove = Infinity;
+        let minDistBelow = Infinity;
+        const searchRoot = clickedColumnEl || pageEl;
+        const minimumClientTop = columnRect?.top ?? pageRect.top + (menuMargins.top * currentScale);
+        const maximumClientBottom = pageRect.bottom - ((menuMargins.bottom + SAFETY_BUFFER) * currentScale);
+        const freeTextHeight = 40 * currentScale;
+        const desiredClientTop = clamp(
+            pageRect.top + (clickY * currentScale),
+            minimumClientTop,
+            maximumClientBottom - freeTextHeight,
+        );
+        const freeTextProducts = new Map(products.filter((product) => product.isFreeText).map((product) => [product.id, product]));
+        const renderedFreeTexts = Array.from(searchRoot.querySelectorAll<HTMLElement>('[id^="product-container-"]'))
+            .map((element) => {
+                const productId = element.id.replace('product-container-', '');
+                const product = freeTextProducts.get(productId);
+                if (!product || !product.category.startsWith(FREE_TEXT_PREFIX)) return null;
+                return {
+                    category: product.category,
+                    productId,
+                    element,
+                    rect: element.getBoundingClientRect(),
+                };
+            })
+            .filter((item): item is { category: string; productId: string; element: HTMLElement; rect: DOMRect } => Boolean(item))
+            .sort((left, right) => left.rect.top - right.rect.top);
+        const overlapsInsertion = (rect: DOMRect) => (
+            desiredClientTop < rect.bottom + (6 * currentScale)
+            && desiredClientTop + freeTextHeight > rect.top - (6 * currentScale)
+        );
+        const overlappingFreeTexts = renderedFreeTexts.filter(({ rect }) => overlapsInsertion(rect));
+        const freeTextElements = new Set(
+            overlappingFreeTexts.map(({ element }) => element),
+        );
+        const hasNonFreeTextCollision = Array.from(pageEl.querySelectorAll<HTMLElement>(
+            '[id^="product-container-"], [id^="category-header-"], #menu-title-text, #menu-subtitle-text, [data-added-image-drag="true"]',
+        )).some((element) => {
+            if (freeTextElements.has(element)) return false;
+            const rect = element.getBoundingClientRect();
+            const sharesColumn = rect.right > (columnRect?.left ?? pageRect.left)
+                && rect.left < (columnRect?.right ?? pageRect.right);
+            return sharesColumn && overlapsInsertion(rect);
+        });
+
+        let rippleClientTop: number | null = null;
+        let firstShiftedProductId: string | null = null;
+        let freeTextPositionUpdates: DraftItem['freeTextPositionUpdates'];
+        if (shiftExistingTexts && overlappingFreeTexts.length > 0 && !hasNonFreeTextCollision) {
+            const updates: NonNullable<DraftItem['freeTextPositionUpdates']> = {};
+            let cursorY = ((desiredClientTop - pageRect.top) / currentScale) + 40 + NUDGE_STEP;
+            let targetPageIndex = pageIndex;
+            const maximumBottom = pageDimensions.heightPx - menuMargins.bottom - SAFETY_BUFFER;
+
+            renderedFreeTexts.forEach(({ category, productId, rect }) => {
+                const currentTop = (rect.top - pageRect.top) / currentScale;
+                const currentHeight = rect.height / currentScale;
+                if (rect.bottom + (6 * currentScale) <= desiredClientTop) return;
+
+                let nextTop = targetPageIndex === pageIndex ? Math.max(currentTop, cursorY) : cursorY;
+                if (nextTop + currentHeight > maximumBottom) {
+                    targetPageIndex += 1;
+                    nextTop = menuMargins.top;
+                }
+                if (targetPageIndex !== pageIndex || nextTop > currentTop + 0.25) {
+                    if (!firstShiftedProductId) firstShiftedProductId = productId;
+                    updates[category] = { pageIndex: targetPageIndex, columnIndex, y: nextTop };
+                }
+                cursorY = nextTop + currentHeight + NUDGE_STEP;
+            });
+
+            if (Object.keys(updates).length > 0) {
+                rippleClientTop = desiredClientTop;
+                freeTextPositionUpdates = updates;
+            }
+        }
+
+        const safeClientTop = rippleClientTop ?? getCollisionSafeFreeTextTop({
+            root: pageEl,
+            desiredTop: desiredClientTop,
+            height: freeTextHeight,
+            pointerY: point?.y ?? pageRect.top + (clickY * currentScale),
+            minTop: minimumClientTop,
+            maxBottom: maximumClientBottom,
+            minLeft: columnRect?.left,
+            maxRight: columnRect?.right,
+        });
+        if (safeClientTop === null) return null;
+        clickY = (safeClientTop - pageRect.top) / currentScale;
+        const allElements = searchRoot.querySelectorAll('[id^="product-container-"], [id^="category-header-"]');
+
+        allElements.forEach(el => {
+            const rect = el.getBoundingClientRect();
+            const itemTop = (rect.top - pageRect.top) / currentScale;
+            const itemHeight = rect.height / currentScale;
+            const itemBottom = itemTop + itemHeight;
+
+            let id = el.getAttribute('data-category-id') || el.getAttribute('data-block-id');
+            if (!id && el.id.startsWith('product-container-')) id = el.id.replace('product-container-', '');
+            if (!id) return;
+
+            if (itemBottom < clickY) {
+                const dist = clickY - itemBottom;
+                if (dist < minDistAbove) {
+                    minDistAbove = dist;
+                    floorId = id;
+                    floorBottom = itemBottom;
+                }
+            } else if (itemTop > clickY) {
+                const dist = itemTop - clickY;
+                if (dist < minDistBelow) {
+                    minDistBelow = dist;
+                    ceilingId = id;
+                    ceilingTop = itemTop;
+                }
+            }
+        });
+
+        if (firstShiftedProductId && !ceilingId) {
+            ceilingId = firstShiftedProductId;
+            const firstShifted = renderedFreeTexts.find(({ productId }) => productId === firstShiftedProductId);
+            if (firstShifted) ceilingTop = (firstShifted.rect.top - pageRect.top) / currentScale;
+        }
+
+        return {
+            pageIndex,
+            columnIndex,
+            top: clickY,
+            floorId,
+            floorBottom,
+            ceilingId,
+            ceilingTop,
+            freeTextPositionUpdates,
+        };
+    }, [pageDimensions.heightPx, products, props.scale, style.categoryPositions, style.margins, style.pagePadding]);
+
+    const getFreeTextPlacementBelowSelection = useCallback((): DraftItem | null => {
+        const selectedObjects = (handlers.selectedItems || []).filter(isObjectItem);
+        let fallbackPlacement: DraftItem | null = null;
+
+        for (const item of selectedObjects) {
+            const element = getObjectElement(item);
+            const pageEl = element?.closest('[data-menu-print-page="true"][data-page-index]') as HTMLElement | null;
+            if (!element || !pageEl) continue;
+
+            const rect = element.getBoundingClientRect();
+            const pageRect = pageEl.getBoundingClientRect();
+            const placement = getFreeTextPlacementFromPoint({
+                x: rect.left + rect.width / 2,
+                y: Math.min(pageRect.bottom - 4, rect.bottom + 8),
+            });
+            if (!placement) continue;
+            if (!fallbackPlacement) fallbackPlacement = placement;
+
+            if (item.type === 'category') {
+                return { ...placement, targetCategory: item.id, targetProductId: null };
+            }
+
+            if (item.type === 'product' || item.type === 'freeText') {
+                const product = products.find((candidate) => candidate.id === item.id);
+                if (product) {
+                    return { ...placement, targetCategory: product.category, targetProductId: product.id };
+                }
+            }
+        }
+
+        return fallbackPlacement;
+    }, [getFreeTextPlacementFromPoint, getObjectElement, handlers.selectedItems, products]);
+
+    const getLastFreeTextPlacement = useCallback((): DraftItem | null => {
+        const pages = Array.from(document.querySelectorAll<HTMLElement>('[data-menu-print-page="true"][data-page-index]'));
+        if (pages.length === 0) return null;
+
+        const lastPage = pages[pages.length - 1];
+        const pageRect = lastPage.getBoundingClientRect();
+        const currentScale = (typeof props.scale === 'number' && props.scale > 0) ? props.scale : 1;
+
+        const columns = Array.from(lastPage.querySelectorAll<HTMLElement>('[data-drag-column-container="category"][data-drag-column-index]'));
+        const lastColumn = columns[columns.length - 1] || lastPage;
+        const columnRect = lastColumn.getBoundingClientRect();
+
+        const elements = Array.from(lastColumn.querySelectorAll<HTMLElement>('[id^="product-container-"], [id^="category-header-"]'));
+
+        let targetY = resolveMenuMargins(style).top;
+        if (elements.length > 0) {
+            const lastElement = elements[elements.length - 1];
+            const rect = lastElement.getBoundingClientRect();
+            targetY = ((rect.bottom - pageRect.top) / currentScale) + NUDGE_STEP;
+        }
+
+        return getFreeTextPlacementFromPoint({
+            x: columnRect.left + Math.min(24, columnRect.width / 2),
+            y: pageRect.top + (targetY * currentScale),
+        });
+    }, [getFreeTextPlacementFromPoint, props.scale, style.margins, style.pagePadding]);
+
+    const getFreeTextPastePlacement = useCallback((
+        menuPoint?: { x: number; y: number } | null,
+        targetItem?: ObjectSelectionItem | null
+    ) => {
+        const placement = (menuPoint ? getFreeTextPlacementFromPoint(menuPoint) : null)
+            || getFreeTextPlacementBelowSelection()
+            || getFreeTextPlacementFromPoint(lastCanvasPointRef.current)
+            || getLastFreeTextPlacement();
+        if (!placement || !targetItem) return placement;
+
+        if (targetItem.type === 'category') {
+            return { ...placement, targetCategory: targetItem.id, targetProductId: null };
+        }
+
+        if (targetItem.type === 'product' || targetItem.type === 'freeText') {
+            const product = products.find((candidate) => candidate.id === targetItem.id);
+            if (product) {
+                return { ...placement, targetCategory: product.category, targetProductId: product.id };
+            }
+        }
+
+        return placement;
+    }, [getLastFreeTextPlacement, getFreeTextPlacementBelowSelection, getFreeTextPlacementFromPoint, products]);
+
+    const getImagePastePoint = useCallback((menuPoint?: { x: number; y: number } | null) => {
+        if (menuPoint) return menuPoint;
+
+        const selectedObjects = (handlers.selectedItems || []).filter(isObjectItem);
+        for (const item of selectedObjects) {
+            const element = getObjectElement(item);
+            const pageEl = element?.closest('[data-menu-print-page="true"][data-page-index]') as HTMLElement | null;
+            if (!element || !pageEl) continue;
+
+            const rect = element.getBoundingClientRect();
+            const pageRect = pageEl.getBoundingClientRect();
+            return {
+                x: rect.left + rect.width / 2,
+                y: Math.min(pageRect.bottom - 4, rect.bottom + 12),
+            };
+        }
+
+        if (lastCanvasPointRef.current) return lastCanvasPointRef.current;
+
+        const firstPage = document.querySelector<HTMLElement>('[data-menu-print-page="true"][data-page-index]');
+        const firstRect = firstPage?.getBoundingClientRect();
+        return firstRect
+            ? {
+                x: firstRect.left + resolveMenuMargins(style).left,
+                y: firstRect.top + resolveMenuMargins(style).top,
+            }
+            : null;
+    }, [getObjectElement, handlers.selectedItems, style.margins, style.pagePadding]);
+
+    const addNativeClipboardImage = useCallback(async (blob: Blob, point?: { x: number; y: number } | null) => {
+        if (!onStyleUpdate) return false;
+
+        const dataUrl = await blobToDataUrl(blob);
+        const pageEls = Array.from(document.querySelectorAll<HTMLElement>('[data-menu-print-page="true"][data-page-index]'));
+        if (pageEls.length === 0) return false;
+
+        const targetPoint = getImagePastePoint(point);
+        const pageEl = targetPoint
+            ? pageEls.find((element) => {
+                const rect = element.getBoundingClientRect();
+                return targetPoint.x >= rect.left && targetPoint.x <= rect.right && targetPoint.y >= rect.top && targetPoint.y <= rect.bottom;
+            }) || pageEls[0]
+            : pageEls[0];
+        const pageRect = pageEl.getBoundingClientRect();
+        const currentScale = (typeof props.scale === 'number' && props.scale > 0) ? props.scale : 1;
+        const width = Math.min(300, pageDimensions.widthPx);
+        const x = clamp((((targetPoint?.x ?? pageRect.left + 100) - pageRect.left) / currentScale) - (width / 2), 0, Math.max(0, pageDimensions.widthPx - width));
+        const y = clamp((((targetPoint?.y ?? pageRect.top + 100) - pageRect.top) / currentScale), 0, Math.max(0, pageDimensions.heightPx - 120));
+        const newId = crypto.randomUUID();
+
+        onStyleUpdate((prev) => {
+            const images = prev.addedImages || [];
+            const maxZ = Math.max(40, ...images.map((image) => image.zIndex ?? 11));
+            return {
+                ...prev,
+                addedImages: [
+                    ...images,
+                    {
+                        id: newId,
+                        url: dataUrl,
+                        assetId: null,
+                        x,
+                        y,
+                        width,
+                        pageIndex: Number(pageEl.dataset.pageIndex ?? 0),
+                        zIndex: maxZ + 1,
+                    },
+                ],
+                name: 'Custom',
+            };
+        });
+
+        handlers.handleSelection('addedImage', newId);
+        return true;
+    }, [getImagePastePoint, handlers, onStyleUpdate, pageDimensions.heightPx, pageDimensions.widthPx, props.scale]);
+
+    const readNativeClipboardPayload = useCallback(async (): Promise<NativeClipboardPayload | null> => {
+        const clipboard = navigator.clipboard as (Clipboard & { read?: () => Promise<globalThis.ClipboardItem[]> }) | undefined;
+        if (!clipboard) return null;
+
+        try {
+            const items = clipboard.read ? await clipboard.read() : [];
+            for (const item of items) {
+                const imageType = item.types.find((type) => type.startsWith('image/'));
+                if (imageType) return { type: 'image', blob: await item.getType(imageType) };
+            }
+        } catch {
+            // Browser may only allow text reads without extra permission.
+        }
+
+        try {
+            const text = await clipboard.readText();
+            if (text.trim()) return { type: 'text', text };
+        } catch {
+            return null;
+        }
+
+        return null;
+    }, []);
+
+    useEffect(() => {
+        if (!objectMenu) {
+            setNativeClipboardAvailable(false);
+            return;
+        }
+
+        if (objectMenu.item) {
+            setNativeClipboardAvailable(Boolean(navigator.clipboard?.readText || (navigator.clipboard as any)?.read));
+            return;
+        }
+
+        let cancelled = false;
+        void readNativeClipboardPayload().then((payload) => {
+            if (!cancelled) setNativeClipboardAvailable(Boolean(payload));
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [objectMenu, readNativeClipboardPayload]);
+
+    const getUniqueCategoryName = useCallback((baseName: string) => {
+        const existing = new Set(products.filter((product) => !product.isFreeText).map((product) => product.category));
+        let candidate = `${baseName} copia`;
+        let index = 2;
+        while (existing.has(candidate)) {
+            candidate = `${baseName} copia ${index}`;
+            index += 1;
+        }
+        return candidate;
+    }, [products]);
+
+    const getCategoryOrder = useCallback(() => {
+        const currentOrder = style.customCategoryOrder?.length
+            ? [...style.customCategoryOrder]
+            : [...handlers.sortedCategories];
+        handlers.sortedCategories.forEach((category: string) => {
+            if (!currentOrder.includes(category)) currentOrder.push(category);
+        });
+        return currentOrder;
+    }, [handlers.sortedCategories, style.customCategoryOrder]);
+
+    const getProductInitialData = (product: Product, categoryId?: string | null): Partial<Product> => ({
+        name: product.name,
+        description: product.description,
+        price: product.price,
+        image: product.image || '',
+        imageAssetId: product.imageAssetId || null,
+        categoryId: categoryId ?? product.categoryId ?? null,
+    });
+
+    const buildClipboardItems = useCallback((items: ObjectSelectionItem[]): ClipboardItem[] => (
+        items.flatMap((item): ClipboardItem[] => {
+            if (item.type === 'category') {
+                return [{
+                    type: 'category',
+                    category: item.id,
+                    products: products.filter((product) => !product.isFreeText && product.category === item.id),
+                }];
+            }
+
+            if (item.type === 'product' || item.type === 'freeText') {
+                const product = products.find((candidate) => candidate.id === item.id);
+                if (!product) return [];
+                return [{ type: product.isFreeText ? 'freeText' : 'product', product }];
+            }
+
+            const image = (style.addedImages || []).find((candidate) => candidate.id === item.id);
+            return image ? [{ type: 'addedImage', image }] : [];
+        })
+    ), [products, style.addedImages]);
+
+    const copyItems = useCallback((items: ObjectSelectionItem[]) => {
+        const clipboardItems = buildClipboardItems(items);
+        if (clipboardItems.length === 0) return false;
+        clipboardRef.current = { mode: 'items', items: clipboardItems };
+        setClipboardVersion((version) => version + 1);
+        return true;
+    }, [buildClipboardItems]);
+
+    const copyFormatting = useCallback((items: ObjectSelectionItem[]) => {
+        const [item] = items;
+        if (!item) return false;
+
+        if (item.type === 'category') {
+            clipboardRef.current = { mode: 'format', format: { type: 'category', style: { ...(style.elementStyles?.category || {}) } } };
+        } else if (item.type === 'product') {
+            clipboardRef.current = {
+                mode: 'format',
+                format: {
+                    type: 'product',
+                    styles: {
+                        productName: { ...(style.elementStyles?.productName || {}) },
+                        productPrice: { ...(style.elementStyles?.productPrice || {}) },
+                        productDescription: { ...(style.elementStyles?.productDescription || {}) },
+                    },
+                },
+            };
+        } else if (item.type === 'freeText') {
+            const product = products.find((candidate) => candidate.id === item.id);
+            if (!product) return false;
+            clipboardRef.current = { mode: 'format', format: { type: 'freeText', style: { ...(product.styles || {}) } } };
+        } else {
+            const image = (style.addedImages || []).find((candidate) => candidate.id === item.id);
+            if (!image) return false;
+            clipboardRef.current = { mode: 'format', format: { type: 'addedImage', width: image.width } };
+        }
+
+        setClipboardVersion((version) => version + 1);
+        return true;
+    }, [products, style.addedImages, style.elementStyles]);
+
+    const insertCategoryAfter = useCallback((categoryOrder: string[], anchorCategory: string, nextCategory: string) => {
+        const nextOrder = categoryOrder.filter((category) => category !== nextCategory);
+        const anchorIndex = nextOrder.indexOf(anchorCategory);
+        nextOrder.splice(anchorIndex === -1 ? nextOrder.length : anchorIndex + 1, 0, nextCategory);
+        return nextOrder;
+    }, []);
+
+    const insertFreeTextProduct = useCallback((product: Product, placement?: DraftItem | null, indexOffset: number = 0) => {
+        if (!onAddProduct || !onStyleUpdate) return false;
+
+        const newId = crypto.randomUUID();
+        const ghostCategory = `${FREE_TEXT_PREFIX}${newId}`;
+
+        if (!placement) return false;
+
+        const getCurrentOrder = (customOrder?: string[]) => {
+            const currentOrder = customOrder && customOrder.length > 0
+                ? [...customOrder]
+                : [...handlers.sortedCategories];
+            handlers.sortedCategories.forEach((category: string) => {
+                if (!currentOrder.includes(category)) currentOrder.push(category);
+            });
+            return currentOrder;
+        };
+
+        const getPlacementInsertIndex = (currentOrder: string[]) => {
+            if (placement.ceilingId) {
+                const cProd = products.find(p => p.id === placement.ceilingId);
+                const cCat = cProd ? cProd.category : (currentOrder.includes(placement.ceilingId) ? placement.ceilingId : null);
+                if (cCat) {
+                    const idx = currentOrder.indexOf(cCat);
+                    if (idx !== -1) return idx;
+                }
+            } else if (placement.floorId) {
+                const fProd = products.find(p => p.id === placement.floorId);
+                const fCat = fProd ? fProd.category : (currentOrder.includes(placement.floorId) ? placement.floorId : null);
+                if (fCat) {
+                    const idx = currentOrder.indexOf(fCat);
+                    if (idx !== -1) return idx + 1;
+                }
+            }
+
+            return currentOrder.length;
+        };
+
+        const newItemTop = Math.max(0, placement.top + (indexOffset * 46));
+
+        onStyleUpdate(prev => {
+            const currentOrder = getCurrentOrder(prev.customCategoryOrder);
+            const insertIndex = getPlacementInsertIndex(currentOrder);
+            currentOrder.splice(insertIndex + indexOffset, 0, ghostCategory);
+            const shiftedPlacements = Object.fromEntries(
+                Object.entries(placement.freeTextPositionUpdates || {}).map(([category, position]) => [
+                    category,
+                    { pageIndex: position.pageIndex, columnIndex: position.columnIndex },
+                ]),
+            );
+
+            return {
+                ...prev,
+                customCategoryOrder: currentOrder,
+                customProductOrder: { ...(prev.customProductOrder || {}), [ghostCategory]: [newId] },
+                categoryPlacements: {
+                    ...(prev.categoryPlacements || {}),
+                    ...shiftedPlacements,
+                    [ghostCategory]: {
+                        pageIndex: placement.pageIndex,
+                        columnIndex: placement.columnIndex,
+                    },
+                },
+                categoryPositions: {
+                    ...(prev.categoryPositions || {}),
+                    ...(placement.freeTextPositionUpdates || {}),
+                    [ghostCategory]: {
+                        pageIndex: placement.pageIndex,
+                        columnIndex: placement.columnIndex,
+                        y: newItemTop,
+                        pageX: placement.pageX,
+                    },
+                },
+                name: 'Custom',
+            };
+        });
+
+        onAddProduct(ghostCategory, undefined, true, newId, {
+            name: product.name || 'Novo texto',
+            description: product.description || '',
+            price: product.price || 0,
+            customMarginTop: 0,
+            styles: { ...(product.styles || {}) },
+        });
+
+        return true;
+    }, [handlers.sortedCategories, onAddProduct, onStyleUpdate, products]);
+
+    const addNativeClipboardText = useCallback((
+        text: string,
+        point?: { x: number; y: number } | null,
+        targetItem?: ObjectSelectionItem | null
+    ) => (
+        insertFreeTextProduct({
+            id: '',
+            name: text.trim() || 'Novo texto',
+            description: '',
+            price: 0,
+            category: '',
+            isFreeText: true,
+        }, getFreeTextPastePlacement(point, targetItem))
+    ), [getFreeTextPastePlacement, insertFreeTextProduct]);
+
+    const handleNativeClipboardPayload = useCallback(async (
+        payload: NativeClipboardPayload,
+        point?: { x: number; y: number } | null,
+        targetItem?: ObjectSelectionItem | null
+    ) => {
+        if (payload.type === 'image') return addNativeClipboardImage(payload.blob, point);
+        return addNativeClipboardText(payload.text, point, targetItem);
+    }, [addNativeClipboardImage, addNativeClipboardText]);
+
+    const duplicateClipboardItems = useCallback((clipboardItems: ClipboardItem[], freeTextPlacement?: DraftItem | null) => {
+        if (clipboardItems.length === 0) return false;
+
+        const addedImages = clipboardItems.filter((item): item is Extract<ClipboardItem, { type: 'addedImage' }> => item.type === 'addedImage');
+        const nonImageItems = clipboardItems.filter((item) => item.type !== 'addedImage');
+
+        if (addedImages.length > 0) {
+            onStyleUpdate?.((prev) => {
+                const images = prev.addedImages || [];
+                const maxZ = Math.max(40, ...images.map((image) => image.zIndex ?? 11));
+                const clones = addedImages.map(({ image }, index) => ({
+                    ...image,
+                    id: crypto.randomUUID(),
+                    backgroundPromptDismissed: undefined,
+                    x: Math.min(image.x + 20, 744),
+                    y: Math.min(image.y + 20, 1073),
+                    zIndex: maxZ + index + 1,
+                }));
+
+                return { ...prev, addedImages: [...images, ...clones], name: 'Custom' };
+            });
+        }
+
+        nonImageItems.forEach((item, index) => {
+            if (item.type === 'product') {
+                const newId = crypto.randomUUID();
+                onAddProduct?.(item.product.category, undefined, false, newId, getProductInitialData(item.product));
+                onStyleUpdate?.((prev) => {
+                    const productOrder = { ...(prev.customProductOrder || {}) };
+                    const currentOrder = productOrder[item.product.category] || (handlers.groupedProducts[item.product.category] || []).map((product: Product) => product.id);
+                    const insertIndex = currentOrder.indexOf(item.product.id);
+                    const nextOrder = currentOrder.filter((id: string) => id !== newId);
+                    nextOrder.splice(insertIndex === -1 ? nextOrder.length : insertIndex + 1, 0, newId);
+                    return { ...prev, customProductOrder: { ...productOrder, [item.product.category]: nextOrder }, name: 'Custom' };
+                });
+                return;
+            }
+
+            if (item.type === 'freeText') {
+                insertFreeTextProduct(item.product, freeTextPlacement, index);
+                return;
+            }
+
+            if (item.type === 'category') {
+                const newCategory = getUniqueCategoryName(item.category);
+                const categoryId = crypto.randomUUID();
+                const productIds = item.products.map(() => crypto.randomUUID());
+
+                onStyleUpdate?.((prev) => {
+                    const currentOrder = getCategoryOrder();
+                    const nextOrder = insertCategoryAfter(currentOrder, item.category, newCategory);
+                    return {
+                        ...prev,
+                        customCategoryOrder: nextOrder,
+                        customProductOrder: {
+                            ...(prev.customProductOrder || {}),
+                            [newCategory]: productIds,
+                        },
+                        name: 'Custom',
+                    };
+                });
+
+                item.products.forEach((product, index) => {
+                    onAddProduct?.(newCategory, undefined, false, productIds[index], getProductInitialData(product, categoryId));
+                });
+            }
+        });
+
+        return true;
+    }, [getCategoryOrder, getUniqueCategoryName, handlers.groupedProducts, insertFreeTextProduct, onAddProduct, onStyleUpdate]);
+
+    const deleteObjectItems = useCallback((items: ObjectSelectionItem[]) => {
+        if (items.length === 0) return false;
+
+        const productIdsToDelete = new Set<string>();
+        const categoriesToDelete = new Set<string>();
+        const freeTextCategoriesToDelete = new Set<string>();
+        const addedImageIdsToDelete = new Set<string>();
+
+        items.forEach((item) => {
+            if (item.type === 'category') {
+                categoriesToDelete.add(item.id);
+                return;
+            }
+
+            if (item.type === 'product' || item.type === 'freeText') {
+                const product = products.find((candidate) => candidate.id === item.id);
+                productIdsToDelete.add(item.id);
+                if (product?.isFreeText || item.type === 'freeText') {
+                    if (product?.category.startsWith(FREE_TEXT_PREFIX)) {
+                        freeTextCategoriesToDelete.add(product.category);
+                    }
+                }
+                return;
+            }
+
+            addedImageIdsToDelete.add(item.id);
+        });
+
+        categoriesToDelete.forEach(category => {
+            (handlers.groupedProducts[category] || products.filter(product => product.category === category)).forEach((product: Product) => {
+                productIdsToDelete.add(product.id);
+            });
+        });
+
+        onStyleUpdate?.((prev) => {
+            const currentHidden = new Set(prev.hiddenProductIds || []);
+            productIdsToDelete.forEach(productId => currentHidden.delete(productId));
+
+            const nextProductOrder = { ...(prev.customProductOrder || {}) };
+            Object.keys(nextProductOrder).forEach(category => {
+                if (categoriesToDelete.has(category) || freeTextCategoriesToDelete.has(category)) {
+                    delete nextProductOrder[category];
+                    return;
+                }
+                nextProductOrder[category] = nextProductOrder[category].filter(productId => !productIdsToDelete.has(productId));
+            });
+            const nextCategoryPlacements = { ...(prev.categoryPlacements || {}) };
+            const nextCategoryPositions = { ...(prev.categoryPositions || {}) };
+            [...categoriesToDelete, ...freeTextCategoriesToDelete].forEach((category) => {
+                delete nextCategoryPlacements[category];
+                delete nextCategoryPositions[category];
+            });
+
+            return {
+                ...prev,
+                hiddenProductIds: Array.from(currentHidden),
+                customCategoryOrder: (prev.customCategoryOrder || []).filter(category => (
+                    !categoriesToDelete.has(category) && !freeTextCategoriesToDelete.has(category)
+                )),
+                customProductOrder: nextProductOrder,
+                categoryPlacements: nextCategoryPlacements,
+                categoryPositions: nextCategoryPositions,
+                freeTextBackgrounds: prev.freeTextBackgrounds && Object.fromEntries(
+                    Object.entries(prev.freeTextBackgrounds).filter(([id]) => !productIdsToDelete.has(id)),
+                ),
+                addedImages: addedImageIdsToDelete.size > 0
+                    ? (prev.addedImages || []).filter((image) => !addedImageIdsToDelete.has(image.id))
+                    : prev.addedImages,
+                name: 'Custom',
+            };
+        });
+
+        productIdsToDelete.forEach((productId) => onDeleteProduct?.(productId));
+        handlers.handleSelection(null, null);
+        return true;
+    }, [handlers, onDeleteProduct, onStyleUpdate, products]);
+
+    const pasteClipboard = useCallback(async (targetItem?: ObjectSelectionItem | null) => {
+        const clipboard = clipboardRef.current;
+        const menuPoint = objectMenu ? { x: objectMenu.x, y: objectMenu.y } : null;
+
+        if (clipboard?.mode === 'items') {
+            const hasFreeText = clipboard.items.some((item) => item.type === 'freeText');
+            const placement = hasFreeText ? getFreeTextPastePlacement(menuPoint, targetItem) : null;
+            return duplicateClipboardItems(clipboard.items, placement);
+        }
+
+        const nativePayload = await readNativeClipboardPayload();
+        return nativePayload ? handleNativeClipboardPayload(nativePayload, menuPoint, targetItem) : false;
+    }, [duplicateClipboardItems, getFreeTextPastePlacement, handleNativeClipboardPayload, objectMenu, readNativeClipboardPayload]);
+
+    const pasteFormattingClipboard = useCallback((targetItem?: ObjectSelectionItem | null) => {
+        const clipboard = clipboardRef.current;
+        if (!clipboard || clipboard.mode !== 'format') return false;
+
+        const targets = getActiveObjectItems(targetItem);
+        if (targets.length === 0) return false;
+        const { format } = clipboard;
+
+        if (format.type === 'category') {
+            if (!targets.some((item) => item.type === 'category')) return false;
+            onStyleUpdate?.((prev) => ({
+                ...prev,
+                elementStyles: { ...prev.elementStyles, category: { ...format.style } },
+                name: 'Custom',
+            }));
+            return true;
+        }
+
+        if (format.type === 'product') {
+            if (!targets.some((item) => item.type === 'product')) return false;
+            onStyleUpdate?.((prev) => ({
+                ...prev,
+                elementStyles: {
+                    ...prev.elementStyles,
+                    productName: { ...(format.styles.productName || {}) },
+                    productPrice: { ...(format.styles.productPrice || {}) },
+                    productDescription: { ...(format.styles.productDescription || {}) },
+                },
+                name: 'Custom',
+            }));
+            return true;
+        }
+
+        if (format.type === 'freeText') {
+            const freeTextTargets = targets.filter((item) => item.type === 'freeText');
+            freeTextTargets.forEach((item) => props.onUpdateProduct?.(item.id, 'styles', { ...format.style }));
+            return freeTextTargets.length > 0;
+        }
+
+        const imageIds = new Set(targets.filter((item) => item.type === 'addedImage').map((item) => item.id));
+        if (imageIds.size === 0) return false;
+        onStyleUpdate?.((prev) => ({
+            ...prev,
+            addedImages: (prev.addedImages || []).map((image) => imageIds.has(image.id) ? { ...image, width: format.width } : image),
+            name: 'Custom',
+        }));
+        return true;
+    }, [getActiveObjectItems, onStyleUpdate, props]);
+
+    const layerObjectItems = useCallback((items: ObjectSelectionItem[], direction: 'front' | 'back') => {
+        if (items.length === 0) return false;
+
+        const imageIds = new Set(items.filter((item) => item.type === 'addedImage').map((item) => item.id));
+        const hasContentItems = items.some((item) => item.type !== 'addedImage');
+
+        onStyleUpdate?.((prev) => {
+            const images = prev.addedImages || [];
+            const nextImageLayers = getImageLayerIndexes(images, Array.from(imageIds), direction);
+
+            return {
+                ...prev,
+                contentLayer: hasContentItems ? (direction === 'front' ? 'front' : 'back') : prev.contentLayer,
+                addedImages: imageIds.size > 0
+                    ? images.map((image) => {
+                        if (nextImageLayers.has(image.id)) {
+                            return { ...image, zIndex: nextImageLayers.get(image.id) ?? image.zIndex };
+                        }
+                        return image;
+                    })
+                    : prev.addedImages,
+                name: 'Custom',
+            };
+        });
+
+        return true;
+    }, [onStyleUpdate]);
+
+    const hideObjectItems = useCallback((items: ObjectSelectionItem[]) => {
+        const productIdsToHide = new Set<string>();
+        const categoriesToHide = new Set<string>();
+
+        items.forEach((item) => {
+            if (item.type === 'category') {
+                if (!isPristineNewCategory(item.id, products)) categoriesToHide.add(item.id);
+                return;
+            }
+
+            if (item.type === 'product') {
+                const product = products.find((candidate) => candidate.id === item.id);
+                if (product && !product.isFreeText && !isPristineNewProduct(product)) productIdsToHide.add(item.id);
+            }
+        });
+
+        if (productIdsToHide.size === 0 && categoriesToHide.size === 0) return false;
+
+        onStyleUpdate?.((prev) => {
+            const currentHidden = new Set(prev.hiddenProductIds || []);
+            productIdsToHide.forEach((productId) => currentHidden.add(productId));
+            categoriesToHide.forEach((category) => {
+                (handlers.groupedProducts[category] || []).forEach((product: Product) => currentHidden.add(product.id));
+            });
+
+            return {
+                ...prev,
+                hiddenProductIds: Array.from(currentHidden),
+                name: 'Custom',
+            };
+        });
+
+        handlers.handleSelection(null, null);
+        return true;
+    }, [handlers, onStyleUpdate, products]);
+
+    const runObjectAction = useCallback(async (action: 'copy' | 'copyFormat' | 'paste' | 'pasteFormat' | 'cut' | 'duplicate' | 'delete' | 'hide' | 'front' | 'back', targetItem?: ObjectSelectionItem | null) => {
+        const items = getActiveObjectItems(targetItem);
+        let handled = false;
+
+        if (action === 'copy') handled = copyItems(items);
+        if (action === 'copyFormat') handled = copyFormatting(items);
+        if (action === 'paste') handled = await pasteClipboard(targetItem);
+        if (action === 'pasteFormat') handled = pasteFormattingClipboard(targetItem);
+        if (action === 'cut') {
+            handled = copyItems(items);
+            if (handled) deleteObjectItems(items);
+        }
+        if (action === 'duplicate') {
+            const clipboardItems = buildClipboardItems(items);
+            handled = duplicateClipboardItems(clipboardItems);
+        }
+        if (action === 'delete') handled = deleteObjectItems(items);
+        if (action === 'hide') handled = hideObjectItems(items);
+        if (action === 'front') handled = layerObjectItems(items, 'front');
+        if (action === 'back') handled = layerObjectItems(items, 'back');
+
+        if (handled) setObjectMenu(null);
+        return handled;
+    }, [buildClipboardItems, copyFormatting, copyItems, deleteObjectItems, duplicateClipboardItems, getActiveObjectItems, hideObjectItems, layerObjectItems, pasteClipboard, pasteFormattingClipboard]);
+
+    useEffect(() => {
+        if (readOnly) return;
+        if (props.externalAction?.type !== 'APPEND_FREE_TEXT') return;
+        if (handledExternalActionIdRef.current === props.externalAction.id) return;
+        handledExternalActionIdRef.current = props.externalAction.id;
+
+        const focus = getCanvasViewportFocus(previewRootRef.current?.closest<HTMLElement>('[data-automenu-editor-canvas]'));
+        const nearby = focus ? getFreeTextPlacementFromPoint(focus.point, false) : getLastFreeTextPlacement();
+        const placement = focus ? {
+            pageIndex: focus.pageIndex,
+            columnIndex: nearby?.columnIndex ?? focus.columnIndex,
+            top: nearby && nearby.top >= focus.visibleTop && nearby.top + 26 <= focus.visibleBottom
+                ? nearby.top : clamp(focus.y - 14, 0, pageDimensions.heightPx - 32),
+            pageX: clamp(focus.x - 48, 0, pageDimensions.widthPx - 96),
+            floorId: nearby?.floorId ?? null,
+            floorBottom: nearby?.floorBottom ?? 0,
+            ceilingId: nearby?.ceilingId ?? null,
+            ceilingTop: nearby?.ceilingTop ?? pageDimensions.heightPx,
+        } : nearby;
+        insertFreeTextProduct({
+            id: '',
+            name: 'Novo texto',
+            description: '',
+            price: 0,
+            category: '',
+            isFreeText: true,
+        }, placement);
+    }, [getLastFreeTextPlacement, getFreeTextPlacementFromPoint, insertFreeTextProduct, pageDimensions.heightPx, pageDimensions.widthPx, props.externalAction, readOnly]);
+
+    const openObjectMenu = useCallback((event: React.MouseEvent, item: CanvasContextMenuItem) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const shouldSuppressTouchMenu = lastPreviewPointerTypeRef.current === 'touch'
+            && !touchStartedOnObjectMenuButtonRef.current
+            && Date.now() < suppressTouchObjectMenuUntilRef.current;
+        if ((event.type === 'contextmenu' && lastPreviewPointerTypeRef.current === 'touch') || shouldSuppressTouchMenu) {
+            return;
+        }
+        if (handlers.draggedItem || handlers.draggedImageId) {
+            setObjectMenu(null);
+            return;
+        }
+
+        const objectItems = (handlers.selectedItems || []).filter(isObjectItem);
+        const isTargetSelected = objectItems.some((selected) => selected.type === item.type && selected.id === item.id);
+        if (!isTargetSelected) {
+            handlers.handleSelection(item.type, item.id);
+        }
+
+        setObjectMenuPosition(null);
+        const page = (event.currentTarget as HTMLElement).closest<HTMLElement>('[data-page-index], [data-object-page-index]');
+        setObjectMenu({ x: event.clientX, y: event.clientY, item, pageIndex: page ? Number(page.dataset.pageIndex ?? page.dataset.objectPageIndex) : undefined });
+    }, [handlers]);
+
+    (handlers as any).openObjectMenu = openObjectMenu;
+
+    const openBackgroundMenu = useCallback((event: React.MouseEvent) => {
+        const target = event.target as HTMLElement | null;
+        if (target?.closest([
+            '[data-drag-type]',
+            '[data-added-image-drag="true"]',
+            '[data-menu-heading]',
+            'button',
+            'input',
+            'textarea',
+            'select',
+            '[contenteditable="true"]',
+        ].join(','))) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        handlers.handleSelection(null, null);
+        handlers.setEditingId(null);
+        handlers.setSelectedPageIndex(null);
+        setObjectMenuPosition(null);
+        setObjectMenu({ x: event.clientX, y: event.clientY, item: null });
+    }, [handlers]);
+
+    useEffect(() => {
+        if (readOnly) return;
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== 'Delete') return;
+
+            const target = event.target as HTMLElement | null;
+            if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+            if (document.body.dataset.automenuDeleteContext === 'product-designer') return;
+
+            if (handleDeleteSelectedCanvasItems()) {
+                event.preventDefault();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [handleDeleteSelectedCanvasItems, readOnly]);
+
+    useEffect(() => {
+        if (readOnly) return;
+        const handleClipboardShortcuts = (event: KeyboardEvent) => {
+            const isDesktop = window.matchMedia('(min-width: 768px)').matches;
+            if (!isDesktop) return;
+            if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+
+            const key = event.key.toLowerCase();
+            if (!['c', 'v', 'x'].includes(key)) return;
+
+            const target = event.target as HTMLElement | null;
+            if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+            if (document.body.dataset.automenuDeleteContext !== 'canvas') return;
+
+            const selectedObjects = (handlers.selectedItems || []).filter(isObjectItem);
+            if (key !== 'v' && selectedObjects.length === 0) return;
+            if (key === 'v' && clipboardRef.current?.mode !== 'items') return;
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            if (key === 'c') runObjectAction('copy');
+            if (key === 'v') runObjectAction('paste');
+            if (key === 'x') runObjectAction('cut');
+        };
+
+        window.addEventListener('keydown', handleClipboardShortcuts);
+        return () => window.removeEventListener('keydown', handleClipboardShortcuts);
+    }, [handlers.selectedItems, readOnly, runObjectAction]);
+
+    useEffect(() => {
+        if (readOnly) return;
+        const handleNativePaste = (event: ClipboardEvent) => {
+            const target = event.target as HTMLElement | null;
+            if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+            if (document.body.dataset.automenuDeleteContext !== 'canvas') return;
+
+            const clipboardData = event.clipboardData;
+            if (!clipboardData) return;
+
+            const imageItem = Array.from(clipboardData.items).find((item) => item.kind === 'file' && item.type.startsWith('image/'));
+            const imageFile = imageItem?.getAsFile();
+            const text = clipboardData.getData('text/plain');
+            const payload: NativeClipboardPayload | null = imageFile
+                ? { type: 'image', blob: imageFile }
+                : text.trim()
+                    ? { type: 'text', text }
+                    : null;
+
+            if (!payload) return;
+            event.preventDefault();
+            void handleNativeClipboardPayload(payload, payload.type === 'image' ? getImagePastePoint(null) : null);
+        };
+
+        window.addEventListener('paste', handleNativePaste);
+        return () => window.removeEventListener('paste', handleNativePaste);
+    }, [getImagePastePoint, handleNativeClipboardPayload, readOnly]);
+
+    const restoreProduct = (id: string) => { onToggleProductVisibility?.(id, true); handlers.setShowAddModal(null); };
+    const createNewInModal = () => { if (handlers.showAddModal) { onAddProduct?.(handlers.showAddModal.category); handlers.setShowAddModal(null); } };
+
+    // FIX: GLOBAL DESELECTION
+    const handleBackgroundClick = (e: React.MouseEvent) => {
+        setObjectMenu(null);
+        if (products.some(product => product.id === handlers.editingId && !product.isFreeText)) return;
+        // Se o alvo do clique não for uma página, um produto ou um controle, limpe.
+        const target = e.target as HTMLElement;
+        if (target.closest('[data-page-index]') || target.closest('button') || target.closest('[contenteditable="true"]')) {
+            return;
+        }
+
+        handlers.handleSelection(null, null);
+        handlers.setEditingId(null);
+        handlers.setSelectedPageIndex(null);
+    };
+
+    const pendingDeletePageIndexes = getPageIndexesForDeletion();
+    const isDeletingSelectedPages = pendingDeletePageIndexes.length > 1;
+    const hasClipboardItems = (clipboardVersion >= 0 && clipboardRef.current?.mode === 'items') || nativeClipboardAvailable;
+    const hasClipboardFormat = clipboardVersion >= 0 && clipboardRef.current?.mode === 'format';
+    const isBackgroundMenu = Boolean(objectMenu && !objectMenu.item);
+    const isMenuTitleContext = objectMenu?.item?.type === 'menuTitle';
+    const contextObjectItem = objectMenu?.item && isObjectItem(objectMenu.item)
+        ? objectMenu.item
+        : null;
+    const contextImage = contextObjectItem?.type === 'addedImage'
+        ? style.addedImages?.find((image) => image.id === contextObjectItem.id)
+        : undefined;
+    const contextFreeTextId = contextObjectItem?.type === 'freeText' ? contextObjectItem.id : null;
+    const objectMenuItems = contextObjectItem ? getActiveObjectItems(contextObjectItem) : [];
+    const canHideFromObjectMenu = objectMenuItems.some((item) => {
+        if (item.type === 'category') return !isPristineNewCategory(item.id, products);
+        if (item.type === 'product') {
+            const product = products.find(candidate => candidate.id === item.id);
+            return Boolean(product && !product.isFreeText && !isPristineNewProduct(product));
+        }
+        return false;
+    });
+    const menuLeft = objectMenuPosition?.left
+        ?? (objectMenu ? clamp(objectMenu.x, 8, Math.max(8, window.innerWidth - 220)) : 0);
+    const menuTop = objectMenuPosition?.top ?? 8;
+    const applyFontPropagation = () => {
+        if (!pendingFontPropagation) return;
+        const fontFamily = pendingFontPropagation.fontFamily;
+        onStyleUpdate?.((previous) => applyFontToMenuStyle(previous, fontFamily));
+        const updates = products
+            .filter((product) => product.isFreeText)
+            .map((product) => ({ id: product.id, field: 'styles' as keyof Product, value: { ...(product.styles || {}), fontFamily } }));
+        if (props.onUpdateProducts) props.onUpdateProducts(updates);
+        else updates.forEach((update) => props.onUpdateProduct?.(update.id, update.field, update.value));
+        setPendingFontPropagation(null);
+    };
+
+    return (
+        <div
+            ref={previewRootRef}
+            inert={readOnly ? true : undefined}
+            aria-label={readOnly ? 'Pré-visualização do cardápio, somente leitura' : undefined}
+            className={`flex justify-start w-full relative ${readOnly ? 'pointer-events-none select-none min-h-0 min-w-0' : 'min-h-full min-w-full md:cursor-grab'}`}
+            onClick={readOnly ? undefined : handleBackgroundClick}
+            onContextMenu={readOnly ? undefined : openBackgroundMenu}
+            onPointerDownCapture={readOnly ? undefined : handlePreviewPointerDownCapture}
+            onPointerMove={readOnly ? undefined : handlePreviewPointerMove}
+            onPointerUp={readOnly ? undefined : handlePreviewPointerEnd}
+            onPointerCancel={readOnly ? undefined : handlePreviewPointerEnd}
+            onClickCapture={readOnly ? undefined : (event) => {
+                const target = event.target as HTMLElement | null;
+                if (target?.closest('[data-canvas-object-menu="true"]')) return;
+                if (suppressBackgroundPressClickRef.current) {
+                    suppressBackgroundPressClickRef.current = false;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
+                }
+                if (!suppressMarqueeClickRef.current) return;
+                suppressMarqueeClickRef.current = false;
+                event.preventDefault();
+                event.stopPropagation();
+            }}
+        >
+            <DynamicFontLoader fonts={usedFonts} />
+            {!readOnly && <input ref={productImageInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => void handleProductImageInput(event)} />}
+            {!readOnly && (
+                <PricePropagationPrompt
+                    request={pendingPricePropagation}
+                    style={style}
+                    onApply={applyPricePropagation}
+                    onDismiss={() => setPendingPricePropagation(null)}
+                />
+            )}
+            {!readOnly && (
+                <FontPropagationPrompt
+                    request={pendingFontPropagation}
+                    onApply={applyFontPropagation}
+                    onDismiss={() => setPendingFontPropagation(null)}
+                />
+            )}
+
+            {readOnly && (
+                <div
+                    aria-hidden="true"
+                    className="absolute inset-0 z-[2147483000] cursor-default pointer-events-auto"
+                    onClick={(event) => { event.preventDefault(); event.stopPropagation(); }}
+                    onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); }}
+                    onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); }}
+                />
+            )}
+
+            {!readOnly && marqueeRect && createPortal(
+                <div
+                    data-marquee-selection="true"
+                    className="fixed pointer-events-none border border-indigo-500 bg-indigo-500/15"
+                    style={{ ...marqueeRect, zIndex: 2147483000 }}
+                />,
+                document.body
+            )}
+
+            {!readOnly && handlers.showAddModal && (createPortal(<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm" onClick={() => handlers.setShowAddModal(null)}> <div className="bg-white p-4 rounded-xl shadow-2xl animate-fade-in" onClick={e => e.stopPropagation()}> <h3 className="text-lg font-bold mb-4">Itens ocultos</h3> <div className="space-y-2 max-h-60 overflow-y-auto"> {products.filter(p => p.category === handlers.showAddModal!.category && !handlers.groupedProducts[handlers.showAddModal!.category]?.find(gp => gp.id === p.id)).map(p => (<button key={p.id} onClick={() => restoreProduct(p.id)} className="w-full p-2 text-left hover:bg-slate-100 rounded flex justify-between items-center"> <span>{p.name}</span> <Plus size={14} /> </button>))} </div> <div className="mt-4 pt-4 border-t"> <button onClick={createNewInModal} className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"> Criar novo item </button> </div> </div> </div>, document.body))}
+
+            <div className={`flex flex-row items-start w-fit mx-auto ${readOnly ? 'gap-4 p-0 min-h-0' : 'gap-8 px-8 pb-20 pt-16 min-h-full'}`}>
+                {pages.map((pageContent, i) => (
+                    visiblePageIndex != null && i !== visiblePageIndex ? null :
+                    <MenuPage
+                        key={i}
+                        pageIndex={i}
+                        page={pageContent}
+                        style={style}
+                        handlers={handlers}
+                        products={products}
+                        needsOverlay={!!style.sourceImage}
+                        pageCount={pages.length}
+                        onAddPage={handleAddPage}
+                        onDeletePage={(idx) => { handlers.setShowDeletePageConfirm(true); handlers.setPageToDelete(idx); }}
+                        onSetPageNumbersVisible={(visible) => onStyleUpdate?.((previous) => ({
+                            ...previous,
+                            showPageNumbers: visible,
+                            name: 'Custom',
+                        }))}
+                    />
+                ))}
+            </div>
+
+            {!readOnly && promptedImage && createPortal(
+                <div
+                    ref={backgroundPromptRef}
+                    data-background-prompt="true"
+                    role="group"
+                    aria-label="Definir como plano de fundo?"
+                    className="fixed z-[10021] w-max max-w-[calc(100vw-16px)] rounded-lg border border-slate-200 bg-white p-2 text-xs text-slate-700 shadow-lg"
+                    style={backgroundPromptPosition ?? { visibility: 'hidden' }}
+                    onClick={(event) => event.stopPropagation()}
+                    onPointerDown={(event) => event.stopPropagation()}
+                >
+                    <p className="px-1 font-medium">Definir como plano de fundo?</p>
+                    <div className="mt-1 flex justify-end gap-1">
+                        <button type="button" className="rounded px-2 py-1 hover:bg-slate-100" onClick={() => {
+                            onStyleUpdate?.((previous) => ({
+                                ...previous,
+                                addedImages: previous.addedImages?.map((image) => image.id === promptedImage.id
+                                    ? { ...image, backgroundPromptDismissed: true }
+                                    : image),
+                            }));
+                            setBackgroundPromptId(null);
+                        }}>Não</button>
+                        <button type="button" className="rounded bg-indigo-600 px-2 py-1 font-semibold text-white hover:bg-indigo-700"
+                            onClick={() => setImageBackground(promptedImage.id)}>Sim</button>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {!readOnly && objectMenu && createPortal(
+                <div
+                    ref={objectMenuRef}
+                    data-canvas-object-menu="true"
+                    className="fixed z-[10000] min-w-52 max-h-[calc(100vh-16px)] select-none overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-2xl text-sm text-slate-700"
+                    style={{ left: menuLeft, top: menuTop, WebkitUserSelect: 'none', userSelect: 'none' }}
+                    onClick={(event) => event.stopPropagation()}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onContextMenu={(event) => event.preventDefault()}
+                >
+                    {isMenuTitleContext ? (
+                        <button
+                            onClick={() => {
+                                onStyleUpdate?.((previous) => ({
+                                    ...previous,
+                                    menuSubtitle: 'Novo subtítulo',
+                                    name: 'Custom',
+                                }));
+                                handlers.handleSelection('menuSubtitle', 'menuSubtitle');
+                                setObjectMenu(null);
+                            }}
+                            className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2"
+                        >
+                            <Plus size={15} /> Adicionar subtítulo
+                        </button>
+                    ) : (
+                    <>
+                    <button onClick={() => { handlers.setMultiSelectMode?.(!handlers.multiSelectMode); setObjectMenu(null); }} className={`w-full px-3 py-2 text-left flex items-center gap-2 ${handlers.multiSelectMode ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-slate-50'}`}><CopyCheck size={15} /> Seleção múltipla</button>
+                    {contextObjectItem && contextObjectItem.type !== 'addedImage' && (
+                        <button type="button" onClick={(event) => {
+                            const { type, id } = contextObjectItem;
+                            setObjectMenu(null);
+                            handlers.startEditing(event, id, type === 'category' ? `text-${id}` : `product-name-${id}`);
+                        }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
+                            <Edit3 size={15} /> {contextObjectItem.type === 'category' ? 'Editar categoria' : contextFreeTextId ? 'Editar texto' : 'Editar produto'}
+                        </button>
+                    )}
+                    {(contextImage || contextFreeTextId) && (
+                        <button type="button" onClick={() => {
+                            if (contextImage) setImageBackground(contextImage.id, objectMenu.pageIndex);
+                            else if (contextFreeTextId) toggleFreeTextBackground(contextFreeTextId);
+                        }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
+                            <Layers size={15} /> {contextImage?.repeatAsBackground ? 'Usar só nesta página'
+                                : contextFreeTextId && style.freeTextBackgrounds?.[contextFreeTextId] ? 'Remover do plano de fundo'
+                                    : 'Definir como plano de fundo'}
+                        </button>
+                    )}
+                    {contextImage && (
+                        <>
+                            <button type="button" aria-pressed={Boolean(contextImage.flipHorizontal)} onClick={() => flipImage(contextImage.id, 'flipHorizontal')}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"><FlipHorizontal2 size={15} /> Inverter horizontalmente</button>
+                            <button type="button" aria-pressed={Boolean(contextImage.flipVertical)} onClick={() => flipImage(contextImage.id, 'flipVertical')}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"><FlipVertical2 size={15} /> Inverter verticalmente</button>
+                        </>
+                    )}
+                    {contextObjectItem && (
+                        <button type="button" onClick={(event) => {
+                            if (contextImage) {
+                                handlers.handleRemoveImage(event, contextImage.id);
+                                setObjectMenu(null);
+                            } else runObjectAction('delete', contextObjectItem);
+                        }}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-red-600 hover:bg-red-50">
+                            <Trash2 size={15} /> {contextImage ? contextImage.shape ? 'Remover forma' : 'Remover imagem' : 'Remover'}
+                        </button>
+                    )}
+                    <button disabled={isBackgroundMenu} onClick={() => runObjectAction('copy', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Copy size={15} /> Copiar</button>
+                    <button disabled={isBackgroundMenu} onClick={() => runObjectAction('copyFormat', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Paintbrush size={15} /> Copiar formatação</button>
+                    <button
+                        onClick={() => runObjectAction('paste', contextObjectItem)}
+                        disabled={!hasClipboardItems}
+                        className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                        <Clipboard size={15} /> Colar
+                    </button>
+                    <button
+                        onClick={() => runObjectAction('pasteFormat', contextObjectItem)}
+                        disabled={isBackgroundMenu || !hasClipboardFormat}
+                        className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                        <Paintbrush size={15} /> Colar formatação
+                    </button>
+                    <button disabled={isBackgroundMenu} onClick={() => runObjectAction('cut', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Scissors size={15} /> Recortar</button>
+                    <button disabled={isBackgroundMenu} onClick={() => runObjectAction('duplicate', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><CopyPlus size={15} /> Duplicar</button>
+                    {(canHideFromObjectMenu || isBackgroundMenu) && (
+                        <button disabled={isBackgroundMenu} onClick={() => runObjectAction('hide', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><EyeOff size={15} /> Ocultar</button>
+                    )}
+                    <div className="my-1 h-px bg-slate-100" />
+                    <button disabled={isBackgroundMenu} onClick={() => runObjectAction('front', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><BringToFront size={15} /> Trazer para frente</button>
+                    <button disabled={isBackgroundMenu} onClick={() => runObjectAction('back', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><SendToBack size={15} /> Trazer para trás</button>
+                    </>
+                    )}
+                </div>,
+                document.body
+            )}
+
+            {handlers.showDeletePageConfirm && createPortal(
+                <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-fade-in" onClick={(e) => e.stopPropagation()}>
+                    <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center border border-slate-200 transform scale-100">
+                        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6 text-red-600">
+                            <AlertTriangle size={32} />
+                        </div>
+                        <h3 className="text-2xl font-bold text-slate-800 mb-3">
+                            {isDeletingSelectedPages ? 'Excluir páginas selecionadas?' : 'Excluir esta página?'}
+                        </h3>
+                        <p className="text-slate-500 mb-8 leading-relaxed">
+                            {isDeletingSelectedPages ? (
+                                <>
+                                    Você está prestes a remover <strong>{pendingDeletePageIndexes.length} páginas selecionadas</strong>. Todos os textos livres serão <span className="text-red-600 font-bold">excluídos permanentemente</span>. Produtos e categorias serão ocultados, mas permanecerão no banco de dados.
+                                </>
+                            ) : (
+                                <>
+                                    Você está prestes a remover a <strong>página {handlers.pageToDelete !== null ? handlers.pageToDelete + 1 : ''}</strong>. Todos os textos livres serão <span className="text-red-600 font-bold">excluídos permanentemente</span>. Produtos e categorias serão ocultados, mas permanecerão no banco de dados.
+                                </>
+                            )}
+                        </p>
+                        <div className="flex gap-4">
+                            <button onClick={() => { handlers.setShowDeletePageConfirm(false); handlers.setPageToDelete(null); }} className="flex-1 py-3 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold transition-colors">
+                                Cancelar
+                            </button>
+                            <button onClick={handleDeletePage} className="flex-1 py-3 rounded-xl bg-red-600 text-white hover:bg-red-700 font-semibold shadow-lg shadow-red-200 transition-colors">
+                                Sim, excluir
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+        </div>
+    );
+};

@@ -1,10 +1,13 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import MenuDesigner from '../../components/MenuDesigner';
-import { MenuPreview } from '../../components/MenuPreview';
-import { PRESET_TEMPLATES } from '../../utils/templateCatalog';
-import type { MenuStyle, Product, SortOption, TemplateDesign } from '../../types';
-import '../../index.css';
+import { browserServices } from '../../src/composition/browserServices';
+import { AppServicesProvider } from '../../src/presentation/app/AppServicesProvider';
+import MenuDesigner from '../../src/presentation/menu/MenuDesigner';
+import { MenuPreview } from '../../src/presentation/menu/canvas/MenuPreview';
+import { PRESET_TEMPLATES } from '../../src/domain/templates/templateCatalog';
+import type { MenuStyle, Product, SortOption } from '../../src/domain/menu/model';
+import type { TemplateDesign } from '../../src/domain/templates/model';
+import '../../src/presentation/styles.css';
 
 const initial = { ...PRESET_TEMPLATES[0], menuTitle: 'Casa São Bento', menuSubtitle: 'Cozinha de estação' };
 const imported: MenuStyle = {
@@ -127,6 +130,8 @@ function LayoutFixture({ categories, productsInCategory, closeTexts, topText }: 
 
 const layout = new URLSearchParams(location.search).get('layout');
 createRoot(document.getElementById('root')!).render(<React.StrictMode>
-  {layout !== null ? <LayoutFixture categories={layout === 'categories'} productsInCategory={layout === 'products'} closeTexts={layout === 'borders'}
-    topText={layout === 'top-detached' ? 'detached' : layout === 'top-attached' ? 'attached' : undefined} /> : <Fixture />}
+  <AppServicesProvider services={browserServices}>
+    {layout !== null ? <LayoutFixture categories={layout === 'categories'} productsInCategory={layout === 'products'} closeTexts={layout === 'borders'}
+      topText={layout === 'top-detached' ? 'detached' : layout === 'top-attached' ? 'attached' : undefined} /> : <Fixture />}
+  </AppServicesProvider>
 </React.StrictMode>);

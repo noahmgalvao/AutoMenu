@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { fitBorder, type BorderGeometry } from '../components/MenuDesigner/borderGeometry';
-import type { MenuBorder } from '../types';
+import { fitBorder, type BorderGeometry } from '../src/domain/menu/borderFitting';
+import type { MenuBorder } from '../src/domain/menu/model';
 
 test('rounding follows the actual corners of the text instead of the narrowest straight edge', () => {
     const edge = { inner: -6, outer: 24 };
