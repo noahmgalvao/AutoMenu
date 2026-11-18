@@ -405,7 +405,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const isSelected = handlers.isSelected?.('category', item.data) ?? handlers.selectedId === item.data;
         const catStyle = style.elementStyles?.category || {};
         const elementId = `text-${item.data}`;
-        const isBeingDragged = handlers.draggedItem?.type === 'category' && handlers.draggedItem?.id === item.data;
+        const isBeingDragged = handlers.isCanvasObjectDragging?.('category', item.data);
         const compactControls = (style.categoryColumnCount || 1) > 1;
         const categoryAlign = catStyle.textAlign || 'left';
         const categoryImage = style.categoryImages?.[item.data];
@@ -494,7 +494,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const canMoveUp = visibleCatProducts.length > 1 && pIndex > 0;
         const canMoveDown = visibleCatProducts.length > 1 && pIndex >= 0 && pIndex < visibleCatProducts.length - 1;
         
-        const isBeingDragged = handlers.draggedItem?.id === product.id;
+        const isBeingDragged = handlers.isCanvasObjectDragging?.(productSelectionType, product.id);
         const nameStyle = product.isFreeText && product.styles ? product.styles : (style.elementStyles?.productName || {});
         const priceStyle = style.elementStyles?.productPrice || {};
         const descStyle = style.elementStyles?.productDescription || {};
@@ -527,6 +527,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     data-menu-border-surface={product.isFreeText ? 'freeText' : 'product'} data-custom-border={getBorderOverride(style, product.isFreeText ? 'freeText' : 'product', product.id)}
                     data-pagination-item={getPaginationItemKey(item)}
                     data-drag-group={item.category}
+                    data-active-canvas-drag={isBeingDragged || undefined}
                     onPointerDown={backgroundText && (!isSelected || (handlers.selectedItems?.length || 0) < 2)
                         ? undefined : (e) => handlers.handleDragStart(e, 'product', product.id, item.category)}
                     onDragStart={(e) => e.preventDefault()}
@@ -565,7 +566,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                         formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle)}
                         {!handlers.readOnly && <ProductControls type="product" id={product.id} catName={item.category} canMoveUp={!backgroundText && canMoveUp} canMoveDown={!backgroundText && canMoveDown} canMoveLeft={false} canMoveRight={false} isFreeText={product.isFreeText} handlers={handlers} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} showGridMoveControls={productColumnCount > 1}/>}
                 
-                <div className={`transition-opacity duration-150 ${isBeingDragged && !product.isFreeText ? 'opacity-40' : ''}`}>
+                <div>
                 {product.isFreeText ? (
                     <div
                         className="relative w-fit min-w-0 max-w-full leading-snug break-words [overflow-wrap:anywhere]"
@@ -805,7 +806,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                      const renderedProductColumnIndex = productColumnIndex % productColumnCount;
                      const canMoveLeft = hasMovableSiblings && renderedProductColumnIndex > 0;
                      const canMoveRight = hasMovableSiblings && renderedProductColumnIndex < productColumnCount - 1 && productColumnIndex + 1 < item.data.length;
-                     const isBeingDragged = handlers.draggedItem?.id === product.id;
+                     const isBeingDragged = handlers.isCanvasObjectDragging?.('product', product.id);
                      const isEditing = handlers.editingId === product.id;
                      const productAddControls = handlers.getSelectionAddControls?.('product', product.id) || { top: true, bottom: true };
                      return (
@@ -820,6 +821,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 data-product-card-surface={isCardLayout || undefined}
                                 data-product-card-shape={isCardLayout ? style.productCardShape || 'template' : undefined}
                                 data-drag-group={item.category}
+                                data-active-canvas-drag={isBeingDragged || undefined}
                                 onPointerDown={(e) => handlers.handleDragStart(e, 'product', product.id, item.category)}
                                 onDragStart={(e) => e.preventDefault()}
                                 onContextMenu={(e) => handlers.openObjectMenu?.(e, { type: 'product', id: product.id })} 
@@ -842,7 +844,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                     data-product-image-editing={isEditing || undefined}
                                     data-card-color-custom={style.cardBackgroundColorOverride || undefined}
                                     data-custom-border={getBorderOverride(style, 'product')}
-                                    className={`h-full min-w-0 transition-all duration-150 ${isCardLayout ? 'border border-slate-200 shadow-sm' : 'bg-transparent'} ${isBeingDragged ? 'opacity-40' : isCardLayout ? 'group-hover:shadow-md' : ''}`}
+                                    className={`h-full min-w-0 transition-all duration-150 ${isCardLayout ? 'border border-slate-200 shadow-sm group-hover:shadow-md' : 'bg-transparent'}`}
                                     style={isCardLayout ? { backgroundColor: `var(--automenu-preview-cards, ${cardBackgroundColor})`, borderRadius: cardRadius } : undefined}
                                 >
                                     <div data-product-card-content className="h-full flex flex-col" style={{ borderRadius: 'inherit' }}>

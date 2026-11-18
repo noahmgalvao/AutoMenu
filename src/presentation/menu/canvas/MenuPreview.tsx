@@ -600,8 +600,10 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         );
     }, [products, props.splitCategoryAcrossPages, style, handlers.groupedProducts, handlers.sortedCategories, handlers.liveCategoryPageAssignments, handlers.liveCategoryPositions, measuredHeights]);
 
+    const canvasStyle = useMemo(() => handlers.liveCanvasLayers
+        ? { ...style, ...handlers.liveCanvasLayers } : style, [handlers.liveCanvasLayers, style]);
     const pages = useMemo(() => finalizeMenuPages(basePages, handlers.liveCategoryPositions
-        ? { ...style, categoryPositions: handlers.liveCategoryPositions } : style), [basePages, handlers.liveCategoryPositions, style]);
+        ? { ...canvasStyle, categoryPositions: handlers.liveCategoryPositions } : canvasStyle), [basePages, canvasStyle, handlers.liveCategoryPositions]);
 
     React.useLayoutEffect(() => {
         const root = previewRootRef.current;
@@ -2435,7 +2437,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                         key={i}
                         pageIndex={i}
                         page={pageContent}
-                        style={style}
+                        style={canvasStyle}
                         handlers={handlers}
                         products={products}
                         needsOverlay={!!style.sourceImage}

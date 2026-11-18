@@ -138,10 +138,16 @@ export const useMenuInteractions = (props: InteractionProps) => {
         // ...draggableInteractions
         dragScope: draggableInteractions.dragScope,
         draggedItem: draggableInteractions.draggedItem,
+        isCanvasObjectDragging: (type: SelectionType, id: string) =>
+            draggableInteractions.draggedSelection.some(item => item.type === type && item.id === id)
+            || (draggableInteractions.draggedItem?.id === id
+                && draggableInteractions.draggedItem.type === (type === 'freeText' ? 'product' : type))
+            || (type === 'addedImage' && imageInteractions.draggedImageId === id),
         // liveCategoryOrder: draggableInteractions.liveCategoryOrder, // Not usually exposed but available if needed
         // liveProductOrder: draggableInteractions.liveProductOrder,
         liveCategoryPageAssignments: draggableInteractions.liveCategoryPageAssignments,
         liveCategoryPositions: draggableInteractions.liveCategoryPositions,
+        liveCanvasLayers: draggableInteractions.liveCanvasLayers,
         sortedCategories: draggableInteractions.sortedCategories,
         groupedProducts: draggableInteractions.groupedProducts,
         handleDragStart: draggableInteractions.handleDragStart,

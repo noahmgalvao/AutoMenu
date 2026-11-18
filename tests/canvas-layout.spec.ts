@@ -108,11 +108,12 @@ for (const touch of [false, true]) {
   test.describe(touch ? 'group drag on touch' : 'group drag with a mouse', () => {
     test.use({ hasTouch: touch });
 
-    test('selected products move together and keep their selection and order', async ({ page }) => {
+    test('nonadjacent selected products reorder independently during the drag and keep their selection', async ({ page }) => {
       await page.goto('/tests/fixtures/template-editor.html?photos=list&dense-list&lanes=2');
       const first = page.locator('#product-container-side-1');
-      const second = page.locator('#product-container-side-2');
-      const target = page.locator('#product-container-side-11');
+      const second = page.locator('#product-container-side-11');
+      const between = page.locator('#product-container-side-2');
+      const next = page.locator('#product-container-side-12');
       await first.getByRole('heading').click();
       await expect(first.getByTitle('Ajustar largura da coluna pela borda direita')).toBeVisible();
       await first.getByTitle('Seleção múltipla').click();
@@ -121,10 +122,10 @@ for (const touch of [false, true]) {
       await expect(page.locator('[data-canvas-action-group="add"], [data-canvas-action-group="move"], [data-column-resize-handle]')).toHaveCount(0);
 
       const start = (await first.boundingBox())!;
-      const destination = (await target.boundingBox())!;
+      const destination = (await between.boundingBox())!;
       const x = start.x + 12;
       const y = start.y + start.height / 2;
-      const end = destination.y + destination.height * 0.8;
+      const end = y + destination.y - start.y;
       const session = touch ? await page.context().newCDPSession(page) : null;
       expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('[data-drag-id]')?.id, { x, y }))
         .toBe('product-container-side-1');
@@ -137,15 +138,15 @@ for (const touch of [false, true]) {
         await page.mouse.down();
         await page.mouse.move(x, end, { steps: 10 });
       }
-      await expect.poll(async () => {
-        const [a, b] = await Promise.all([first, second].map(item => item.evaluate(element => element.style.translate)));
-        return Boolean(a) && a === b;
-      }).toBe(true);
+      await expect.poll(() => between.evaluate(element => [element.nextElementSibling?.id, element.nextElementSibling?.nextElementSibling?.id,
+        element.nextElementSibling?.nextElementSibling?.nextElementSibling?.id]))
+        .toEqual(['product-container-side-1', 'product-container-side-12', 'product-container-side-11']);
+      await expect(first.locator('[data-canvas-selection-outline]')).toBeVisible();
+      await expect(second.locator('[data-canvas-selection-outline]')).toBeVisible();
       if (session) await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
       else await page.mouse.up();
 
-      await expect.poll(() => target.evaluate(element => [element.nextElementSibling?.id, element.nextElementSibling?.nextElementSibling?.id]))
-        .toEqual(['product-container-side-1', 'product-container-side-2']);
+      await expect.poll(() => next.evaluate(element => element.nextElementSibling?.id)).toBe('product-container-side-11');
       await expect(second.getByTitle('Seleção múltipla')).toHaveAttribute('aria-pressed', 'true');
     });
   });
@@ -166,6 +167,8 @@ test('dragging selected products from different categories moves only the presse
   await page.mouse.move(x, start.y + start.height / 2);
   await page.mouse.down();
   await page.mouse.move(x, destination.y + destination.height * 0.75, { steps: 10 });
+  await expect(first).toHaveAttribute('data-active-canvas-drag', 'true');
+  await expect(first.locator('[data-canvas-selection-outline]')).toBeVisible();
   await page.mouse.up();
   await expect.poll(() => next.evaluate(element => element.nextElementSibling?.id)).toBe('product-container-1');
   await expect(first.getByTitle('Seleção múltipla')).toHaveAttribute('aria-pressed', 'false');
@@ -185,6 +188,8 @@ test('detached free texts keep their spacing after dragging together', async ({ 
   await page.mouse.move(x, y);
   await page.mouse.down();
   await page.mouse.move(x + 70, y + 110, { steps: 8 });
+  await expect.poll(async () => Math.round((await first.boundingBox())!.y - before.y)).toBe(110);
+  await expect.poll(async () => Math.round((await second.boundingBox())!.y - other.y)).toBe(110);
   await page.mouse.up();
   await expect.poll(async () => Math.round((await first.boundingBox())!.y - before.y)).toBe(110);
   expect((await second.boundingBox())!.y - other.y).toBeCloseTo(110, 0);
@@ -200,6 +205,8 @@ test('selected canvas images retain their relative positions after a group drag'
   await page.locator('[data-object-page-index]').getByTitle('Seleção múltipla').click();
   await second.click();
   await expect(page.locator('[data-image-selection-overlay]')).toHaveCount(2);
+  const editorState = page.getByTestId('editor-state');
+  const editsBefore = Number(await editorState.getAttribute('data-edits'));
   const firstStart = (await first.boundingBox())!;
   const secondStart = (await second.boundingBox())!;
   const x = firstStart.x + firstStart.width / 2;
@@ -207,7 +214,11 @@ test('selected canvas images retain their relative positions after a group drag'
   await page.mouse.move(x, y);
   await page.mouse.down();
   await page.mouse.move(x + 35, y + 50, { steps: 8 });
+  await expect.poll(async () => Math.round((await second.boundingBox())!.x - secondStart.x)).toBe(35);
+  await expect(page.locator('[data-image-selection-overlay][data-active-canvas-drag]')).toHaveCount(2);
+  await expect(editorState).toHaveAttribute('data-edits', String(editsBefore));
   await page.mouse.up();
+  await expect(editorState).toHaveAttribute('data-edits', String(editsBefore + 1));
   await expect.poll(async () => Math.round((await first.boundingBox())!.x - firstStart.x)).toBe(35);
   const secondEnd = (await second.boundingBox())!;
   expect(secondEnd.x - secondStart.x).toBeCloseTo(35, 0);
@@ -230,6 +241,9 @@ test('selected category groups keep their relative positions after a group drag'
   await page.mouse.move(x, y);
   await page.mouse.down();
   await page.mouse.move(x, y + 56, { steps: 8 });
+  await expect(first).toHaveClass(/ring-indigo-500/);
+  await expect(second).toHaveClass(/ring-indigo-500/);
+  await expect.poll(async () => Math.round((await second.boundingBox())!.y - other.y)).toBe(56);
   await page.mouse.up();
   await expect.poll(async () => Math.round((await first.boundingBox())!.y - before.y)).toBe(56);
   expect((await second.boundingBox())!.y - other.y).toBeCloseTo(56, 0);

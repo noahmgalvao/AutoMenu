@@ -152,7 +152,11 @@ export const ProductControls = ({
         };
     }, [catName]);
 
-    if (isDragging) return null;
+    const isDragged = handlers.isCanvasObjectDragging?.(selectionType, selectionId);
+    const outline = showSelectionOutline && (isSelected || isDragged)
+        ? <div data-canvas-selection-outline className={`pointer-events-none absolute inset-0 rounded-lg border-2 border-indigo-500 ${selectionLayerClasses.outline}`} />
+        : null;
+    if (isDragging) return isDragged ? outline : null;
 
     const renderMove = (direction: MoveDirection, edge: FlowDirection) => (
         <button key={direction} type="button"
@@ -186,9 +190,7 @@ export const ProductControls = ({
 
     return (
         <>
-            {isSelected && showSelectionOutline && (
-                <div className={`pointer-events-none absolute inset-0 rounded-lg border-2 border-indigo-500 ${selectionLayerClasses.outline}`} />
-            )}
+            {outline}
             {isActive && !isFreeText && showAddControls && !handlers.editingId && !handlers.multiSelectMode && (
                 <>
                     {showTopAddControl && renderAdd('before', addFlow.before)}

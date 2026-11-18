@@ -204,7 +204,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
             || handlers.selectedItems?.[handlers.selectedItems.length - 1];
         const isCategoryControlAnchor = (handlers.selectedItems?.length || 0) <= 1
             || (activeSelectedItem?.type === 'category' && activeSelectedItem.id === chunk.category);
-        const isCategoryDragged = isCategoryTarget && handlers.draggedItem?.type === 'category' && handlers.draggedItem?.id === chunk.category;
+        const isCategoryDragged = isCategoryTarget && handlers.isCanvasObjectDragging?.('category', chunk.category);
         const categoryAddControls = handlers.getSelectionAddControls?.('category', chunk.category) || { top: true, bottom: true };
         const categoryFlowDirections = handlers.getFlowControlDirections?.('category', chunk.category) || { before: 'top', after: 'bottom' };
         const categoryAddFlow = isCategorySelected
@@ -255,6 +255,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 layoutKey={`${flowIndex}:${categoryColumnWidths.join(',')}`}
                 data-chunk-id={chunk.chunkId}
                 data-category-chunk={chunk.category}
+                data-active-canvas-drag={isCategoryDragged || undefined}
                 data-menu-border-surface={isFreeTextTarget ? undefined : 'categoryGroup'}
                 data-drag-scope={handlers.dragScope}
                 data-drag-type={isDragTarget ? 'category' : undefined}
@@ -263,7 +264,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 data-drag-column-index={isDragTarget ? chunk.columnIndex : undefined}
                 data-drag-flow-index={isDragTarget ? flowIndex : undefined}
                 onDragOver={(e) => handlers.handleDragOverItem?.(e, chunk.category, 'category')}
-                className={`relative rounded-xl ${isCategoryDragged || Number.isFinite(desiredPageY) ? 'transition-none' : 'transition-all duration-200'} pointer-events-none ${isCategorySelected ? `ring-2 ring-indigo-500 bg-indigo-50/10 ${selectionLayerClasses.outline}` : ''}`}
+                className={`relative rounded-xl ${isCategoryDragged || Number.isFinite(desiredPageY) ? 'transition-none' : 'transition-all duration-200'} pointer-events-none ${isCategorySelected || isCategoryDragged ? `ring-2 ring-indigo-500 bg-indigo-50/10 ${selectionLayerClasses.outline}` : ''}`}
             >
                 {!isFreeTextTarget && <BorderDecoration style={renderedStyle} scope="categoryGroup" />}
                 {isCategorySelected && isCategoryControlAnchor && !isCategoryDragged && !handlers.editingId && !handlers.multiSelectMode && (
@@ -300,7 +301,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         )}
                     </>
                 )}
-                <div data-pagination-chunk-content className={`transition-opacity duration-150 ${isFreeTextTarget ? '' : 'flex flex-col'} ${isCategoryDragged ? 'opacity-40' : ''}`}>
+                <div data-pagination-chunk-content className={isFreeTextTarget ? undefined : 'flex flex-col'}>
                     {renderItems.map((item, idx) => (
                         <MenuItem
                             key={item.type === 'product-item'
@@ -584,6 +585,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         data-print-control="true"
                         data-added-image-drag="true"
                         data-image-selection-overlay={img.id}
+                        data-active-canvas-drag={handlers.isCanvasObjectDragging?.('addedImage', img.id) || undefined}
                         data-drag-ignore="true"
                         className="automenu-drag-item absolute cursor-move"
                         style={{

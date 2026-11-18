@@ -2,25 +2,14 @@ import React, { useState } from 'react';
 import { getImageLayerIndexes } from '../../../domain/menu/imageLayers';
 import { InteractionProps, SelectionItem, TOUCH_LONG_PRESS_MS } from './types';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
+import { captureImageDrag, getRenderedImageDragPages, moveDraggedLayers } from './imageDragMotion';
 
-const NEW_PAGE_SWITCH_THRESHOLD_PX = 96;
 type ImageResizeDirection = 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight';
 type ImageResizeSnapshot = {
     x: number;
     y: number;
     width: number;
     aspectRatio: number;
-};
-
-const getRenderedPages = () => {
-    if (typeof document === 'undefined') return [];
-    return Array.from(document.querySelectorAll<HTMLElement>('[data-menu-print-page="true"][data-page-index]'))
-        .map((element) => ({
-            element,
-            pageIndex: Number(element.dataset.pageIndex ?? 0),
-            rect: element.getBoundingClientRect(),
-        }))
-        .sort((left, right) => left.pageIndex - right.pageIndex);
 };
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
@@ -93,9 +82,7 @@ export const useImageManipulation = (
         }
         
         const currentScale: number = (typeof scale === 'number' && scale > 0) ? scale : 1;
-        const pointerOffsetX = (startX - Number(rect.left)) / currentScale;
-        const pointerOffsetY = (startY - Number(rect.top)) / currentScale;
-        const imageHeight = Math.max(1, Number(rect.height) / currentScale);
+        const drag = captureImageDrag(imgId, pageIndex, rect, { x: startX, y: startY }, currentScale);
 
         const handlePointerMove = (moveEvent: PointerEvent) => {
             if (moveEvent.pointerId !== pointerId) return;
@@ -110,67 +97,12 @@ export const useImageManipulation = (
             }
 
             if (onStyleUpdate) {
-               const pages = getRenderedPages();
-               const pageCount = Math.max(1, ...pages.map((page) => page.pageIndex + 1));
-               const pageAtPointer = pages.find((page) => (
-                   moveX >= page.rect.left &&
-                   moveX <= page.rect.right &&
-                   moveY >= page.rect.top &&
-                   moveY <= page.rect.bottom
-               ));
-
-               onStyleUpdate(prev => {
-                   let nextBlankPages = prev.blankPages || [];
-                   const nextImages = prev.addedImages?.map(img => {
-                       if (img.id !== imgId) return img;
-
-                       const currentPageIndex = img.repeatAsBackground ? pageIndex : img.pageIndex || 0;
-                       const currentPage = pages.find((page) => page.pageIndex === currentPageIndex) || pages[0];
-                       const hasExistingNextPage = pages.some((page) => page.pageIndex > currentPageIndex);
-                       const shouldCreateNextPage = Boolean(
-                           currentPage &&
-                           !hasExistingNextPage &&
-                           (
-                               moveX > currentPage.rect.right + NEW_PAGE_SWITCH_THRESHOLD_PX ||
-                               moveY > currentPage.rect.bottom + NEW_PAGE_SWITCH_THRESHOLD_PX
-                           )
-                       );
-                       let targetPageIndex = currentPageIndex;
-                       let targetPage = currentPage;
-                       let newX = currentPage ? ((moveX - currentPage.rect.left) / currentScale) - pointerOffsetX : img.x;
-                       let newY = currentPage ? ((moveY - currentPage.rect.top) / currentScale) - pointerOffsetY : img.y;
-
-                       if (pageAtPointer) {
-                           targetPageIndex = pageAtPointer.pageIndex;
-                           targetPage = pageAtPointer;
-                           newX = ((moveX - targetPage.rect.left) / currentScale) - pointerOffsetX;
-                           newY = ((moveY - targetPage.rect.top) / currentScale) - pointerOffsetY;
-                       } else if (shouldCreateNextPage && !img.repeatAsBackground) {
-                           targetPageIndex = currentPageIndex + 1;
-                           newX = 0;
-                           newY = 0;
-                       }
-
-                        targetPageIndex = Math.max(0, targetPageIndex);
-                        if (targetPageIndex >= pageCount && !nextBlankPages.some((page) => page.index === targetPageIndex)) {
-                            nextBlankPages = [...nextBlankPages, { id: crypto.randomUUID(), index: targetPageIndex, fixedPosition: true }];
-                        }
-
-                        return {
-                            ...img,
-                            pageIndex: img.repeatAsBackground ? img.pageIndex : targetPageIndex,
-                            x: clamp(newX, 0, Math.max(0, pageWidthPx - img.width)),
-                            y: clamp(newY, 0, Math.max(0, pageHeightPx - imageHeight)),
-                        };
-                    });
-
-                   return {
-                       ...prev,
-                       blankPages: nextBlankPages,
-                       addedImages: nextImages,
-                       name: 'Custom'
-                   };
-               });
+                const pages = getRenderedImageDragPages();
+                onStyleUpdate(previous => ({
+                    ...previous,
+                    ...moveDraggedLayers(previous, [{ drag, point: { x: moveX, y: moveY } }], pages),
+                    name: 'Custom',
+                }));
             }
         };
 
