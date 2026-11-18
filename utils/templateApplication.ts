@@ -32,6 +32,14 @@ export function resizeMenuStyle(current: MenuStyle, setup: MenuPageSetup): MenuS
       const width = Math.min(image.width * Math.min(xRatio, yRatio), right - left);
       return { ...image, x: x(image.x, width), y: y(image.y), width };
     }),
+    freeTextBackgrounds: current.freeTextBackgrounds && Object.fromEntries(Object.entries(current.freeTextBackgrounds)
+      .map(([id, position]) => {
+        const width = Math.min(position.width, to.widthPx);
+        return [id, {
+          ...position, x: clamp(position.x * xRatio, 0, to.widthPx - width),
+          y: clamp(position.y * yRatio, 0, to.heightPx - 28), width,
+        }];
+      })),
     categoryPositions: current.categoryPositions && Object.fromEntries(Object.entries(current.categoryPositions)
       .filter(([, position]) => position.pageX !== undefined)
       .map(([category, position]) => [category, {

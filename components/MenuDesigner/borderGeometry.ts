@@ -8,6 +8,7 @@ type Limits = readonly [number, number];
 export type BorderGeometry = {
     width: number;
     height: number;
+    enclosesSurface: boolean;
     space: Record<MenuBorderSide, SideSpace>;
 };
 
@@ -36,9 +37,15 @@ function measureGeometry(surface: HTMLElement, page: HTMLElement, entries: TextB
     const scale = pageBox.width / Number(page.dataset.menuPageWidthPx) || 1;
     const width = Math.round(box.width / scale * 100) / 100;
     const height = Math.round(box.height / scale * 100) / 100;
+    const enclosesSurface = surface.hasAttribute('data-product-card-surface') || surface.dataset.menuBorderSurface === 'productImage';
     const maxOutset = Math.min(64, Math.max(4, Math.round(Math.min(width, height) / 2)));
     const ownText = entries.filter(({ element }) => surface.contains(element)).map(({ box }) => box);
     const neighbors = entries.filter(({ element }) => !surface.contains(element)).map(({ box }) => box);
+    if (surface.hasAttribute('data-product-card-surface')) {
+        page.querySelectorAll('[data-product-card-surface]').forEach((card) => {
+            if (card !== surface) neighbors.push(card.getBoundingClientRect());
+        });
+    }
     const clip = { top: pageBox.top, right: pageBox.right, bottom: pageBox.bottom, left: pageBox.left };
     for (let element: HTMLElement | null = surface; element && element !== page; element = element.parentElement) {
         const css = getComputedStyle(element);
@@ -65,9 +72,9 @@ function measureGeometry(surface: HTMLElement, page: HTMLElement, entries: TextB
                 distance(neighbor[farEdge]) + gap <= inner) continue;
             outer = Math.min(outer, distance(neighbor[nearEdge]) - gap);
         }
-        return { inner: Math.ceil(inner), outer: Math.floor(outer) };
+        return { inner: enclosesSurface ? Math.min(-12, Math.floor(outer) - 12) : Math.ceil(inner), outer: Math.floor(outer) };
     };
-    return { width, height, space: {
+    return { width, height, enclosesSurface, space: {
         top: getSpace('top', 'left', 'right', 'bottom', 'top', -1),
         right: getSpace('right', 'top', 'bottom', 'left', 'right', 1),
         bottom: getSpace('bottom', 'left', 'right', 'top', 'bottom', 1),
@@ -155,7 +162,7 @@ export function fitBorder(border: MenuBorder, geometry: BorderGeometry) {
         ? clamp(fittedOffset, [space[side].inner + fittedThickness, space[side].outer])
         : clamp(fittedOffset, [0, Math.max(0, space[side].outer)])])) as Record<MenuBorderSide, number>;
     const radius: Limits = [0, Math.max(0, Math.min(Math.floor(shortEdge / 2),
-        ...safeSides.map((side) => outsets[side] - space[side].inner)))];
+        ...(geometry.enclosesSurface ? [] : safeSides.map((side) => outsets[side] - space[side].inner))))];
     const length: Limits = [Math.min(100, Math.max(5, Math.ceil(300 * fittedThickness / Math.max(1, shortEdge)))), 100];
     return {
         outsets,

@@ -6,14 +6,10 @@ import { FontSelect } from './SearchableSelects';
 import { ColorPicker } from './ColorPicker';
 import { FontSizeInput } from './FontSizeInput';
 import type { PriceAdjustmentMode } from '../../utils/pricePropagation';
-import type { CategoryDividerStyle } from '../../types';
-import { CategoryDividerPicker } from './CategoryDividerPicker';
 
-interface InlineStyleToolbarProps {
+type InlineStyleToolbarProps = {
     targetElementId: string;
     positionTargetElementId?: string;
-    value: ElementStyle;
-    onChange: (style: ElementStyle) => void | boolean;
     onDismiss: () => void;
     controls?: 'all' | 'sizeColor';
     maxFontSize?: number;
@@ -22,15 +18,14 @@ interface InlineStyleToolbarProps {
     compact?: boolean;
     onAdjustPrice?: (direction: 1 | -1, amount: number, mode: PriceAdjustmentMode) => void;
     fallbackFontFamily?: string;
-    categoryDividerPreset?: CategoryDividerStyle;
-    categoryDividerColor?: string;
-    onCategoryDividerChange?: (preset: CategoryDividerStyle) => void;
-    dividerLabel?: string;
     decoration?: (formatButtons: React.ReactNode) => React.ReactNode;
     borderOffset?: number;
-}
+} & (
+    | { value: ElementStyle; onChange: (style: ElementStyle) => void | boolean; children?: never }
+    | { value?: never; onChange?: never; children: React.ReactNode }
+);
 
-export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, positionTargetElementId, value, onChange, onDismiss, controls = 'all', maxFontSize, minFontSize, header, compact = false, onAdjustPrice, fallbackFontFamily, categoryDividerPreset, categoryDividerColor = '#000000', onCategoryDividerChange, dividerLabel, decoration, borderOffset }) => {
+export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, positionTargetElementId, value, onChange, onDismiss, controls = 'all', maxFontSize, minFontSize, header, compact = false, onAdjustPrice, fallbackFontFamily, decoration, borderOffset, children }) => {
     const toolbarRef = useRef<HTMLDivElement>(null);
     const contentRef = useRef<HTMLDivElement>(null);
     const [position, setPosition] = useState<React.CSSProperties>({ left: 8, top: 8, width: 270 });
@@ -40,6 +35,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
     const hasHeader = Boolean(header);
     const hasPriceAdjustment = Boolean(onAdjustPrice);
     const hasDecoration = Boolean(decoration);
+    const hasTextControls = Boolean(value);
 
     useEffect(() => {
         setPriceAdjustment('10');
@@ -50,8 +46,11 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
         const dismissOnOutsidePointer = (event: PointerEvent) => {
             const target = event.target;
             if (!(target instanceof Element) || toolbarRef.current?.contains(target) || target.closest('[data-editor-popover="true"]')) return;
+            if (target.closest<HTMLElement>('[data-inline-format-target]')?.dataset.inlineFormatTarget === targetElementId) return;
             const editedElement = document.getElementById(targetElementId);
             const editedProduct = editedElement?.closest('[data-drag-type="product"]');
+            if (editedProduct instanceof HTMLElement
+                && target.closest<HTMLElement>('[data-product-image-surface]')?.dataset.productImageSurface === editedProduct.dataset.dragId) return;
             const editedHeader = editedElement?.closest('[data-template-header]');
             if (editedProduct?.contains(target) || (editedHeader?.contains(target) && target.closest('[data-menu-heading]'))) return;
             if (editedElement === document.activeElement) editedElement?.blur();
@@ -73,7 +72,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
 
         const updatePosition = () => {
             const toolbarHeight = (contentRef.current?.offsetHeight || 76) + (compact ? 10 : 14);
-            const preferredWidth = hasHeader ? (compact ? 148 : 210) : isSizeColorOnly ? 120 : hasPriceAdjustment || onCategoryDividerChange ? 300 : 270;
+            const preferredWidth = !hasTextControls ? 200 : hasHeader ? (compact ? 148 : 210) : isSizeColorOnly ? 120 : hasPriceAdjustment ? 300 : 270;
             const width = Math.min(preferredWidth, window.innerWidth - 16);
             const borderSurface = hasDecoration
                 ? document.getElementById(targetElementId)?.closest('[data-menu-border-surface]')
@@ -122,7 +121,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
             window.removeEventListener('resize', updatePosition);
             window.removeEventListener('scroll', updatePosition, true);
         };
-    }, [borderOffset, compact, hasDecoration, hasHeader, hasPriceAdjustment, isSizeColorOnly, onCategoryDividerChange, positionTargetElementId, targetElementId]);
+    }, [borderOffset, compact, hasDecoration, hasHeader, hasPriceAdjustment, hasTextControls, isSizeColorOnly, positionTargetElementId, targetElementId]);
 
     const parsedPriceAdjustment = Number(priceAdjustment);
     const canAdjustPrice = Number.isFinite(parsedPriceAdjustment) && parsedPriceAdjustment > 0;
@@ -143,7 +142,8 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                     {header}
                 </div>
             )}
-            <div className={`flex ${compact ? 'justify-center gap-1' : 'gap-1.5'}`}>
+            {children}
+            {value && onChange && <div className={`flex ${compact ? 'justify-center gap-1' : 'gap-1.5'}`}>
                 {!isSizeColorOnly && (
                     <div className="min-w-0 flex-1">
                         <FontSelect
@@ -163,8 +163,8 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                     onChange={(fontSize) => onChange({ ...value, fontSize })}
                 />
                 <ColorPicker value={value.color} onChange={color => onChange({ ...value, color })} />
-            </div>
-            {!isSizeColorOnly && (() => {
+            </div>}
+            {value && onChange && !isSizeColorOnly && (() => {
                 const formatButtons = <>
                     {(['left', 'center', 'right'] as const).map((align) => (
                         <button
@@ -206,16 +206,6 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                     : <div className="flex items-center justify-center gap-1">{formatButtons}</div>}
                 </div>;
             })()}
-            {onCategoryDividerChange && categoryDividerPreset && (
-                <div className="mt-2 border-t border-slate-100 pt-2">
-                    <CategoryDividerPicker
-                        value={categoryDividerPreset}
-                        color={categoryDividerColor}
-                        onChange={onCategoryDividerChange}
-                        label={dividerLabel}
-                    />
-                </div>
-            )}
             {onAdjustPrice && (
                 <div className="mt-2 border-t border-slate-100 pt-2">
                     <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Alterar valor</div>

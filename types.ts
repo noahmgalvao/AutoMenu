@@ -161,7 +161,10 @@ export interface AddedImage {
   pageIndex: number;
   zIndex?: number;
   repeatAsBackground?: boolean;
+  backgroundPromptDismissed?: boolean;
   previousZIndex?: number;
+  flipHorizontal?: boolean;
+  flipVertical?: boolean;
   shape?: CanvasShape;
   boundingBox?: BoundingBox;
 }
@@ -245,6 +248,7 @@ export interface MenuStyle {
   design?: TemplateDesign;
   borders?: Partial<Record<Exclude<MenuBorderScope, 'freeText'>, MenuBorder>>;
   freeTextBorders?: Record<string, MenuBorder>;
+  freeTextBackgrounds?: Record<string, { x: number; y: number; width: number; pageIndex: number }>;
   markers?: Partial<Record<'category' | 'product', MenuMarker>>;
   catalogMetadata?: TemplateCatalogMetadata;
   appliedTemplateId?: string;
@@ -272,6 +276,9 @@ export interface MenuStyle {
   showCategoryImages?: boolean;
   cardBackgroundColor?: string;
   cardBackgroundColorOverride?: boolean;
+  productCardShape?: 'template' | 'square' | 'rounded' | 'soft' | 'arch';
+  productImageFrame?: 'template' | 'rounded' | 'circle' | 'arch';
+  productImageFlips?: Record<string, { horizontal?: boolean; vertical?: boolean }>;
   imageScale?: number;
   categoryImageScale?: number;
   columnCount: 1 | 2 | 3;

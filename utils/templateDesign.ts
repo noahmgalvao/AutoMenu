@@ -46,6 +46,34 @@ export function templateProductImageHeight(style: MenuStyle, standardHeight: num
   return Math.round(standardHeight * Math.min(1.5, Math.max(0.7, ratioFactor)));
 }
 
+export const PRODUCT_CARD_SHAPES = [
+  ['template', 'Do modelo'], ['square', 'Reto'], ['rounded', 'Arredondado'], ['soft', 'Cantos amplos'], ['arch', 'Arco'],
+] as const;
+
+export const PRODUCT_IMAGE_FRAMES = [
+  ['template', 'Do modelo'], ['rounded', 'Arredondada'], ['circle', 'Circular'], ['arch', 'Arco'],
+] as const;
+
+export function getProductCardRadius(style: MenuStyle, shape = style.productCardShape) {
+  if (shape === 'square') return 0;
+  if (shape === 'rounded') return 12;
+  if (shape === 'soft') return 24;
+  if (shape === 'arch') return 36;
+  return style.globalRadius ?? 12;
+}
+
+export function getProductCardCornerRadii(style: MenuStyle, radius: number) {
+  return style.productCardShape === 'arch'
+    ? `${radius}px ${radius}px ${Math.round(radius / 4)}px ${Math.round(radius / 4)}px`
+    : `${radius}px`;
+}
+
+export function getProductPhotoFrameRadius(frame: MenuStyle['productImageFrame'], radius?: number) {
+  if (frame === 'circle') return '50%';
+  if (frame === 'arch') return `50% 50% ${radius ?? 8}px ${radius ?? 8}px / 34% 34% ${radius ?? 8}px ${radius ?? 8}px`;
+  return `${radius ?? (frame === 'rounded' ? 12 : 6)}px`;
+}
+
 export const templateHeaderExtra = (style: MenuStyle) =>
   style.design?.header === 'hero' ? 40 : style.design?.header === 'banner' ? 26 : style.design?.header === 'split' ? 10 : 0;
 

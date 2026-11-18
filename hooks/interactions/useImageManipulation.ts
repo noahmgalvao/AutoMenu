@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { getImageLayerIndexes } from '../../utils/imageLayers';
-import { InteractionProps, SelectionItem } from './types';
+import { InteractionProps, SelectionItem, TOUCH_LONG_PRESS_MS } from './types';
 import { resolveMenuPageDimensions } from '../../utils/pageSetup';
 
 const NEW_PAGE_SWITCH_THRESHOLD_PX = 96;
@@ -32,9 +32,10 @@ export const useImageManipulation = (
         id: string | null,
         options?: { shiftKey?: boolean; ctrlKey?: boolean }
     ) => void,
-    selectedItems: SelectionItem[] = []
+    selectedItems: SelectionItem[] = [],
+    multiSelectMode = false,
 ) => {
-    const { onStyleUpdate, scale, style } = props;
+    const { onStyleUpdate, onImageEditEnd, scale, style } = props;
     const { widthPx: pageWidthPx, heightPx: pageHeightPx } = resolveMenuPageDimensions(style);
     const [imageEditPage, setImageEditPage] = React.useState<{ id: string; pageIndex: number } | null>(null);
     const [draggedImageId, setDraggedImageId] = useState<string | null>(null);
@@ -54,6 +55,7 @@ export const useImageManipulation = (
     };
 
     const handleImageDragStart = (e: React.PointerEvent, imgId: string, pageIndex = 0) => {
+        if (!e.isPrimary || e.button !== 0) return;
         e.preventDefault();
         e.stopPropagation();
         imageDragCleanupRef.current?.();
@@ -70,17 +72,21 @@ export const useImageManipulation = (
         }
         const startX = Number(e.clientX);
         const startY = Number(e.clientY);
-        if (e.pointerType === 'touch') {
+        const pointerId = e.pointerId;
+        let moved = false;
+        let openedMenu = false;
+        const longPress = e.pointerType === 'touch' ? window.setTimeout(() => {
+            openedMenu = true;
             window.dispatchEvent(new CustomEvent('automenu:canvas-drag-ready', {
                 detail: { type: 'addedImage', id: imgId, x: startX, y: startY },
             }));
-        } else {
-            window.dispatchEvent(new CustomEvent('automenu:canvas-drag-move'));
-        }
+        }, TOUCH_LONG_PRESS_MS) : undefined;
+        window.dispatchEvent(new CustomEvent('automenu:canvas-drag-move'));
         const rect = el.getBoundingClientRect();
         const parentEl = el.parentElement;
         
         if (!parentEl) {
+            window.clearTimeout(longPress);
             delete document.body.dataset.automenuImageInteraction;
             setDraggedImageId(null);
             return;
@@ -92,10 +98,14 @@ export const useImageManipulation = (
         const imageHeight = Math.max(1, Number(rect.height) / currentScale);
 
         const handlePointerMove = (moveEvent: PointerEvent) => {
+            if (moveEvent.pointerId !== pointerId) return;
             if (moveEvent.cancelable) moveEvent.preventDefault();
             const moveX = Number(moveEvent.clientX);
             const moveY = Number(moveEvent.clientY);
-            if (Math.hypot(moveX - startX, moveY - startY) >= 6) {
+            if (!moved) {
+                if (Math.hypot(moveX - startX, moveY - startY) < 6) return;
+                moved = true;
+                window.clearTimeout(longPress);
                 window.dispatchEvent(new CustomEvent('automenu:canvas-drag-move'));
             }
 
@@ -165,6 +175,7 @@ export const useImageManipulation = (
         };
 
         const cleanupDrag = () => {
+            window.clearTimeout(longPress);
             try {
                 if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
             } catch {
@@ -177,7 +188,13 @@ export const useImageManipulation = (
             imageDragCleanupRef.current = null;
             setDraggedImageId(null);
         };
-        const handlePointerUp = cleanupDrag;
+        const handlePointerUp = (event: PointerEvent) => {
+            if (event.pointerId !== pointerId) return;
+            cleanupDrag();
+            if (event.type === 'pointerup' && (moved || (!openedMenu && !multiSelectMode && !e.shiftKey && !e.ctrlKey && !e.metaKey))) {
+                onImageEditEnd?.(imgId);
+            }
+        };
 
         window.addEventListener('pointermove', handlePointerMove, { passive: false });
         window.addEventListener('pointerup', handlePointerUp);
@@ -325,6 +342,7 @@ export const useImageManipulation = (
         const sourceSnapshot = imageResizeSessionRef.current?.images.get(imgId);
         if (sourceSnapshot && Number.isFinite(finalWidth) && finalWidth > 0) {
             resizeImageFromCorner(imgId, direction, finalWidth - sourceSnapshot.width);
+            if (finalWidth !== Math.round(sourceSnapshot.width)) onImageEditEnd?.(imgId);
         }
         imageResizeSessionRef.current = null;
         imageResizeCleanupRef.current?.();

@@ -1,13 +1,14 @@
 import React, { useMemo, useEffect, useRef, useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AddedImage, ElementStyle, Product, MenuStyle, SortOption, type CategoryDividerStyle } from '../types';
-import { AlertTriangle, BringToFront, Copy, CopyCheck, CopyPlus, EyeOff, Paintbrush, Clipboard, Plus, Scissors, SendToBack, Trash2 } from 'lucide-react';
+import { AddedImage, ElementStyle, Product, MenuStyle, SortOption } from '../types';
+import { AlertTriangle, BringToFront, Copy, CopyCheck, CopyPlus, Edit3, EyeOff, FlipHorizontal2, FlipVertical2, Layers, Paintbrush, Clipboard, Plus, Scissors, SendToBack, Trash2 } from 'lucide-react';
 import { calculatePagination, finalizeMenuPages, FREE_TEXT_PREFIX, getPaginationHeightKey, SAFETY_BUFFER, type PageLayout } from '../utils/menuPagination';
 import { isPristineNewCategory, isPristineNewProduct } from '../utils/pristineItems';
 import { useMenuInteractions } from '../hooks/useMenuInteractions';
 import { NUDGE_STEP, type DraftItem, type MoveDirection, type SelectionItem } from '../hooks/interactions/types';
 import { MenuPage } from './MenuPage';
 import { getImageLayerIndexes } from '../utils/imageLayers';
+import { toggleBackgroundLayer } from '../utils/canvasShapes';
 import type { FlowDirection } from '../utils/flowControls';
 import { getCollisionSafeFreeTextTop } from '../hooks/interactions/freeTextMovement';
 import { resolveMenuMargins } from '../utils/styleRules';
@@ -25,7 +26,7 @@ import {
 } from '../utils/pricePropagation';
 import { FontPropagationPrompt, type FontPropagationRequest } from './FontPropagationPrompt';
 import { applyFontToMenuStyle } from '../utils/fontPropagation';
-import { CategoryDividerPicker } from './MenuDesigner/CategoryDividerPicker';
+
 
 interface MenuPreviewProps {
     products: Product[];
@@ -90,6 +91,7 @@ type ObjectMenuState = {
     x: number;
     y: number;
     item: CanvasContextMenuItem | null;
+    pageIndex?: number;
 };
 
 type MarqueeRect = {
@@ -157,6 +159,10 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     // 1. Hook for all interactions and state
     const [pendingPricePropagation, setPendingPricePropagation] = useState<PricePropagationRequest | null>(null);
     const [pendingFontPropagation, setPendingFontPropagation] = useState<FontPropagationRequest | null>(null);
+    const [backgroundPromptId, setBackgroundPromptId] = useState<string | null>(null);
+    const [backgroundPromptPosition, setBackgroundPromptPosition] = useState<{ left: number; top: number }>();
+    const backgroundPromptRef = useRef<HTMLDivElement | null>(null);
+    const skipBackgroundDismissClickRef = useRef(false);
     const productImageInputRef = useRef<HTMLInputElement | null>(null);
     const pendingProductImageIdRef = useRef<string | null>(null);
     const handleProductUpdateWithPricePrompt = useCallback((id: string, field: keyof Product, value: any) => {
@@ -178,7 +184,13 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         });
         setPendingPricePropagation((current) => mergePricePropagationRequest(current, request));
     }, [props.onUpdateProduct, props.products]);
-    const handlers = useMenuInteractions({ ...props, onUpdateProduct: handleProductUpdateWithPricePrompt });
+    const finishImageEdit = useCallback((id: string) => {
+        const image = props.style.addedImages?.find((candidate) => candidate.id === id);
+        if (!props.readOnly && image && !image.repeatAsBackground && !image.backgroundPromptDismissed) {
+            setBackgroundPromptId(id);
+        }
+    }, [props.readOnly, props.style.addedImages]);
+    const handlers = useMenuInteractions({ ...props, onUpdateProduct: handleProductUpdateWithPricePrompt, onImageEditEnd: finishImageEdit });
     const clipboardRef = useRef<CanvasClipboard | null>(null);
     const previewRootRef = useRef<HTMLDivElement | null>(null);
     const [measuredHeights, setMeasuredHeights] = useState<ReadonlyMap<string, number>>(() => new Map());
@@ -208,7 +220,8 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             const detail = (event as CustomEvent<{ type: ObjectSelectionItem['type']; id: string; x: number; y: number }>).detail;
             if (!detail || !['product', 'category', 'freeText', 'addedImage'].includes(detail.type)) return;
             setObjectMenuPosition(null);
-            setObjectMenu({ x: detail.x, y: detail.y, item: { type: detail.type, id: detail.id } });
+            const page = previewRootRef.current && document.elementFromPoint(detail.x, detail.y)?.closest<HTMLElement>('[data-page-index]');
+            setObjectMenu({ x: detail.x, y: detail.y, item: { type: detail.type, id: detail.id }, pageIndex: page ? Number(page.dataset.pageIndex) : undefined });
         };
         const closeTouchMenu = () => setObjectMenu(null);
         window.addEventListener('automenu:canvas-drag-ready', openTouchMenu);
@@ -223,6 +236,112 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         readOnly = false, visiblePageIndex, onPageCountChange,
     } = props;
     const pageDimensions = resolveMenuPageDimensions(style);
+    const promptedImage = style.addedImages?.find((image) => image.id === backgroundPromptId && !image.repeatAsBackground && !image.backgroundPromptDismissed);
+    const promptOpen = Boolean(promptedImage);
+
+    useEffect(() => {
+        if (readOnly) return;
+        const finishSidebarImageEdit = (event: Event) => finishImageEdit((event as CustomEvent<string>).detail);
+        window.addEventListener('automenu:image-edit-end', finishSidebarImageEdit);
+        return () => window.removeEventListener('automenu:image-edit-end', finishSidebarImageEdit);
+    }, [finishImageEdit, readOnly]);
+
+    React.useLayoutEffect(() => {
+        if (!promptedImage) return;
+        const anchor = document.getElementById(`added-image-${promptedImage.pageIndex || 0}-${promptedImage.id}`);
+        const prompt = backgroundPromptRef.current;
+        if (!anchor || !prompt) return;
+        const position = () => {
+            const rect = anchor.getBoundingClientRect();
+            const width = prompt.offsetWidth;
+            setBackgroundPromptPosition({
+                left: clamp((rect.left + rect.right - width) / 2, 8, Math.max(8, window.innerWidth - width - 8)),
+                top: rect.bottom + 6,
+            });
+        };
+        position();
+        const observer = new ResizeObserver(position);
+        observer.observe(anchor);
+        window.addEventListener('scroll', position, true);
+        window.addEventListener('resize', position);
+        return () => {
+            observer.disconnect();
+            window.removeEventListener('scroll', position, true);
+            window.removeEventListener('resize', position);
+        };
+    }, [promptedImage, props.scale]);
+
+    useEffect(() => {
+        if (readOnly) return;
+        const dismissOutside = (event: PointerEvent) => {
+            skipBackgroundDismissClickRef.current = false;
+            if (!promptOpen || backgroundPromptRef.current?.contains(event.target as Node)) return;
+            skipBackgroundDismissClickRef.current = true;
+            event.preventDefault();
+            event.stopPropagation();
+            setBackgroundPromptId(null);
+        };
+        const skipDismissClick = (event: MouseEvent) => {
+            if (!skipBackgroundDismissClickRef.current) return;
+            skipBackgroundDismissClickRef.current = false;
+            event.preventDefault();
+            event.stopPropagation();
+        };
+        window.addEventListener('pointerdown', dismissOutside, true);
+        window.addEventListener('click', skipDismissClick, true);
+        window.addEventListener('contextmenu', skipDismissClick, true);
+        return () => {
+            window.removeEventListener('pointerdown', dismissOutside, true);
+            window.removeEventListener('click', skipDismissClick, true);
+            window.removeEventListener('contextmenu', skipDismissClick, true);
+        };
+    }, [promptOpen, readOnly]);
+
+    const setImageBackground = (id: string, pageIndex?: number) => {
+        onStyleUpdate?.((previous) => ({
+            ...previous,
+            addedImages: previous.addedImages?.map((image) => image.id === id ? toggleBackgroundLayer(image, pageIndex) : image),
+            name: 'Custom',
+        }));
+        setBackgroundPromptId(null);
+        setObjectMenu(null);
+    };
+
+    const toggleFreeTextBackground = (id: string) => {
+        const text = document.getElementById(`product-container-${id}`);
+        const page = text?.closest<HTMLElement>('[data-menu-print-page][data-page-index]');
+        if (!text || !page) return;
+        const rect = text.getBoundingClientRect();
+        const pageRect = page.getBoundingClientRect();
+        const scale = pageRect.width / page.offsetWidth || 1;
+        const position = {
+            x: (rect.left - pageRect.left) / scale,
+            y: (rect.top - pageRect.top) / scale,
+            width: text.offsetWidth,
+            pageIndex: Number(page.dataset.pageIndex),
+        };
+        onStyleUpdate?.((previous) => {
+            const backgrounds = { ...previous.freeTextBackgrounds };
+            if (backgrounds[id]) delete backgrounds[id];
+            else backgrounds[id] = position;
+            return { ...previous, freeTextBackgrounds: backgrounds, name: 'Custom' };
+        });
+        handlers.setEditingId(null);
+        handlers.setFormattingTarget(null);
+        setObjectMenu(null);
+    };
+
+    const flipImage = (id: string, axis: 'flipHorizontal' | 'flipVertical') => {
+        onStyleUpdate?.((previous) => ({
+            ...previous,
+            addedImages: previous.addedImages?.map((image) => image.id === id ? { ...image, [axis]: !image[axis] } : image),
+            name: 'Custom',
+        }));
+        setObjectMenu(null);
+        finishImageEdit(id);
+    };
+
+    (handlers as any).finishImageEdit = finishImageEdit;
 
     const adjustProductPrice = useCallback((
         productId: string,
@@ -289,6 +408,16 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             name: 'Custom',
         }));
     };
+    (handlers as any).flipProductImage = (id: string, axis: 'horizontal' | 'vertical') => {
+        onStyleUpdate?.((previous) => ({
+            ...previous,
+            productImageFlips: {
+                ...previous.productImageFlips,
+                [id]: { ...previous.productImageFlips?.[id], [axis]: !previous.productImageFlips?.[id]?.[axis] },
+            },
+            name: 'Custom',
+        }));
+    };
 
     const handleProductImageInput = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const productId = pendingProductImageIdRef.current;
@@ -326,25 +455,25 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         onSelectedItemsChange?.(handlers.selectedItems || []);
     }, [handlers.selectedItems, onSelectedItemsChange]);
 
-    const focusedMobileProductRef = useRef<string | null>(null);
+    const focusedProductRef = useRef<string | null>(null);
     useEffect(() => {
-        if (readOnly || !window.matchMedia('(max-width: 767px)').matches) return;
+        if (readOnly) return;
         const editingProductId = handlers.editingId
             && products.some((product) => product.id === handlers.editingId && !product.isFreeText)
             ? handlers.editingId
             : null;
 
-        if (editingProductId && editingProductId !== focusedMobileProductRef.current) {
-            focusedMobileProductRef.current = editingProductId;
+        if (editingProductId && editingProductId !== focusedProductRef.current) {
+            focusedProductRef.current = editingProductId;
             props.onProductEditStart?.(editingProductId);
-        } else if (!editingProductId && focusedMobileProductRef.current) {
-            focusedMobileProductRef.current = null;
+        } else if (!editingProductId && focusedProductRef.current) {
+            focusedProductRef.current = null;
             props.onProductEditEnd?.();
         }
     }, [handlers.editingId, products, props.onProductEditEnd, props.onProductEditStart, readOnly]);
 
     useEffect(() => () => {
-        if (focusedMobileProductRef.current) props.onProductEditEnd?.();
+        if (focusedProductRef.current) props.onProductEditEnd?.();
     }, [props.onProductEditEnd]);
 
     useEffect(() => {
@@ -833,6 +962,9 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 customProductOrder: nextProductOrder,
                 categoryPlacements: nextCategoryPlacements,
                 categoryPositions: nextCategoryPositions,
+                freeTextBackgrounds: prev.freeTextBackgrounds && Object.fromEntries(
+                    Object.entries(prev.freeTextBackgrounds).filter(([id]) => !productIdsToDelete.has(id)),
+                ),
                 addedImages: addedImageIdsToDelete.size > 0
                     ? (prev.addedImages || []).filter((img) => !addedImageIdsToDelete.has(img.id))
                     : prev.addedImages,
@@ -1672,6 +1804,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 const clones = addedImages.map(({ image }, index) => ({
                     ...image,
                     id: crypto.randomUUID(),
+                    backgroundPromptDismissed: undefined,
                     x: Math.min(image.x + 20, 744),
                     y: Math.min(image.y + 20, 1073),
                     zIndex: maxZ + index + 1,
@@ -1791,6 +1924,9 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 customProductOrder: nextProductOrder,
                 categoryPlacements: nextCategoryPlacements,
                 categoryPositions: nextCategoryPositions,
+                freeTextBackgrounds: prev.freeTextBackgrounds && Object.fromEntries(
+                    Object.entries(prev.freeTextBackgrounds).filter(([id]) => !productIdsToDelete.has(id)),
+                ),
                 addedImages: addedImageIdsToDelete.size > 0
                     ? (prev.addedImages || []).filter((image) => !addedImageIdsToDelete.has(image.id))
                     : prev.addedImages,
@@ -1996,7 +2132,8 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         }
 
         setObjectMenuPosition(null);
-        setObjectMenu({ x: event.clientX, y: event.clientY, item });
+        const page = (event.currentTarget as HTMLElement).closest<HTMLElement>('[data-page-index], [data-object-page-index]');
+        setObjectMenu({ x: event.clientX, y: event.clientY, item, pageIndex: page ? Number(page.dataset.pageIndex ?? page.dataset.objectPageIndex) : undefined });
     }, [handlers]);
 
     (handlers as any).openObjectMenu = openObjectMenu;
@@ -2128,27 +2265,11 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const contextObjectItem = objectMenu?.item && isObjectItem(objectMenu.item)
         ? objectMenu.item
         : null;
+    const contextImage = contextObjectItem?.type === 'addedImage'
+        ? style.addedImages?.find((image) => image.id === contextObjectItem.id)
+        : undefined;
+    const contextFreeTextId = contextObjectItem?.type === 'freeText' ? contextObjectItem.id : null;
     const objectMenuItems = contextObjectItem ? getActiveObjectItems(contextObjectItem) : [];
-    const categoryMenuItems = objectMenuItems.filter((item): item is SelectionItem & { type: 'category' } => item.type === 'category');
-    const productMenuItems = objectMenuItems.filter((item): item is SelectionItem & { type: 'product' } => item.type === 'product');
-    const setCategoryDividerPreset = (preset: CategoryDividerStyle) => {
-        if (categoryMenuItems.length === 0) return;
-        onStyleUpdate?.((previous) => {
-            const nextDividers = { ...(previous.categoryDividerStyles || {}) };
-            categoryMenuItems.forEach((item) => { nextDividers[item.id] = preset; });
-            return { ...previous, categoryDividerStyles: nextDividers, name: 'Custom' };
-        });
-        setObjectMenu(null);
-    };
-    const setProductDividerPreset = (preset: CategoryDividerStyle) => {
-        if (productMenuItems.length === 0) return;
-        onStyleUpdate?.((previous) => {
-            const nextDividers = { ...(previous.productDividerStyles || {}) };
-            productMenuItems.forEach((item) => { nextDividers[item.id] = preset; });
-            return { ...previous, productDividerStyles: nextDividers, name: 'Custom' };
-        });
-        setObjectMenu(null);
-    };
     const canHideFromObjectMenu = objectMenuItems.some((item) => {
         if (item.type === 'category') return !isPristineNewCategory(item.id, products);
         if (item.type === 'product') {
@@ -2261,6 +2382,35 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 ))}
             </div>
 
+            {!readOnly && promptedImage && createPortal(
+                <div
+                    ref={backgroundPromptRef}
+                    data-background-prompt="true"
+                    role="group"
+                    aria-label="Definir como plano de fundo?"
+                    className="fixed z-[10021] w-max max-w-[calc(100vw-16px)] rounded-lg border border-slate-200 bg-white p-2 text-xs text-slate-700 shadow-lg"
+                    style={backgroundPromptPosition ?? { visibility: 'hidden' }}
+                    onClick={(event) => event.stopPropagation()}
+                    onPointerDown={(event) => event.stopPropagation()}
+                >
+                    <p className="px-1 font-medium">Definir como plano de fundo?</p>
+                    <div className="mt-1 flex justify-end gap-1">
+                        <button type="button" className="rounded px-2 py-1 hover:bg-slate-100" onClick={() => {
+                            onStyleUpdate?.((previous) => ({
+                                ...previous,
+                                addedImages: previous.addedImages?.map((image) => image.id === promptedImage.id
+                                    ? { ...image, backgroundPromptDismissed: true }
+                                    : image),
+                            }));
+                            setBackgroundPromptId(null);
+                        }}>Não</button>
+                        <button type="button" className="rounded bg-indigo-600 px-2 py-1 font-semibold text-white hover:bg-indigo-700"
+                            onClick={() => setImageBackground(promptedImage.id)}>Sim</button>
+                    </div>
+                </div>,
+                document.body
+            )}
+
             {!readOnly && objectMenu && createPortal(
                 <div
                     ref={objectMenuRef}
@@ -2289,24 +2439,43 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     ) : (
                     <>
                     <button onClick={() => { handlers.setMultiSelectMode?.(!handlers.multiSelectMode); setObjectMenu(null); }} className={`w-full px-3 py-2 text-left flex items-center gap-2 ${handlers.multiSelectMode ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-slate-50'}`}><CopyCheck size={15} /> Seleção múltipla</button>
-                    {categoryMenuItems.length > 0 && (
-                        <div className="border-y border-slate-100 px-3 py-2.5">
-                            <CategoryDividerPicker
-                                value={style.categoryDividerStyles?.[categoryMenuItems[0].id] || 'solid'}
-                                color={style.primaryColor}
-                                onChange={setCategoryDividerPreset}
-                            />
-                        </div>
+                    {contextObjectItem && contextObjectItem.type !== 'addedImage' && (
+                        <button type="button" onClick={(event) => {
+                            const { type, id } = contextObjectItem;
+                            setObjectMenu(null);
+                            handlers.startEditing(event, id, type === 'category' ? `text-${id}` : `product-name-${id}`);
+                        }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
+                            <Edit3 size={15} /> {contextObjectItem.type === 'category' ? 'Editar categoria' : contextFreeTextId ? 'Editar texto' : 'Editar produto'}
+                        </button>
                     )}
-                    {productMenuItems.length > 0 && (
-                        <div className="border-y border-slate-100 px-3 py-2.5">
-                            <CategoryDividerPicker
-                                label="Linha do produto"
-                                value={style.productDividerStyles?.[productMenuItems[0].id] || 'none'}
-                                color={style.textColor}
-                                onChange={setProductDividerPreset}
-                            />
-                        </div>
+                    {(contextImage || contextFreeTextId) && (
+                        <button type="button" onClick={() => {
+                            if (contextImage) setImageBackground(contextImage.id, objectMenu.pageIndex);
+                            else if (contextFreeTextId) toggleFreeTextBackground(contextFreeTextId);
+                        }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
+                            <Layers size={15} /> {contextImage?.repeatAsBackground ? 'Usar só nesta página'
+                                : contextFreeTextId && style.freeTextBackgrounds?.[contextFreeTextId] ? 'Remover do plano de fundo'
+                                    : 'Definir como plano de fundo'}
+                        </button>
+                    )}
+                    {contextImage && (
+                        <>
+                            <button type="button" aria-pressed={Boolean(contextImage.flipHorizontal)} onClick={() => flipImage(contextImage.id, 'flipHorizontal')}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"><FlipHorizontal2 size={15} /> Inverter horizontalmente</button>
+                            <button type="button" aria-pressed={Boolean(contextImage.flipVertical)} onClick={() => flipImage(contextImage.id, 'flipVertical')}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"><FlipVertical2 size={15} /> Inverter verticalmente</button>
+                        </>
+                    )}
+                    {contextObjectItem && (
+                        <button type="button" onClick={(event) => {
+                            if (contextImage) {
+                                handlers.handleRemoveImage(event, contextImage.id);
+                                setObjectMenu(null);
+                            } else runObjectAction('delete', contextObjectItem);
+                        }}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-red-600 hover:bg-red-50">
+                            <Trash2 size={15} /> {contextImage ? contextImage.shape ? 'Remover forma' : 'Remover imagem' : 'Remover'}
+                        </button>
                     )}
                     <button disabled={isBackgroundMenu} onClick={() => runObjectAction('copy', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Copy size={15} /> Copiar</button>
                     <button disabled={isBackgroundMenu} onClick={() => runObjectAction('copyFormat', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Paintbrush size={15} /> Copiar formatação</button>

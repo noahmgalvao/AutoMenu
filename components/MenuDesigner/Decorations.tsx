@@ -3,6 +3,7 @@ import { List, Minus, Square } from 'lucide-react';
 import type { MenuBorder, MenuBorderScope, MenuBorderSide, MenuMarker, MenuStyle } from '../../types';
 import { resolveMenuPageDimensions } from '../../utils/pageSetup';
 import { resolveMenuMargins } from '../../utils/styleRules';
+import { getProductCardCornerRadii, getProductCardRadius, getProductPhotoFrameRadius } from '../../utils/templateDesign';
 import { ColorPicker } from './ColorPicker';
 import { FontSizeInput } from './FontSizeInput';
 import { fitBorder, observeBorderGeometry, type BorderGeometry } from './borderGeometry';
@@ -66,7 +67,7 @@ function getBorderConfiguration(style: MenuStyle, scope: MenuBorderScope, id?: s
     }
   }
   if (scope === 'product') {
-    const rounded = { ...border, radius: style.globalRadius ?? 12 };
+    const rounded = { ...border, radius: getProductCardRadius(style) };
     if (style.design?.card === 'bordered') return { ...rounded, sides: all };
     if (style.design?.card === 'full-bleed') return { ...rounded, sides: ['bottom'], thickness: 3 };
     if (style.design?.product === 'editorial') return { ...border, sides: ['bottom'] };
@@ -81,13 +82,24 @@ function getBorderConfiguration(style: MenuStyle, scope: MenuBorderScope, id?: s
     if (style.design?.price === 'highlight') return { ...border, sides: ['bottom'], thickness: 3 };
     if (!style.design && style.layoutMode !== 'list') return { ...border, sides: all, radius: 24, color: '#e2e8f0' };
   }
-  if (scope === 'productImage' && style.design?.product === 'featured') return { ...border, sides: ['bottom'], thickness: 3 };
+  if (scope === 'productImage') {
+    const radius = style.productImageFrame === 'rounded' ? 12 : style.productImageFrame === 'arch' ? 8 : 0;
+    return style.design?.product === 'featured' ? { ...border, sides: ['bottom'], thickness: 3, radius } : { ...border, radius };
+  }
   return border;
 }
 
 export function BorderDecoration({ style, scope, id }: { style: MenuStyle; scope: MenuBorderScope; id?: string }) {
   const border = activeBorder(style, scope, id);
-  return border?.sides.length ? <SafeBorder border={border} /> : null;
+  return border?.sides.length ? <SafeBorder border={border} scope={scope} style={style} /> : null;
+}
+
+function findBorderSurface(scope?: MenuBorderScope, id?: string) {
+  const selector = `[data-menu-border-surface="${scope}"]`;
+  const target = id ? document.getElementById(id) : null;
+  return target?.closest<HTMLElement>(selector)
+    ?? target?.querySelector<HTMLElement>(selector)
+    ?? document.querySelector<HTMLElement>(`[data-menu-print-page] ${selector}`);
 }
 
 function useBorderGeometry(enabled: boolean, scope?: MenuBorderScope, id?: string, anchor?: React.RefObject<HTMLElement | null>) {
@@ -95,12 +107,7 @@ function useBorderGeometry(enabled: boolean, scope?: MenuBorderScope, id?: strin
   React.useLayoutEffect(() => {
     setGeometry(null);
     if (!enabled) return;
-    const selector = `[data-menu-border-surface="${scope}"]`;
-    const target = id ? document.getElementById(id) : null;
-    const surface = anchor?.current?.parentElement
-      ?? target?.closest<HTMLElement>(selector)
-      ?? target?.querySelector<HTMLElement>(selector)
-      ?? document.querySelector<HTMLElement>(`[data-menu-print-page] ${selector}`);
+    const surface = anchor?.current?.parentElement ?? findBorderSurface(scope, id);
     if (!surface) return;
     return observeBorderGeometry(surface, (next) => setGeometry((current) => (
       JSON.stringify(current) === JSON.stringify(next) ? current : next
@@ -109,17 +116,26 @@ function useBorderGeometry(enabled: boolean, scope?: MenuBorderScope, id?: strin
   return geometry;
 }
 
-function SafeBorder({ border }: { border: MenuBorder }) {
+function SafeBorder({ border, scope, style }: { border: MenuBorder; scope: MenuBorderScope; style: MenuStyle }) {
   const anchor = React.useRef<HTMLSpanElement>(null);
   const geometry = useBorderGeometry(true, undefined, undefined, anchor);
   const fitted = geometry && fitBorder(border, geometry);
+  let cornerRadii: string | undefined;
+  if (fitted && fitted.border.length === 100 && geometry?.enclosesSurface) {
+    if (scope === 'product') {
+      const radius = fitted.border.radius;
+      cornerRadii = getProductCardCornerRadii(style, radius ? Math.max(0, radius + fitted.border.offset) : 0);
+    } else if (scope === 'productImage') {
+      cornerRadii = getProductPhotoFrameRadius(style.productImageFrame, fitted.border.radius);
+    }
+  }
   return <>
     <span ref={anchor} hidden />
-    {fitted && <BorderShape border={fitted.border} outsets={fitted.outsets} />}
+    {fitted && <BorderShape border={fitted.border} outsets={fitted.outsets} cornerRadii={cornerRadii} />}
   </>;
 }
 
-function BorderShape({ border, outsets }: { border: MenuBorder; outsets?: Record<MenuBorderSide, number> }) {
+function BorderShape({ border, outsets, cornerRadii }: { border: MenuBorder; outsets?: Record<MenuBorderSide, number>; cornerRadii?: string }) {
   if (!border.sides.length) return null;
   const stroke = `${border.thickness}px ${border.pattern} ${border.color}`;
   const inset = (side: MenuBorderSide) => -(outsets?.[side] ?? border.offset);
@@ -130,7 +146,7 @@ function BorderShape({ border, outsets }: { border: MenuBorder; outsets?: Record
       borderRight: border.sides.includes('right') ? stroke : undefined,
       borderBottom: border.sides.includes('bottom') ? stroke : undefined,
       borderLeft: border.sides.includes('left') ? stroke : undefined,
-      borderRadius: border.radius,
+      borderRadius: cornerRadii ?? border.radius,
     }} />;
   }
   return <>{border.sides.map(side => {
@@ -200,30 +216,28 @@ const borderValues = [
   ['offset', 'Distância (px)'],
 ] as const;
 
-const edgeClasses: Record<MenuBorderSide, string> = {
-  top: 'inset-x-7 top-0 h-5 border-b-2',
-  right: 'inset-y-5 right-0 w-7 border-l-2',
-  bottom: 'inset-x-7 bottom-0 h-5 border-t-2',
-  left: 'inset-y-5 left-0 w-7 border-r-2',
-};
-
 export function DecorationControls({ style, setStyle, scope: baseScope, id, showBorder = true, showMarker = true, children, targetElementId, sidebar = false, divider, borderTargets }: DecorationProps) {
   const [panel, setPanel] = React.useState<'line' | 'border' | 'marker' | null>(null);
   const [targetScope, setTargetScope] = React.useState(baseScope);
   const selectedTarget = borderTargets?.find((target) => target.scope === targetScope);
   const scope = selectedTarget?.scope ?? baseScope;
   const border = getBorderConfiguration(style, scope, id);
-  const geometry = useBorderGeometry(panel === 'border', scope, selectedTarget?.elementId || targetElementId || (id ? `product-container-${id}` : undefined));
+  const surfaceId = selectedTarget?.elementId || targetElementId || (id ? `product-container-${id}` : undefined);
+  const geometry = useBorderGeometry(panel === 'border', scope, surfaceId);
   const fitted = geometry && fitBorder(border, geometry);
-  const preview = fitted?.border ?? border;
   const activePreset = borderPresets.find((preset) => preset.sides.length === border.sides.length && preset.sides.every((side) => border.sides.includes(side)));
-  const change = (update: Partial<MenuBorder>) => setStyle(previous => {
-    const next = { ...getBorderConfiguration(previous, scope, id), ...update };
-    const safeBorder = geometry ? { ...fitBorder(next, geometry).border, sides: next.sides } : next;
-    return scope === 'freeText'
-      ? { ...previous, freeTextBorders: { ...previous.freeTextBorders, [id!]: safeBorder }, name: 'Custom' }
-      : { ...previous, borders: { ...previous.borders, [scope]: safeBorder }, name: 'Custom' };
-  });
+  const change = (update: Partial<MenuBorder>) => {
+    if (update.offset !== undefined && update.offset > (fitted?.border.offset ?? border.offset) && border.sides.length) {
+      findBorderSurface(scope, surfaceId)?.dispatchEvent(new Event('automenu:border-offset-increase', { bubbles: true }));
+    }
+    setStyle(previous => {
+      const next = { ...getBorderConfiguration(previous, scope, id), ...update };
+      const safeBorder = geometry ? { ...fitBorder(next, geometry).border, sides: next.sides } : next;
+      return scope === 'freeText'
+        ? { ...previous, freeTextBorders: { ...previous.freeTextBorders, [id!]: safeBorder }, name: 'Custom' }
+        : { ...previous, borders: { ...previous.borders, [scope]: safeBorder }, name: 'Custom' };
+    });
+  };
   const markerScope = baseScope === 'category' || baseScope === 'product' ? baseScope : null;
   const markerLabel = markerScope === 'category' ? 'Marcadores das categorias' : 'Marcadores dos produtos';
   const borderLabel = baseScope === 'header' ? 'Borda do título e subtítulo' : baseScope === 'price' ? 'Borda do preço'
@@ -260,20 +274,17 @@ export function DecorationControls({ style, setStyle, scope: baseScope, id, show
         onChange={(event) => setTargetScope(event.target.value as MenuBorderScope)}>
         {borderTargets.map((target) => <option key={target.scope} value={target.scope}>{target.label}</option>)}
       </select>}
-      <div className="grid grid-cols-2 gap-2">
-        <div className="relative h-20 overflow-hidden rounded bg-slate-50" aria-label="Prévia e lados da borda" role="group">
-          <div className="pointer-events-none absolute inset-x-7 inset-y-6">
-            <BorderShape border={{ ...preview, thickness: Math.min(7, preview.thickness / 2), offset: Math.max(-7, Math.min(12, preview.offset / 5)) }} />
-          </div>
+      <div className="space-y-1.5">
+        <div className="flex flex-wrap gap-1" aria-label="Lados individuais da borda" role="group">
           {sides.map(({ id, label }) => {
             const active = border.sides.includes(id);
             return <button type="button" key={id} title={label} aria-label={label} aria-pressed={active}
-              className={`absolute ${edgeClasses[id]} ${active ? 'border-indigo-500 bg-indigo-100/50 hover:bg-indigo-100' : 'border-slate-200 hover:bg-slate-200'}`}
-              onClick={() => change({ sides: active ? border.sides.filter(side => side !== id) : [...border.sides, id] })} />;
+              className={`rounded border px-1.5 py-1 text-[11px] ${active ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-600 hover:bg-slate-100'}`}
+              onClick={() => change({ sides: active ? border.sides.filter(side => side !== id) : [...border.sides, id] })}>{label}</button>;
           })}
         </div>
         <select aria-label="Lados da borda" value={activePreset?.id ?? 'custom'}
-          className="h-8 min-w-0 self-center rounded-md border border-slate-200 text-xs"
+          className="h-8 w-full rounded-md border border-slate-200 text-xs"
           onChange={(event) => {
             const preset = borderPresets.find(({ id }) => id === event.target.value);
             if (preset) change({ sides: preset.sides });

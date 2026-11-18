@@ -9,15 +9,26 @@ interface CategoryDividerPickerProps {
   onChange: (value: CategoryDividerStyle) => void;
   label?: string;
   inlineOptions?: boolean;
+  compact?: boolean;
 }
 
-export const CategoryDividerPicker: React.FC<CategoryDividerPickerProps> = ({ value, color, onChange, label = 'Linha da categoria', inlineOptions = false }) => {
+export const CategoryDividerPicker: React.FC<CategoryDividerPickerProps> = ({ value, color, onChange, label = 'Linha da categoria', inlineOptions = false, compact = false }) => {
   const [isOpen, setIsOpen] = useState(false);
   const selected = CATEGORY_DIVIDER_PRESETS.find((preset) => preset.value === value) || CATEGORY_DIVIDER_PRESETS[0];
 
   const renderPreview = (preset: CategoryDividerStyle) => preset === 'none'
     ? <span className="w-full text-center text-[10px] text-slate-400">sem linha</span>
     : <span className="block w-full" data-ornamental-divider={preset === 'ornamental' ? 'right' : undefined} style={getCategoryDividerStyle(preset, color, 'right')} />;
+
+  if (compact) return (
+    <div className="flex items-center gap-2 rounded border border-slate-200 px-1.5 py-1">
+      <span aria-hidden="true" className="min-w-0 flex-1">{renderPreview(value)}</span>
+      <select aria-label={label} value={value} onChange={event => onChange(event.currentTarget.value as CategoryDividerStyle)}
+        className="h-6 rounded border border-slate-200 bg-white px-1 text-[11px] text-slate-700">
+        {CATEGORY_DIVIDER_PRESETS.map((preset) => <option key={preset.value} value={preset.value}>{preset.label}</option>)}
+      </select>
+    </div>
+  );
 
   return (
     <div className="space-y-1.5">

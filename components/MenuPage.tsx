@@ -2,7 +2,7 @@ import { getTemplateColors, getTemplateDesignAttributes } from '../utils/templat
 import './MenuDesigner/templateDesign.css';
 import React from 'react';
 import { Product, MenuStyle } from '../types';
-import { BringToFront, Layers, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Minus, MoreHorizontal, Plus, SendToBack, Trash2 } from 'lucide-react';
+import { BringToFront, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CopyCheck, Minus, MoreHorizontal, Plus, SendToBack, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { Resizable } from 're-resizable';
 import { MenuItem, ResponsiveMoveButton } from './MenuItem';
 import { PageLayout, CategoryChunkLayout, PageItem, FREE_TEXT_PREFIX } from '../utils/menuPagination';
@@ -13,7 +13,8 @@ import { InlineStyleToolbar } from './MenuDesigner/InlineStyleToolbar';
 import { resolveMenuMargins, resolveMinimumFontSize, roundFontSize } from '../utils/styleRules';
 import { getColumnGridTemplate, getPageColumnWidths } from '../utils/categoryColumns';
 import { ColumnResizeHandles } from './ColumnResizeHandles';
-import { toggleBackgroundLayer } from '../utils/canvasShapes';
+import { canvasShapeUrl } from '../utils/canvasShapes';
+import { ShapeSettings } from './MenuDesigner/ShapePicker';
 import { resolveMenuPageDimensions } from '../utils/pageSetup';
 
 const CategoryMoveIcon = ({ direction }: { direction: FlowDirection }) => {
@@ -157,6 +158,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
     );
 
     const visibleImages = (style.addedImages || []).filter(image => image?.id && (image.repeatAsBackground || (image.pageIndex || 0) === pageIndex));
+    const [formattingShapeId, setFormattingShapeId] = React.useState<string | null>(null);
     const editableImages = readOnly ? [] : visibleImages.filter(image => (
         ((handlers.imageEditPage?.id === image.id && image.repeatAsBackground ? handlers.imageEditPage.pageIndex : image.pageIndex) || 0) === pageIndex
     ));
@@ -553,7 +555,30 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                             onClick={(e) => e.stopPropagation()}
                             onContextMenu={(e) => handlers.openObjectMenu?.(e, { type: 'addedImage', id: img.id })}
                         >
-                            <img src={img.url} alt={img.shape ? 'Forma adicionada' : 'Imagem adicionada'} className="w-full h-auto pointer-events-none select-none" draggable={false} />
+                            <img src={img.url} alt={img.shape ? 'Forma adicionada' : 'Imagem adicionada'} className="w-full h-auto pointer-events-none select-none" draggable={false}
+                                style={img.flipHorizontal || img.flipVertical
+                                    ? { transform: `scale(${img.flipHorizontal ? -1 : 1}, ${img.flipVertical ? -1 : 1})` }
+                                    : undefined} />
+                        </div>
+                    );
+                })}
+
+                {products.map((product) => {
+                    const layer = product.isFreeText ? style.freeTextBackgrounds?.[product.id] : undefined;
+                    if (!layer || style.hiddenProductIds?.includes(product.id)) return null;
+                    const editable = !readOnly && pageIndex === Math.min(layer.pageIndex, pageCount - 1);
+                    return (
+                        <div key={product.id} data-canvas-background-layer="true" data-page-positioned-text="true" className="pointer-events-none absolute z-[1]"
+                            style={{ left: layer.x, top: layer.y, width: Math.max(1, pageDimensions.widthPx - layer.x) }}>
+                            <MenuItem
+                                item={{ type: 'product-item', data: { ...product, customMarginTop: 0, freeTextWidth: product.freeTextWidth || layer.width }, category: product.category }}
+                                idx={0}
+                                style={renderedStyle}
+                                handlers={editable ? handlers : { readOnly: true, groupedProducts: {} }}
+                                products={products}
+                                inGroup
+                                backgroundText
+                            />
                         </div>
                     );
                 })}
@@ -718,6 +743,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 <div
                     key={`controls-${img.id}`}
                     data-print-control="true"
+                    data-object-page-index={pageIndex}
                     className="absolute shadow-lg rounded-full flex gap-1 p-1 bg-white pointer-events-auto"
                     style={{
                         top: `${Math.max(-56, img.y - 56)}px`,
@@ -731,17 +757,43 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 >
                     <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => handlers.handleLayerImage(e, img.id, 'back')} className="p-2.5 hover:bg-slate-100 rounded-l-full rounded-r text-slate-600" title="Enviar para trás"><SendToBack size={24} /></button>
                     <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => handlers.handleLayerImage(e, img.id, 'front')} className="p-2.5 hover:bg-slate-100 rounded text-slate-600" title="Trazer à frente"><BringToFront size={24} /></button>
-                    <button type="button" aria-pressed={Boolean(img.repeatAsBackground)} title={img.repeatAsBackground ? 'Usar só nesta página' : 'Definir como plano de fundo'}
-                        aria-label={img.repeatAsBackground ? 'Usar só nesta página' : 'Definir como plano de fundo'}
-                        onPointerDown={event => event.stopPropagation()} onClick={event => {
+                    {img.shape && (
+                        <button type="button" title="Formatar forma" aria-pressed={formattingShapeId === img.id}
+                            data-inline-format-target={`added-image-${pageIndex}-${img.id}`}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                setFormattingShapeId((current) => current === img.id ? null : img.id);
+                            }}
+                            className={`rounded p-2.5 ${formattingShapeId === img.id ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'}`}>
+                            <SlidersHorizontal size={24} />
+                        </button>
+                    )}
+                    <button type="button" title="Seleção múltipla" aria-pressed={Boolean(handlers.multiSelectMode)}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
                             event.stopPropagation();
-                            handlers.updateStyle?.((previous: MenuStyle) => ({
-                                ...previous, addedImages: previous.addedImages?.map(image => image.id === img.id ? toggleBackgroundLayer(image, pageIndex) : image),
-                            }));
-                        }} className={`p-2.5 rounded transition-colors ${img.repeatAsBackground ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'}`}><Layers size={24} /></button>
-                    <div className="w-px bg-slate-200 mx-1"></div>
-                    <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => handlers.handleRemoveImage(e, img.id)} className="p-2.5 hover:bg-red-50 rounded text-red-500"><Trash2 size={24} /></button>
+                            handlers.setMultiSelectMode?.(!handlers.multiSelectMode);
+                        }}
+                        className={`rounded p-2.5 ${handlers.multiSelectMode ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'}`}>
+                        <CopyCheck size={24} />
+                    </button>
                     <button data-open-object-menu="true" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => handlers.openObjectMenu?.(e, { type: 'addedImage', id: img.id })} className="p-2.5 hover:bg-slate-100 rounded-l rounded-r-full text-slate-600" title="Mais opções"><MoreHorizontal size={24} /></button>
+                    {img.shape && formattingShapeId === img.id && (
+                        <InlineStyleToolbar compact targetElementId={`added-image-${pageIndex}-${img.id}`}
+                            onDismiss={() => setFormattingShapeId(null)}>
+                            <div className="p-1.5">
+                                <ShapeSettings shape={img.shape}
+                                    onChange={(shape) => handlers.updateStyle?.((previous: MenuStyle) => ({
+                                        ...previous,
+                                        addedImages: previous.addedImages?.map((image) => image.id === img.id ? { ...image, shape, url: canvasShapeUrl(shape) } : image),
+                                        name: 'Custom',
+                                    }))}
+                                    onEditEnd={() => handlers.finishImageEdit?.(img.id)}
+                                />
+                            </div>
+                        </InlineStyleToolbar>
+                    )}
                 </div>
             ))}
             {isPageSelected && (

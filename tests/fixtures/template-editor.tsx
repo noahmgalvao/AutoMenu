@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import MenuDesigner from '../../components/MenuDesigner';
 import { MenuPreview } from '../../components/MenuPreview';
 import { PRESET_TEMPLATES } from '../../utils/templateCatalog';
-import type { MenuStyle, Product, SortOption } from '../../types';
+import type { MenuStyle, Product, SortOption, TemplateDesign } from '../../types';
 import '../../index.css';
 
 const initial = { ...PRESET_TEMPLATES[0], menuTitle: 'Casa São Bento', menuSubtitle: 'Cozinha de estação' };
@@ -16,16 +16,35 @@ const products: Product[] = [
   {id:'2', category:'Principais', name:'Risoto de abóbora', price:59, description:'Manteiga de sálvia e queijo curado.'},
   {id:'3', category:'Sobremesas', name:'Tarte de maçã', price:24, description:'Massa crocante e baunilha.'},
 ];
+const samplePhoto = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jBXsAAAAASUVORK5CYII=';
 
 function Fixture() {
-  const [history, setHistory] = useState([initial]);
+  const params = new URLSearchParams(location.search);
+  const photoMode = params.get('photos');
+  const [history, setHistory] = useState<MenuStyle[]>(() => !photoMode ? [
+    params.has('added-image') ? {
+      ...initial, addedImages: [{ id: 'sample-image', url: samplePhoto, x: 290, y: 360, width: 128, pageIndex: 0 }],
+    } : initial,
+  ] : [{
+    ...initial, showImages: true,
+    layoutMode: photoMode === 'list' ? 'list' : 'cards',
+    columnCount: photoMode === 'list' ? 1 : 3,
+    design: {
+      ...initial.design!,
+      card: (params.get('card') as TemplateDesign['card']) || 'flat',
+      image: photoMode === 'background' ? 'background' : 'top',
+    },
+  }]);
+  const [items, setItems] = useState(() => !photoMode ? products : products.map(product => ({
+    ...product, category: 'Entradas', image: samplePhoto,
+  })));
   const style = history[history.length - 1];
   const [sortOption, setSortOption] = useState<SortOption>({ field:'name', direction:'asc' });
   return <>
     <output hidden data-testid="editor-state" data-edits={history.length - 1} data-applied={style.appliedTemplateId || style.id} />
     <MenuDesigner style={style} setStyle={(patch) =>
       setHistory((current) => [...current, typeof patch === 'function' ? patch(current[current.length - 1]) : patch])
-    } products={products} sortOption={sortOption} setSortOption={setSortOption}
+    } products={items} setProducts={photoMode ? setItems : undefined} sortOption={sortOption} setSortOption={setSortOption}
       templates={[...PRESET_TEMPLATES, imported]} workspaceId="test-workspace" currentUserId="test-user"
       undo={() => setHistory((current) => current.length > 1 ? current.slice(0, -1) : current)}
       canUndo={history.length > 1} splitCategoryAcrossPages />
@@ -60,6 +79,7 @@ function LayoutFixture({ categories, productsInCategory, closeTexts }: { categor
         setItems(current => [...current, { id, category, name: '', description: '', price: 0, isFreeText, ...initialData }]);
       }}
       onCommitCategoryOrder={(customCategoryOrder) => setStyle((current) => ({ ...current, customCategoryOrder }))}
+      onDeleteProduct={(id) => setItems((current) => current.filter((item) => item.id !== id))}
       onUpdateProducts={(updates) => setItems((current) => current.map((item) => updates.reduce((result, update) => (
         update.id === item.id ? { ...result, [update.field]: update.value } : result
       ), item)))}

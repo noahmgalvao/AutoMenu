@@ -445,6 +445,9 @@ export const useSelectionState = (
                         customProductOrder: nextProductOrder,
                         categoryPlacements: nextCategoryPlacements,
                         categoryPositions: nextCategoryPositions,
+                        freeTextBackgrounds: prev.freeTextBackgrounds && Object.fromEntries(
+                            Object.entries(prev.freeTextBackgrounds).filter(([key]) => key !== id),
+                        ),
                         pageBreaks: isEmptyFreeTextCategory
                             ? (prev.pageBreaks || []).filter(category => category !== product.category)
                             : prev.pageBreaks,

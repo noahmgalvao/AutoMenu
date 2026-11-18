@@ -26,7 +26,7 @@ export const useMenuInteractions = (props: InteractionProps) => {
     const selectionState = useSelectionState(props, sortedCategoriesBase, groupedProductsBase);
 
     // 3. Image Manipulation
-    const imageInteractions = useImageManipulation(props, selectionState.handleSelection, selectionState.selectedItems);
+    const imageInteractions = useImageManipulation(props, selectionState.handleSelection, selectionState.selectedItems, selectionState.multiSelectMode);
     const columnResizeContext = useMemo(() => ({
         products,
         groupedProducts: groupedProductsBase,

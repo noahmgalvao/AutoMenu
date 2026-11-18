@@ -198,12 +198,15 @@ export const calculateItemHeight = (
     let contentHeight = 0;
 
     if (isRowLayout) {
-        if (style.showImages && product.image) {
-            contentHeight += style.design?.image === 'background' ? 36 : templateProductImageHeight(style, getProductCardImageHeight(style));
-        }
-
         const productGridGap = getProductGridGap(style);
         const usableColWidth = Math.max(40, (containerWidth - (productGridGap * (columnCount - 1))) / columnCount);
+        if (style.showImages && product.image) {
+            const frame = style.productImageFrame;
+            const framed = frame && frame !== 'template';
+            const height = templateProductImageHeight(style, getProductCardImageHeight(style));
+            contentHeight += framed ? 8 + (frame === 'circle' ? Math.min(usableColWidth - 16, height) : height)
+                : style.design?.image === 'background' ? 36 : height;
+        }
         const cardHorizontalPadding = categoryColumnCount > 1 || columnCount > 2 ? 12 : columnCount > 1 ? 16 : 32;
         const textContentWidth = Math.max(32, usableColWidth - cardHorizontalPadding);
         const nameCharWidth = fontSize * 0.6;
@@ -722,7 +725,7 @@ export const calculatePagination = (
     );
     const headerHeight = getMainHeaderHeight(style, options.measuredHeights);
     const pageBreaks = new Set(style.pageBreaks || []);
-    const isHidden = (id: string) => style.hiddenProductIds?.includes(id);
+    const isHidden = (id: string) => style.hiddenProductIds?.includes(id) || Boolean(style.freeTextBackgrounds?.[id]);
 
     if (categoryPlacementAssignments) {
         return buildLockedPagination(

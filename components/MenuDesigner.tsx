@@ -1,5 +1,6 @@
 import { applyTemplateToCurrentStyle, getAppliedTemplateId } from '../utils/templateApplication';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { Product, MenuStyle, SortOption, ElementStyle, AddedImage, CanvasShape } from '../types';
 import { PRESET_TEMPLATES } from '../constants';
 import { MenuPreview } from './MenuPreview';
@@ -231,7 +232,10 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     } | null>(null);
     const suppressNextCanvasClickRef = useRef(false);
     const knownProductIdsRef = useRef(new Set(products.map(product => product.id)));
-    const mobileEditViewRef = useRef<{ scale: number; scrollLeft: number; scrollTop: number } | null>(null);
+    const productEditViewRef = useRef<{ scale: number; scrollLeft: number; scrollTop: number } | null>(null);
+    const editingProductRef = useRef<string | null>(null);
+    const productFocusTimer = useRef<number | undefined>(undefined);
+    const borderFocusFrame = useRef<number | undefined>(undefined);
 
     useEffect(() => {
         if (!tipsOpen) return;
@@ -1159,7 +1163,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     };
 
     const handleMobileProductEditStart = useCallback((productId: string) => {
-        if (window.matchMedia('(min-width: 768px)').matches || mobileEditViewRef.current) return;
+        editingProductRef.current = productId;
+        if (window.matchMedia('(min-width: 768px)').matches || productEditViewRef.current) return;
         const canvas = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas="true"]');
         if (!canvas) return;
         const snapshot = {
@@ -1167,10 +1172,10 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             scrollLeft: canvas.scrollLeft,
             scrollTop: canvas.scrollTop,
         };
-        mobileEditViewRef.current = snapshot;
+        productEditViewRef.current = snapshot;
         setScale(1.6);
-        window.setTimeout(() => {
-            if (mobileEditViewRef.current !== snapshot) return;
+        productFocusTimer.current = window.setTimeout(() => {
+            if (productEditViewRef.current !== snapshot) return;
             const target = Array.from(canvas.querySelectorAll<HTMLElement>('[data-drag-type="product"][data-drag-id]'))
                 .find((element) => element.dataset.dragId === productId);
             if (!target) return;
@@ -1185,15 +1190,79 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     }, [scale]);
 
     const handleMobileProductEditEnd = useCallback(() => {
-        const snapshot = mobileEditViewRef.current;
+        editingProductRef.current = null;
+        window.clearTimeout(productFocusTimer.current);
+        if (borderFocusFrame.current !== undefined) window.cancelAnimationFrame(borderFocusFrame.current);
+        const snapshot = productEditViewRef.current;
         const canvas = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas="true"]');
         if (!snapshot || !canvas) return;
-        mobileEditViewRef.current = null;
+        productEditViewRef.current = null;
         setScale(snapshot.scale);
         window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
             canvas.scrollTo({ left: snapshot.scrollLeft, top: snapshot.scrollTop });
         }));
     }, []);
+
+    useEffect(() => {
+        const canvas = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas="true"]');
+        const wrapper = canvas?.firstElementChild as HTMLElement | null | undefined;
+        if (!canvas || !wrapper) return;
+
+        const focusBorder = (event: Event) => {
+            const surface = event.target;
+            if (!(surface instanceof HTMLElement)) return;
+            if (borderFocusFrame.current !== undefined) window.cancelAnimationFrame(borderFocusFrame.current);
+            borderFocusFrame.current = window.requestAnimationFrame(() => {
+                borderFocusFrame.current = undefined;
+                if (!surface.isConnected) return;
+                const strokes = surface.querySelectorAll(':scope > [data-menu-border]');
+                if (!strokes.length) return;
+                const bounds = [surface, ...strokes].map(element => element.getBoundingClientRect());
+                const left = Math.min(...bounds.map(rect => rect.left));
+                const right = Math.max(...bounds.map(rect => rect.right));
+                const top = Math.min(...bounds.map(rect => rect.top));
+                const bottom = Math.max(...bounds.map(rect => rect.bottom));
+                const viewport = canvas.getBoundingClientRect();
+                const padding = 16;
+                const sheetHeight = !isDesktopViewport && (isOpen || isProductDesignerOpen)
+                    ? parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--automenu-bottom-sheet-height')) || 45
+                    : 0;
+                const visibleHeight = Math.min(canvas.clientHeight, window.innerHeight * (1 - sheetHeight / 100) - viewport.top);
+                if (visibleHeight <= padding * 2) return;
+                if (left >= viewport.left + padding && right <= viewport.right - padding
+                    && top >= viewport.top + padding && bottom <= viewport.top + visibleHeight - padding) return;
+
+                window.clearTimeout(productFocusTimer.current);
+                if (editingProductRef.current && !productEditViewRef.current) {
+                    productEditViewRef.current = { scale, scrollLeft: canvas.scrollLeft, scrollTop: canvas.scrollTop };
+                }
+                const wrapperRect = wrapper.getBoundingClientRect();
+                const currentRenderScale = wrapperRect.width / wrapper.offsetWidth || renderScale;
+                const ratio = Math.min(1,
+                    (canvas.clientWidth - padding * 2) / Math.max(1, right - left),
+                    (visibleHeight - padding * 2) / Math.max(1, bottom - top));
+                const nextScale = Math.max(0.3, Math.min(scale, scale * ratio * currentRenderScale / renderScale));
+                if (ratio < 1) {
+                    // Apply the new scale before measuring the border's position.
+                    wrapper.style.transitionProperty = 'none';
+                    flushSync(() => setScale(nextScale));
+                }
+                const nextWrapper = wrapper.getBoundingClientRect();
+                const zoomRatio = nextWrapper.width / wrapperRect.width || 1;
+                canvas.scrollTo({
+                    left: canvas.scrollLeft + nextWrapper.left + ((left + right) / 2 - wrapperRect.left) * zoomRatio - viewport.left - canvas.clientWidth / 2,
+                    top: canvas.scrollTop + nextWrapper.top + ((top + bottom) / 2 - wrapperRect.top) * zoomRatio - viewport.top - visibleHeight / 2,
+                });
+                wrapper.style.removeProperty('transition-property');
+                if (ratio < 1) canvas.dispatchEvent(new Event('scroll'));
+            });
+        };
+        canvas.addEventListener('automenu:border-offset-increase', focusBorder);
+        return () => {
+            canvas.removeEventListener('automenu:border-offset-increase', focusBorder);
+            if (borderFocusFrame.current !== undefined) window.cancelAnimationFrame(borderFocusFrame.current);
+        };
+    }, [isDesktopViewport, isOpen, isProductDesignerOpen, renderScale, scale]);
 
     const handleProductImageUpload = async (productId: string, file: File) => {
         if (!setProducts) throw new Error('Não foi possível alterar a imagem.');
@@ -1677,12 +1746,15 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
     const resizeSelectedAddedImages = (delta: number) => {
         const ids = new Set(getTargetAddedImageIds());
-        if (ids.size === 0) return;
+        if (!selectedAddedImage || !ids.size) return;
         setStyle(prev => ({
             ...prev,
             addedImages: prev.addedImages?.map(img => ids.has(img.id) ? { ...img, width: Math.max(50, img.width + delta) } : img),
             name: 'Custom'
         }));
+        if (selectedAddedImage.width !== Math.max(50, selectedAddedImage.width + delta)) {
+            window.dispatchEvent(new CustomEvent('automenu:image-edit-end', { detail: selectedAddedImage.id }));
+        }
     };
 
     const removeSelectedAddedImages = () => {

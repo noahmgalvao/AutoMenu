@@ -141,7 +141,9 @@ test('a shape becomes the same editable background on newly added pages', async 
   await page.getByRole('button', { name: 'Estrela', exact: true }).click();
   await page.getByRole('button', { name: 'Inserir forma' }).click();
   await expect(page.getByAltText('Forma adicionada')).toHaveCount(1);
-  await page.getByRole('button', { name: 'Definir como plano de fundo' }).first().click();
+  await page.getByRole('slider', { name: 'Rotação' }).press('ArrowRight');
+  const prompt = page.getByRole('group', { name: 'Definir como plano de fundo?' });
+  await prompt.getByRole('button', { name: 'Sim', exact: true }).click();
   const pages = page.locator('[data-menu-print-page]');
   await pages.first().dispatchEvent('click');
   const addPage = page.getByTitle('Adicionar página depois');
@@ -153,6 +155,65 @@ test('a shape becomes the same editable background on newly added pages', async 
     elements => elements.map(element => element.getAttribute('data-added-image-id')),
   );
   expect(new Set(ids).size).toBe(1);
+});
+
+test('the shape prompt dismisses outside, remembers No, and leaves background and flip actions in the menu', async ({ page }) => {
+  await page.getByRole('button', { name: 'Adicionar forma' }).click();
+  await page.getByRole('button', { name: 'Inserir forma' }).click();
+  const shape = page.getByAltText('Forma adicionada');
+  const controls = page.locator('[data-object-page-index]');
+  const prompt = page.getByRole('group', { name: 'Definir como plano de fundo?' });
+  const { x, y, width, height } = (await shape.boundingBox())!;
+  const releaseShape = () => page.mouse.click(x + width / 2, y + height / 2);
+  await releaseShape();
+  await expect(prompt).toBeVisible();
+  expect((await prompt.boundingBox())!.y).toBeGreaterThan(y + height);
+  await page.mouse.click(x - 45, y + height / 2);
+  await expect(prompt).toHaveCount(0);
+  await expect(controls).toBeVisible();
+  await releaseShape();
+  await expect(prompt).toBeVisible();
+  await prompt.getByRole('button', { name: 'Não', exact: true }).click();
+  await releaseShape();
+  await expect(prompt).toHaveCount(0);
+  await controls.getByTitle('Seleção múltipla').click();
+  await expect(controls.getByTitle('Seleção múltipla')).toHaveAttribute('aria-pressed', 'true');
+  await controls.getByTitle('Formatar forma').click();
+  const rotation = page.locator('[data-inline-format-toolbar]').getByRole('slider', { name: 'Rotação' });
+  await page.locator('[data-inline-format-toolbar]').getByRole('button', { name: 'Aumentar Rotação' }).click();
+  await expect(rotation).toHaveValue('1');
+  await controls.getByTitle('Mais opções').click();
+  const menu = page.locator('[data-canvas-object-menu]');
+  await expect(menu.getByRole('button', { name: 'Definir como plano de fundo' })).toBeVisible();
+  await menu.getByRole('button', { name: 'Inverter horizontalmente' }).click();
+  await expect(shape).toHaveCSS('transform', 'matrix(-1, 0, 0, 1, 0, 0)');
+  await controls.getByTitle('Mais opções').click();
+  await menu.getByRole('button', { name: 'Inverter verticalmente' }).click();
+  await expect(shape).toHaveCSS('transform', 'matrix(-1, 0, 0, -1, 0, 0)');
+  await controls.getByTitle('Mais opções').click();
+  await menu.getByRole('button', { name: 'Definir como plano de fundo' }).click();
+  await controls.getByTitle('Mais opções').click();
+  await expect(menu.getByRole('button', { name: 'Usar só nesta página' })).toBeVisible();
+  await menu.getByRole('button', { name: 'Remover forma' }).click();
+  await expect(shape).toHaveCount(0);
+});
+
+test('an added image can use the background prompt and keeps its More options actions', async ({ page }) => {
+  await page.goto(`${url}?added-image`);
+  const image = page.getByAltText('Imagem adicionada');
+  const { x, y, width, height } = (await image.boundingBox())!;
+  await page.mouse.click(x + width / 2, y + height / 2);
+  const prompt = page.getByRole('group', { name: 'Definir como plano de fundo?' });
+  await prompt.getByRole('button', { name: 'Sim', exact: true }).click();
+  await expect(image.locator('..')).toHaveAttribute('data-canvas-background-layer', 'true');
+  const controls = page.locator('[data-object-page-index]');
+  await expect(controls.getByTitle('Seleção múltipla')).toBeVisible();
+  await controls.getByTitle('Mais opções').click();
+  const menu = page.locator('[data-canvas-object-menu]');
+  await menu.getByRole('button', { name: 'Usar só nesta página' }).click();
+  await controls.getByTitle('Mais opções').click();
+  await menu.getByRole('button', { name: 'Remover imagem' }).click();
+  await expect(image).toHaveCount(0);
 });
 
 test('title and subtitle edit the same border and categories share their marker style', async ({ page }) => {
@@ -182,7 +243,8 @@ test.describe('mobile product formatting', () => {
     const initialWidth = (await canvas.boundingBox())!.width;
     const product = page.locator('#product-container-1');
     await product.getByRole('heading', { name: 'Burrata da casa' }).tap();
-    await product.getByRole('button', { name: 'Editar produto' }).tap();
+    await product.getByRole('button', { name: 'Mais opções' }).tap();
+    await page.getByRole('button', { name: 'Editar produto' }).tap();
     const toolbar = page.locator('[data-inline-format-toolbar]');
     const name = product.getByRole('heading', { name: 'Burrata da casa' });
     await expect(name).toHaveAttribute('contenteditable', 'true');
@@ -197,6 +259,64 @@ test.describe('mobile product formatting', () => {
     await page.locator('[data-automenu-editor-canvas]').tap({ position: { x: 8, y: 32 } });
     await expect(name).toHaveAttribute('contenteditable', 'false');
     await expect.poll(async () => Math.abs((await canvas.boundingBox())!.width - initialWidth)).toBeLessThan(2);
+  });
+
+  test('expanding a border refocuses the canvas until product editing ends', async ({ page }) => {
+    const canvas = page.locator('[data-automenu-editor-canvas]');
+    const sheet = canvas.locator('[data-menu-print-page]').first();
+    const product = page.locator('#product-container-1');
+    const width = () => sheet.evaluate((element) => element.getBoundingClientRect().width);
+    const initialWidth = await width();
+    await product.getByRole('heading', { name: 'Burrata da casa' }).tap();
+    await product.getByRole('button', { name: 'Mais opções' }).tap();
+    await page.getByRole('button', { name: 'Editar produto' }).tap();
+    await expect.poll(width).toBeGreaterThan(initialWidth + 100);
+    const toolbar = page.locator('[data-inline-format-toolbar]');
+    const borderButton = toolbar.getByRole('button', { name: 'Borda', exact: true });
+    await borderButton.tap();
+    await toolbar.getByRole('combobox', { name: 'Lados da borda' }).selectOption('left');
+    const scrollLeft = () => canvas.evaluate((element) => element.scrollLeft);
+    const stroke = product.locator('[data-menu-border]');
+    await expect(stroke).toBeVisible();
+    await expect.poll(async () => Math.abs(await width() - initialWidth * 1.6)).toBeLessThan(2);
+    await canvas.evaluate((element) => { element.scrollLeft = element.clientWidth; });
+    const clippedPosition = await scrollLeft();
+    const distance = toolbar.getByRole('slider', { name: 'Distância (px)' });
+    await distance.press('End');
+    await expect.poll(scrollLeft).toBeLessThan(clippedPosition - 20);
+    const focusedPosition = await scrollLeft();
+    await borderButton.tap();
+    await expect(distance).toHaveCount(0);
+    expect(await scrollLeft()).toBe(focusedPosition);
+    await canvas.tap({ position: { x: 8, y: 32 } });
+    await expect.poll(width).toBeCloseTo(initialWidth, 0);
+    await expect.poll(scrollLeft).toBe(0);
+  });
+
+  test('a quick touch drag moves a shape and only a held touch opens its menu', async ({ page }) => {
+    await page.getByRole('button', { name: 'Adicionar forma' }).tap();
+    await page.getByRole('button', { name: 'Inserir forma' }).tap();
+    const shape = page.getByAltText('Forma adicionada');
+    const menu = page.locator('[data-canvas-object-menu]');
+    const { x, y, width, height } = (await shape.boundingBox())!;
+    const point = { x: x + width / 2, y: y + height / 2 };
+    const touch = await page.context().newCDPSession(page);
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+    await expect(menu).toHaveCount(0);
+    await expect(menu).toBeVisible();
+    const moved = { x: point.x + 25, y: point.y + 30 };
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [moved] });
+    await expect(menu).toHaveCount(0);
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    const prompt = page.locator('[data-background-prompt]');
+    await expect(prompt).toBeVisible();
+    expect((await shape.boundingBox())!.x).toBeGreaterThan(x + 10);
+    await prompt.getByRole('button', { name: 'Não', exact: true }).tap();
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [moved] });
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...moved, x: moved.x - 20 }] });
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await expect(menu).toHaveCount(0);
+    expect((await shape.boundingBox())!.x).toBeLessThan(x + 15);
   });
 });
 

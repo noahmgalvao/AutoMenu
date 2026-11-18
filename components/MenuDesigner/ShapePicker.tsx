@@ -3,6 +3,7 @@ import { Shapes } from 'lucide-react';
 import type { CanvasShape, CanvasShapeKind } from '../../types';
 import { canvasShapeKinds, canvasShapeUrl, createCanvasShape } from '../../utils/canvasShapes';
 import { ColorPicker } from './ColorPicker';
+import { FontSizeInput } from './FontSizeInput';
 
 const numberFields = {
   strokeWidth: ['Contorno', 0, 12, 1],
@@ -13,32 +14,57 @@ const numberFields = {
   innerRadius: ['Profundidade (%)', 10, 90, 1],
 } as const;
 
-export function ShapeSettings({ shape, onChange }: { shape: CanvasShape; onChange: (next: CanvasShape) => void }) {
+export function ShapeSettings({ shape, onChange, onEditEnd }: {
+  shape: CanvasShape;
+  onChange: (next: CanvasShape) => void;
+  onEditEnd?: () => void;
+}) {
+  const changedSlider = React.useRef(false);
+  const finishSlider = () => {
+    if (!changedSlider.current) return;
+    changedSlider.current = false;
+    onEditEnd?.();
+  };
   const fields: (keyof typeof numberFields)[] = ['strokeWidth', 'ratio', 'rotation'];
   if (shape.kind === 'rectangle') fields.push('corners');
   if (shape.kind === 'star' || shape.kind === 'polygon') fields.push('points');
   if (shape.kind === 'star') fields.push('innerRadius');
   return <div className="space-y-2">
-    <div className="flex gap-4 text-xs text-slate-600">
-      {shape.kind !== 'line' && <label className="flex items-center gap-1.5">Preenchimento
-        <ColorPicker value={shape.fill} label="Cor do preenchimento" onChange={fill => onChange({ ...shape, fill })} />
-      </label>}
-      <label className="flex items-center gap-1.5">Contorno
-        <ColorPicker value={shape.stroke} label="Cor do contorno" onChange={stroke => onChange({ ...shape, stroke })} />
-      </label>
+    <div className="flex flex-wrap gap-2 text-[11px] text-slate-600">
+      {shape.kind !== 'line' && <div className="flex items-center gap-1">Preenchimento
+        <ColorPicker value={shape.fill} label="Cor do preenchimento" onChange={fill => {
+          onChange({ ...shape, fill });
+          onEditEnd?.();
+        }} />
+      </div>}
+      <div className="flex items-center gap-1">Contorno
+        <ColorPicker value={shape.stroke} label="Cor do contorno" onChange={stroke => {
+          onChange({ ...shape, stroke });
+          onEditEnd?.();
+        }} />
+      </div>
     </div>
-    <div className="grid grid-cols-3 gap-2">
+    <div className="space-y-1">
       {fields.map(field => {
         const [label, min, max, step] = numberFields[field];
-        return <label key={field} className="text-[10px] font-medium text-slate-600">
-          {field === 'points' && shape.kind === 'polygon' ? 'Lados' : label}
-          <input type="number" min={min} max={max} step={step} defaultValue={shape[field]} key={shape[field]}
-            onBlur={event => {
-              const value = event.currentTarget.valueAsNumber;
-              if (Number.isFinite(value) && value !== shape[field]) onChange({ ...shape, [field]: Math.min(max, Math.max(min, Math.round(value / step) * step)) });
-            }} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }}
-            className="mt-1 h-8 w-full rounded-md border border-slate-200 px-2 text-xs" />
-        </label>;
+        const fieldLabel = field === 'points' && shape.kind === 'polygon' ? 'Lados' : label;
+        const change = (value: number) => {
+          const next = Number((Math.round(value / step) * step).toFixed(1));
+          if (next === shape[field]) return;
+          changedSlider.current = true;
+          onChange({ ...shape, [field]: next });
+        };
+        return <div key={field} className="flex items-center gap-2">
+          <label className="flex min-w-0 flex-1 flex-col text-[11px] font-medium text-slate-600">
+            {fieldLabel}
+            <input type="range" min={min} max={max} step={step} value={shape[field]}
+              onChange={event => change(event.currentTarget.valueAsNumber)}
+              onPointerUp={finishSlider} onPointerCancel={finishSlider} onKeyUp={finishSlider} onBlur={finishSlider}
+              className="w-full accent-indigo-600" />
+          </label>
+          <FontSizeInput label={fieldLabel} value={shape[field]} min={min} max={max}
+            onChange={change} onEditEnd={finishSlider} className="!w-14" />
+        </div>;
       })}
     </div>
   </div>;

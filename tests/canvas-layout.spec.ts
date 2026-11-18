@@ -84,8 +84,8 @@ test.describe('touch dragging', () => {
 test('a narrow free text keeps its selection buttons in a single row', async ({ page }) => {
   const source = page.locator('#product-container-text-a');
   await source.click();
-  const buttons = source.getByRole('button', { name: /Editar texto|Seleção múltipla|Excluir item|Mais opções/ });
-  await expect(buttons).toHaveCount(4);
+  const buttons = source.getByRole('button', { name: /Seleção múltipla|Mais opções/ });
+  await expect(buttons).toHaveCount(2);
   const rows = await buttons.evaluateAll((elements) => elements.map((element) => Math.round(element.getBoundingClientRect().top)));
   expect(new Set(rows).size).toBe(1);
 });

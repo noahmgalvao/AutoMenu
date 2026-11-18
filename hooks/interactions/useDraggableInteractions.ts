@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { flushSync } from 'react-dom';
 import { CategoryPosition, Product } from '../../types';
-import { InteractionProps } from './types';
+import { InteractionProps, TOUCH_LONG_PRESS_MS } from './types';
 import { CATEGORY_CHUNK_GAP_PX, FREE_TEXT_PREFIX, getPaginationBottomInset, SAFETY_BUFFER, STANDARD_GAP, type CategoryPlacementAssignment } from '../../utils/menuPagination';
 import {
     getCollisionSafeFreeTextTop,
@@ -117,7 +117,6 @@ interface ScrollContainerSnapshot {
 const POINTER_MOVE_THRESHOLD_PX = 8;
 const TOUCH_MOVE_CANCEL_THRESHOLD_PX = 10;
 const TWO_COLUMN_CATEGORY_TOUCH_MOVE_CANCEL_THRESHOLD_PX = 18;
-const TOUCH_LONG_PRESS_MS = 320;
 const CATEGORY_COLUMN_SWITCH_INSET_PX = 32;
 const CATEGORY_PAGE_SWITCH_INSET_PX = 72;
 const CATEGORY_PAGE_SWITCH_THRESHOLD_PX = 96;

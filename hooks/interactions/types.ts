@@ -4,6 +4,7 @@ import { Product, MenuStyle, SortOption } from '../../types';
 export const NUDGE_STEP = 10;
 export const FREE_TEXT_PREFIX = 'ft_zone_';
 export const STANDARD_GAP = 15;
+export const TOUCH_LONG_PRESS_MS = 320;
 
 export type SelectionType = 'product' | 'category' | 'freeText' | 'addedImage' | 'page' | 'menuTitle' | 'menuSubtitle' | null;
 export type SelectableType = Exclude<SelectionType, null>;
@@ -59,6 +60,7 @@ export interface InteractionProps {
     onAddCategory?: (nearCategory: string, position: 'before' | 'after') => void;
     onDeleteProduct?: (productId: string) => void;
     onStyleUpdate?: React.Dispatch<React.SetStateAction<MenuStyle>>;
+    onImageEditEnd?: (id: string) => void;
     onSelectionChange?: (selection: { type: SelectionType, id: string | null }) => void;
     selection?: { type: SelectionType, id: string | null };
     productsCanChangeCategory?: boolean;

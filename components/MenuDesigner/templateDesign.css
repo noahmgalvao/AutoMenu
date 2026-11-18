@@ -25,9 +25,17 @@
 [data-design-product="compact"] [data-template-card] > div > div:last-child { padding-block: 4px; }
 [data-design-product="featured"] [data-template-image] { border-bottom: 3px solid var(--template-accent); }
 [data-design-image="background"] [data-template-card] { position: relative; isolation: isolate; }
-[data-design-image="background"] [data-template-image] { position: absolute; inset: 0; height: 100% !important; z-index: -1; }
-[data-design-image="background"] [data-template-image] img { opacity: .22; }
-[data-design-image="background"] [data-template-card]:has([data-template-image]) [data-template-content] { padding-top: 36px; background: linear-gradient(transparent, var(--template-paper)); }
+[data-design-image="background"] [data-template-card] [data-template-image]:not([data-product-photo-frame]) { position: absolute; inset: 0; height: 100% !important; z-index: -1; }
+[data-design-image="background"] [data-template-card] [data-template-image]:not([data-product-photo-frame]) img { opacity: .22; }
+[data-design-image="background"] [data-template-card]:has([data-template-image]:not([data-product-photo-frame])) [data-template-content] {
+  padding-top: 36px;
+  border-radius: inherit;
+  background: linear-gradient(transparent, var(--template-paper));
+}
+[data-design-image="background"] [data-product-image-editing]:has([data-template-image]:not([data-product-photo-frame])) [data-template-content] { pointer-events: none; }
+[data-design-image="background"] [data-product-image-editing] > [data-product-card-content]:has(> [data-template-image]:not([data-product-photo-frame])) { pointer-events: none; }
+[data-design-image="background"] [data-product-image-editing] [data-template-image] { pointer-events: auto; }
+[data-design-image="background"] [data-product-image-editing] [data-template-content] [contenteditable="true"] { pointer-events: auto; }
 [data-design-image="cover"] [data-template-image] img { object-fit: cover; }
 [data-design-image="top"] [data-template-image] img { object-fit: contain; }
 [data-design-schema-version="2"] [data-template-image] { background-color: var(--template-tint); }
@@ -74,8 +82,6 @@
 [data-template-hero-image] { position: absolute; inset: 0 0 0 auto; width: 39%; height: 100%; object-fit: cover; opacity: .28; pointer-events: none; }
 [data-design-header="hero"] [data-menu-heading] { position: relative; }
 [data-design-price="inline"] [data-template-price] { justify-content: flex-start !important; }
-
-[data-design-schema-version="2"] [data-template-edit-action] { position: absolute; right: 4px; top: -23px; z-index: 60; }
 
 .template-discover button { touch-action: manipulation; }
 

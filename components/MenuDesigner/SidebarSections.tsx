@@ -13,6 +13,7 @@ import { StyleControls } from './StyleControls';
 import { FontSelect, MiniFoodTextureSelect, TextureSelect } from './SearchableSelects';
 import { resolveCategoryDivider } from '../../utils/categoryDividers';
 import { CategoryDividerPicker } from './CategoryDividerPicker';
+import { getProductCardRadius, PRODUCT_CARD_SHAPES, PRODUCT_IMAGE_FRAMES } from '../../utils/templateDesign';
 import { 
   Type, ImagePlus, Minus, Plus, LayoutTemplate, 
   Layout, List, Maximize, Palette, ArrowUpAZ, SortAsc, SortDesc, BringToFront, SendToBack, SlidersHorizontal,
@@ -134,10 +135,13 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                     }))}>
                     {selectedAddedImage.repeatAsBackground ? 'Usar só nesta página' : 'Definir como plano de fundo'}
                 </button>
-                {selectedAddedImage.shape && <ShapeSettings shape={selectedAddedImage.shape} onChange={shape => setStyle(previous => ({
-                    ...previous, name: 'Custom',
-                    addedImages: previous.addedImages?.map(image => image.id === selectedAddedImage.id ? { ...image, shape, url: canvasShapeUrl(shape) } : image),
-                }))} />}
+                {selectedAddedImage.shape && <ShapeSettings shape={selectedAddedImage.shape}
+                    onChange={shape => setStyle(previous => ({
+                        ...previous, name: 'Custom',
+                        addedImages: previous.addedImages?.map(image => image.id === selectedAddedImage.id ? { ...image, shape, url: canvasShapeUrl(shape) } : image),
+                    }))}
+                    onEditEnd={() => window.dispatchEvent(new CustomEvent('automenu:image-edit-end', { detail: selectedAddedImage.id }))}
+                />}
                 {selectedImageCount > 1 && <p className="my-2 text-xs text-slate-500">{selectedImageCount} elementos selecionados.</p>}
                 <div className="flex items-center justify-between bg-slate-50 p-2 rounded">
                     <span className="text-xs font-bold">Tamanho</span>
@@ -691,6 +695,22 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle })
     </div>
     {(style.layoutMode === 'cards' || style.layoutMode === 'grid') && (
         <div className="space-y-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+            <label className="flex items-center justify-between gap-2 text-xs font-medium text-slate-600">
+                Formato dos cartões
+                <select value={style.productCardShape || 'template'} className="h-8 min-w-0 rounded border border-slate-200 bg-white px-1.5"
+                    onChange={(event) => {
+                        const productCardShape = event.currentTarget.value as MenuStyle['productCardShape'];
+                        setStyle((previous) => ({
+                            ...previous, productCardShape, name: 'Custom',
+                            borders: previous.borders?.product ? {
+                                ...previous.borders,
+                                product: { ...previous.borders.product, radius: getProductCardRadius(previous, productCardShape) },
+                            } : previous.borders,
+                        }));
+                    }}>
+                    {PRODUCT_CARD_SHAPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+            </label>
             <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-500 uppercase">Cor dos cartões</span>
                 <ColorPicker value={style.cardBackgroundColor || '#ffffff'} label="Cor de fundo dos cartões" preview="cards"
@@ -717,6 +737,18 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle })
         <div className="flex items-center gap-2 px-1 text-xs font-bold uppercase text-slate-500">
             <ImageIcon size={14} className="text-indigo-500" /> Imagens
         </div>
+        {style.showImages && (
+            <label className="flex items-center justify-between gap-2 px-1 text-xs font-medium text-slate-600">
+                Moldura das fotos dos produtos
+                <select value={style.productImageFrame || 'template'} className="h-8 rounded border border-slate-200 bg-white px-1.5"
+                    onChange={(event) => {
+                        const productImageFrame = event.currentTarget.value as MenuStyle['productImageFrame'];
+                        setStyle((previous) => ({ ...previous, productImageFrame, name: 'Custom' }));
+                    }}>
+                    {PRODUCT_IMAGE_FRAMES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+            </label>
+        )}
         {([
           { label: 'Produtos', visible: style.showImages, toggleField: 'showImages' as const, scaleField: 'imageScale' as const, scale: style.imageScale || 1 },
           { label: 'Categorias', visible: style.showCategoryImages !== false, toggleField: 'showCategoryImages' as const, scaleField: 'categoryImageScale' as const, scale: style.categoryImageScale || 1 },
