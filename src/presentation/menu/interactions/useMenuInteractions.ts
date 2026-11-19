@@ -128,7 +128,7 @@ export const useMenuInteractions = (props: InteractionProps) => {
         handleResizeImage: imageInteractions.handleResizeImage,
         resizeImageByDelta: imageInteractions.resizeImageByDelta,
         startImageResize: imageInteractions.startImageResize,
-        resizeImageFromCorner: imageInteractions.resizeImageFromCorner,
+        previewImageResize: imageInteractions.previewImageResize,
         stopImageResize: imageInteractions.stopImageResize,
         handleRemoveImage: imageInteractions.handleRemoveImage,
         handleLayerImage: imageInteractions.handleLayerImage,

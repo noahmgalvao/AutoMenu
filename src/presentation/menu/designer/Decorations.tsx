@@ -40,7 +40,7 @@ export function getBorderOverride(style: MenuStyle, scope: MenuBorderScope, id?:
   return activeBorder(style, scope, id) ? 'true' : undefined;
 }
 
-function getBorderConfiguration(style: MenuStyle, scope: MenuBorderScope, id?: string): MenuBorder {
+export function getBorderConfiguration(style: MenuStyle, scope: MenuBorderScope, id?: string): MenuBorder {
   const existing = activeBorder(style, scope, id);
   if (existing) return existing;
   const border: MenuBorder = { sides: [], color: style.primaryColor, thickness: 1, length: 100, radius: 0, offset: 0, pattern: 'solid' };

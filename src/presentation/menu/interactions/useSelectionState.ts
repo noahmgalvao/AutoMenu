@@ -382,13 +382,13 @@ export const useSelectionState = (
         emitSelection(type, id);
     }, [emitSelection, getSingleSelectionItem]);
 
-    const replaceSelectedItems = useCallback((items: SelectionItem[]) => {
+    const replaceSelectedItems = useCallback((items: SelectionItem[], enableMultiSelect = false) => {
         const nextItems = uniqueSelectionItems(items);
         const activeItem = nextItems[nextItems.length - 1] || null;
 
         setFormattingTarget(null);
         setSelectedItems(nextItems);
-        if (nextItems.length === 0) setMultiSelectMode(false);
+        if (nextItems.length === 0 || enableMultiSelect) setMultiSelectModeState(enableMultiSelect && nextItems.length > 0);
         lastRangeAnchorRef.current = activeItem;
         setSelectedId(activeItem?.type === 'page' ? null : activeItem?.id || null);
         setSelectedPageIndex(activeItem?.type === 'page' ? Number(activeItem.id) : null);
@@ -548,7 +548,7 @@ export const useSelectionState = (
             type: product.isFreeText ? 'freeText' as const : 'product' as const, id: product.id,
         }));
         setEditingItems(uniqueSelectionItems([...current, ...categoryContents]));
-        setMultiSelectModeState(false);
+        if (item.type !== 'addedImage') setMultiSelectModeState(false);
     };
 
     const startImageEditing = (id: string) => {

@@ -15,7 +15,7 @@ import { InlineStyleToolbar } from '../designer/InlineStyleToolbar';
 import { resolveMenuMargins, resolveMinimumFontSize, roundFontSize } from '../../../domain/menu/styleRules';
 import { getColumnGridTemplate, getPageColumnWidths } from '../../../domain/menu/categoryColumns';
 import { ColumnResizeHandles } from './ColumnResizeHandles';
-import { canvasShapeUrl } from '../../../domain/menu/canvasShapes';
+import { applyCanvasShapeParameters, getSelectedLayerIds } from '../../../domain/menu/canvasShapes';
 import { ShapeSettings } from '../designer/ShapePicker';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 import { BorderDecoration } from '../designer/Decorations';
@@ -170,6 +170,10 @@ export const MenuPage: React.FC<MenuPageProps> = ({
     const editableImages = readOnly ? [] : visibleImages.filter(image => (
         ((handlers.imageEditPage?.id === image.id && image.repeatAsBackground ? handlers.imageEditPage.pageIndex : image.pageIndex) || 0) === pageIndex
     ));
+    const activeImage = editableImages.find(image => image.id === handlers.selectedId);
+    const selectedLayers = activeImage ? getSelectedLayerIds(handlers.selectedItems || [], activeImage.id) : null;
+    const shapeEditor = activeImage?.shape ? activeImage
+        : selectedLayers && [...(style.addedImages || [])].reverse().find(image => image.shape && selectedLayers.has(image.id));
     const pageStyle: React.CSSProperties = {
         fontFamily: style.fontFamily + (style.design ? ', Georgia, serif' : ''),
         ...getTemplateColors(style),
@@ -614,33 +618,9 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                                 event.stopPropagation();
                                 handlers.startImageResize?.(img.id, direction);
                             }}
-                            onResize={(event, direction, ref, delta) => {
+                            onResize={(event, direction, ref) => {
                                 event.stopPropagation();
-                                const controlWrapper = ref.parentElement;
-                                if (!controlWrapper) return;
-                                const finalWidth = Number(ref.offsetWidth);
-                                const deltaWidth = Number.isFinite(finalWidth)
-                                    ? finalWidth - Number(img.width)
-                                    : Number(delta.width);
-                                const deltaHeight = Number(delta.height);
-                                if (!Number.isFinite(finalWidth) || finalWidth <= 0 || !Number.isFinite(deltaWidth)) return;
-
-                                const nextLeft = direction === 'topLeft' || direction === 'bottomLeft'
-                                    ? img.x - deltaWidth
-                                    : img.x;
-                                const nextTop = direction === 'topLeft' || direction === 'topRight'
-                                    ? img.y - (Number.isFinite(deltaHeight) ? deltaHeight : 0)
-                                    : img.y;
-                                if (!Number.isFinite(nextLeft) || !Number.isFinite(nextTop)) return;
-                                controlWrapper.style.left = `${nextLeft}px`;
-                                controlWrapper.style.top = `${nextTop}px`;
-
-                                const imageElement = document.getElementById(`added-image-${pageIndex}-${img.id}`);
-                                if (imageElement) {
-                                    imageElement.style.left = `${nextLeft}px`;
-                                    imageElement.style.top = `${nextTop}px`;
-                                    imageElement.style.width = `${finalWidth}px`;
-                                }
+                                handlers.previewImageResize?.(img.id, direction, ref.offsetWidth);
                             }}
                             onResizeStop={(event, direction, ref) => {
                                 event.stopPropagation();
@@ -742,16 +722,16 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 >
                     <button onClick={(e) => handlers.handleLayerImage(e, img.id, 'back')} className={canvasActionButtonClass} title="Enviar para trás"><SendToBack size={19} /></button>
                     <button onClick={(e) => handlers.handleLayerImage(e, img.id, 'front')} className={canvasActionButtonClass} title="Trazer à frente"><BringToFront size={19} /></button>
-                    {img.shape && (
-                        <button type="button" title="Formatar forma" aria-pressed={formattingShapeId === img.id}
-                            data-inline-format-target={`added-image-${pageIndex}-${img.id}`}
+                    {shapeEditor && (
+                        <button type="button" title="Formatar forma" aria-pressed={formattingShapeId === shapeEditor.id}
+                            data-inline-format-target={`added-image-${shapeEditor.id === img.id ? pageIndex : shapeEditor.pageIndex || 0}-${shapeEditor.id}`}
                             onPointerDown={(event) => event.stopPropagation()}
                             onClick={(event) => {
                                 event.stopPropagation();
-                                if (formattingShapeId === img.id) handlers.setEditingId(null);
-                                else handlers.startImageEditing(img.id);
+                                if (formattingShapeId === shapeEditor.id) handlers.setEditingId(null);
+                                else handlers.startImageEditing(shapeEditor.id);
                             }}
-                            className={`${canvasActionButtonClass} ${formattingShapeId === img.id ? 'before:!bg-indigo-50 !text-indigo-700' : ''}`}>
+                            className={`${canvasActionButtonClass} ${formattingShapeId === shapeEditor.id ? 'before:!bg-indigo-50 !text-indigo-700' : ''}`}>
                             <SlidersHorizontal size={19} />
                         </button>
                     )}
@@ -775,11 +755,15 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                             onDismiss={() => handlers.setEditingId(null)}>
                             <div className="p-1.5">
                                 <ShapeSettings shape={img.shape}
-                                    onChange={(shape) => handlers.updateStyle?.((previous: MenuStyle) => ({
-                                        ...previous,
-                                        addedImages: previous.addedImages?.map((image) => image.id === img.id ? { ...image, shape, url: canvasShapeUrl(shape) } : image),
-                                        name: 'Custom',
-                                    }))}
+                                    onChange={patch => {
+                                        const ids = getSelectedLayerIds(handlers.selectedItems || [], img.id);
+                                        handlers.updateStyle?.((previous: MenuStyle) => ({
+                                            ...previous,
+                                            addedImages: previous.addedImages?.map(image => ids.has(image.id)
+                                                ? applyCanvasShapeParameters(image, patch) : image),
+                                            name: 'Custom',
+                                        }));
+                                    }}
                                     onEditEnd={() => handlers.finishImageEdit?.(img.id)}
                                 />
                             </div>

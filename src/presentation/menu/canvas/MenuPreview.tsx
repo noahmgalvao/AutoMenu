@@ -13,7 +13,9 @@ import { NUDGE_STEP, type DraftItem, type MoveDirection, type SelectionItem } fr
 import { MenuPage } from './MenuPage';
 import { getImageLayerIndexes } from '../../../domain/menu/imageLayers';
 import { getCanvasViewportFocus } from './canvasViewport';
-import { toggleBackgroundLayer } from '../../../domain/menu/canvasShapes';
+import { getSelectedLayerIds, setCanvasImageBackground } from '../../../domain/menu/canvasShapes';
+import { acceptsCanvasFormat, applyCanvasFormat, captureCanvasFormat, type CanvasFormat, type FormatObject } from './canvasFormatting';
+import { isHeadingTextHit } from './menuHeadingHit';
 import type { FlowDirection } from './flowControls';
 import { getCollisionSafeFreeTextTop } from '../interactions/freeTextMovement';
 import { resolveMenuMargins } from '../../../domain/menu/styleRules';
@@ -71,23 +73,13 @@ interface MenuPreviewProps {
 }
 
 type ObjectSelectionItem = SelectionItem & { type: 'product' | 'category' | 'freeText' | 'addedImage' };
-type CanvasContextMenuItem = ObjectSelectionItem | { type: 'menuTitle'; id: 'menuTitle' };
+type CanvasContextMenuItem = FormatObject;
 
 type ClipboardItem =
     | { type: 'product'; product: Product }
     | { type: 'freeText'; product: Product }
     | { type: 'category'; category: string; products: Product[] }
     | { type: 'addedImage'; image: AddedImage };
-
-type FormatClipboard =
-    | { type: 'category'; style: ElementStyle }
-    | { type: 'product'; styles: Pick<MenuStyle['elementStyles'], 'productName' | 'productPrice' | 'productDescription'> }
-    | { type: 'freeText'; style: ElementStyle }
-    | { type: 'addedImage'; width: number };
-
-type CanvasClipboard =
-    | { mode: 'items'; items: ClipboardItem[] }
-    | { mode: 'format'; format: FormatClipboard };
 
 type NativeClipboardPayload =
     | { type: 'text'; text: string }
@@ -168,6 +160,8 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const [backgroundPromptId, setBackgroundPromptId] = useState<string | null>(null);
     const [backgroundPromptPosition, setBackgroundPromptPosition] = useState<{ left: number; top: number }>();
     const backgroundPromptRef = useRef<HTMLDivElement | null>(null);
+    const promptedLayerIds = useRef(new Set<string>());
+    const formatClipboardRef = useRef<{ format: CanvasFormat; source: FormatObject; armed: boolean } | null>(null);
     const skipBackgroundDismissClickRef = useRef(false);
     const productImageInputRef = useRef<HTMLInputElement | null>(null);
     const pendingProductImageIdRef = useRef<string | null>(null);
@@ -192,12 +186,14 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     }, [props.onUpdateProduct, props.products]);
     const finishImageEdit = useCallback((id: string) => {
         const image = props.style.addedImages?.find((candidate) => candidate.id === id);
-        if (!props.readOnly && image && !image.repeatAsBackground && !image.backgroundPromptDismissed) {
+        if (!props.readOnly && image && !image.repeatAsBackground && !image.backgroundPromptDismissed
+            && !promptedLayerIds.current.has(id) && !formatClipboardRef.current?.armed) {
+            promptedLayerIds.current.add(id);
             setBackgroundPromptId(id);
         }
     }, [props.readOnly, props.style.addedImages]);
     const handlers = useMenuInteractions({ ...props, onUpdateProduct: handleProductUpdateWithPricePrompt, onImageEditEnd: finishImageEdit });
-    const clipboardRef = useRef<CanvasClipboard | null>(null);
+    const clipboardRef = useRef<ClipboardItem[] | null>(null);
     const previewRootRef = useRef<HTMLDivElement | null>(null);
     useReplacePlaceholderOnInput(previewRootRef);
     useResponsivePrices(previewRootRef, props.style);
@@ -217,7 +213,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const lastPreviewPointerTypeRef = useRef<string | null>(null);
     const suppressTouchObjectMenuUntilRef = useRef(0);
     const touchStartedOnObjectMenuButtonRef = useRef(false);
-    const [clipboardVersion, setClipboardVersion] = useState(0);
+    const [, setClipboardVersion] = useState(0);
     const [nativeClipboardAvailable, setNativeClipboardAvailable] = useState(false);
     const [objectMenu, setObjectMenu] = useState<ObjectMenuState | null>(null);
     (handlers as any).objectMenuOpen = Boolean(objectMenu);
@@ -247,6 +243,16 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const pageDimensions = resolveMenuPageDimensions(style);
     const promptedImage = style.addedImages?.find((image) => image.id === backgroundPromptId && !image.repeatAsBackground && !image.backgroundPromptDismissed);
     const promptOpen = Boolean(promptedImage);
+    const dismissBackgroundPrompt = useCallback(() => {
+        if (!backgroundPromptId) return;
+        const ids = getSelectedLayerIds(handlers.selectedItems, backgroundPromptId);
+        onStyleUpdate?.(previous => ({
+            ...previous,
+            addedImages: previous.addedImages?.map(image => ids.has(image.id) && !image.backgroundPromptDismissed
+                ? { ...image, backgroundPromptDismissed: true } : image),
+        }));
+        setBackgroundPromptId(null);
+    }, [backgroundPromptId, handlers.selectedItems, onStyleUpdate]);
 
     useEffect(() => {
         if (readOnly) return;
@@ -288,7 +294,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             skipBackgroundDismissClickRef.current = true;
             event.preventDefault();
             event.stopPropagation();
-            setBackgroundPromptId(null);
+            dismissBackgroundPrompt();
         };
         const skipDismissClick = (event: MouseEvent) => {
             if (!skipBackgroundDismissClickRef.current) return;
@@ -304,12 +310,16 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             window.removeEventListener('click', skipDismissClick, true);
             window.removeEventListener('contextmenu', skipDismissClick, true);
         };
-    }, [promptOpen, readOnly]);
+    }, [dismissBackgroundPrompt, promptOpen, readOnly]);
 
     const setImageBackground = (id: string, pageIndex?: number) => {
+        const source = style.addedImages?.find(image => image.id === id);
+        if (!source) return;
+        const ids = getSelectedLayerIds(handlers.selectedItems, id);
         onStyleUpdate?.((previous) => ({
             ...previous,
-            addedImages: previous.addedImages?.map((image) => image.id === id ? toggleBackgroundLayer(image, pageIndex) : image),
+            addedImages: previous.addedImages?.map(image => ids.has(image.id)
+                ? setCanvasImageBackground(image, !source.repeatAsBackground, image.id === id ? pageIndex : undefined) : image),
             name: 'Custom',
         }));
         setBackgroundPromptId(null);
@@ -341,9 +351,12 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     };
 
     const flipImage = (id: string, axis: 'flipHorizontal' | 'flipVertical') => {
+        const source = style.addedImages?.find(image => image.id === id);
+        if (!source) return;
+        const ids = getSelectedLayerIds(handlers.selectedItems, id);
         onStyleUpdate?.((previous) => ({
             ...previous,
-            addedImages: previous.addedImages?.map((image) => image.id === id ? { ...image, [axis]: !image[axis] } : image),
+            addedImages: previous.addedImages?.map(image => ids.has(image.id) ? { ...image, [axis]: !source[axis] } : image),
             name: 'Custom',
         }));
         setObjectMenu(null);
@@ -1708,42 +1721,20 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const copyItems = useCallback((items: ObjectSelectionItem[]) => {
         const clipboardItems = buildClipboardItems(items);
         if (clipboardItems.length === 0) return false;
-        clipboardRef.current = { mode: 'items', items: clipboardItems };
+        clipboardRef.current = clipboardItems;
         setClipboardVersion((version) => version + 1);
         return true;
     }, [buildClipboardItems]);
 
-    const copyFormatting = useCallback((items: ObjectSelectionItem[]) => {
-        const [item] = items;
-        if (!item) return false;
-
-        if (item.type === 'category') {
-            clipboardRef.current = { mode: 'format', format: { type: 'category', style: { ...(style.elementStyles?.category || {}) } } };
-        } else if (item.type === 'product') {
-            clipboardRef.current = {
-                mode: 'format',
-                format: {
-                    type: 'product',
-                    styles: {
-                        productName: { ...(style.elementStyles?.productName || {}) },
-                        productPrice: { ...(style.elementStyles?.productPrice || {}) },
-                        productDescription: { ...(style.elementStyles?.productDescription || {}) },
-                    },
-                },
-            };
-        } else if (item.type === 'freeText') {
-            const product = products.find((candidate) => candidate.id === item.id);
-            if (!product) return false;
-            clipboardRef.current = { mode: 'format', format: { type: 'freeText', style: { ...(product.styles || {}) } } };
-        } else {
-            const image = (style.addedImages || []).find((candidate) => candidate.id === item.id);
-            if (!image) return false;
-            clipboardRef.current = { mode: 'format', format: { type: 'addedImage', width: image.width } };
-        }
-
-        setClipboardVersion((version) => version + 1);
+    const copyFormatting = useCallback((source?: FormatObject | null) => {
+        if (!source) return false;
+        const format = captureCanvasFormat(source, style, products);
+        if (!format) return false;
+        formatClipboardRef.current = { format, source, armed: true };
+        setClipboardVersion(version => version + 1);
+        setObjectMenu(null);
         return true;
-    }, [products, style.addedImages, style.elementStyles]);
+    }, [products, style]);
 
     const insertCategoryAfter = useCallback((categoryOrder: string[], anchorCategory: string, nextCategory: string) => {
         const nextOrder = categoryOrder.filter((category) => category !== nextCategory);
@@ -1837,7 +1828,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             styles: { ...(product.styles || {}) },
         });
 
-        return true;
+        return newId;
     }, [handlers.sortedCategories, onAddProduct, onStyleUpdate, products]);
 
     const addNativeClipboardText = useCallback((
@@ -1845,14 +1836,14 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         point?: { x: number; y: number } | null,
         targetItem?: ObjectSelectionItem | null
     ) => (
-        insertFreeTextProduct({
+        Boolean(insertFreeTextProduct({
             id: '',
             name: text.trim() || 'Novo texto',
             description: '',
             price: 0,
             category: '',
             isFreeText: true,
-        }, getFreeTextPastePlacement(point, targetItem))
+        }, getFreeTextPastePlacement(point, targetItem)))
     ), [getFreeTextPastePlacement, insertFreeTextProduct]);
 
     const handleNativeClipboardPayload = useCallback(async (
@@ -1864,32 +1855,32 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         return addNativeClipboardText(payload.text, point, targetItem);
     }, [addNativeClipboardImage, addNativeClipboardText]);
 
-    const duplicateClipboardItems = useCallback((clipboardItems: ClipboardItem[], freeTextPlacement?: DraftItem | null) => {
+    const duplicateClipboardItems = useCallback((clipboardItems: ClipboardItem[], freeTextPlacement?: DraftItem | null, selection?: ObjectSelectionItem[]) => {
         if (clipboardItems.length === 0) return false;
 
         const addedImages = clipboardItems.filter((item): item is Extract<ClipboardItem, { type: 'addedImage' }> => item.type === 'addedImage');
         const nonImageItems = clipboardItems.filter((item) => item.type !== 'addedImage');
+        const created: ObjectSelectionItem[] = [];
 
-        if (addedImages.length > 0) {
-            onStyleUpdate?.((prev) => {
+        if (addedImages.length > 0 && onStyleUpdate) {
+            const clones = addedImages.map(({ image }) => ({
+                ...image,
+                id: crypto.randomUUID(),
+                x: Math.min(image.x + 20, Math.max(0, pageDimensions.widthPx - Math.min(image.width, 50))),
+                y: Math.min(image.y + 20, Math.max(0, pageDimensions.heightPx - 50)),
+            }));
+            created.push(...clones.map(image => ({ type: 'addedImage' as const, id: image.id })));
+            onStyleUpdate(prev => {
                 const images = prev.addedImages || [];
                 const maxZ = Math.max(40, ...images.map((image) => image.zIndex ?? 11));
-                const clones = addedImages.map(({ image }, index) => ({
-                    ...image,
-                    id: crypto.randomUUID(),
-                    backgroundPromptDismissed: undefined,
-                    x: Math.min(image.x + 20, 744),
-                    y: Math.min(image.y + 20, 1073),
-                    zIndex: maxZ + index + 1,
-                }));
-
-                return { ...prev, addedImages: [...images, ...clones], name: 'Custom' };
+                return { ...prev, addedImages: [...images, ...clones.map((image, index) => ({ ...image, zIndex: maxZ + index + 1 }))], name: 'Custom' };
             });
         }
 
         nonImageItems.forEach((item, index) => {
             if (item.type === 'product') {
                 const newId = crypto.randomUUID();
+                if (onAddProduct) created.push({ type: 'product', id: newId });
                 onAddProduct?.(item.product.category, undefined, false, newId, getProductInitialData(item.product));
                 onStyleUpdate?.((prev) => {
                     const productOrder = { ...(prev.customProductOrder || {}) };
@@ -1903,7 +1894,8 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             }
 
             if (item.type === 'freeText') {
-                insertFreeTextProduct(item.product, freeTextPlacement, index);
+                const id = insertFreeTextProduct(item.product, freeTextPlacement, index);
+                if (id) created.push({ type: 'freeText', id });
                 return;
             }
 
@@ -1911,6 +1903,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 const newCategory = getUniqueCategoryName(item.category);
                 const categoryId = crypto.randomUUID();
                 const productIds = item.products.map(() => crypto.randomUUID());
+                if (onAddProduct && productIds.length) created.push({ type: 'category', id: newCategory });
 
                 onStyleUpdate?.((prev) => {
                     const currentOrder = getCategoryOrder();
@@ -1932,8 +1925,14 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             }
         });
 
+        if (selection && created.some(item => item.type === 'addedImage')) {
+            const [active] = created.splice(addedImages.length - 1, 1);
+            handlers.setEditingId(null);
+            handlers.replaceSelectedItems([...selection, ...created, active], true);
+        }
         return true;
-    }, [getCategoryOrder, getUniqueCategoryName, handlers.groupedProducts, insertFreeTextProduct, onAddProduct, onStyleUpdate]);
+    }, [getCategoryOrder, getUniqueCategoryName, handlers.groupedProducts, handlers.replaceSelectedItems, handlers.setEditingId,
+        insertFreeTextProduct, onAddProduct, onStyleUpdate, pageDimensions.heightPx, pageDimensions.widthPx]);
 
     const deleteObjectItems = useCallback((items: ObjectSelectionItem[]) => {
         if (items.length === 0) return false;
@@ -2016,64 +2015,66 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         const clipboard = clipboardRef.current;
         const menuPoint = objectMenu ? { x: objectMenu.x, y: objectMenu.y } : null;
 
-        if (clipboard?.mode === 'items') {
-            const hasFreeText = clipboard.items.some((item) => item.type === 'freeText');
+        if (clipboard) {
+            const hasFreeText = clipboard.some((item) => item.type === 'freeText');
             const placement = hasFreeText ? getFreeTextPastePlacement(menuPoint, targetItem) : null;
-            return duplicateClipboardItems(clipboard.items, placement);
+            return duplicateClipboardItems(clipboard, placement);
         }
 
         const nativePayload = await readNativeClipboardPayload();
         return nativePayload ? handleNativeClipboardPayload(nativePayload, menuPoint, targetItem) : false;
     }, [duplicateClipboardItems, getFreeTextPastePlacement, handleNativeClipboardPayload, objectMenu, readNativeClipboardPayload]);
 
-    const pasteFormattingClipboard = useCallback((targetItem?: ObjectSelectionItem | null) => {
-        const clipboard = clipboardRef.current;
-        if (!clipboard || clipboard.mode !== 'format') return false;
-
-        const targets = getActiveObjectItems(targetItem);
-        if (targets.length === 0) return false;
+    const pasteFormattingClipboard = useCallback((targets: FormatObject[]) => {
+        const clipboard = formatClipboardRef.current;
+        if (!clipboard) return false;
         const { format } = clipboard;
+        const compatible = targets.filter(target => acceptsCanvasFormat(format, target));
+        if (!compatible.length) return false;
 
-        if (format.type === 'category') {
-            if (!targets.some((item) => item.type === 'category')) return false;
-            onStyleUpdate?.((prev) => ({
-                ...prev,
-                elementStyles: { ...prev.elementStyles, category: { ...format.style } },
-                name: 'Custom',
-            }));
-            return true;
+        clipboard.armed = false;
+        onStyleUpdate?.(previous => applyCanvasFormat(previous, format, compatible));
+        if (format.type === 'text') {
+            const updates = compatible.filter(target => target.type === 'freeText').flatMap(({ id }) => [
+                { id, field: 'styles' as const, value: { ...format.text } },
+                ...(format.freeTextWidth === undefined ? [] : [{ id, field: 'freeTextWidth' as const, value: format.freeTextWidth }]),
+            ]);
+            if (updates.length && props.onUpdateProducts) props.onUpdateProducts(updates);
+            else updates.forEach(({ id, field, value }) => props.onUpdateProduct?.(id, field, value));
         }
-
-        if (format.type === 'product') {
-            if (!targets.some((item) => item.type === 'product')) return false;
-            onStyleUpdate?.((prev) => ({
-                ...prev,
-                elementStyles: {
-                    ...prev.elementStyles,
-                    productName: { ...(format.styles.productName || {}) },
-                    productPrice: { ...(format.styles.productPrice || {}) },
-                    productDescription: { ...(format.styles.productDescription || {}) },
-                },
-                name: 'Custom',
-            }));
-            return true;
-        }
-
-        if (format.type === 'freeText') {
-            const freeTextTargets = targets.filter((item) => item.type === 'freeText');
-            freeTextTargets.forEach((item) => props.onUpdateProduct?.(item.id, 'styles', { ...format.style }));
-            return freeTextTargets.length > 0;
-        }
-
-        const imageIds = new Set(targets.filter((item) => item.type === 'addedImage').map((item) => item.id));
-        if (imageIds.size === 0) return false;
-        onStyleUpdate?.((prev) => ({
-            ...prev,
-            addedImages: (prev.addedImages || []).map((image) => imageIds.has(image.id) ? { ...image, width: format.width } : image),
-            name: 'Custom',
-        }));
+        setObjectMenu(null);
         return true;
-    }, [getActiveObjectItems, onStyleUpdate, props]);
+    }, [onStyleUpdate, props.onUpdateProduct, props.onUpdateProducts]);
+
+    const pasteFormattingOnClick = (event: React.MouseEvent) => {
+        const clipboard = formatClipboardRef.current;
+        const element = event.target;
+        if (!clipboard?.armed || !(element instanceof Element) || element.closest('button, input, textarea, select, [data-print-control]:not([data-image-selection-overlay])')) return;
+        clipboard.armed = false;
+        if (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return;
+
+        const layer = element.closest<HTMLElement>('[data-added-image-id], [data-image-selection-overlay]');
+        const heading = element.closest<HTMLElement>('[data-menu-heading]');
+        const product = element.closest<HTMLElement>('[data-drag-type="product"][data-drag-id]');
+        const category = element.closest<HTMLElement>('[data-category-id]');
+        let target: FormatObject | undefined;
+        if (layer) {
+            const id = layer.dataset.addedImageId || layer.dataset.imageSelectionOverlay;
+            if (id) target = { type: 'addedImage', id };
+        } else if (heading && isHeadingTextHit(heading, event)) {
+            const type = heading.dataset.menuHeading === 'title' ? 'menuTitle' : 'menuSubtitle';
+            target = { type, id: type };
+        } else if (product?.dataset.dragId) {
+            const id = product.dataset.dragId;
+            target = { type: products.find(item => item.id === id)?.isFreeText ? 'freeText' : 'product', id };
+        } else if (category?.dataset.categoryId) {
+            target = { type: 'category', id: category.dataset.categoryId };
+        }
+
+        if (target && (target.type !== clipboard.source.type || target.id !== clipboard.source.id)) {
+            pasteFormattingClipboard([target]);
+        }
+    };
 
     const layerObjectItems = useCallback((items: ObjectSelectionItem[], direction: 'front' | 'back') => {
         if (items.length === 0) return false;
@@ -2144,16 +2145,18 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         let handled = false;
 
         if (action === 'copy') handled = copyItems(items);
-        if (action === 'copyFormat') handled = copyFormatting(items);
+        if (action === 'copyFormat') handled = copyFormatting(targetItem ?? items[0]);
         if (action === 'paste') handled = await pasteClipboard(targetItem);
-        if (action === 'pasteFormat') handled = pasteFormattingClipboard(targetItem);
+        if (action === 'pasteFormat') handled = pasteFormattingClipboard(items);
         if (action === 'cut') {
             handled = copyItems(items);
             if (handled) deleteObjectItems(items);
         }
         if (action === 'duplicate') {
             const clipboardItems = buildClipboardItems(items);
-            handled = duplicateClipboardItems(clipboardItems);
+            const includesLayer = clipboardItems.some(item => item.type === 'addedImage');
+            const placement = includesLayer && clipboardItems.some(item => item.type === 'freeText') ? getFreeTextPastePlacement(null, targetItem) : null;
+            handled = duplicateClipboardItems(clipboardItems, placement, items);
         }
         if (action === 'delete') handled = deleteObjectItems(items);
         if (action === 'hide') handled = hideObjectItems(items);
@@ -2162,7 +2165,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
         if (handled) setObjectMenu(null);
         return handled;
-    }, [buildClipboardItems, copyFormatting, copyItems, deleteObjectItems, duplicateClipboardItems, getActiveObjectItems, hideObjectItems, layerObjectItems, pasteClipboard, pasteFormattingClipboard]);
+    }, [buildClipboardItems, copyFormatting, copyItems, deleteObjectItems, duplicateClipboardItems, getActiveObjectItems, getFreeTextPastePlacement, hideObjectItems, layerObjectItems, pasteClipboard, pasteFormattingClipboard]);
 
     (handlers as typeof handlers & { removeCanvasObject: (item: ObjectSelectionItem) => void }).removeCanvasObject = (item) => {
         void runObjectAction('delete', item);
@@ -2282,7 +2285,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
             const selectedObjects = (handlers.selectedItems || []).filter(isObjectItem);
             if (key !== 'v' && selectedObjects.length === 0) return;
-            if (key === 'v' && clipboardRef.current?.mode !== 'items') return;
+            if (key === 'v' && !clipboardRef.current) return;
 
             event.preventDefault();
             event.stopPropagation();
@@ -2341,10 +2344,11 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
     const pendingDeletePageIndexes = getPageIndexesForDeletion();
     const isDeletingSelectedPages = pendingDeletePageIndexes.length > 1;
-    const hasClipboardItems = (clipboardVersion >= 0 && clipboardRef.current?.mode === 'items') || nativeClipboardAvailable;
-    const hasClipboardFormat = clipboardVersion >= 0 && clipboardRef.current?.mode === 'format';
+    const hasClipboardItems = Boolean(clipboardRef.current) || nativeClipboardAvailable;
     const isBackgroundMenu = Boolean(objectMenu && !objectMenu.item);
-    const isMenuTitleContext = objectMenu?.item?.type === 'menuTitle';
+    const headingContext = objectMenu?.item?.type === 'menuTitle' || objectMenu?.item?.type === 'menuSubtitle' ? objectMenu.item : null;
+    const hasClipboardFormat = formatClipboardRef.current && objectMenu?.item
+        ? acceptsCanvasFormat(formatClipboardRef.current.format, objectMenu.item) : false;
     const contextObjectItem = objectMenu?.item && isObjectItem(objectMenu.item)
         ? objectMenu.item
         : null;
@@ -2397,10 +2401,13 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     event.stopPropagation();
                     return;
                 }
-                if (!suppressMarqueeClickRef.current) return;
-                suppressMarqueeClickRef.current = false;
-                event.preventDefault();
-                event.stopPropagation();
+                if (suppressMarqueeClickRef.current) {
+                    suppressMarqueeClickRef.current = false;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
+                }
+                pasteFormattingOnClick(event);
             }}
         >
             <DynamicFontLoader fonts={usedFonts} />
@@ -2478,15 +2485,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 >
                     <p className="px-1 font-medium">Definir como plano de fundo?</p>
                     <div className="mt-1 flex justify-end gap-1">
-                        <button type="button" className="rounded px-2 py-1 hover:bg-slate-100" onClick={() => {
-                            onStyleUpdate?.((previous) => ({
-                                ...previous,
-                                addedImages: previous.addedImages?.map((image) => image.id === promptedImage.id
-                                    ? { ...image, backgroundPromptDismissed: true }
-                                    : image),
-                            }));
-                            setBackgroundPromptId(null);
-                        }}>Não</button>
+                        <button type="button" className="rounded px-2 py-1 hover:bg-slate-100" onClick={dismissBackgroundPrompt}>Não</button>
                         <button type="button" className="rounded bg-indigo-600 px-2 py-1 font-semibold text-white hover:bg-indigo-700"
                             onClick={() => setImageBackground(promptedImage.id)}>Sim</button>
                     </div>
@@ -2504,7 +2503,9 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     onPointerDown={(event) => event.stopPropagation()}
                     onContextMenu={(event) => event.preventDefault()}
                 >
-                    {isMenuTitleContext ? (
+                    {headingContext ? (
+                        <>
+                        {headingContext.type === 'menuTitle' && !style.menuSubtitle?.trim() && (
                         <button
                             onClick={() => {
                                 onStyleUpdate?.((previous) => ({
@@ -2519,6 +2520,15 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                         >
                             <Plus size={15} /> Adicionar subtítulo
                         </button>
+                        )}
+                        <button type="button" onClick={() => copyFormatting(headingContext)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
+                            <Paintbrush size={15} /> Copiar formatação
+                        </button>
+                        <button type="button" disabled={!hasClipboardFormat} onClick={() => pasteFormattingClipboard([headingContext])}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                            <Paintbrush size={15} /> Colar formatação
+                        </button>
+                        </>
                     ) : (
                     <>
                     <button onClick={() => { handlers.setMultiSelectMode?.(!handlers.multiSelectMode); setObjectMenu(null); }} className={`w-full px-3 py-2 text-left flex items-center gap-2 ${handlers.multiSelectMode ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-slate-50'}`}><CopyCheck size={15} /> Seleção múltipla</button>

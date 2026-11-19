@@ -237,7 +237,7 @@ test('a shape becomes the same editable background on newly added pages', async 
   expect(new Set(ids).size).toBe(1);
 });
 
-test('the shape prompt dismisses outside, remembers No, and leaves background and flip actions in the menu', async ({ page }) => {
+test('the shape prompt remembers an outside dismissal and leaves background and flip actions in the menu', async ({ page }) => {
   await page.getByRole('button', { name: 'Adicionar forma' }).click();
   await page.getByRole('button', { name: 'Inserir forma' }).click();
   const shape = page.getByAltText('Forma adicionada');
@@ -252,9 +252,6 @@ test('the shape prompt dismisses outside, remembers No, and leaves background an
   await expect(prompt).toHaveCount(0);
   await expect(controls).toBeVisible();
   await expect(controls.locator(':scope > button').last()).toHaveAttribute('title', 'Remover forma');
-  await releaseShape();
-  await expect(prompt).toBeVisible();
-  await prompt.getByRole('button', { name: 'Não', exact: true }).click();
   await releaseShape();
   await expect(prompt).toHaveCount(0);
   await controls.getByTitle('Seleção múltipla').click();
@@ -297,6 +294,112 @@ test('an added image can use the background prompt and keeps its More options ac
   await expect(removeImage).toHaveAttribute('title', 'Remover imagem');
   await removeImage.click();
   await expect(image).toHaveCount(0);
+});
+
+test('a mixed selection formats, resizes, layers and duplicates its shapes and image together', async ({ page }) => {
+  await page.goto(`${url}?batch-layers`);
+  const firstPage = page.locator('[data-menu-print-page][data-page-index="0"]');
+  const secondPage = page.locator('[data-menu-print-page][data-page-index="1"]');
+  const layers = ['shape-left', 'batch-photo', 'shape-right'];
+  const layer = (id: string) => firstPage.locator(`[data-added-image-id="${id}"]`);
+  const controls = page.locator('[data-object-page-index="0"]');
+  const menu = page.locator('[data-canvas-object-menu]');
+  const menuAction = async (name: string) => {
+    await controls.getByTitle('Mais opções').click();
+    await menu.getByRole('button', { name, exact: true }).click();
+  };
+  await layer(layers[0]).click();
+  await controls.getByTitle('Seleção múltipla').click();
+  await layer(layers[2]).click();
+  await layer(layers[1]).click();
+  await expect(firstPage.locator('[data-image-selection-overlay]')).toHaveCount(3);
+
+  const photoUrl = await layer(layers[1]).locator('img').getAttribute('src');
+  await controls.getByTitle('Formatar forma').click();
+  const toolbar = page.locator('[data-inline-format-toolbar]');
+  await toolbar.getByRole('button', { name: 'Aumentar Rotação' }).click();
+  for (const id of ['shape-left', 'shape-right']) {
+    await expect.poll(async () => decodeURIComponent((await layer(id).locator('img').getAttribute('src'))!)).toContain('rotate(1)');
+  }
+  await expect(layer(layers[1]).locator('img')).toHaveAttribute('src', photoUrl!);
+  await controls.getByTitle('Formatar forma').click();
+  await expect(controls.getByTitle('Seleção múltipla')).toHaveAttribute('aria-pressed', 'true');
+
+  const overlay = firstPage.locator('[data-image-selection-overlay="shape-right"]');
+  const box = (await overlay.boundingBox())!;
+  await page.mouse.move(box.x + box.width, box.y + box.height);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width + 24, box.y + box.height + 24, { steps: 5 });
+  const width = (id: string) => layer(id).evaluate(node => parseFloat((node as HTMLElement).style.width));
+  for (const id of layers) await expect.poll(() => width(id)).toBeGreaterThan(100);
+  const resized = await width('shape-left');
+  await page.mouse.up();
+  for (const id of layers) await expect.poll(() => width(id)).toBe(resized);
+
+  await menuAction('Inverter horizontalmente');
+  await menuAction('Inverter verticalmente');
+  for (const id of layers) await expect(layer(id).locator('img')).toHaveCSS('transform', 'matrix(-1, 0, 0, -1, 0, 0)');
+  await controls.getByTitle('Trazer à frente').click();
+  for (const id of layers) await expect.poll(() => layer(id).evaluate(node => Number(getComputedStyle(node).zIndex))).toBeGreaterThan(40);
+  await controls.getByTitle('Enviar para trás').click();
+  for (const id of layers) await expect(layer(id)).toHaveCSS('z-index', '1');
+
+  await menuAction('Definir como plano de fundo');
+  await expect(secondPage.locator('[data-added-image-id]')).toHaveCount(3);
+  await menuAction('Usar só nesta página');
+  await expect(secondPage.locator('[data-added-image-id]')).toHaveCount(0);
+  await menuAction('Duplicar');
+  await expect(firstPage.locator('[data-added-image-id]')).toHaveCount(7);
+  await expect(firstPage.locator('[data-image-selection-overlay]')).toHaveCount(6);
+  await expect(controls.getByTitle('Seleção múltipla')).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('shape formatting applies on the next click and stays available after valid, invalid and empty clicks', async ({ page }) => {
+  await page.goto(`${url}?batch-layers`);
+  const menu = page.locator('[data-canvas-object-menu]');
+  const layer = (id: string) => page.locator(`[data-added-image-id="${id}"]`);
+  const clickLayer = async (id: string, button: 'left' | 'right' = 'left') => {
+    await layer(id).scrollIntoViewIfNeeded();
+    const box = (await layer(id).boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button });
+  };
+  const copy = async () => {
+    await clickLayer('shape-left', 'right');
+    await menu.getByRole('button', { name: 'Copiar formatação' }).click();
+  };
+  const svg = async (id: string) => decodeURIComponent((await layer(id).locator('img').getAttribute('src'))!);
+  await copy();
+  await clickLayer('shape-right');
+  await expect.poll(() => svg('shape-right')).toContain('rotate(25)');
+  expect(await svg('shape-right')).toContain('<polygon');
+  await clickLayer('batch-photo', 'right');
+  await expect(menu.getByRole('button', { name: 'Colar formatação' })).toBeEnabled();
+  await page.keyboard.press('Escape');
+
+  await copy();
+  await page.locator('[data-menu-print-page]').first().click({ position: { x: 30, y: 410 } });
+  await clickLayer('shape-other');
+  expect(await svg('shape-other')).toContain('rotate(0)');
+  await copy();
+  await page.locator('#product-container-1').getByRole('heading').click();
+  await clickLayer('shape-other');
+  expect(await svg('shape-other')).toContain('rotate(0)');
+  await clickLayer('shape-other', 'right');
+  await menu.getByRole('button', { name: 'Colar formatação' }).click();
+  await expect.poll(() => svg('shape-other')).toContain('rotate(25)');
+  expect(await svg('shape-other')).toContain('rx="12"');
+});
+
+test('category formatting pastes its border, marker and divider into a product', async ({ page }) => {
+  await page.goto(`${url}?photos=list&formatting-sample`);
+  await page.locator('[data-category-id="Entradas"]').getByRole('heading').click({ button: 'right' });
+  await page.getByRole('button', { name: 'Copiar formatação' }).click();
+  const product = page.locator('#product-container-1');
+  await product.getByRole('heading').click();
+  await expect(product.locator('[data-menu-marker]')).toHaveText('◆');
+  await expect(product.locator('[data-divider-segment="start"]')).toHaveCSS('border-top-style', 'dotted');
+  await expect(product.locator(':scope > [data-menu-border]').first()).toHaveCSS('border-left-style', 'dashed');
+  await expect(product.locator(':scope > [data-menu-border]').first()).toHaveCSS('border-left-color', 'rgb(220, 38, 38)');
 });
 
 test('title and subtitle edit the same border and categories share their marker style', async ({ page }) => {

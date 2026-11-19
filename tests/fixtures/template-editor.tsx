@@ -22,6 +22,11 @@ const products: Product[] = [
   {id:'3', category:'Sobremesas', name:'Tarte de maçã', price:24, description:'Massa crocante e baunilha.'},
 ];
 const samplePhoto = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jBXsAAAAASUVORK5CYII=';
+const batchShapes = [
+  { id: 'shape-left', x: 115, shape: { ...createCanvasShape('rectangle', '#4f46e5'), rotation: 25, corners: 12 } },
+  { id: 'shape-right', x: 325, shape: createCanvasShape('star', '#dc2626') },
+  { id: 'shape-other', x: 520, shape: createCanvasShape('rectangle', '#15803d') },
+];
 
 function Fixture() {
   const params = new URLSearchParams(location.search);
@@ -29,8 +34,18 @@ function Fixture() {
   const defaultFields = params.has('default-fields');
   const priceFlow = params.has('price-flow');
   const splitCategory = params.has('split-category');
+  const batchLayers = params.has('batch-layers');
   const [history, setHistory] = useState<MenuStyle[]>(() => !photoMode ? [
-    params.has('added-image') ? {
+    batchLayers ? {
+      ...initial,
+      addedImages: [
+        ...batchShapes.map(shape => ({
+          ...shape, y: 475, width: 100, url: canvasShapeUrl(shape.shape), pageIndex: 0, backgroundPromptDismissed: true,
+        })),
+        { id: 'batch-photo', x: 325, y: 640, width: 100, url: samplePhoto, pageIndex: 0, backgroundPromptDismissed: true },
+      ],
+      blankPages: [{ id: 'layers-page', index: 1, fixedPosition: true }],
+    } : params.has('added-image') ? {
       ...initial, addedImages: [
         { id: 'sample-image', url: samplePhoto, x: 290, y: 360, width: 128, pageIndex: 0 },
         ...(params.has('image-pair') ? [{ id: 'second-image', url: samplePhoto, x: 470, y: 460, width: 128, pageIndex: 0 }] : []),
@@ -44,6 +59,13 @@ function Fixture() {
         ...initial.elementStyles,
         productName: { fontFamily: 'Arial', fontSize: 20 },
         productPrice: { fontFamily: 'Arial', fontSize: 28 },
+      },
+    } : {}),
+    ...(params.has('formatting-sample') ? {
+      markers: { category: 'diamond', product: 'none' },
+      categoryDividerStyles: { Entradas: 'dotted' },
+      borders: {
+        category: { sides: ['left'], color: '#dc2626', thickness: 3, length: 100, radius: 0, offset: 0, pattern: 'dashed' },
       },
     } : {}),
     layoutMode: photoMode === 'list' ? 'list' : 'cards',

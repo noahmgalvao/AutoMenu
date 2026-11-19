@@ -45,8 +45,39 @@ export function canvasShapeUrl(shape: CanvasShape) {
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
-export function toggleBackgroundLayer(image: AddedImage, pageIndex = image.pageIndex): AddedImage {
-  return image.repeatAsBackground
-    ? { ...image, pageIndex, repeatAsBackground: false, zIndex: image.previousZIndex ?? (image.shape ? 1 : 11), previousZIndex: undefined }
-    : { ...image, repeatAsBackground: true, previousZIndex: image.zIndex, zIndex: 1 };
+export type CanvasShapeParameters = Partial<Omit<CanvasShape, 'kind'>>;
+
+export function getCanvasShapeParameters(shape: CanvasShape): CanvasShapeParameters {
+  const { fill, stroke, strokeWidth, ratio, rotation, corners, points, innerRadius } = shape;
+  return {
+    stroke, strokeWidth, ratio, rotation,
+    ...(shape.kind !== 'line' && { fill }),
+    ...(shape.kind === 'rectangle' && { corners }),
+    ...((shape.kind === 'star' || shape.kind === 'polygon') && { points }),
+    ...(shape.kind === 'star' && { innerRadius }),
+  };
+}
+
+export function applyCanvasShapeParameters(image: AddedImage, patch: CanvasShapeParameters): AddedImage {
+  if (!image.shape) return image;
+  const applicable = getCanvasShapeParameters(image.shape);
+  const updates = Object.fromEntries(Object.entries(patch).filter(([key]) => key in applicable));
+  if (Object.keys(updates).length === 0) return image;
+  const shape = { ...image.shape, ...updates };
+  return { ...image, shape, url: canvasShapeUrl(shape) };
+}
+
+export function setCanvasImageBackground(image: AddedImage, enabled: boolean, pageIndex = image.pageIndex): AddedImage {
+  if (enabled === Boolean(image.repeatAsBackground)) {
+    return image.backgroundPromptDismissed ? image : { ...image, backgroundPromptDismissed: true };
+  }
+  return enabled
+    ? { ...image, backgroundPromptDismissed: true, repeatAsBackground: true, previousZIndex: image.zIndex, zIndex: 1 }
+    : { ...image, backgroundPromptDismissed: true, pageIndex, repeatAsBackground: false,
+      zIndex: image.previousZIndex ?? (image.shape ? 1 : 11), previousZIndex: undefined };
+}
+
+export function getSelectedLayerIds(items: readonly { type: string; id: string }[], sourceId: string): Set<string> {
+  const ids = items.filter(item => item.type === 'addedImage').map(item => item.id);
+  return new Set(ids.includes(sourceId) ? ids : [sourceId]);
 }

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Shapes } from 'lucide-react';
 import type { CanvasShape, CanvasShapeKind } from '../../../domain/menu/model';
-import { canvasShapeKinds, canvasShapeUrl, createCanvasShape } from '../../../domain/menu/canvasShapes';
+import { canvasShapeKinds, canvasShapeUrl, createCanvasShape, type CanvasShapeParameters } from '../../../domain/menu/canvasShapes';
 import { ColorPicker } from './ColorPicker';
 import { FontSizeInput } from './FontSizeInput';
 
@@ -16,7 +16,7 @@ const numberFields = {
 
 export function ShapeSettings({ shape, onChange, onEditEnd }: {
   shape: CanvasShape;
-  onChange: (next: CanvasShape) => void;
+  onChange: (patch: CanvasShapeParameters) => void;
   onEditEnd?: () => void;
 }) {
   const changedSlider = React.useRef(false);
@@ -33,13 +33,13 @@ export function ShapeSettings({ shape, onChange, onEditEnd }: {
     <div className="flex flex-wrap gap-2 text-[11px] text-slate-600">
       {shape.kind !== 'line' && <div className="flex items-center gap-1">Preenchimento
         <ColorPicker value={shape.fill} label="Cor do preenchimento" onChange={fill => {
-          onChange({ ...shape, fill });
+          onChange({ fill });
           onEditEnd?.();
         }} />
       </div>}
       <div className="flex items-center gap-1">Contorno
         <ColorPicker value={shape.stroke} label="Cor do contorno" onChange={stroke => {
-          onChange({ ...shape, stroke });
+          onChange({ stroke });
           onEditEnd?.();
         }} />
       </div>
@@ -52,7 +52,7 @@ export function ShapeSettings({ shape, onChange, onEditEnd }: {
           const next = Number((Math.round(value / step) * step).toFixed(1));
           if (next === shape[field]) return;
           changedSlider.current = true;
-          onChange({ ...shape, [field]: next });
+          onChange({ [field]: next });
         };
         return <div key={field} className="flex items-center gap-2">
           <label className="flex min-w-0 flex-1 flex-col text-[11px] font-medium text-slate-600">
@@ -92,7 +92,7 @@ export function ShapePicker({ color, onAdd }: { color: string; onAdd: (shape: Ca
       <div className="grid h-16 place-items-center rounded-lg bg-slate-50">
         <img src={canvasShapeUrl(shape)} alt="Prévia da forma" className="h-12 w-20 object-contain" />
       </div>
-      <ShapeSettings shape={shape} onChange={setShape} />
+      <ShapeSettings shape={shape} onChange={patch => setShape(current => ({ ...current, ...patch }))} />
       <button type="button" onClick={() => { onAdd(shape); setOpen(false); }}
         className="w-full rounded-lg bg-indigo-700 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-800">Inserir forma</button>
     </div>}

@@ -1,7 +1,7 @@
 import { ColorPicker } from './ColorPicker';
 import { DecorationControls } from './Decorations';
 import { ShapePicker, ShapeSettings } from './ShapePicker';
-import { canvasShapeUrl, toggleBackgroundLayer } from '../../../domain/menu/canvasShapes';
+import { applyCanvasShapeParameters, setCanvasImageBackground } from '../../../domain/menu/canvasShapes';
 import type { CanvasShape } from '../../../domain/menu/model';
 
 import React, { useRef } from 'react';
@@ -67,6 +67,10 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
   layerSelectedAddedImages
 }) => {
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const layerIds = new Set(selectedAddedImageIds.includes(selectedAddedImage?.id || '')
+    ? selectedAddedImageIds : selectedAddedImage ? [selectedAddedImage.id] : []);
+  const shapeEditor = selectedAddedImage?.shape ? selectedAddedImage
+    : [...(style.addedImages || [])].reverse().find(image => layerIds.has(image.id) && image.shape);
   const selectedImageCount = selectedAddedImageIds.includes(selectedAddedImage?.id || '') && selectedAddedImageIds.length > 1
     ? selectedAddedImageIds.length
     : 1;
@@ -133,22 +137,26 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                     className="mb-2 w-full rounded-md border border-indigo-200 bg-indigo-50 px-2 py-2 text-xs font-semibold text-indigo-700"
                     onClick={() => setStyle(previous => ({
                         ...previous,
-                        addedImages: previous.addedImages?.map(image => image.id === selectedAddedImage.id ? toggleBackgroundLayer(image) : image),
+                        name: 'Custom',
+                        addedImages: previous.addedImages?.map(image => layerIds.has(image.id)
+                            ? setCanvasImageBackground(image, !selectedAddedImage.repeatAsBackground) : image),
                     }))}>
                     {selectedAddedImage.repeatAsBackground ? 'Usar só nesta página' : 'Definir como plano de fundo'}
                 </button>
-                {selectedAddedImage.shape && <ShapeSettings shape={selectedAddedImage.shape}
-                    onChange={shape => setStyle(previous => ({
+                {shapeEditor?.shape && <ShapeSettings shape={shapeEditor.shape}
+                    onChange={patch => setStyle(previous => ({
                         ...previous, name: 'Custom',
-                        addedImages: previous.addedImages?.map(image => image.id === selectedAddedImage.id ? { ...image, shape, url: canvasShapeUrl(shape) } : image),
+                        addedImages: previous.addedImages?.map(image => layerIds.has(image.id)
+                            ? applyCanvasShapeParameters(image, patch) : image),
                     }))}
-                    onEditEnd={() => window.dispatchEvent(new CustomEvent('automenu:image-edit-end', { detail: selectedAddedImage.id }))}
+                    onEditEnd={() => window.dispatchEvent(new CustomEvent('automenu:image-edit-end', { detail: shapeEditor.id }))}
                 />}
                 {selectedImageCount > 1 && <p className="my-2 text-xs text-slate-500">{selectedImageCount} elementos selecionados.</p>}
                 <div className="flex items-center justify-between bg-slate-50 p-2 rounded">
                     <span className="text-xs font-bold">Tamanho</span>
                     <div className="flex items-center gap-2">
                         <button 
+                        aria-label="Diminuir tamanho"
                         onClick={() => resizeSelectedAddedImages(-20)}
                         className="p-1 bg-white border border-slate-200 rounded hover:bg-slate-100"
                         >
@@ -156,6 +164,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                         </button>
                         <span className="text-xs w-12 text-center">{Math.round(selectedAddedImage.width)}px</span>
                         <button 
+                        aria-label="Aumentar tamanho"
                         onClick={() => resizeSelectedAddedImages(20)}
                         className="p-1 bg-white border border-slate-200 rounded hover:bg-slate-100"
                         >

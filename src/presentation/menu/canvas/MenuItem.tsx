@@ -10,6 +10,7 @@ import { ProductImageToolbar } from './ProductImageToolbar';
 import { getProductCardRadius, getProductPhotoFrameRadius, getProductCardCornerRadii } from './templateStyles';
 import { AutoFitText } from './AutoFitText';
 import { CanvasTextDivider } from './CanvasTextDivider';
+import { isHeadingTextHit } from './menuHeadingHit';
 import { getPaginationItemKey } from '../../../domain/menu/menuPagination';
 import { ProductControls, FreeTextResizeHandles, getFreeTextMaximumWidth, getFreeTextContentWidth } from './ProductCanvasControls';
 import { FREE_TEXT_PREFIX } from '../../../domain/menu/flow';
@@ -63,21 +64,7 @@ const handleEditableFieldClick = (event: React.MouseEvent<HTMLElement>) => {
     focusCanvasFieldAtClick(event);
 };
 
-const isMenuHeadingTextHit = (event: React.MouseEvent<HTMLElement>) => {
-    const heading = event.currentTarget;
-    if (!heading.textContent?.trim()) return heading.hasAttribute('data-subtitle-placeholder');
-
-    const range = heading.ownerDocument.createRange();
-    const textNodes = heading.ownerDocument.createTreeWalker(heading, NodeFilter.SHOW_TEXT);
-    for (let node = textNodes.nextNode(); node; node = textNodes.nextNode()) {
-        range.selectNodeContents(node);
-        const isInsideText = Array.from(range.getClientRects()).some(({ left, right, top, bottom }) => (
-            right > left && event.clientX >= left && event.clientX <= right && event.clientY >= top && event.clientY <= bottom
-        ));
-        if (isInsideText) return true;
-    }
-    return false;
-};
+const isMenuHeadingTextHit = (event: React.MouseEvent<HTMLElement>) => isHeadingTextHit(event.currentTarget, event);
 
 const preventHeadingFocusOutsideText = (event: React.PointerEvent<HTMLElement>) => {
     if (isMenuHeadingTextHit(event)) return;
@@ -416,9 +403,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     marginBottom: `${showSubtitle ? (titleStyle.marginBottom ?? 10) : contentSpacing.headerToContent}px`
                 }} 
                 onPointerDown={handlers.readOnly ? undefined : preventHeadingFocusOutsideText}
-                onContextMenu={!hasSubtitle ? (event) => {
+                onContextMenu={handlers.readOnly ? undefined : (event) => {
                     if (isMenuHeadingTextHit(event)) handlers.openObjectMenu?.(event, { type: 'menuTitle', id: 'menuTitle' });
-                } : undefined}
+                }}
                 onClick={(e) => {
                     if (!isMenuHeadingTextHit(e)) return;
                     e.stopPropagation();
@@ -448,6 +435,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 widthMode="parent"
                 id={handlers.readOnly ? undefined : "menu-subtitle-text"}
                 data-menu-heading="subtitle"
+                onContextMenu={handlers.readOnly ? undefined : (event) => {
+                    if (isMenuHeadingTextHit(event)) handlers.openObjectMenu?.(event, { type: 'menuSubtitle', id: 'menuSubtitle' });
+                }}
                 className={`opacity-90 outline-none focus:bg-blue-50/50 rounded cursor-text empty:before:pointer-events-none empty:before:opacity-50 empty:before:content-[attr(data-subtitle-placeholder)] ${showSubtitleDraft ? `empty:w-fit ${subtitlePlaceholderAlignment}` : ''} ${isSubtitleSelected ? 'ring-2 ring-indigo-500 bg-indigo-50/20' : ''}`}
                 style={{
                     color: `var(--automenu-preview-primary, ${subStyle.color || style.textColor})`,

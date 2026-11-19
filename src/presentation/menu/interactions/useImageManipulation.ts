@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { getImageLayerIndexes } from '../../../domain/menu/imageLayers';
+import { getSelectedLayerIds } from '../../../domain/menu/canvasShapes';
 import { InteractionProps, SelectionItem, TOUCH_LONG_PRESS_MS } from './types';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 import { captureImageDrag, getRenderedImageDragPages, IMAGE_DRAG_THRESHOLD_PX, moveDraggedLayers } from './imageDragMotion';
@@ -11,6 +12,22 @@ type ImageResizeSnapshot = {
     width: number;
     aspectRatio: number;
 };
+type ImageResizePosition = Pick<ImageResizeSnapshot, 'x' | 'y' | 'width'>;
+
+function renderResizePreview(positions: Map<string, ImageResizePosition>, sourceId?: string) {
+    document.querySelectorAll<HTMLElement>('[data-added-image-id], [data-image-selection-overlay]').forEach(element => {
+        const id = element.dataset.addedImageId || element.dataset.imageSelectionOverlay;
+        const position = id && positions.get(id);
+        if (!position) return;
+        element.style.left = `${position.x}px`;
+        element.style.top = `${position.y}px`;
+        element.style.width = `${position.width}px`;
+        const resizer = element.firstElementChild;
+        if (element.dataset.imageSelectionOverlay && id !== sourceId && resizer instanceof HTMLElement) {
+            resizer.style.width = `${position.width}px`;
+        }
+    });
+}
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
@@ -36,12 +53,7 @@ export const useImageManipulation = (
         images: Map<string, ImageResizeSnapshot>;
     } | null>(null);
 
-    const getBatchImageIds = (imgId: string) => {
-        const selectedImageIds = selectedItems
-            .filter((item) => item.type === 'addedImage')
-            .map((item) => item.id);
-        return selectedImageIds.includes(imgId) && selectedImageIds.length > 1 ? selectedImageIds : [imgId];
-    };
+    const getBatchImageIds = (imgId: string) => getSelectedLayerIds(selectedItems, imgId);
 
     const handleImageDragStart = (e: React.PointerEvent, imgId: string, pageIndex = 0) => {
         if (!e.isPrimary || e.button !== 0) return;
@@ -142,7 +154,7 @@ export const useImageManipulation = (
     const resizeImageByDelta = (imgId: string, delta: number) => {
         if (!delta) return;
         if (onStyleUpdate) {
-            const imageIds = new Set(getBatchImageIds(imgId));
+            const imageIds = getBatchImageIds(imgId);
             onStyleUpdate(prev => ({
                 ...prev,
                 addedImages: prev.addedImages?.map(img => {
@@ -161,16 +173,20 @@ export const useImageManipulation = (
         imageDragCleanupRef.current?.();
         imageResizeCleanupRef.current?.();
         document.body.dataset.automenuImageInteraction = 'resize';
-        const releaseResizeInteraction = () => {
+        const releaseResizeInteraction = (event?: PointerEvent) => {
             window.removeEventListener('pointerup', releaseResizeInteraction);
             window.removeEventListener('pointercancel', releaseResizeInteraction);
             delete document.body.dataset.automenuImageInteraction;
             imageResizeCleanupRef.current = null;
+            if (event?.type === 'pointercancel' && imageResizeSessionRef.current) {
+                renderResizePreview(imageResizeSessionRef.current.images);
+                imageResizeSessionRef.current = null;
+            }
         };
         window.addEventListener('pointerup', releaseResizeInteraction);
         window.addEventListener('pointercancel', releaseResizeInteraction);
         imageResizeCleanupRef.current = releaseResizeInteraction;
-        const imageIds = new Set(getBatchImageIds(imgId));
+        const imageIds = getBatchImageIds(imgId);
         const renderedAspectRatios = new Map<string, number>();
         (style.addedImages || []).forEach((imageStyle) => {
             if (!imageIds.has(imageStyle.id)) return;
@@ -211,73 +227,52 @@ export const useImageManipulation = (
         }
     };
 
-    const resizeImageFromCorner = (
-        imgId: string,
-        direction: ImageResizeDirection,
-        deltaWidth: number
-    ) => {
-        if (!onStyleUpdate || !Number.isFinite(deltaWidth)) return;
-        if (
-            !imageResizeSessionRef.current
-            || imageResizeSessionRef.current.sourceId !== imgId
-            || imageResizeSessionRef.current.direction !== direction
-        ) {
-            startImageResize(imgId, direction);
-        }
-
+    const getResizePositions = (imgId: string, direction: ImageResizeDirection, finalWidth: number) => {
         const session = imageResizeSessionRef.current;
-        if (!session) return;
-        const resizesFromLeft = direction === 'topLeft' || direction === 'bottomLeft';
-        const resizesFromTop = direction === 'topLeft' || direction === 'topRight';
+        const source = session?.images.get(imgId);
+        if (!session || !source || session.sourceId !== imgId || session.direction !== direction
+            || !Number.isFinite(finalWidth) || finalWidth <= 0) return null;
 
-        onStyleUpdate(prev => ({
-            ...prev,
-            addedImages: prev.addedImages?.map(img => {
-                const snapshot = session.images.get(img.id);
-                if (!snapshot) return img;
-
-                const aspectRatio = Number.isFinite(snapshot.aspectRatio) && snapshot.aspectRatio > 0
-                    ? snapshot.aspectRatio
-                    : 1;
-                const currentHeight = snapshot.width * aspectRatio;
-                const horizontalLimit = resizesFromLeft
-                    ? snapshot.x + snapshot.width
-                    : pageWidthPx - snapshot.x;
-                const verticalLimit = resizesFromTop
-                    ? (snapshot.y + currentHeight) / aspectRatio
-                    : (pageHeightPx - snapshot.y) / aspectRatio;
-                const safeHorizontalLimit = Number.isFinite(horizontalLimit) ? horizontalLimit : snapshot.width;
-                const safeVerticalLimit = Number.isFinite(verticalLimit) ? verticalLimit : snapshot.width;
-                const maxWidth = Math.max(50, Math.min(safeHorizontalLimit, safeVerticalLimit));
-                const width = clamp(snapshot.width + deltaWidth, 50, maxWidth);
-                const height = width * aspectRatio;
-                const x = resizesFromLeft ? (snapshot.x + snapshot.width) - width : snapshot.x;
-                const y = resizesFromTop ? (snapshot.y + currentHeight) - height : snapshot.y;
-                if (![width, height, x, y].every(Number.isFinite)) return img;
-
-                return {
-                    ...img,
-                    width,
-                    x,
-                    y,
-                };
-            }),
-            name: 'Custom'
-        }));
+        const delta = finalWidth - source.width;
+        const fromLeft = direction === 'topLeft' || direction === 'bottomLeft';
+        const fromTop = direction === 'topLeft' || direction === 'topRight';
+        const positions = new Map<string, ImageResizePosition>();
+        for (const [id, snapshot] of session.images) {
+            const { x, y, width, aspectRatio } = snapshot;
+            const right = x + width;
+            const bottom = y + width * aspectRatio;
+            const horizontalLimit = fromLeft ? right : pageWidthPx - x;
+            const verticalLimit = (fromTop ? bottom : pageHeightPx - y) / aspectRatio;
+            const nextWidth = clamp(width + delta, 50, Math.max(50, Math.min(horizontalLimit, verticalLimit)));
+            positions.set(id, { width: nextWidth, x: fromLeft ? right - nextWidth : x, y: fromTop ? bottom - nextWidth * aspectRatio : y });
+        }
+        return positions;
     };
 
-    const stopImageResize = (
-        imgId: string,
-        direction: ImageResizeDirection,
-        finalWidth: number
-    ) => {
-        const sourceSnapshot = imageResizeSessionRef.current?.images.get(imgId);
-        if (sourceSnapshot && Number.isFinite(finalWidth) && finalWidth > 0) {
-            resizeImageFromCorner(imgId, direction, finalWidth - sourceSnapshot.width);
-            if (finalWidth !== Math.round(sourceSnapshot.width)) onImageEditEnd?.(imgId);
-        }
+    const previewImageResize = (imgId: string, direction: ImageResizeDirection, finalWidth: number) => {
+        const positions = getResizePositions(imgId, direction, finalWidth);
+        if (positions) renderResizePreview(positions, imgId);
+    };
+
+    const stopImageResize = (imgId: string, direction: ImageResizeDirection, finalWidth: number) => {
+        const positions = getResizePositions(imgId, direction, finalWidth);
+        const source = imageResizeSessionRef.current?.images.get(imgId);
         imageResizeSessionRef.current = null;
         imageResizeCleanupRef.current?.();
+        if (!positions || !source || !onStyleUpdate) return;
+
+        renderResizePreview(positions);
+        const changed = source.width !== positions.get(imgId)?.width || finalWidth !== Math.round(source.width);
+        if (!changed) return;
+        onStyleUpdate(previous => ({
+            ...previous,
+            addedImages: previous.addedImages?.map(image => {
+                const position = positions.get(image.id);
+                return position ? { ...image, ...position } : image;
+            }),
+            name: 'Custom',
+        }));
+        onImageEditEnd?.(imgId);
     };
 
     React.useEffect(() => () => {
@@ -290,7 +285,7 @@ export const useImageManipulation = (
     const handleRemoveImage = (e: React.MouseEvent, imgId: string) => {
         e.stopPropagation();
         if (onStyleUpdate) {
-            const imageIds = new Set(getBatchImageIds(imgId));
+            const imageIds = getBatchImageIds(imgId);
             onStyleUpdate(prev => ({
                 ...prev,
                 addedImages: prev.addedImages?.filter(img => !imageIds.has(img.id)),
@@ -304,7 +299,7 @@ export const useImageManipulation = (
         e.stopPropagation();
         if (!onStyleUpdate) return;
 
-        const imageIds = getBatchImageIds(imgId);
+        const imageIds = Array.from(getBatchImageIds(imgId));
         const imageIdSet = new Set(imageIds);
         onStyleUpdate(prev => {
             const images = prev.addedImages || [];
@@ -331,7 +326,7 @@ export const useImageManipulation = (
         handleResizeImage,
         resizeImageByDelta,
         startImageResize,
-        resizeImageFromCorner,
+        previewImageResize,
         stopImageResize,
         handleRemoveImage,
         handleLayerImage
