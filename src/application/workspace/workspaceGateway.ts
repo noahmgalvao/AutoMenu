@@ -43,7 +43,7 @@ export interface WorkspaceGateway {
   saveWorkspaceState(input: SaveWorkspaceInput): Promise<SaveWorkspaceResult>;
   createWorkspaceMenu(input: { workspaceId: string; userId: string; name: string; sourceMenuId?: string | null }): Promise<Menu>;
   renameWorkspaceMenu(input: WorkspaceMenu & { name: string }): Promise<Menu>;
-  deleteWorkspaceMenu(input: WorkspaceMenu): Promise<void>;
+  deleteWorkspaceMenus(input: { workspaceId: string; menuIds: string[] }): Promise<void>;
   updateAccountIdentity(input: { userId: string; workspaceId: string; fullName: string; workspaceName: string }):
     Promise<{ fullName: string; workspaceName: string }>;
   updateWorkspaceRuleSettings(input: { workspaceId: string; splitCategoryAcrossPages: boolean; productsCanChangeCategory: boolean }):

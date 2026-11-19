@@ -564,6 +564,19 @@ test('category text and group have independent borders and the formatting panel 
   await expect(toolbar.getByRole('combobox', { name: 'Lados da borda' })).toHaveValue('outline');
 });
 
+test('the arch card moves the product title row a little farther inside', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=cards&cols=3');
+  const shape = page.getByLabel('Formato dos cartões');
+  const titleRow = page.locator('#product-container-1 [data-product-text-row]');
+  await expect(titleRow).toHaveCSS('margin-left', '0px');
+  await shape.selectOption('arch');
+  await expect(titleRow).toHaveCSS('margin-left', '4px');
+  await expect(titleRow).toHaveCSS('margin-right', '4px');
+  await expect(titleRow).toHaveCSS('margin-top', '4px');
+  await shape.selectOption('rounded');
+  await expect(titleRow).toHaveCSS('margin-left', '0px');
+});
+
 test('a narrow two-column card saves a corrected name even after typing an oversized word', async ({ page }) => {
   await page.goto('/tests/fixtures/template-editor.html?photos=cards&cols=2&lanes=3&long-name');
   const product = page.locator('#product-container-1');

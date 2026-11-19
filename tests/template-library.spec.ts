@@ -216,6 +216,47 @@ test('the canvas eyedropper samples the page without the native eyedropper API',
   await expect.poll(() => trigger.evaluate(element => getComputedStyle(element).backgroundColor)).toBe(paper);
 });
 
+test('adding an image shows a preview through upload and canvas preparation', async ({ page }) => {
+  const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jBXsAAAAASUVORK5CYII=', 'base64');
+  let finishUpload!: () => void;
+  let finishImage!: () => void;
+  let rejectUpload = false;
+  const upload = new Promise<void>(resolve => { finishUpload = resolve; });
+  const prepare = new Promise<void>(resolve => { finishImage = resolve; });
+  await page.route('**/tests/asset-upload', async route => {
+    await upload;
+    if (rejectUpload) await route.fulfill({ status: 500 });
+    else await route.fulfill({ json: { asset: { id: 'uploaded-image' }, url: '/tests/uploaded-image.png' } });
+  });
+  await page.route('**/tests/uploaded-image.png', async route => {
+    await prepare;
+    await route.fulfill({ contentType: 'image/png', body: image });
+  });
+  await page.goto(`${url}?image-upload`);
+  const addButton = page.getByRole('button', { name: 'Adicionar imagem', exact: true });
+  await expect(addButton).toBeVisible();
+  const fileInput = addButton.locator('..').locator('input[type="file"]');
+  await fileInput.setInputFiles({ name: 'foto.png', mimeType: 'image/png', buffer: image });
+  const feedback = page.locator('[data-image-insertion-feedback]');
+  await expect(feedback.getByRole('status')).toContainText('Enviando imagem');
+  await expect(feedback.getByRole('status')).toContainText('foto.png');
+  await expect(feedback.locator('img')).toHaveAttribute('src', /^blob:/);
+  await expect(page.getByRole('button', { name: 'Adicionando imagem…' })).toBeDisabled();
+  finishUpload();
+  await expect(feedback.getByRole('status')).toContainText('Preparando imagem no editor');
+  await expect(page.getByAltText('Imagem adicionada')).toHaveCount(0);
+  finishImage();
+  await expect(page.getByAltText('Imagem adicionada')).toBeVisible();
+  await expect(feedback).toHaveCount(0);
+
+  rejectUpload = true;
+  await fileInput.setInputFiles({ name: 'segunda.png', mimeType: 'image/png', buffer: image });
+  await expect(feedback.getByRole('alert')).toContainText('Não foi possível adicionar a imagem');
+  await expect(addButton).toBeEnabled();
+  await feedback.getByRole('button', { name: 'Dispensar erro de imagem' }).click();
+  await expect(feedback).toHaveCount(0);
+});
+
 test('a shape becomes the same editable background on newly added pages', async ({ page }) => {
   await page.getByRole('button', { name: 'Adicionar forma' }).click();
   await page.getByRole('button', { name: 'Estrela', exact: true }).click();

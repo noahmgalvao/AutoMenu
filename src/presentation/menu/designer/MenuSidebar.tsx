@@ -43,6 +43,7 @@ interface MenuSidebarProps {
     setPreviewAction: React.Dispatch<React.SetStateAction<{ type: string, id: number } | undefined>>;
     onAddShape: (shape: CanvasShape) => void;
     handleAddedImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    isAddingImage: boolean;
     resizeSelectedAddedImages: (delta: number) => void;
     removeSelectedAddedImages: () => void;
     layerSelectedAddedImages: (direction: 'front' | 'back') => void;
@@ -52,7 +53,7 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
     isOpen, onClose, onPdfClick, handleResetDesign,
     style, setStyle, templates, applyTemplate, sortOption, setSortOption, products, currentUserId, splitCategoryAcrossPages,
     selection, setSelection, selectedFreeText, selectedAddedImage, selectedAddedImageIds,
-    updateFreeTextStyle, updateGlobalElementStyle, setPreviewAction, handleAddedImageUpload, onAddShape,
+    updateFreeTextStyle, updateGlobalElementStyle, setPreviewAction, handleAddedImageUpload, isAddingImage, onAddShape,
     resizeSelectedAddedImages, removeSelectedAddedImages, layerSelectedAddedImages
 }) => {
     
@@ -121,6 +122,7 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
             updateGlobalElementStyle={updateGlobalElementStyle}
             setPreviewAction={setPreviewAction}
             onAddedImageUpload={handleAddedImageUpload}
+            isAddingImage={isAddingImage}
             onAddShape={onAddShape}
             resizeSelectedAddedImages={resizeSelectedAddedImages}
             removeSelectedAddedImages={removeSelectedAddedImages}

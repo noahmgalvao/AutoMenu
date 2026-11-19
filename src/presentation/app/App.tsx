@@ -29,11 +29,11 @@ const App: React.FC = () => {
   const [isScrolling, setIsScrolling] = useState(false);
   const [isMenuImportOpen, setIsMenuImportOpen] = useState(false);
   const {
-    session, isAuthLoading, isWorkspaceLoading, isAuthSubmitting, authError, loadError, setLoadError, isConfigured,
+    session, isAuthLoading, isWorkspaceLoading, isAuthSubmitting, authError, loadError, setLoadError, workspaceLoadError, isConfigured,
     workspaceData, products, style, templates, sortOption, setSortOption, isSettingsSaving, isMenuActionLoading,
     setProducts, setStyle, setProductsAndStyle, setTemplates, undo, redo, canUndo, canRedo, handleProductEditChange,
     handleSignIn, handleSignUp, handleSignOut, handleSaveSettings, handleRequestPasswordReset, handleUpdatePassword,
-    handleSelectMenu, performCreateMenu, handleRenameMenu, handleDeleteMenu, forceSaveCurrentMenu,
+    handleSelectMenu, performCreateMenu, handleRenameMenu, handleDeleteMenus, forceSaveCurrentMenu,
   } = useWorkspaceEditor({
     showStylePanel: () => setActivePanel('style'),
     closeProfileMenu: () => setIsProfileMenuOpen(false),
@@ -86,7 +86,7 @@ const App: React.FC = () => {
     );
   }
 
-  if (isAuthLoading || (session && isWorkspaceLoading && !workspaceData)) {
+  if (isAuthLoading || (session && !workspaceData && !workspaceLoadError)) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center">
         <div className="flex items-center gap-3 text-slate-700">
@@ -109,7 +109,7 @@ const App: React.FC = () => {
             <AlertCircle className="w-6 h-6 text-red-500" />
             <h1 className="text-xl font-semibold">Falha ao carregar o ambiente</h1>
           </div>
-          <p className="text-slate-600">{loadError || 'Nenhum dado carregado.'}</p>
+          <p className="text-slate-600">{workspaceLoadError}</p>
           <button
             onClick={handleSignOut}
             className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-medium"
@@ -188,7 +188,7 @@ const App: React.FC = () => {
               onSelectMenu={(menuId) => void handleSelectMenu(menuId)}
               onCreateMenu={() => void handleCreateMenu()}
               onRenameMenu={handleRenameMenu}
-              onDeleteMenu={handleDeleteMenu}
+              onDeleteMenus={handleDeleteMenus}
               onOpenSettings={() => {
                 setIsProfileMenuOpen(false);
                 setIsSettingsOpen(true);
@@ -336,6 +336,7 @@ const App: React.FC = () => {
             onScrollActivity={setIsScrolling}
             workspaceId={workspaceData.workspace.id}
             currentUserId={session.user.id}
+            currentMenuId={workspaceData.menu.id}
             splitCategoryAcrossPages={workspaceData.workspace.settings.splitCategoryAcrossPages}
             productsCanChangeCategory={workspaceData.workspace.settings?.productsCanChangeCategory}
           />

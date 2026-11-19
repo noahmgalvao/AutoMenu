@@ -17,7 +17,7 @@ import { resolveCategoryDivider, resolveProductDivider } from '../canvas/categor
 import { CategoryDividerPicker } from './CategoryDividerPicker';
 import { getProductCardRadius, PRODUCT_CARD_SHAPES, PRODUCT_IMAGE_FRAMES } from '../canvas/templateStyles';
 import { 
-  Type, ImagePlus, Minus, Plus,
+  Type, ImagePlus, Loader2, Minus, Plus,
   Layout, List, Maximize, Palette, ArrowUpAZ, SortAsc, SortDesc, BringToFront, SendToBack, SlidersHorizontal,
   ImageIcon, Eye, EyeOff, FileCog, RectangleHorizontal, RectangleVertical
 } from 'lucide-react';
@@ -39,6 +39,7 @@ interface ElementsSectionProps {
   updateGlobalElementStyle: (elementType: keyof MenuStyle['elementStyles'], newStyle: ElementStyle) => void | boolean;
   setPreviewAction: React.Dispatch<React.SetStateAction<{ type: string, id: number } | undefined>>;
   onAddedImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  isAddingImage: boolean;
   setSelection: (selection: { type: 'product' | 'category' | 'freeText' | 'addedImage' | 'page' | 'menuTitle' | 'menuSubtitle' | null, id: string | null }) => void;
   resizeSelectedAddedImages: (delta: number) => void;
   removeSelectedAddedImages: () => void;
@@ -60,6 +61,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
   updateGlobalElementStyle,
   setPreviewAction,
   onAddedImageUpload,
+  isAddingImage,
   onAddShape,
   setSelection,
   resizeSelectedAddedImages,
@@ -306,10 +308,12 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
         
         <button 
             onClick={() => imageInputRef.current?.click()}
-            className="p-3 bg-white border border-slate-200 rounded-lg shadow-sm hover:shadow-md hover:border-indigo-300 hover:bg-indigo-50 transition-all flex flex-col items-center justify-center gap-2 text-sm font-medium text-slate-700"
+            disabled={isAddingImage}
+            aria-busy={isAddingImage}
+            className="p-3 bg-white border border-slate-200 rounded-lg shadow-sm hover:shadow-md hover:border-indigo-300 hover:bg-indigo-50 transition-all flex flex-col items-center justify-center gap-2 text-sm font-medium text-slate-700 disabled:cursor-wait disabled:border-indigo-200 disabled:bg-indigo-50"
         >
-            <ImagePlus size={18} className="text-indigo-600" />
-            <span>Adicionar imagem</span>
+            {isAddingImage ? <Loader2 size={18} className="animate-spin text-indigo-600 motion-reduce:animate-none" /> : <ImagePlus size={18} className="text-indigo-600" />}
+            <span>{isAddingImage ? 'Adicionando imagem…' : 'Adicionar imagem'}</span>
         </button>
         <ShapePicker color={style.primaryColor} onAdd={onAddShape} />
         <input 

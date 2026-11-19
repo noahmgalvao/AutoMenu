@@ -33,7 +33,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
   const { auth, workspace: workspaceGateway } = useAppServices();
   const { getInitialSession, subscribeToAuth, sendPasswordReauthentication, signInWithEmail, signOutCurrentUser,
     signUpWithEmail, updatePasswordWithNonce, isConfigured } = auth;
-  const { createWorkspaceMenu, deleteWorkspaceMenu, renameWorkspaceMenu, updateAccountIdentity, updateWorkspaceRuleSettings,
+  const { createWorkspaceMenu, deleteWorkspaceMenus, renameWorkspaceMenu, updateAccountIdentity, updateWorkspaceRuleSettings,
     loadWorkspaceData, loadWorkspaceMenuData, saveWorkspaceState } = workspaceGateway;
   const [session, setSession] = useState<AuthSession | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
@@ -41,6 +41,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [workspaceLoadFailure, setWorkspaceLoadFailure] = useState<{ userId: string; message: string } | null>(null);
 
   const [workspaceData, setWorkspaceData] = useState<LoadedWorkspaceData | null>(null);
   const [products, setProductsRaw] = useState<Product[]>([]);
@@ -63,6 +64,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
   const menuSavedSignatureCacheRef = useRef<Record<string, string>>({});
   const prefetchingMenuIdsRef = useRef<Set<string>>(new Set());
   const pendingPersistActionLabelRef = useRef<string | null>(null);
+  const menuIdsBeingDeleted = useRef<Set<string> | null>(null);
   const { setProducts, setStyle, setProductsAndStyle, undo, redo, canUndo, canRedo, clearHistory, handleProductEditChange } =
     useEditorHistory({ products, style, setProductsRaw, setStyleRaw, pendingPersistActionLabel: pendingPersistActionLabelRef });
 
@@ -72,7 +74,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
 
   const persistNow = useCallback(async () => {
     const payload = latestPersistPayloadRef.current;
-    if (!payload) return;
+    if (!payload || menuIdsBeingDeleted.current?.has(payload.menuId)) return;
 
     const signature = getPersistSignature(payload);
     if (signature === lastSavedSignatureRef.current) {
@@ -255,6 +257,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
       : null;
     setIsWorkspaceLoading(true);
     setLoadError(null);
+    setWorkspaceLoadFailure(null);
 
     try {
       const data = await loadWorkspaceData(userId, menuId);
@@ -271,7 +274,9 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
       hydrateWorkspaceState(data);
     } catch (error) {
       if (requestId !== workspaceLoadRequestRef.current) return;
-      setLoadError(getErrorMessage(error, 'Não foi possível carregar seus cardápios.'));
+      const message = getErrorMessage(error, 'Não foi possível carregar seus cardápios.');
+      setWorkspaceLoadFailure({ userId, message });
+      setLoadError(message);
     } finally {
       if (requestId === workspaceLoadRequestRef.current) {
         setIsWorkspaceLoading(false);
@@ -336,6 +341,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
       menuCacheRef.current = {};
       menuSavedSignatureCacheRef.current = {};
       prefetchingMenuIdsRef.current.clear();
+      setWorkspaceLoadFailure(null);
       setWorkspaceData(null);
       setProductsRaw([]);
       setStyleRaw(INITIAL_STYLE);
@@ -376,7 +382,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
         menuId: menu.id,
       })
         .then((data) => {
-          if (cancelled) return;
+          if (cancelled || !prefetchingMenuIdsRef.current.has(menu.id)) return;
 
           menuCacheRef.current[data.menu.id] = data;
           menuSavedSignatureCacheRef.current[data.menu.id] = getPersistSignature(data);
@@ -393,7 +399,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
   }, [isWorkspaceLoading, session, templates, workspaceData]);
 
   useEffect(() => {
-    if (!session || !workspaceData || isWorkspaceLoading) {
+    if (!session || !workspaceData || isWorkspaceLoading || menuIdsBeingDeleted.current?.has(workspaceData.menu.id)) {
       return;
     }
 
@@ -442,7 +448,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
 
   const flushPendingSave = useCallback(() => {
     const payload = latestPersistPayloadRef.current;
-    if (!payload) return;
+    if (!payload || menuIdsBeingDeleted.current?.has(payload.menuId)) return;
 
     const signature = getPersistSignature(payload);
     if (signature === lastSavedSignatureRef.current) return;
@@ -887,51 +893,77 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     }
   };
 
-  const handleDeleteMenu = async (menuId: string) => {
-    if (!session || !workspaceData) return;
+  const handleDeleteMenus = async (menuIds: string[]) => {
+    if (!session || !workspaceData || menuIdsBeingDeleted.current) return false;
+    const requestedIds = new Set(menuIds);
+    const ids = new Set(workspaceData.menus.filter(menu => requestedIds.has(menu.id)).map(menu => menu.id));
+    if (!ids.size) return false;
 
-    const deletingActiveMenu = workspaceData.menu.id === menuId;
-    const remainingMenus = workspaceData.menus.filter((menu) => menu.id !== menuId);
+    const { workspace } = workspaceData;
+    const userId = session.user.id;
+    const deletingActiveMenu = ids.has(workspaceData.menu.id);
+    const pendingActivePayload = deletingActiveMenu ? latestPersistPayloadRef.current : null;
+    menuIdsBeingDeleted.current = ids;
     setIsMenuActionLoading(true);
     setLoadError(null);
 
-    try {
-      await deleteWorkspaceMenu({ workspaceId: workspaceData.workspace.id, menuId });
-      clearLocalPendingSnapshot(workspaceData.workspace.id, menuId);
-      if (deletingActiveMenu) clearWorkspaceViewCache(session.user.id);
-
-      if (!deletingActiveMenu) {
-        setWorkspaceData((prev) => prev ? { ...prev, menus: prev.menus.filter((menu) => menu.id !== menuId) } : prev);
-        return;
-      }
-
+    if (deletingActiveMenu) {
       if (persistTimeoutRef.current) clearTimeout(persistTimeoutRef.current);
+      persistTimeoutRef.current = null;
       latestPersistPayloadRef.current = null;
-      const nextMenu = remainingMenus[0];
-      if (nextMenu) {
-        const data = await loadWorkspaceMenuData({
-          userId: session.user.id,
-          profile: workspaceData.profile,
-          workspace: workspaceData.workspace,
-          templates,
-          menuId: nextMenu.id,
-        });
-        hydrateWorkspaceState(data);
-      } else {
-        await loadWorkspace(session.user.id);
-      }
+    }
+
+    try {
+      while (isSavingRef.current) await waitForSaveRetry(100);
+      await deleteWorkspaceMenus({ workspaceId: workspace.id, menuIds: [...ids] });
     } catch (error) {
-      setLoadError(getErrorMessage(error, 'Falha ao excluir cardápio.'));
+      menuIdsBeingDeleted.current = null;
+      if (pendingActivePayload) {
+        latestPersistPayloadRef.current = pendingActivePayload;
+        persistTimeoutRef.current = setTimeout(() => void persistNowRef.current(), SAVE_DEBOUNCE_MS);
+      }
+      setLoadError(getErrorMessage(error, 'Falha ao excluir os cardápios.'));
+      setIsMenuActionLoading(false);
+      return false;
+    }
+
+    try {
+      const withoutDeletedMenus = (data: LoadedWorkspaceData) => ({
+        ...data, menus: data.menus.filter(menu => !ids.has(menu.id)),
+      });
+      for (const id of ids) {
+        clearLocalPendingSnapshot(workspace.id, id);
+        delete menuCacheRef.current[id];
+        delete menuSavedSignatureCacheRef.current[id];
+        prefetchingMenuIdsRef.current.delete(id);
+      }
+      for (const [id, data] of Object.entries(menuCacheRef.current)) {
+        menuCacheRef.current[id] = withoutDeletedMenus(data);
+      }
+      const cached = readWorkspaceViewCache(userId);
+      if (deletingActiveMenu || (cached && ids.has(cached.data.menu.id))) clearWorkspaceViewCache(userId);
+      else if (cached) scheduleWorkspaceViewCacheWrite(userId, withoutDeletedMenus(cached.data));
+
+      if (deletingActiveMenu) {
+        activeMenuIdRef.current = null;
+        setWorkspaceData(null);
+        await loadWorkspace(userId, workspaceData.menus.find(menu => !ids.has(menu.id))?.id);
+      } else {
+        setWorkspaceData(previous => previous && withoutDeletedMenus(previous));
+      }
     } finally {
+      menuIdsBeingDeleted.current = null;
       setIsMenuActionLoading(false);
     }
+    return true;
   };
 
   return {
     session, isAuthLoading, isWorkspaceLoading, isAuthSubmitting, authError, loadError, setLoadError, isConfigured,
+    workspaceLoadError: workspaceLoadFailure?.userId === authenticatedUserId ? workspaceLoadFailure?.message : null,
     workspaceData, products, style, templates, sortOption, setSortOption, isSettingsSaving, isMenuActionLoading,
     setProducts, setStyle, setProductsAndStyle, setTemplates, undo, redo, canUndo, canRedo, handleProductEditChange,
     handleSignIn, handleSignUp, handleSignOut, handleSaveSettings, handleRequestPasswordReset, handleUpdatePassword,
-    handleSelectMenu, performCreateMenu, handleRenameMenu, handleDeleteMenu, forceSaveCurrentMenu,
+    handleSelectMenu, performCreateMenu, handleRenameMenu, handleDeleteMenus, forceSaveCurrentMenu,
   };
 }

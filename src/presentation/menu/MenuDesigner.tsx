@@ -4,7 +4,7 @@ import { flushSync } from 'react-dom';
 import type { Product, MenuStyle, SortOption, ElementStyle, AddedImage, CanvasShape } from '../../domain/menu/model';
 import { PRESET_TEMPLATES } from '../../domain/menu/defaults';
 import { MenuPreview } from './canvas/MenuPreview';
-import { Undo, Redo, Check, X } from 'lucide-react';
+import { Undo, Redo, AlertCircle, Check, Loader2, X } from 'lucide-react';
 import { ZoomControls } from './designer/ZoomControls';
 import { MenuSidebar } from './designer/MenuSidebar';
 import type { PrintCanvasOptions } from './designer/PrintCanvasModal';
@@ -60,6 +60,7 @@ interface MenuDesignerProps {
     onScrollActivity?: (isScrolling: boolean) => void;
     workspaceId: string;
     currentUserId: string;
+    currentMenuId?: string;
     splitCategoryAcrossPages?: boolean;
     productsCanChangeCategory?: boolean;
 }
@@ -67,6 +68,10 @@ interface MenuDesignerProps {
 const DEFAULT_PREVIEW_ZOOM = 1;
 const MOBILE_PREVIEW_ZOOM_RENDER_MULTIPLIER = 0.36;
 const DESKTOP_PREVIEW_ZOOM_RENDER_MULTIPLIER = MOBILE_PREVIEW_ZOOM_RENDER_MULTIPLIER * 1.7;
+
+type AddedImageFeedback =
+    | { phase: 'uploading' | 'preparing'; filename: string; previewUrl: string }
+    | { phase: 'error'; filename: string };
 
 interface FontTip {
     scope: WordFitScope;
@@ -139,7 +144,7 @@ const formatLayoutIssueBreakdown = (categories: number, products: number, freeTe
     return `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`;
 };
 
-const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, onProductEditChange, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions, virtualLinkControls, onClose, onScrollActivity, workspaceId, currentUserId, splitCategoryAcrossPages = false, productsCanChangeCategory = false }) => {
+const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, onProductEditChange, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions, virtualLinkControls, onClose, onScrollActivity, workspaceId, currentUserId, currentMenuId, splitCategoryAcrossPages = false, productsCanChangeCategory = false }) => {
     const { assets: { uploadFileAsset } } = useAppServices();
     const [scale, setScale] = useState(DEFAULT_PREVIEW_ZOOM);
     const [isDesktopViewport, setIsDesktopViewport] = useState(() => window.matchMedia('(min-width: 768px)').matches);
@@ -148,6 +153,16 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const [splitCategorySwap, setSplitCategorySwap] = useState<SplitCategorySwap | null>(null);
     const [fontTips, setFontTips] = useState<FontTip[]>([]);
     const [pendingFontPropagation, setPendingFontPropagation] = useState<FontPropagationRequest | null>(null);
+    const [addedImageFeedback, setAddedImageFeedback] = useState<AddedImageFeedback | null>(null);
+    const pendingImagePreview = useRef<string | null>(null);
+    const isAddingImage = Boolean(addedImageFeedback && addedImageFeedback.phase !== 'error');
+    React.useLayoutEffect(() => {
+        setAddedImageFeedback(null);
+        return () => {
+            if (pendingImagePreview.current) URL.revokeObjectURL(pendingImagePreview.current);
+            pendingImagePreview.current = null;
+        };
+    }, [currentMenuId, workspaceId, currentUserId]);
     const [layoutDiagnostics, setLayoutDiagnostics] = useState<LayoutDiagnostics>(EMPTY_LAYOUT_DIAGNOSTICS);
     const [dismissedTips, setDismissedTips] = useState<Set<string>>(() => new Set());
     const [hoveredFontScope, setHoveredFontScope] = useState<WordFitScope | null>(null);
@@ -1407,8 +1422,11 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
     const handleAddedImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (!file) return;
         e.target.value = '';
+        if (!file || pendingImagePreview.current) return;
+        const previewUrl = URL.createObjectURL(file);
+        pendingImagePreview.current = previewUrl;
+        setAddedImageFeedback({ phase: 'uploading', filename: file.name, previewUrl });
         const focus = getCanvasViewportFocus(containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas]'));
 
         try {
@@ -1420,8 +1438,11 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 file,
                 metadata: { style_id: style.id }
             });
+            if (pendingImagePreview.current !== previewUrl) return;
+            setAddedImageFeedback({ phase: 'preparing', filename: file.name, previewUrl });
             const newId = crypto.randomUUID();
             const size = await preloadImage(uploaded.url);
+            if (pendingImagePreview.current !== previewUrl) return;
 
             setStyle(prev => {
                 const currentImages = prev.addedImages || [];
@@ -1442,10 +1463,16 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             });
 
             setSelection({ type: 'addedImage', id: newId });
-
-        } catch (err) {
-            console.error("Falha ao adicionar imagem", err);
-            alert("Não foi possível carregar a imagem.");
+            setAddedImageFeedback(null);
+        } catch {
+            if (pendingImagePreview.current === previewUrl) {
+                setAddedImageFeedback({ phase: 'error', filename: file.name });
+            }
+        } finally {
+            if (pendingImagePreview.current === previewUrl) {
+                pendingImagePreview.current = null;
+                URL.revokeObjectURL(previewUrl);
+            }
         }
     };
 
@@ -1731,6 +1758,31 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     return (
         <MenuColorContext.Provider value={menuPalette}>
         <div className="flex flex-row-reverse h-full bg-slate-100 overflow-hidden relative">
+            {addedImageFeedback && (
+                <div data-image-insertion-feedback
+                    className="absolute left-1/2 top-[4.5rem] z-[90] flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-2xl border border-slate-200 bg-white p-2 pr-3 text-slate-800 shadow-lg">
+                    {addedImageFeedback.phase === 'error' ? (
+                        <>
+                            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-red-50 text-red-600"><AlertCircle size={19} /></span>
+                            <div role="alert" className="min-w-0">
+                                <p className="text-sm font-semibold">Não foi possível adicionar a imagem</p>
+                                <p className="truncate text-xs text-slate-500">{addedImageFeedback.filename}</p>
+                            </div>
+                            <button type="button" aria-label="Dispensar erro de imagem" onClick={() => setAddedImageFeedback(null)}
+                                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-500 hover:bg-slate-100"><X size={16} /></button>
+                        </>
+                    ) : (
+                        <>
+                            <img src={addedImageFeedback.previewUrl} alt="" className="h-10 w-10 shrink-0 rounded-xl bg-slate-100 object-cover" />
+                            <div role="status" className="min-w-0">
+                                <p className="text-sm font-semibold">{addedImageFeedback.phase === 'uploading' ? 'Enviando imagem…' : 'Preparando imagem no editor…'}</p>
+                                <p className="max-w-52 truncate text-xs text-slate-500">{addedImageFeedback.filename}</p>
+                            </div>
+                            <Loader2 aria-hidden="true" size={17} className="shrink-0 animate-spin text-indigo-600 motion-reduce:animate-none" />
+                        </>
+                    )}
+                </div>
+            )}
             <FontPropagationPrompt
                 request={pendingFontPropagation}
                 onApply={applyPendingFontPropagation}
@@ -2023,6 +2075,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 updateGlobalElementStyle={updateGlobalElementStyle}
                 setPreviewAction={setPreviewAction}
                 handleAddedImageUpload={handleAddedImageUpload}
+                isAddingImage={isAddingImage}
                 onAddShape={handleAddShape}
                 resizeSelectedAddedImages={resizeSelectedAddedImages}
                 removeSelectedAddedImages={removeSelectedAddedImages}

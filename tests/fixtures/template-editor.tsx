@@ -189,8 +189,18 @@ function LayoutFixture({ categories, adjacent, productsInCategory, closeTexts, t
 
 const params = new URLSearchParams(location.search);
 const layout = params.get('layout');
+const services: typeof browserServices = params.has('image-upload') ? {
+  ...browserServices,
+  assets: {
+    async uploadFileAsset({ file }) {
+      const response = await fetch('/tests/asset-upload', { method: 'POST', body: file });
+      if (!response.ok) throw new Error('Upload failed');
+      return response.json();
+    },
+  },
+} : browserServices;
 createRoot(document.getElementById('root')!).render(<React.StrictMode>
-  <AppServicesProvider services={browserServices}>
+  <AppServicesProvider services={services}>
     {layout !== null ? <LayoutFixture categories={layout === 'categories'} adjacent={params.has('adjacent')} productsInCategory={layout === 'products'} closeTexts={layout === 'borders'}
       layer={params.has('shape') ? 'shape' : params.has('image') ? 'image' : undefined}
       topText={layout === 'top-detached' ? 'detached' : layout === 'top-attached' ? 'attached' : undefined} /> : <Fixture />}

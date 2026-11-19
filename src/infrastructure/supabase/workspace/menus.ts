@@ -106,18 +106,19 @@ export const renameWorkspaceMenu = async ({
   return mapMenuRow(data);
 };
 
-export const deleteWorkspaceMenu = async ({
+export const deleteWorkspaceMenus = async ({
   workspaceId,
-  menuId,
+  menuIds,
 }: {
   workspaceId: string;
-  menuId: string;
+  menuIds: string[];
 }) => {
+  if (!menuIds.length) return;
   const supabase = getSupabaseClient();
   const { error } = await supabase
     .from('menus')
     .delete()
-    .eq('id', menuId)
+    .in('id', menuIds)
     .eq('workspace_id', workspaceId);
 
   if (error) throw error;
