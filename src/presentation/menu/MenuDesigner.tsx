@@ -15,7 +15,7 @@ import { useAppServices } from '../app/AppServicesProvider';
 import { useCanvasPrinting } from './designer/useCanvasPrinting';
 import type { MoveDirection, SelectionItem } from './interactions/types';
 import { canvasShapeUrl, getCanvasShapeDimensions } from '../../domain/menu/canvasShapes';
-import { centerCanvasProduct, getCanvasProduct, getCanvasProductBounds, getCanvasViewportBounds, getCanvasViewportFocus, positionCanvasImage } from './canvas/canvasViewport';
+import { bindCanvasZoomGestures, getZoomAnchor, restoreZoomAnchor, type CanvasPoint, centerCanvasProduct, getCanvasProduct, getCanvasProductBounds, getCanvasViewportBounds, getCanvasViewportFocus, positionCanvasImage } from './canvas/canvasViewport';
 import { MenuColorContext, getMenuPalette } from './designer/ColorPicker';
 import { getImageLayerIndexes } from '../../domain/menu/imageLayers';
 import type { PdfExportResult } from '../../infrastructure/browser/pdfExport';
@@ -208,9 +208,10 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     // State to trigger imperative actions in Preview from Sidebar
     const [previewAction, setPreviewAction] = useState<{ type: string, id: number } | undefined>(undefined);
 
-    // Pinch to zoom refs
-    const initialPinchDistanceRef = useRef<number | null>(null);
-    const initialPinchScaleRef = useRef<number | null>(null);
+    const canvasZoomRef = useRef<HTMLDivElement>(null);
+    const zoomLayerRef = useRef<HTMLDivElement>(null);
+    const scaleRef = useRef(scale);
+    scaleRef.current = scale;
 
     const displayProducts = products;
     const realCategoryIds = new Set(products.filter(product => !product.isFreeText).map(product => product.category));
@@ -545,31 +546,31 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         };
     }, [renderScale]);
 
-    const updateZoom = (delta: number) => {
-        const newScale = Math.min(2.5, Math.max(0.3, scale + delta));
-        setScale(newScale);
-
-        // Show indicator logic
-        setShowZoomInfo(true);
+    const zoomAt = useCallback((value: number, point: CanvasPoint, anchor: CanvasPoint) => {
+        const canvas = canvasZoomRef.current;
+        const layer = zoomLayerRef.current;
+        if (!canvas || !layer) return;
+        const next = Math.min(2.5, Math.max(0.3, value));
+        flushSync(() => { setScale(next); setShowZoomInfo(true); });
+        restoreZoomAnchor(canvas, layer, anchor, point);
         if (zoomTimeoutRef.current) clearTimeout(zoomTimeoutRef.current);
-        zoomTimeoutRef.current = setTimeout(() => {
-            setShowZoomInfo(false);
-        }, 2000);
-    };
+        zoomTimeoutRef.current = setTimeout(() => setShowZoomInfo(false), 2000);
+    }, []);
+
+    const updateZoom = useCallback((delta: number) => {
+        const canvas = canvasZoomRef.current;
+        const layer = zoomLayerRef.current;
+        if (!canvas || !layer) return;
+        const bounds = getCanvasViewportBounds(canvas);
+        const focus = { x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2 };
+        zoomAt(scaleRef.current + delta, focus, getZoomAnchor(layer, focus));
+    }, [zoomAt]);
 
     useEffect(() => {
-        const el = containerRef.current;
-        if (!el) return;
-        const handleWheel = (e: WheelEvent) => {
-            if (e.ctrlKey || e.metaKey) {
-                e.preventDefault();
-                const delta = e.deltaY * -0.005;
-                updateZoom(delta);
-            }
-        };
-        el.addEventListener('wheel', handleWheel, { passive: false });
-        return () => el.removeEventListener('wheel', handleWheel);
-    }, [scale]);
+        const canvas = canvasZoomRef.current;
+        const layer = zoomLayerRef.current;
+        if (canvas && layer) return bindCanvasZoomGestures(canvas, layer, () => scaleRef.current, zoomAt);
+    }, [zoomAt]);
 
     const { handlePrint, printDialog, onPageCountChange } = useCanvasPrinting({
         containerRef, products, style, setStyle, sortOption, splitCategoryAcrossPages, currentPrintPageIndex,
@@ -585,41 +586,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             scrollTimeoutRef.current = setTimeout(() => {
                 onScrollActivity(false);
             }, 500); // UI reappears after 500ms of no scroll
-        }
-    };
-
-    const handleTouchStart = (e: React.TouchEvent) => {
-        if (e.touches.length === 2) {
-            const touch1 = e.touches[0];
-            const touch2 = e.touches[1];
-            const dist = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
-            initialPinchDistanceRef.current = dist;
-            initialPinchScaleRef.current = scale;
-        }
-    };
-
-    const handleTouchMove = (e: React.TouchEvent) => {
-        if (e.touches.length === 2 && initialPinchDistanceRef.current !== null && initialPinchScaleRef.current !== null) {
-            const touch1 = e.touches[0];
-            const touch2 = e.touches[1];
-            const dist = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
-            const ratio = dist / initialPinchDistanceRef.current;
-
-            const newScale = Math.min(2.5, Math.max(0.3, initialPinchScaleRef.current * ratio));
-            setScale(newScale);
-
-            setShowZoomInfo(true);
-            if (zoomTimeoutRef.current) clearTimeout(zoomTimeoutRef.current);
-            zoomTimeoutRef.current = setTimeout(() => {
-                setShowZoomInfo(false);
-            }, 2000);
-        }
-    };
-
-    const handleTouchEnd = (e: React.TouchEvent) => {
-        if (e.touches.length < 2) {
-            initialPinchDistanceRef.current = null;
-            initialPinchScaleRef.current = null;
         }
     };
 
@@ -1979,13 +1945,10 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 </div>
 
                 <div
+                    ref={canvasZoomRef}
                     data-automenu-editor-canvas="true"
                     className="flex-1 overflow-auto custom-scrollbar px-4 pt-20 pb-20 md:px-8 md:pt-24 md:pb-8 flex items-start justify-start touch-pan-x touch-pan-y md:cursor-grab"
                     onScroll={handleScroll}
-                    onTouchStart={handleTouchStart}
-                    onTouchMove={handleTouchMove}
-                    onTouchEnd={handleTouchEnd}
-                    onTouchCancel={handleTouchEnd}
                     onPointerDown={handleCanvasPointerDown}
                     onPointerMove={handleCanvasPointerMove}
                     onPointerUp={handleCanvasPointerEnd}
@@ -2008,50 +1971,52 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                         }
                     }}
                 >
-                    <div
-                        data-canvas-zoom-layer
-                        style={{ transform: `scale(${renderScale})`, transformOrigin: 'top left', width: 'fit-content', minWidth: `${resolveMenuPageDimensions(style).widthPx}px`, }}
-                        className="transition-transform duration-200 ease-out"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <MenuPreview
-                            products={displayProducts}
-                            onPasteObjects={(nextProducts, nextStyle) => {
-                                if (setProductsAndStyle) setProductsAndStyle(nextProducts, nextStyle, 'Colar');
-                                else { setProducts?.(nextProducts); setStyle(nextStyle); }
-                            }}
-                            style={style}
-                            sortOption={sortOption}
-                            productsCanChangeCategory={productsCanChangeCategory}
-                            onMoveCategory={handleMoveCategory}
-                            onMoveProduct={handleMoveProduct}
-                            onUpdateProduct={handleProductUpdate}
-                            onUpdateProducts={handleBatchProductUpdate}
-                            onUpdateCategoryName={handleCategoryRename}
-                            onUpdateMenuText={handleMenuTextUpdate}
-                            onCommitCategoryOrder={handleCommitCategoryOrder}
-                            onCommitProductOrder={handleCommitProductOrder}
-                            onToggleProductVisibility={handleToggleProductVisibility}
-                            onAddProduct={handleAddProduct}
-                            onAddCategory={handleAddCategory}
-                            onDeleteProduct={handleDeleteProduct}
-                            onStyleUpdate={setStyle}
-                            externalAction={previewAction}
-                            selection={selection}
-                            onSelectionChange={setSelection}
-                            onSelectedItemsChange={setSelectedCanvasItems}
-                            undo={undo}
-                            redo={redo}
-                            canUndo={canUndo}
-                            canRedo={canRedo}
-                            scale={renderScale}
-                            splitCategoryAcrossPages={splitCategoryAcrossPages}
-                            onUploadProductImage={handleProductImageUpload}
-                            onProductEditStart={handleCanvasProductEditStart}
-                            onProductEditEnd={handleCanvasProductEditEnd}
-                            onPageCountChange={onPageCountChange}
-                            onSplitCategorySwap={setSplitCategorySwap}
-                        />
+                    <div className="w-max flex-none">
+                        <div ref={zoomLayerRef}
+                            data-canvas-zoom-layer
+                            style={{ transform: `scale(${renderScale})`, transformOrigin: 'top left', width: 'fit-content', minWidth: `${resolveMenuPageDimensions(style).widthPx}px`, }}
+                            className="origin-top-left"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <MenuPreview
+                                products={displayProducts}
+                                onPasteObjects={(nextProducts, nextStyle) => {
+                                    if (setProductsAndStyle) setProductsAndStyle(nextProducts, nextStyle, 'Colar');
+                                    else { setProducts?.(nextProducts); setStyle(nextStyle); }
+                                }}
+                                style={style}
+                                sortOption={sortOption}
+                                productsCanChangeCategory={productsCanChangeCategory}
+                                onMoveCategory={handleMoveCategory}
+                                onMoveProduct={handleMoveProduct}
+                                onUpdateProduct={handleProductUpdate}
+                                onUpdateProducts={handleBatchProductUpdate}
+                                onUpdateCategoryName={handleCategoryRename}
+                                onUpdateMenuText={handleMenuTextUpdate}
+                                onCommitCategoryOrder={handleCommitCategoryOrder}
+                                onCommitProductOrder={handleCommitProductOrder}
+                                onToggleProductVisibility={handleToggleProductVisibility}
+                                onAddProduct={handleAddProduct}
+                                onAddCategory={handleAddCategory}
+                                onDeleteProduct={handleDeleteProduct}
+                                onStyleUpdate={setStyle}
+                                externalAction={previewAction}
+                                selection={selection}
+                                onSelectionChange={setSelection}
+                                onSelectedItemsChange={setSelectedCanvasItems}
+                                undo={undo}
+                                redo={redo}
+                                canUndo={canUndo}
+                                canRedo={canRedo}
+                                scale={renderScale}
+                                splitCategoryAcrossPages={splitCategoryAcrossPages}
+                                onUploadProductImage={handleProductImageUpload}
+                                onProductEditStart={handleCanvasProductEditStart}
+                                onProductEditEnd={handleCanvasProductEditEnd}
+                                onPageCountChange={onPageCountChange}
+                                onSplitCategorySwap={setSplitCategorySwap}
+                            />
+                        </div>
                     </div>
                     <div style={{ height: '100px', width: '1px' }} />
                 </div>

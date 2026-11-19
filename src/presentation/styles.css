@@ -24,6 +24,10 @@ body {
   inset: 0;
 }
 
+[data-menu-page-frame] {
+  isolation: isolate;
+}
+
 [data-menu-page-frame]:has([data-selected-control]) {
   z-index: 1;
 }

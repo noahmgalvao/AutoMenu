@@ -1,3 +1,4 @@
+import { shortcutsFor } from './fixtures/canvas-shortcuts';
 import { expect, test } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
@@ -84,15 +85,15 @@ test.describe('touch dragging', () => {
 test('a narrow free text keeps its selection buttons in a single row', async ({ page }) => {
   const source = page.locator('#product-container-text-a');
   await source.click();
-  const buttons = source.getByRole('button', { name: /Editar texto|Seleção múltipla|Remover|Mais opções/ });
+  const buttons = shortcutsFor(source).getByRole('button', { name: /Editar texto|Seleção múltipla|Remover|Mais opções/ });
   await expect.poll(() => buttons.evaluateAll(elements => elements.map(element => element.getAttribute('title'))))
     .toEqual(['Editar texto', 'Seleção múltipla', 'Remover', 'Mais opções']);
   const rows = await buttons.evaluateAll((elements) => elements.map((element) => Math.round(element.getBoundingClientRect().top)));
   expect(new Set(rows).size).toBe(1);
-  await source.getByTitle('Editar texto').click();
+  await shortcutsFor(source).getByTitle('Editar texto').click();
   await expect(page.locator('#product-name-text-a')).toBeFocused();
   await page.keyboard.press('Escape');
-  await source.getByTitle('Remover', { exact: true }).click();
+  await shortcutsFor(source).getByTitle('Remover', { exact: true }).click();
   await expect(source).toHaveCount(0);
 });
 
@@ -130,9 +131,9 @@ for (const touch of [false, true]) {
       const next = page.locator('#product-container-side-12');
       await first.getByRole('heading').click();
       await expect(first.getByTitle('Ajustar largura da coluna pela borda direita')).toBeVisible();
-      await first.getByTitle('Seleção múltipla').click();
+      await shortcutsFor(first).getByTitle('Seleção múltipla').click();
       await second.getByRole('heading').click();
-      await expect(second.getByTitle('Seleção múltipla')).toHaveAttribute('aria-pressed', 'true');
+      await expect(shortcutsFor(second).getByTitle('Seleção múltipla')).toHaveAttribute('aria-pressed', 'true');
       await expect(page.locator('[data-canvas-action-group="add"], [data-canvas-action-group="move"], [data-column-resize-handle]')).toHaveCount(0);
 
       const start = (await first.boundingBox())!;
@@ -169,7 +170,7 @@ for (const touch of [false, true]) {
       else await page.mouse.up();
 
       await expect.poll(() => next.evaluate(element => element.nextElementSibling?.id)).toBe('product-container-side-11');
-      await expect(second.getByTitle('Seleção múltipla')).toHaveAttribute('aria-pressed', 'true');
+      await expect(shortcutsFor(second).getByTitle('Seleção múltipla')).toHaveAttribute('aria-pressed', 'true');
     });
   });
 }
@@ -180,7 +181,7 @@ test('dragging selected products from different categories moves only the presse
   const next = page.locator('#product-container-2');
   const other = page.locator('#product-container-3');
   await first.getByRole('heading').click();
-  await first.getByTitle('Seleção múltipla').click();
+  await shortcutsFor(first).getByTitle('Seleção múltipla').click();
   await other.getByRole('heading').click();
   const start = (await first.boundingBox())!;
   const destination = (await next.boundingBox())!;
@@ -193,7 +194,7 @@ test('dragging selected products from different categories moves only the presse
   await expect(first.locator('[data-canvas-selection-outline]')).toBeVisible();
   await page.mouse.up();
   await expect.poll(() => next.evaluate(element => element.nextElementSibling?.id)).toBe('product-container-1');
-  await expect(first.getByTitle('Seleção múltipla')).toHaveAttribute('aria-pressed', 'false');
+  await expect(shortcutsFor(first).getByTitle('Seleção múltipla')).toHaveAttribute('aria-pressed', 'false');
   expect((await other.boundingBox())!.y).toBeCloseTo(otherStart.y, 0);
 });
 
@@ -201,7 +202,7 @@ test('detached free texts keep their spacing after dragging together', async ({ 
   const first = page.locator('#product-container-text-a');
   const second = page.locator('#product-container-text-b');
   await first.click();
-  await first.getByTitle('Seleção múltipla').click();
+  await shortcutsFor(first).getByTitle('Seleção múltipla').click();
   await second.click();
   const before = (await first.boundingBox())!;
   const other = (await second.boundingBox())!;
@@ -253,7 +254,7 @@ test('selected category groups keep their relative positions after a group drag'
   const second = page.locator('[data-category-chunk="Sobremesas"]');
   const header = first.getByRole('heading', { name: 'Principais' });
   await header.click();
-  await first.locator('[data-category-id="Principais"]').getByTitle('Seleção múltipla').click();
+  await shortcutsFor(first.locator('[data-category-id="Principais"]')).getByTitle('Seleção múltipla').click();
   await second.getByRole('heading', { name: 'Sobremesas' }).click();
   const before = (await first.boundingBox())!;
   const other = (await second.boundingBox())!;
@@ -286,7 +287,7 @@ test.describe('quick touch group drag from canvas layers', () => {
       const category = page.locator('[data-category-chunk="Sobremesas"]');
       const layer = page.locator('[data-added-image-id="test-layer"]');
       await category.getByRole('heading', { name: 'Sobremesas' }).tap();
-      await category.locator('[data-category-id="Sobremesas"]').getByTitle('Seleção múltipla').tap();
+      await shortcutsFor(category.locator('[data-category-id="Sobremesas"]')).getByTitle('Seleção múltipla').tap();
       await layer.tap();
       const overlay = page.locator('[data-image-selection-overlay]');
       await expect(overlay).toBeVisible();
@@ -386,7 +387,7 @@ test('quick controls touch, grid insertion stays lateral and resizing starts at 
   await page.goto('/tests/fixtures/template-editor.html?photos=cards&cols=2&lanes=2');
   const product = page.locator('#product-container-1');
   await product.getByRole('heading').click();
-  const quick = product.locator('[data-canvas-action-group="quick"]');
+  const quick = shortcutsFor(product);
   await expect(quick.getByRole('button').first()).toHaveAttribute('title', 'Editar produto');
   await expect(product.getByTitle('Adicionar item à esquerda')).toBeVisible();
   await expect(product.getByTitle('Adicionar item à direita')).toBeVisible();
@@ -407,7 +408,8 @@ test('quick controls touch, grid insertion stays lateral and resizing starts at 
   });
   expect(dividerError).toBeLessThan(1);
   const overlap = await product.evaluate(node => {
-    const controls = [...node.querySelectorAll('[data-canvas-action-group] button')].map(button => button.getBoundingClientRect());
+    const bar = document.getElementById(node.querySelector('[data-canvas-action-anchor="quick"]')!.getAttribute('aria-controls')!)!;
+    const controls = [...bar.querySelectorAll('button'), ...node.querySelectorAll('[data-canvas-action-group] button')].map(button => button.getBoundingClientRect());
     const intersects = (a: DOMRect, b: DOMRect) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1
       && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
     const handle = node.querySelector('[data-column-resize-handle]')!.getBoundingClientRect();
@@ -447,11 +449,11 @@ for (const { width, height, touch, buttonSize } of [
       const select = product.getByRole('heading');
       if (touch) await select.tap();
       else await select.click();
-      const toolbar = product.locator('[data-canvas-action-group="quick"]');
+      const toolbar = shortcutsFor(product);
       await expect(toolbar).toBeVisible();
       await expect.poll(() => product.evaluate(item => {
         const box = item.getBoundingClientRect();
-        const bar = item.querySelector('[data-canvas-action-group="quick"]')!.getBoundingClientRect();
+        const bar = document.getElementById(item.querySelector('[data-canvas-action-anchor="quick"]')!.getAttribute('aria-controls')!)!.getBoundingClientRect();
         const edges = [...item.querySelectorAll<HTMLElement>('[data-canvas-action-group="add"], [data-canvas-action-group="move"]')];
         return bar.bottom <= box.top + 1 && box.top - bar.bottom <= 6 && Math.abs(bar.right - box.right) < 1
           && edges.length >= 3 && edges.every(control => {
@@ -477,7 +479,7 @@ for (const { width, height, touch, buttonSize } of [
             const heading = product.getByRole('heading');
             if (touch) await heading.tap();
             else await heading.click();
-            const quick = product.locator('[data-canvas-action-group="quick"] > button');
+            const quick = shortcutsFor(product).locator(':scope > button');
             await expect(quick).toHaveCount(4);
             const checkButtons = () => expect.poll(() => quick.evaluateAll((buttons, targetSize) => buttons.map(button => {
               const rect = button.getBoundingClientRect();
@@ -489,7 +491,7 @@ for (const { width, height, touch, buttonSize } of [
 
             await expect.poll(() => product.evaluate(element => {
               const item = element.getBoundingClientRect();
-              const toolbar = element.querySelector('[data-canvas-action-group="quick"]')!.getBoundingClientRect();
+              const toolbar = document.getElementById(element.querySelector('[data-canvas-action-anchor="quick"]')!.getAttribute('aria-controls')!)!.getBoundingClientRect();
               const horizontalOverlap = Math.min(item.right, toolbar.right) - Math.max(item.left, toolbar.left);
               return horizontalOverlap >= Math.min(item.width, toolbar.width) / 2
                 && toolbar.bottom <= item.top + 1 && item.top - toolbar.bottom <= 36;
@@ -528,14 +530,16 @@ for (const { width, height, touch, buttonSize } of [
               const paper = canvas.locator('[data-menu-print-page]').first();
               const paperWidth = () => paper.evaluate(element => element.getBoundingClientRect().width);
               const initialWidth = await paperWidth();
-              await canvas.dispatchEvent('wheel', { ctrlKey: true, deltaY: 130, bubbles: true, cancelable: true });
+              const item = (await product.boundingBox())!;
+              await canvas.dispatchEvent('wheel', { ctrlKey: true, deltaY: 130, bubbles: true, cancelable: true,
+                clientX: item.x + item.width / 2, clientY: item.y + item.height / 2 });
               await expect.poll(paperWidth).toBeLessThan(initialWidth * 0.85);
               await expect.poll(() => canvas.locator('[data-canvas-zoom-layer]').evaluate(element =>
                 element.getAnimations().some(animation => animation.playState === 'running'))).toBe(false);
               await checkButtons();
             }
 
-            const more = product.getByTitle('Mais opções');
+            const more = shortcutsFor(product).getByTitle('Mais opções');
             if (touch) {
               // A physical tap uses the painted coordinates without a programmatic scroll.
               const rect = (await more.boundingBox())!;

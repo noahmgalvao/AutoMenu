@@ -99,11 +99,12 @@ export const useSelectionState = (
 
     const getItemCategory = useCallback((item: SelectionItem) => {
         if (item.type === 'category') return item.id;
+        if (item.type === 'freeText' && style.freeTextBackgrounds?.[item.id]) return null;
         const product = products.find((candidate) => candidate.id === item.id);
         return product?.category && !product.category.startsWith(FREE_TEXT_PREFIX)
             ? product.category
             : null;
-    }, [products]);
+    }, [products, style.freeTextBackgrounds]);
 
     const getCategorySelectionsFor = useCallback((items: SelectionItem[]) => (
         uniqueSelectionItems(
@@ -210,7 +211,7 @@ export const useSelectionState = (
         }
     }, [getSingleSelectionItem, props.selection, setEditingId, setMultiSelectMode]);
 
-    const handleSelection = useCallback((type: SelectionType, id: string | null, options?: { shiftKey?: boolean; ctrlKey?: boolean }) => {
+    const handleSelection = useCallback((type: SelectionType, id: string | null, options?: { shiftKey?: boolean; ctrlKey?: boolean; backgroundPage?: number }) => {
         if (editingId && (editingId !== id || !editingKeys.has(getSelectionKey(type, id)))) {
             blurEditingField(editingId);
             setEditingId(null);
@@ -257,13 +258,18 @@ export const useSelectionState = (
         }
 
         const nextItem = getSingleSelectionItem(type, id);
+        const pageIndex = options?.backgroundPage;
+        const repeated = type === 'freeText' ? style.freeTextBackgrounds?.[id]
+            : type === 'addedImage' && pageIndex !== undefined
+                ? style.addedImages?.find(image => image.id === id && image.repeatAsBackground) : undefined;
+        if (nextItem && repeated && pageIndex !== undefined) nextItem.backgroundPages = [pageIndex];
         const objectSelectedItems = selectedItems.filter((item) => item.type !== 'page');
 
         if (
             (effectiveCtrlKey || options?.shiftKey) &&
             nextItem &&
             objectSelectedItems.some((item) => item.type === 'category') &&
-            (nextItem.type === 'product' || nextItem.type === 'freeText')
+            (nextItem.type === 'product' || (nextItem.type === 'freeText' && !repeated))
         ) {
             const categoryItems = getCategorySelectionsFor([...objectSelectedItems, nextItem]);
             setSelectedItems(categoryItems);
@@ -278,7 +284,7 @@ export const useSelectionState = (
         if (
             (effectiveCtrlKey || options?.shiftKey) &&
             nextItem?.type === 'category' &&
-            objectSelectedItems.some((item) => item.type === 'product' || item.type === 'freeText')
+            objectSelectedItems.some((item) => item.type === 'product' || (item.type === 'freeText' && !style.freeTextBackgrounds?.[item.id]))
         ) {
             const categoryItems = getCategorySelectionsFor([...objectSelectedItems, nextItem]);
             setSelectedItems(categoryItems);
@@ -290,13 +296,17 @@ export const useSelectionState = (
         }
 
         if (effectiveCtrlKey && nextItem) {
-            const isAlreadySelected = objectSelectedItems.some((item) => isSameSelectionItem(item, nextItem));
-            const nextSelectedItems = isAlreadySelected
-                ? objectSelectedItems.filter((item) => !isSameSelectionItem(item, nextItem))
-                : [...objectSelectedItems, nextItem];
-            const activeItem = isAlreadySelected
-                ? nextSelectedItems[nextSelectedItems.length - 1] || null
-                : nextItem;
+            const previous = objectSelectedItems.find(item => isSameSelectionItem(item, nextItem));
+            let keep = !previous;
+            if (previous && repeated && pageIndex !== undefined) {
+                const pages = previous.backgroundPages ?? [repeated.pageIndex || 0];
+                nextItem.backgroundPages = pages.includes(pageIndex)
+                    ? pages.filter(page => page !== pageIndex) : [...pages, pageIndex];
+                keep = nextItem.backgroundPages.length > 0;
+            }
+            const nextSelectedItems = objectSelectedItems.filter(item => item !== previous);
+            if (keep) nextSelectedItems.push(nextItem);
+            const activeItem = nextSelectedItems[nextSelectedItems.length - 1] || null;
 
             setSelectedItems(nextSelectedItems);
             if (nextSelectedItems.length === 0) setMultiSelectMode(false);
@@ -354,6 +364,8 @@ export const useSelectionState = (
         editingId,
         editingKeys,
         getCategorySelectionsFor,
+        style.addedImages,
+        style.freeTextBackgrounds,
         getPageRange,
         getSingleSelectionItem,
         multiSelectMode,

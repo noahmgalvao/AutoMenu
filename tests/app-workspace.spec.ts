@@ -1,3 +1,4 @@
+import { shortcutsFor } from './fixtures/canvas-shortcuts';
 import { expect, test, type Page } from '@playwright/test';
 import { PRESET_TEMPLATES } from '../src/domain/templates/templateCatalog';
 
@@ -78,7 +79,7 @@ test('the app signs in, keeps the product editor through history, and stores an 
 
   await context.setOffline(true);
   await title.click();
-  await product.getByRole('button', { name: 'Editar produto' }).click();
+  await shortcutsFor(product).getByRole('button', { name: 'Editar produto' }).click();
   const fontSize = page.locator('[data-inline-format-toolbar]').getByRole('spinbutton');
   const originalSize = await fontSize.inputValue();
   await fontSize.press('ArrowDown');

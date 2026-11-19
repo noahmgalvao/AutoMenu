@@ -30,7 +30,7 @@ interface MenuItemProps {
     inGroup: boolean;
     columnIndex?: number;
     categoryColumnCount?: number;
-    backgroundText?: boolean;
+    backgroundText?: { pageIndex: number; primary: boolean; selected: boolean };
 }
 
 const editableTextClassName = 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto';
@@ -83,7 +83,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
     inGroup,
     columnIndex = 0,
     categoryColumnCount: renderedCategoryColumnCount,
-    backgroundText = false,
+    backgroundText,
 }) => {
     const formattingTarget = handlers.formattingTarget;
     const fontSizeLimits = resolveFontSizeLimits(style);
@@ -188,11 +188,11 @@ export const MenuItem: React.FC<MenuItemProps> = ({
     };
     const handleItemClick = (event: React.MouseEvent, type: 'product' | 'category' | 'freeText', id: string) => {
         event.stopPropagation();
-        if (handlers.editingId === id) return;
+        if (handlers.readOnly || handlers.editingId === id) return;
         if (handlers.isReadyToEdit?.(type, id)) {
             handlers.startEditing(event, id, type === 'category' ? `text-${id}` : `product-name-${id}`);
         } else {
-            handlers.handleSelection(type, id, { shiftKey: event.shiftKey, ctrlKey: event.ctrlKey || event.metaKey });
+            handlers.handleSelection(type, id, { shiftKey: event.shiftKey, ctrlKey: event.ctrlKey || event.metaKey, backgroundPage: backgroundText?.pageIndex });
         }
     };
 
@@ -557,8 +557,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
     if (item.type === 'product-item') {
         const product = item.data as Product;
         const productSelectionType = product.isFreeText ? 'freeText' : 'product';
-        const isSelected = handlers.isSelected?.(productSelectionType, product.id) ?? handlers.selectedId === product.id;
-        const isEditable = !handlers.readOnly && handlers.isReadyToEdit?.(productSelectionType, product.id);
+        const isSelected = backgroundText?.selected ?? (handlers.isSelected?.(productSelectionType, product.id) ?? handlers.selectedId === product.id);
+        const primary = !backgroundText || backgroundText.primary;
+        const isEditable = primary && !handlers.readOnly && handlers.isReadyToEdit?.(productSelectionType, product.id);
         const hiddenProductIds = new Set(style.hiddenProductIds || []);
         const visibleCatProducts = (handlers.groupedProducts[item.category] || [])
             .filter((candidate: Product) => !hiddenProductIds.has(candidate.id));
@@ -591,10 +592,10 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         return (
                 <div 
                     key={product.id}
-                    id={handlers.readOnly ? undefined : `product-container-${product.id}`}
+                    id={handlers.readOnly || !primary ? undefined : `product-container-${product.id}`}
                     data-drag-scope={handlers.dragScope}
-                    data-drag-type={handlers.readOnly && backgroundText ? undefined : 'product'}
-                    data-drag-id={handlers.readOnly && backgroundText ? undefined : product.id}
+                    data-drag-type={backgroundText && handlers.readOnly ? undefined : 'product'}
+                    data-drag-id={backgroundText && (handlers.readOnly || !primary) ? undefined : product.id}
                     data-template-product={product.isFreeText ? undefined : true}
                     data-menu-border-surface={product.isFreeText ? 'freeText' : 'product'} data-custom-border={getBorderOverride(style, product.isFreeText ? 'freeText' : 'product', product.id)}
                     data-pagination-item={getPaginationItemKey(item)}
@@ -632,11 +633,11 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 {product.isFreeText && isSelected && !handlers.isResizingCategoryColumns && (
                     <FreeTextResizeHandles product={product} style={style} handlers={handlers} />
                 )}
-                {product.isFreeText
+                {primary && (product.isFreeText
                     ? renderFormattingToolbar('freeText', product.id, product.styles || {})
                     : renderFormattingToolbar('product', product.id,
-                        formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle)}
-                        {!handlers.readOnly && <ProductControls type="product" id={product.id} catName={item.category} canMoveUp={!backgroundText && canMoveUp} canMoveDown={!backgroundText && canMoveDown} canMoveLeft={false} canMoveRight={false} isFreeText={product.isFreeText} handlers={handlers} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} showGridMoveControls={productColumnCount > 1}/>}
+                        formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle))}
+                {!handlers.readOnly && (primary || isSelected) && <ProductControls type="product" id={product.id} catName={item.category} canMoveUp={!backgroundText && canMoveUp} canMoveDown={!backgroundText && canMoveDown} canMoveLeft={false} canMoveRight={false} isFreeText={product.isFreeText} handlers={handlers} outlineOnly={!primary} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} showGridMoveControls={productColumnCount > 1}/>}
                 
                 <div>
                 {product.isFreeText ? (
@@ -653,7 +654,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             fitScope="freeText"
                             disableAutoFit
                             containerSelector={`#product-container-${product.id}`}
-                            id={handlers.readOnly ? undefined : `product-name-${product.id}`} data-product-edit-id={product.id} className={`whitespace-pre-wrap break-words [overflow-wrap:anywhere] outline-none rounded ${isEditable ? editableTextClassName : ''}`}
+                            id={handlers.readOnly || !primary ? undefined : `product-name-${product.id}`} data-product-edit-id={product.id} className={`whitespace-pre-wrap break-words [overflow-wrap:anywhere] outline-none rounded ${isEditable ? editableTextClassName : ''}`}
                             style={{ 
                                 color: nameStyle.color || style.textColor,
                                 fontFamily: nameStyle.fontFamily,

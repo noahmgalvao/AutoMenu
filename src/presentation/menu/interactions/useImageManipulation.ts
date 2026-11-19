@@ -36,7 +36,7 @@ export const useImageManipulation = (
     handleSelection: (
         type: 'product' | 'category' | 'freeText' | 'addedImage' | null,
         id: string | null,
-        options?: { shiftKey?: boolean; ctrlKey?: boolean }
+        options?: { shiftKey?: boolean; ctrlKey?: boolean; backgroundPage?: number }
     ) => void,
     selectedItems: SelectionItem[] = [],
     multiSelectMode = false,
@@ -63,7 +63,7 @@ export const useImageManipulation = (
         document.body.dataset.automenuImageInteraction = 'drag';
         setDraggedImageId(imgId);
         setImageEditPage({ id: imgId, pageIndex });
-        handleSelection('addedImage', imgId, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey });
+        handleSelection('addedImage', imgId, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey, backgroundPage: pageIndex });
         
         const el = e.currentTarget as HTMLElement;
         try {

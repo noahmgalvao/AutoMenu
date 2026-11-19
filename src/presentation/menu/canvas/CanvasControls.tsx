@@ -1,4 +1,5 @@
-import React, { useLayoutEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import type { FlowDirection } from './flowControls';
 import { getCanvasViewportBounds } from './canvasViewport';
 
@@ -44,7 +45,7 @@ function placeControls(
     const time = performance.now();
     const active = [...controls].filter(control => {
         const { node, anchor, hoverOnly } = control;
-        const hovered = hoverOnly && hoverEnabled && (anchor.matches(':hover') || node.contains(document.activeElement));
+        const hovered = hoverOnly && hoverEnabled && (anchor.matches(':hover') || node.matches(':hover') || node.contains(document.activeElement));
         if (hovered) control.lastHovered = time;
         const lingering = hoverOnly && hoverEnabled && !hovered && time - (control.lastHovered ?? -Infinity) < 180;
         if (lingering) expireHover();
@@ -194,8 +195,9 @@ function placeControls(
         // Fixed positioning escapes the paper clip when controls need space around the page.
         const inPaper = left >= pageRect.left && left + width <= pageRect.right
             && top >= pageRect.top && top + height <= pageRect.bottom;
-        node.style.position = inPaper ? 'absolute' : 'fixed';
-        const parent = inPaper ? (node.offsetParent as HTMLElement | null) || anchor : zoomLayer;
+        const inOverlay = node.parentElement?.hasAttribute('data-canvas-shortcuts');
+        node.style.position = inPaper || inOverlay ? 'absolute' : 'fixed';
+        const parent = inPaper || inOverlay ? (node.offsetParent as HTMLElement | null) || anchor : zoomLayer;
         const parentRect = parent?.getBoundingClientRect();
         node.style.left = `${(left - (parentRect?.left ?? 0)) / scale - (parent?.clientLeft ?? 0)}px`;
         node.style.top = `${(top - (parentRect?.top ?? 0)) / scale - (parent?.clientTop ?? 0)}px`;
@@ -238,6 +240,9 @@ function observeControls(frame: HTMLElement, page: HTMLElement) {
         observer.observe(element);
         mutations.observe(element, { attributes: true, attributeFilter: ['class', 'style'] });
     });
+    const shortcutLayer = frame.parentElement?.querySelector<HTMLElement>(':scope > [data-canvas-shortcuts]');
+    shortcutLayer?.addEventListener('pointerover', update);
+    shortcutLayer?.addEventListener('pointerout', update);
     frame.addEventListener('pointerover', update);
     frame.addEventListener('pointerout', update);
     frame.addEventListener('focusin', update);
@@ -262,6 +267,8 @@ function observeControls(frame: HTMLElement, page: HTMLElement) {
                 window.clearTimeout(hoverTimer);
                 observer.disconnect();
                 mutations.disconnect();
+                shortcutLayer?.removeEventListener('pointerover', update);
+                shortcutLayer?.removeEventListener('pointerout', update);
                 frame.removeEventListener('pointerover', update);
                 frame.removeEventListener('pointerout', update);
                 frame.removeEventListener('focusin', update);
@@ -285,22 +292,30 @@ export function CanvasActionGroup({ direction, kind, anchorId, anchorSelector, h
     hoverOnly?: boolean;
 }) {
     const ref = useRef<HTMLDivElement>(null);
+    const marker = useRef<HTMLSpanElement>(null);
+    const [overlay, setOverlay] = useState<HTMLElement | null>(null);
+    const groupId = React.useId();
     useLayoutEffect(() => {
-        const node = ref.current;
-        const frame = node?.closest<HTMLElement>('[data-menu-page-frame]');
+        const origin = marker.current ?? ref.current;
+        const frame = origin?.closest<HTMLElement>('[data-menu-page-frame]');
         const page = frame?.querySelector<HTMLElement>(':scope > [data-menu-print-page]');
         const anchor = anchorId ? document.getElementById(anchorId)
-            : anchorSelector ? node?.closest<HTMLElement>(anchorSelector) : node?.parentElement;
-        if (!node || !frame || !page || !anchor) return;
+            : anchorSelector ? origin?.closest<HTMLElement>(anchorSelector) : origin?.parentElement;
+        if (!frame || !page || !anchor) return;
+        const host = kind === 'quick' ? frame.parentElement?.querySelector<HTMLElement>(':scope > [data-canvas-shortcuts]') : null;
+        if (host && host !== overlay) { setOverlay(host); return; }
+        const node = ref.current;
+        if (!node) return;
+        if (overlay) node.dataset.shortcutPage = page.dataset.pageIndex;
         let coordinator = pageControlObservers.get(frame);
         if (!coordinator) {
             coordinator = observeControls(frame, page);
             pageControlObservers.set(frame, coordinator);
         }
         return coordinator.add({ node, anchor, direction, kind, hoverOnly });
-    }, [anchorId, anchorSelector, direction, hoverOnly, kind]);
-    return (
-        <div {...props} ref={ref} data-canvas-action-group={kind} data-canvas-action-direction={direction} data-selected-control={hoverOnly ? undefined : 'true'}
+    }, [anchorId, anchorSelector, direction, hoverOnly, kind, overlay]);
+    const group = (
+        <div {...props} id={kind === 'quick' ? groupId : props.id} ref={ref} data-canvas-action-group={kind} data-canvas-action-direction={direction} data-selected-control={hoverOnly ? undefined : 'true'}
             data-drag-ignore="true" data-print-control="true"
             className={`pointer-events-auto absolute z-[80] flex w-max min-w-min origin-top-left flex-wrap items-center gap-1 ${className}`}
             style={{ visibility: 'hidden' }}
@@ -308,4 +323,9 @@ export function CanvasActionGroup({ direction, kind, anchorId, anchorSelector, h
             {children}
         </div>
     );
+    if (kind !== 'quick') return group;
+    return <>
+        <span hidden ref={marker} aria-controls={groupId} data-canvas-action-anchor={kind} />
+        {overlay ? createPortal(group, overlay) : group}
+    </>;
 }

@@ -181,6 +181,7 @@ function LayoutFixture({ categories, adjacent, productsInCategory, closeTexts, t
       }}
       onCommitCategoryOrder={(customCategoryOrder) => setStyle((current) => ({ ...current, customCategoryOrder }))}
       onDeleteProduct={(id) => setItems((current) => current.filter((item) => item.id !== id))}
+      onUpdateProduct={(id, field, value) => setItems(current => current.map(item => item.id === id ? { ...item, [field]: value } : item))}
       onUpdateProducts={(updates) => setItems((current) => current.map((item) => updates.reduce((result, update) => (
         update.id === item.id ? { ...result, [update.field]: update.value } : result
       ), item)))}

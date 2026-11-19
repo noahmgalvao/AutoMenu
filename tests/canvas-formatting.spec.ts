@@ -1,3 +1,4 @@
+import { shortcutsFor } from './fixtures/canvas-shortcuts';
 import { expect, test } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
@@ -54,7 +55,7 @@ test('the border panel starts with a contour and applies sliders and numbers imm
   await page.goto('/tests/fixtures/template-editor.html?layout');
   const freeText = page.locator('#product-container-text-a');
   await freeText.click();
-  await freeText.getByRole('button', { name: 'Mais opções' }).click();
+  await shortcutsFor(freeText).getByRole('button', { name: 'Mais opções' }).click();
   await page.getByRole('button', { name: 'Editar texto' }).click();
   const toolbar = page.locator('[data-inline-format-toolbar]');
   await toolbar.getByRole('button', { name: 'Borda', exact: true }).click();
@@ -102,7 +103,7 @@ test('the safe distance accounts for neighboring text and preserves room for the
   const source = page.locator('#product-container-text-a');
   const neighbor = page.locator('#product-name-text-b');
   await source.click();
-  await source.getByRole('button', { name: 'Mais opções' }).click();
+  await shortcutsFor(source).getByRole('button', { name: 'Mais opções' }).click();
   await page.getByRole('button', { name: 'Editar texto' }).click();
   const toolbar = page.locator('[data-inline-format-toolbar]');
   await toolbar.getByRole('button', { name: 'Borda', exact: true }).click();
@@ -135,7 +136,7 @@ test('category markers scale with the configured heading size', async ({ page })
   const heading = page.locator('#text-Entradas');
   const category = page.locator('[data-category-id="Entradas"]');
   await category.click();
-  await category.getByRole('button', { name: 'Mais opções' }).click();
+  await shortcutsFor(category).getByRole('button', { name: 'Mais opções' }).click();
   await expect(page.locator('[data-canvas-object-menu]').getByText('Linha da categoria')).toHaveCount(0);
   await page.getByRole('button', { name: 'Editar categoria' }).click();
   const toolbar = page.locator('[data-inline-format-toolbar]');
@@ -182,7 +183,7 @@ test('free text becomes an editable background and repeats on a new page', async
   await page.goto('/tests/fixtures/template-editor.html?layout');
   const source = page.locator('#product-container-text-a');
   await source.click();
-  await source.getByRole('button', { name: 'Mais opções' }).click();
+  await shortcutsFor(source).getByRole('button', { name: 'Mais opções' }).click();
   await page.getByRole('button', { name: 'Definir como plano de fundo', exact: true }).click();
   await expect(page.locator('[data-background-prompt]')).toHaveCount(0);
   const layers = page.locator('[data-canvas-background-layer]');
@@ -193,7 +194,26 @@ test('free text becomes an editable background and repeats on a new page', async
   await expect(layers).toHaveCount(2);
   await expect(layers.last()).toHaveText('A');
   await source.click();
-  await source.getByRole('button', { name: 'Mais opções' }).click();
+  await shortcutsFor(source).getByTitle('Seleção múltipla').click();
+  const first = layers.first().locator('[data-menu-border-surface="freeText"]');
+  const second = layers.last().locator('[data-menu-border-surface="freeText"]');
+  const outline = '[data-canvas-selection-outline]';
+  await expect(second.locator(outline)).toHaveCount(0);
+  await second.click();
+  await expect(first.locator(outline)).toHaveCount(1);
+  await expect(second.locator(outline)).toHaveCount(1);
+  await expect(shortcutsFor(second).getByTitle('Seleção múltipla')).toHaveAttribute('aria-pressed', 'true');
+  await first.click();
+  await expect(first.locator(outline)).toHaveCount(0);
+  await expect(second.locator(outline)).toHaveCount(1);
+  await expect(shortcutsFor(second).getByTitle('Seleção múltipla')).toHaveAttribute('aria-pressed', 'true');
+  await shortcutsFor(second).getByTitle('Editar texto').click();
+  const field = second.locator('[contenteditable="true"]');
+  await expect(field).toBeFocused();
+  await field.fill('Texto de fundo');
+  await field.press('Enter');
+  for (const copy of [first, second]) await expect(copy).toHaveText('Texto de fundo');
+  await shortcutsFor(source).getByRole('button', { name: 'Mais opções' }).click();
   await page.getByRole('button', { name: 'Remover', exact: true }).click();
   await expect(layers).toHaveCount(0);
 });
@@ -205,7 +225,7 @@ for (const layout of ['list', 'cards', 'background']) {
     const photo = product.locator('[data-template-image]');
     const title = product.getByRole('heading');
     await title.click();
-    await product.getByRole('button', { name: 'Mais opções' }).click();
+    await shortcutsFor(product).getByRole('button', { name: 'Mais opções' }).click();
     const options = page.locator('[data-canvas-object-menu]');
     await expect(options.getByText('Linha do produto')).toHaveCount(0);
     await options.getByRole('button', { name: 'Editar produto' }).click();
@@ -270,7 +290,7 @@ test('the price prompt shows only the amount in the selected adjustment mode', a
   await page.goto('/tests/fixtures/template-editor.html?photos=list');
   const product = page.locator('#product-container-1');
   await product.getByRole('heading').click();
-  await product.getByRole('button', { name: 'Mais opções' }).click();
+  await shortcutsFor(product).getByRole('button', { name: 'Mais opções' }).click();
   await page.getByRole('button', { name: 'Editar produto' }).click();
   await product.locator('#product-price-1').focus();
   const toolbar = page.locator('[data-inline-format-toolbar]');
@@ -284,7 +304,7 @@ test('the price prompt shows only the amount in the selected adjustment mode', a
   await expect(prompt).toContainText('+10% e +R$ 10,00');
   await expect(prompt).not.toContainText('→');
   await page.getByRole('button', { name: 'Só neste produto' }).click();
-  await product.getByRole('button', { name: 'Mais opções' }).click();
+  await shortcutsFor(product).getByRole('button', { name: 'Mais opções' }).click();
   await page.getByRole('button', { name: 'Editar produto' }).click();
   await product.locator('#product-price-1').focus();
   await adjustmentType.selectOption('integer');
@@ -298,17 +318,17 @@ test('the first price saves when selecting another product and selected products
   const first = page.locator('#product-container-1');
   const second = page.locator('#product-container-2');
   await first.getByRole('heading').click();
-  await first.getByTitle('Editar produto').click();
+  await shortcutsFor(first).getByTitle('Editar produto').click();
   await first.locator('#product-price-1').fill('12,50');
   await second.getByRole('heading').click();
-  await expect(second.getByTitle('Editar produto')).toBeVisible();
+  await expect(shortcutsFor(second).getByTitle('Editar produto')).toBeVisible();
   await expect(first.locator('#product-price-1')).toHaveText('12,50');
   await expect(first.locator('#product-price-1')).toHaveAttribute('contenteditable', 'false');
   await expect(page.getByText('Reajustar os outros produtos?')).toHaveCount(0);
 
-  await second.getByTitle('Seleção múltipla').click();
+  await shortcutsFor(second).getByTitle('Seleção múltipla').click();
   await first.getByRole('heading').click();
-  await first.getByTitle('Editar produto').click();
+  await shortcutsFor(first).getByTitle('Editar produto').click();
   await expect(second.locator('#product-name-2')).toHaveClass(/bg-indigo-500\/15/);
   await expect(second.locator('#product-price-2')).toHaveClass(/bg-indigo-500\/15/);
   await expect(second.locator('#product-description-2')).toHaveClass(/bg-indigo-500\/15/);
@@ -324,9 +344,9 @@ test('editing selected categories keeps their products available as the formatti
   const first = page.locator('[data-category-id="Entradas"]');
   const second = page.locator('[data-category-id="Sobremesas"]');
   await first.getByRole('heading').click();
-  await first.getByTitle('Seleção múltipla').click();
+  await shortcutsFor(first).getByTitle('Seleção múltipla').click();
   await second.getByRole('heading').click();
-  await second.getByTitle('Editar categoria').click();
+  await shortcutsFor(second).getByTitle('Editar categoria').click();
   await expect(second.getByRole('heading')).toBeFocused();
   await expect(first.getByRole('heading')).toHaveClass(/bg-indigo-500\/15/);
   const price = page.locator('#product-price-1');
@@ -353,9 +373,9 @@ test('editing one selected free text keeps the other editable', async ({ page })
   const first = page.locator('#product-container-text-a');
   const second = page.locator('#product-container-text-b');
   await first.click();
-  await first.getByTitle('Seleção múltipla').click();
+  await shortcutsFor(first).getByTitle('Seleção múltipla').click();
   await second.click();
-  await second.getByTitle('Editar texto').click();
+  await shortcutsFor(second).getByTitle('Editar texto').click();
   const firstText = first.locator('#product-name-text-a');
   await expect(firstText).toHaveAttribute('contenteditable', 'true');
   await expect(firstText).toHaveClass(/bg-indigo-500\/15/);
@@ -403,7 +423,7 @@ test('the first insertion replaces default names and descriptions in the canvas'
   const category = page.locator('[data-category-id="Nova categoria 12"]');
   const title = category.getByRole('heading');
   await title.click();
-  await category.getByTitle('Editar categoria').click();
+  await shortcutsFor(category).getByTitle('Editar categoria').click();
   const name = page.locator('#product-name-1');
   const description = page.locator('#product-description-1');
 
@@ -444,10 +464,10 @@ for (const mobile of [false, true]) {
       await expect(product.locator('xpath=ancestor::*[@data-drag-column-index][1]')).toHaveAttribute('data-drag-column-index', '1');
       if (mobile) {
         await product.getByRole('heading').tap();
-        await product.getByTitle('Editar produto').tap();
+        await shortcutsFor(product).getByTitle('Editar produto').tap();
       } else {
         await product.getByRole('heading').click();
-        await product.getByTitle('Editar produto').click();
+        await shortcutsFor(product).getByTitle('Editar produto').click();
       }
       await expect(product.getByRole('heading')).toBeFocused();
       await expect.poll(() => product.evaluate((element, checkCenter) => {
@@ -475,7 +495,7 @@ test('the card contour stays complete with a photo frame and adjustable border v
     return Math.abs(rect.width - rect.height);
   }).toBeLessThan(1);
   await product.getByRole('heading').click();
-  await product.getByRole('button', { name: 'Mais opções' }).click();
+  await shortcutsFor(product).getByRole('button', { name: 'Mais opções' }).click();
   await page.getByRole('button', { name: 'Editar produto' }).click();
   const toolbar = page.locator('[data-inline-format-toolbar]');
   await toolbar.getByRole('button', { name: 'Borda', exact: true }).click();
@@ -521,12 +541,12 @@ test('product and category removal is available in More options', async ({ page 
   await page.goto('/tests/fixtures/template-editor.html?photos=list');
   const product = page.locator('#product-container-1');
   await product.getByRole('heading').click();
-  await product.getByRole('button', { name: 'Mais opções' }).click();
+  await shortcutsFor(product).getByRole('button', { name: 'Mais opções' }).click();
   await page.getByRole('button', { name: 'Remover', exact: true }).click();
   await expect(product).toHaveCount(0);
   const category = page.locator('[data-category-id="Entradas"]');
   await category.click();
-  await category.getByRole('button', { name: 'Mais opções' }).click();
+  await shortcutsFor(category).getByRole('button', { name: 'Mais opções' }).click();
   await page.getByRole('button', { name: 'Remover', exact: true }).click();
   await expect(category).toHaveCount(0);
 });
@@ -536,7 +556,7 @@ test('category text and group have independent borders and the formatting panel 
   const category = page.locator('[data-category-id="Entradas"]');
   const group = page.locator('[data-category-chunk="Entradas"]');
   await category.getByRole('heading').click();
-  await category.getByRole('button', { name: 'Mais opções' }).click();
+  await shortcutsFor(category).getByRole('button', { name: 'Mais opções' }).click();
   await page.getByRole('button', { name: 'Editar categoria' }).click();
   const toolbar = page.locator('[data-inline-format-toolbar]');
   await toolbar.getByRole('button', { name: 'Borda', exact: true }).click();
@@ -584,7 +604,7 @@ test('a narrow two-column card saves a corrected name even after typing an overs
   const product = page.locator('#product-container-1');
   const title = product.getByRole('heading');
   await title.click();
-  await product.getByRole('button', { name: 'Editar produto' }).click();
+  await shortcutsFor(product).getByRole('button', { name: 'Editar produto' }).click();
   await title.fill('Palavra'.repeat(55));
   await expect(title).toHaveClass(/automenu-word-wrap/);
   await expect(page.getByText('Limite de caracteres excedido')).toHaveCount(0);
@@ -592,7 +612,7 @@ test('a narrow two-column card saves a corrected name even after typing an overs
   await title.press('Enter');
   await expect(title).toHaveText('X');
   await title.click();
-  await product.getByRole('button', { name: 'Editar produto' }).click();
+  await shortcutsFor(product).getByRole('button', { name: 'Editar produto' }).click();
   await title.fill('Burrata');
   await page.locator('[data-automenu-editor-canvas]').click({ position: { x: 8, y: 32 } });
   await expect(title).toHaveText('Burrata');
@@ -621,7 +641,7 @@ test('undo and redo keep product editing open until history reaches an earlier a
   const product = page.locator('#product-container-1');
   const title = product.getByRole('heading');
   await title.click();
-  await product.getByRole('button', { name: 'Editar produto' }).click();
+  await shortcutsFor(product).getByRole('button', { name: 'Editar produto' }).click();
   const toolbar = page.locator('[data-inline-format-toolbar]');
   const size = toolbar.getByRole('spinbutton');
   const value = Number(await size.inputValue());
@@ -644,7 +664,7 @@ test('category and product dividers align to the middle of the rendered titles',
   const product = page.locator('#product-container-1');
   const title = product.getByRole('heading');
   await title.click();
-  await product.getByRole('button', { name: 'Editar produto' }).click();
+  await shortcutsFor(product).getByRole('button', { name: 'Editar produto' }).click();
   const toolbar = page.locator('[data-inline-format-toolbar]');
   await toolbar.getByRole('button', { name: 'Linha do produto' }).click();
   await toolbar.getByRole('combobox', { name: 'Linha do produto' }).selectOption('ornamental');
@@ -730,7 +750,7 @@ for (const layout of ['photos=list&lanes=2', 'photos=cards&cols=3']) {
     for (const other of await prices.all()) await expect(other).toHaveCSS('font-size', '28px');
     await resize(widths.tight);
     await product.getByRole('heading').click();
-    await product.getByTitle('Editar produto').click();
+    await shortcutsFor(product).getByTitle('Editar produto').click();
     await price.focus();
     const fontSize = page.locator('[data-inline-format-toolbar]').getByRole('spinbutton').first();
     await fontSize.fill('22');
@@ -759,7 +779,7 @@ test('price format settings apply currency and decimals to every product from th
   await page.goto('/tests/fixtures/template-editor.html?photos=list');
   const product = page.locator('#product-container-1');
   await product.getByRole('heading').click();
-  await product.getByTitle('Editar produto').click();
+  await shortcutsFor(product).getByTitle('Editar produto').click();
   await product.locator('[data-price-value]').focus();
   const toolbar = page.locator('[data-inline-format-toolbar]');
   await toolbar.getByRole('button', { name: 'Configurações de preço' }).click();

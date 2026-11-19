@@ -47,8 +47,8 @@ export const FreeTextResizeHandles = ({ product, style, handlers }: { product: P
         event.preventDefault();
         event.stopPropagation();
         event.currentTarget.setPointerCapture(event.pointerId);
-        const container = document.getElementById(`product-container-${product.id}`);
-        const text = document.getElementById(`product-name-${product.id}`);
+        const container = event.currentTarget.closest<HTMLElement>('[data-menu-border-surface="freeText"]');
+        const text = container?.querySelector<HTMLElement>('[data-product-edit-id]');
         if (!container || !text) return;
         const scale = getRenderedScale(container);
         const startX = event.clientX;
@@ -117,6 +117,7 @@ interface ProductControlsProps {
     handlers: any;
     isDragging?: boolean;
     showSelectionOutline?: boolean;
+    outlineOnly?: boolean;
     showAddControls?: boolean;
     showTopAddControl?: boolean;
     showBottomAddControl?: boolean;
@@ -125,7 +126,7 @@ interface ProductControlsProps {
 
 export const ProductControls = ({
     type, id, catName, canMoveUp, canMoveDown, canMoveLeft, canMoveRight, isFreeText, handlers,
-    isDragging, showSelectionOutline = true, showAddControls = true, showTopAddControl = true,
+    isDragging, showSelectionOutline = true, outlineOnly = false, showAddControls = true, showTopAddControl = true,
     showBottomAddControl = true, showGridMoveControls,
 }: ProductControlsProps) => {
     const selectionType = type === 'category' ? 'category' : isFreeText ? 'freeText' : 'product';
@@ -157,6 +158,7 @@ export const ProductControls = ({
         ? <div data-canvas-selection-outline className={`pointer-events-none absolute inset-0 rounded-lg border-2 border-indigo-500 ${selectionLayerClasses.outline}`} />
         : null;
     if (isDragging) return isDragged ? outline : null;
+    if (outlineOnly) return outline;
 
     const renderMove = (direction: MoveDirection, edge: FlowDirection) => (
         <button key={direction} type="button"

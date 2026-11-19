@@ -1,3 +1,4 @@
+import { shortcutsFor } from './fixtures/canvas-shortcuts';
 import { test, expect, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 
@@ -470,7 +471,7 @@ test.describe('mobile product formatting', () => {
     const initialWidth = (await canvas.boundingBox())!.width;
     const product = page.locator('#product-container-1');
     await product.getByRole('heading', { name: 'Burrata da casa' }).tap();
-    await product.getByRole('button', { name: 'Mais opções' }).tap();
+    await shortcutsFor(product).getByRole('button', { name: 'Mais opções' }).tap();
     await page.getByRole('button', { name: 'Editar produto' }).tap();
     const toolbar = page.locator('[data-inline-format-toolbar]');
     const name = product.getByRole('heading', { name: 'Burrata da casa' });
@@ -495,7 +496,7 @@ test.describe('mobile product formatting', () => {
     const width = () => sheet.evaluate((element) => element.getBoundingClientRect().width);
     const initialWidth = await width();
     await product.getByRole('heading', { name: 'Burrata da casa' }).tap();
-    await product.getByRole('button', { name: 'Mais opções' }).tap();
+    await shortcutsFor(product).getByRole('button', { name: 'Mais opções' }).tap();
     await page.getByRole('button', { name: 'Editar produto' }).tap();
     await expect.poll(width).toBeGreaterThan(initialWidth + 100);
     const toolbar = page.locator('[data-inline-format-toolbar]');

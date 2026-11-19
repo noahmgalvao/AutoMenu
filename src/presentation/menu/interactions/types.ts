@@ -8,6 +8,7 @@ export type SelectionType = 'product' | 'category' | 'freeText' | 'addedImage' |
 export type SelectableType = Exclude<SelectionType, null>;
 
 export interface SelectionItem {
+    backgroundPages?: number[];
     type: SelectableType;
     id: string;
 }

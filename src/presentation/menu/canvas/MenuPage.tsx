@@ -1,7 +1,8 @@
+import type { SelectionItem } from '../interactions/types';
 import { getTemplateColors, getTemplateDesignAttributes } from './templateStyles';
 import '../designer/templateDesign.css';
 import React from 'react';
-import type { Product, MenuStyle } from '../../../domain/menu/model';
+import type { AddedImage, Product, MenuStyle } from '../../../domain/menu/model';
 import { BringToFront, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CopyCheck, MoreHorizontal, Plus, SendToBack, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { Resizable } from 're-resizable';
 import { MenuItem } from './MenuItem';
@@ -168,10 +169,13 @@ export const MenuPage: React.FC<MenuPageProps> = ({
         event.stopPropagation();
         if (handlers.isReadyToEdit?.('addedImage', id)) handlers.startImageEditing(id);
     };
-    const editableImages = readOnly ? [] : visibleImages.filter(image => (
-        ((handlers.imageEditPage?.id === image.id && image.repeatAsBackground ? handlers.imageEditPage.pageIndex : image.pageIndex) || 0) === pageIndex
-    ));
-    const activeImage = editableImages.find(image => image.id === handlers.selectedId);
+    const selectionPages = (image: AddedImage): number[] => {
+        if (!image.repeatAsBackground) return [image.pageIndex || 0];
+        const selected = handlers.selectedItems?.find((item: SelectionItem) => item.type === 'addedImage' && item.id === image.id);
+        return selected?.backgroundPages ?? [handlers.imageEditPage?.id === image.id ? handlers.imageEditPage.pageIndex : image.pageIndex || 0];
+    };
+    const editableImages = readOnly ? [] : visibleImages.filter(image => selectionPages(image).includes(pageIndex));
+    const activeImage = editableImages.find(image => image.id === handlers.selectedId && selectionPages(image).slice(-1)[0] === pageIndex);
     const selectedLayers = activeImage ? getSelectedLayerIds(handlers.selectedItems || [], activeImage.id) : null;
     const shapeEditor = activeImage?.shape ? activeImage
         : selectedLayers && [...(style.addedImages || [])].reverse().find(image => image.shape && selectedLayers.has(image.id));
@@ -559,7 +563,9 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 {products.map((product) => {
                     const layer = product.isFreeText ? style.freeTextBackgrounds?.[product.id] : undefined;
                     if (!layer || style.hiddenProductIds?.includes(product.id)) return null;
-                    const editable = !readOnly && pageIndex === Math.min(layer.pageIndex, pageCount - 1);
+                    const selected = handlers.selectedItems?.find((item: SelectionItem) => item.type === 'freeText' && item.id === product.id);
+                    const pages: number[] = selected?.backgroundPages?.filter((index: number) => index < pageCount) ?? [];
+                    const primaryPage = pages[pages.length - 1] ?? Math.min(layer.pageIndex, pageCount - 1);
                     return (
                         <div key={product.id} data-canvas-background-layer="true" data-page-positioned-text="true" className="pointer-events-none absolute z-[1]"
                             style={{ left: layer.x, top: layer.y, width: Math.max(1, pageDimensions.widthPx - layer.x) }}>
@@ -567,10 +573,11 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                                 item={{ type: 'product-item', data: { ...product, customMarginTop: 0, freeTextWidth: product.freeTextWidth || layer.width }, category: product.category }}
                                 idx={0}
                                 style={renderedStyle}
-                                handlers={editable ? handlers : { readOnly: true, groupedProducts: {} }}
+                                handlers={readOnly ? { readOnly: true, groupedProducts: {} } : handlers}
                                 products={products}
                                 inGroup
-                                backgroundText
+                                backgroundText={{ pageIndex, primary: pageIndex === primaryPage,
+                                    selected: Boolean(!readOnly && selected && (pages.length ? pages.includes(pageIndex) : pageIndex === primaryPage)) }}
                             />
                         </div>
                     );
@@ -713,20 +720,20 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                     </div>
                 </div>
             </div>
-            {editableImages.filter(img => handlers.selectedId === img.id).map((img) => (
+            {activeImage && (
                 <CanvasActionGroup
-                    key={`controls-${img.id}`}
+                    key={`controls-${activeImage.id}`}
                     data-object-page-index={pageIndex}
-                    anchorId={`added-image-${pageIndex}-${img.id}`}
+                    anchorId={`added-image-${pageIndex}-${activeImage.id}`}
                     direction="top"
                     kind="quick"
                     className="!z-[100000]"
                 >
-                    <button onClick={(e) => handlers.handleLayerImage(e, img.id, 'back')} className={canvasActionButtonClass} title="Enviar para trás"><SendToBack size={19} /></button>
-                    <button onClick={(e) => handlers.handleLayerImage(e, img.id, 'front')} className={canvasActionButtonClass} title="Trazer à frente"><BringToFront size={19} /></button>
+                    <button onClick={(e) => handlers.handleLayerImage(e, activeImage.id, 'back')} className={canvasActionButtonClass} title="Enviar para trás"><SendToBack size={19} /></button>
+                    <button onClick={(e) => handlers.handleLayerImage(e, activeImage.id, 'front')} className={canvasActionButtonClass} title="Trazer à frente"><BringToFront size={19} /></button>
                     {shapeEditor && (
                         <button type="button" title="Formatar forma" aria-pressed={formattingShapeId === shapeEditor.id}
-                            data-inline-format-target={`added-image-${shapeEditor.id === img.id ? pageIndex : shapeEditor.pageIndex || 0}-${shapeEditor.id}`}
+                            data-inline-format-target={`added-image-${shapeEditor.id === activeImage.id ? pageIndex : shapeEditor.pageIndex || 0}-${shapeEditor.id}`}
                             onPointerDown={(event) => event.stopPropagation()}
                             onClick={(event) => {
                                 event.stopPropagation();
@@ -741,24 +748,25 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         onPointerDown={(event) => event.stopPropagation()}
                         onClick={(event) => {
                             event.stopPropagation();
+                            if (!handlers.multiSelectMode && formattingShapeId) handlers.setEditingId(null);
                             handlers.setMultiSelectMode?.(!handlers.multiSelectMode);
                         }}
                         className={`${canvasActionButtonClass} ${handlers.multiSelectMode ? 'before:!bg-indigo-50 !text-indigo-700' : ''}`}>
                         <CopyCheck size={19} />
                     </button>
-                    <button data-open-object-menu="true" onClick={(e) => handlers.openObjectMenu?.(e, { type: 'addedImage', id: img.id })} className={canvasActionButtonClass} title="Mais opções"><MoreHorizontal size={20} /></button>
+                    <button data-open-object-menu="true" onClick={(e) => handlers.openObjectMenu?.(e, { type: 'addedImage', id: activeImage.id })} className={canvasActionButtonClass} title="Mais opções"><MoreHorizontal size={20} /></button>
                     <button type="button" className={`${canvasActionButtonClass} !text-red-600 hover:before:!border-red-300 hover:before:!bg-red-50`}
                         aria-hidden={handlers.objectMenuOpen || undefined} tabIndex={handlers.objectMenuOpen ? -1 : undefined}
-                        onClick={(event) => handlers.handleRemoveImage(event, img.id)} title={img.shape ? 'Remover forma' : 'Remover imagem'}>
+                        onClick={(event) => handlers.handleRemoveImage(event, activeImage.id)} title={activeImage.shape ? 'Remover forma' : 'Remover imagem'}>
                         <Trash2 size={19} />
                     </button>
-                    {img.shape && formattingShapeId === img.id && (
-                        <InlineStyleToolbar compact dismissOnClickInCanvas targetElementId={`added-image-${pageIndex}-${img.id}`}
+                    {activeImage.shape && formattingShapeId === activeImage.id && (
+                        <InlineStyleToolbar compact dismissOnClickInCanvas targetElementId={`added-image-${pageIndex}-${activeImage.id}`}
                             onDismiss={() => handlers.setEditingId(null)}>
                             <div className="p-1.5">
-                                <ShapeSettings shape={img.shape}
+                                <ShapeSettings shape={activeImage.shape}
                                     onChange={patch => {
-                                        const ids = getSelectedLayerIds(handlers.selectedItems || [], img.id);
+                                        const ids = getSelectedLayerIds(handlers.selectedItems || [], activeImage.id);
                                         handlers.updateStyle?.((previous: MenuStyle) => ({
                                             ...previous,
                                             addedImages: previous.addedImages?.map(image => ids.has(image.id)
@@ -766,13 +774,13 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                                             name: 'Custom',
                                         }));
                                     }}
-                                    onEditEnd={() => handlers.finishImageEdit?.(img.id)}
+                                    onEditEnd={() => handlers.finishImageEdit?.(activeImage.id)}
                                 />
                             </div>
                         </InlineStyleToolbar>
                     )}
                 </CanvasActionGroup>
-            ))}
+            )}
             {isPageSelected && (
                 <>
                     <button

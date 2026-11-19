@@ -314,7 +314,7 @@ export const useDraggableInteractions = (
     props: InteractionProps,
     groupedProductsBase: Record<string, Product[]>,
     sortedCategoriesBase: string[],
-    handleSelection: (type: 'product' | 'category' | 'freeText' | 'addedImage' | null, id: string | null) => void,
+    handleSelection: (type: 'product' | 'category' | 'freeText' | 'addedImage' | null, id: string | null, options?: { backgroundPage?: number }) => void,
     editingId: string | null,
     multiSelectMode: boolean = false,
     selectedItems: SelectionItem[] = [],
@@ -3727,7 +3727,10 @@ export const useDraggableInteractions = (
 
             const pending = pendingDragRef.current;
             if (pending && event.pointerId === pending.pointerId) {
-                if (pending.type === 'addedImage' && !pending.longPressReady) handleSelection('addedImage', pending.id);
+                if (pending.type === 'addedImage' && !pending.longPressReady) {
+                    const page = pending.element.closest<HTMLElement>('[data-menu-print-page]');
+                    handleSelection('addedImage', pending.id, { backgroundPage: Number(page?.dataset.pageIndex || 0) });
+                }
                 cancelAndCleanup();
             }
         },

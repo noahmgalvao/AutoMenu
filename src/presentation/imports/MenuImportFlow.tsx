@@ -1,3 +1,5 @@
+import { bindCanvasZoomGestures, getZoomAnchor, restoreZoomAnchor, type CanvasPoint } from '../menu/canvas/canvasViewport';
+import { flushSync } from 'react-dom';
 import React, {
   forwardRef,
   useCallback,
@@ -157,7 +159,7 @@ const PreviewCanvas: React.FC<{
   const fitScaleRef = useRef(0.42);
   const manualZoomRef = useRef(false);
   const scaleRef = useRef(0.42);
-  const pinchStartRef = useRef<{ distance: number; scale: number } | null>(null);
+  const zoomLayer = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.42);
   const [pageIndex, setPageIndex] = useState(0);
   const [pageCount, setPageCount] = useState(1);
@@ -183,62 +185,32 @@ const PreviewCanvas: React.FC<{
     return () => observer.disconnect();
   }, [pageDimensions.heightPx, pageDimensions.widthPx]);
 
-  const updateZoom = useCallback((delta: number) => {
+  const zoomAt = useCallback((value: number, point: CanvasPoint, anchor: CanvasPoint) => {
+    if (!containerRef.current || !zoomLayer.current) return;
     manualZoomRef.current = true;
-    setScale((current) => Math.max(0.1, Math.min(2.5, current + delta)));
+    flushSync(() => setScale(Math.max(0.1, Math.min(2.5, value))));
+    restoreZoomAnchor(containerRef.current, zoomLayer.current, anchor, point);
   }, []);
+
+  const updateZoom = useCallback((delta: number) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect || !zoomLayer.current) return;
+    const focus = { x: (rect.left + rect.right) / 2, y: (rect.top + rect.bottom) / 2 };
+    zoomAt(scaleRef.current + delta, focus, getZoomAnchor(zoomLayer.current, focus));
+  }, [zoomAt]);
 
   const resetZoom = () => {
     manualZoomRef.current = false;
+    zoomLayer.current?.parentElement?.removeAttribute('style');
+    containerRef.current?.scrollTo(0, 0);
     setScale(fitScaleRef.current);
   };
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
-
-    const getTouchDistance = (touches: TouchList) => Math.hypot(
-      touches[0].clientX - touches[1].clientX,
-      touches[0].clientY - touches[1].clientY,
-    );
-    const handleWheel = (event: WheelEvent) => {
-      if (!event.ctrlKey && !event.metaKey) return;
-      event.preventDefault();
-      updateZoom(event.deltaY * -0.005);
-    };
-    const handleTouchStart = (event: TouchEvent) => {
-      if (event.touches.length !== 2) return;
-      event.preventDefault();
-      pinchStartRef.current = {
-        distance: getTouchDistance(event.touches),
-        scale: scaleRef.current,
-      };
-    };
-    const handleTouchMove = (event: TouchEvent) => {
-      const pinchStart = pinchStartRef.current;
-      if (event.touches.length !== 2 || !pinchStart || pinchStart.distance <= 0) return;
-      event.preventDefault();
-      manualZoomRef.current = true;
-      const nextScale = pinchStart.scale * (getTouchDistance(event.touches) / pinchStart.distance);
-      setScale(Math.max(0.1, Math.min(2.5, nextScale)));
-    };
-    const handleTouchEnd = (event: TouchEvent) => {
-      if (event.touches.length < 2) pinchStartRef.current = null;
-    };
-
-    container.addEventListener('wheel', handleWheel, { passive: false });
-    container.addEventListener('touchstart', handleTouchStart, { passive: false });
-    container.addEventListener('touchmove', handleTouchMove, { passive: false });
-    container.addEventListener('touchend', handleTouchEnd);
-    container.addEventListener('touchcancel', handleTouchEnd);
-    return () => {
-      container.removeEventListener('wheel', handleWheel);
-      container.removeEventListener('touchstart', handleTouchStart);
-      container.removeEventListener('touchmove', handleTouchMove);
-      container.removeEventListener('touchend', handleTouchEnd);
-      container.removeEventListener('touchcancel', handleTouchEnd);
-    };
-  }, [updateZoom]);
+    const layer = zoomLayer.current;
+    if (container && layer) return bindCanvasZoomGestures(container, layer, () => scaleRef.current, zoomAt);
+  }, [zoomAt]);
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
@@ -250,17 +222,19 @@ const PreviewCanvas: React.FC<{
         </div>
       </div>
       <div ref={containerRef} className="relative min-h-0 flex-1 overflow-auto rounded-2xl bg-slate-200/60 p-3 custom-scrollbar" style={{ touchAction: 'pan-x pan-y' }}>
-        <div className="mx-auto w-fit origin-top-left" style={{ zoom: scale }}>
-          <MenuPreview
-            products={products}
-            style={style}
-            sortOption={sortOption}
-            splitCategoryAcrossPages={splitCategoryAcrossPages}
-            productsCanChangeCategory={productsCanChangeCategory}
-            readOnly
-            visiblePageIndex={paginate ? pageIndex : undefined}
-            onPageCountChange={paginate ? setPageCount : undefined}
-          />
+        <div className="mx-auto w-max">
+          <div ref={zoomLayer} className="w-fit origin-top-left" style={{ zoom: scale }}>
+            <MenuPreview
+              products={products}
+              style={style}
+              sortOption={sortOption}
+              splitCategoryAcrossPages={splitCategoryAcrossPages}
+              productsCanChangeCategory={productsCanChangeCategory}
+              readOnly
+              visiblePageIndex={paginate ? pageIndex : undefined}
+              onPageCountChange={paginate ? setPageCount : undefined}
+            />
+          </div>
         </div>
       </div>
       {paginate && (
