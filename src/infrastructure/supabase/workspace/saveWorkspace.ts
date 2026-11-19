@@ -1,3 +1,4 @@
+import { categoryName, categoryInstanceSlug, storedCategoryKey } from '../../../domain/menu/categoryName';
 import type { Product, MenuStyle, SortOption } from '../../../domain/menu/model';
 import type { SaveWorkspaceResult, MenuVersion } from '../../../domain/workspace/model';
 import { getSupabaseClient } from '../client';
@@ -49,15 +50,15 @@ const resolveCategoriesForSave = async (
   ]));
 
   const usedCategoryIds = new Set<string>();
-  const categoriesForSave = orderedNames.map((categoryName, index) => {
-    const categoryProducts = grouped.get(categoryName) || [];
+  const categoriesForSave = orderedNames.map((key, index) => {
+    const categoryProducts = grouped.get(key) || [];
     const candidateIds = categoryProducts
       .map((product) => product.categoryId)
       .filter((value): value is string => Boolean(value && existingById.has(value)));
 
     const chosenId =
       candidateIds.find((categoryId) => !usedCategoryIds.has(categoryId)) ||
-      existingCategories.find((category) => category.name === categoryName && !usedCategoryIds.has(category.id))?.id ||
+      existingCategories.find((category) => storedCategoryKey(category) === key && !usedCategoryIds.has(category.id))?.id ||
       crypto.randomUUID();
 
     usedCategoryIds.add(chosenId);
@@ -65,7 +66,7 @@ const resolveCategoriesForSave = async (
     return {
       id: chosenId,
       workspace_id: workspaceId,
-      name: categoryName,
+      name: categoryName(key),
       position: index,
       is_active: true,
     };
@@ -73,8 +74,8 @@ const resolveCategoriesForSave = async (
 
   const existingSlugOwners = new Map(existingCategories.map((category) => [category.slug, category.id]));
   const usedSlugs = new Set<string>();
-  const categoryRows = categoriesForSave.map((category) => {
-    const baseSlug = slugify(category.name);
+  const categoryRows = categoriesForSave.map((category, index) => {
+    const baseSlug = categoryInstanceSlug(orderedNames[index]) ?? slugify(category.name);
     let slug = baseSlug;
     let suffix = 2;
 
@@ -90,7 +91,7 @@ const resolveCategoriesForSave = async (
     return { ...category, slug };
   });
 
-  const categoryIdByName = new Map(categoryRows.map((row) => [row.name, row.id]));
+  const categoryIdByName = new Map(categoryRows.map((row, index) => [orderedNames[index], row.id]));
   const normalizedProducts = products.map((product) => ({
     ...product,
     categoryId: categoryIdByName.get(product.category) || product.categoryId || null,

@@ -173,6 +173,7 @@ function LayoutFixture({ categories, adjacent, productsInCategory, closeTexts, t
   ]);
   return <main data-automenu-editor-canvas="true" style={{ maxHeight: '100vh', overflow: 'auto' }}>
     <MenuPreview products={items} style={style} sortOption={{ field:'name', direction:'asc' }}
+      onPasteObjects={(nextProducts, nextStyle) => { setItems(nextProducts); setStyle(nextStyle); }}
       onStyleUpdate={setStyle}
       onAddProduct={(category, _productId, isFreeText, id, initialData) => {
         if (!id) return;

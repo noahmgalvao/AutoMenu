@@ -40,10 +40,11 @@ const PositionedCategoryChunk: React.FC<
         flowOffsetBefore?: number;
         detachedForDrag?: boolean;
         detachedFromFlow?: boolean;
+        fitContent?: boolean;
         pageIndex: number;
         layoutKey: string;
     }
-> = ({ desiredPageY, desiredPageX, absolutePageX, flowOffsetBefore = 0, detachedForDrag = false, detachedFromFlow = false, pageIndex, layoutKey, style, children, ...props }) => {
+> = ({ desiredPageY, desiredPageX, absolutePageX, flowOffsetBefore = 0, detachedForDrag = false, detachedFromFlow = false, fitContent = false, pageIndex, layoutKey, style, children, ...props }) => {
     const elementRef = React.useRef<HTMLDivElement>(null);
     const [position, setPosition] = React.useState({ top: 0, left: 0 });
     const isFreePositioned = detachedFromFlow && Number.isFinite(desiredPageY);
@@ -91,7 +92,7 @@ const PositionedCategoryChunk: React.FC<
                     position: 'absolute',
                     top: position.top,
                     left: position.left,
-                    width: 'max-content',
+                    width: fitContent ? 'max-content' : '100%',
                     maxWidth: absolutePageX !== undefined ? `calc(var(--menu-page-width) - ${absolutePageX}px)` : '100%',
                 } : {}),
             }}
@@ -256,10 +257,11 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 key={chunk.chunkId}
                 desiredPageY={desiredPageY}
                 desiredPageX={isFreeTextTarget ? categoryPosition?.x : undefined}
-                absolutePageX={isFreeTextTarget ? categoryPosition?.pageX : undefined}
+                absolutePageX={categoryPosition?.pageX}
                 flowOffsetBefore={chunk.flowOffsetBefore}
                 detachedForDrag={isCategoryDragged}
-                detachedFromFlow={isFreeTextTarget}
+                fitContent={isFreeTextTarget}
+                detachedFromFlow={isFreeTextTarget || categoryPosition?.pageX !== undefined}
                 pageIndex={pageIndex}
                 layoutKey={`${flowIndex}:${categoryColumnWidths.join(',')}`}
                 data-chunk-id={chunk.chunkId}

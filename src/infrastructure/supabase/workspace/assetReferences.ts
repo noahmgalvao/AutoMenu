@@ -1,3 +1,4 @@
+import { storedCategoryKey } from '../../../domain/menu/categoryName';
 import type { MenuStyle, Product, AddedImage, CategoryImage } from '../../../domain/menu/model';
 import type { MenuEditorState, TemplateVersion, Asset, Category } from '../../../domain/workspace/model';
 import { isRecord, withStyleDefaults, normalizePersistedProducts, cloneJson, DEFAULT_SORT_OPTION } from '../../../application/workspace/state';
@@ -278,7 +279,7 @@ export const resolveProductRowsForApp = (
       name: row.name,
       description: row.description || '',
       price: roundPrice(row.base_price),
-      category: category?.name || 'Uncategorized',
+      category: category ? storedCategoryKey(category) : 'Uncategorized',
       categoryId: row.category_id,
       imageAssetId: row.primary_asset_id,
       image: row.primary_asset_id ? assetUrlMap.get(row.primary_asset_id) || '' : '',

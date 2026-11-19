@@ -1,7 +1,9 @@
+import { categoryKey, categoryName } from '../../../domain/menu/categoryName';
+import { copiedProductFields, lastCanvasCopy, matchingCanvasCopy, pasteCanvasObjects, writeCanvasCopy, type CanvasClip, type CopiedObject, type PasteContent } from './canvasClipboard';
 import React, { useMemo, useEffect, useRef, useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { AddedImage, ElementStyle, Product, MenuStyle, SortOption } from '../../../domain/menu/model';
-import { AlertTriangle, BringToFront, Copy, CopyCheck, CopyPlus, Edit3, EyeOff, FlipHorizontal2, FlipVertical2, Layers, Paintbrush, Clipboard, Plus, Scissors, SendToBack, Trash2 } from 'lucide-react';
+import type { CategoryPosition, ElementStyle, Product, MenuStyle, SortOption } from '../../../domain/menu/model';
+import { AlertTriangle, BringToFront, Copy, CopyCheck, CopyPlus, Edit3, EyeOff, FlipHorizontal2, FlipVertical2, Images, Layers, Paintbrush, Clipboard, Plus, Scissors, SendToBack, Trash2 } from 'lucide-react';
 import { calculatePagination, finalizeMenuPages, getPaginationHeightKey, getSavedCategoryPlacements } from '../../../domain/menu/menuPagination';
 import { findSplitCategorySwap, type SplitCategorySwap } from '../../../domain/menu/splitCategorySwap';
 import { FREE_TEXT_PREFIX, SAFETY_BUFFER } from '../../../domain/menu/flow';
@@ -39,6 +41,7 @@ interface MenuPreviewProps {
     products: Product[];
     style: MenuStyle;
     sortOption: SortOption;
+    onPasteObjects?: (products: Product[], style: MenuStyle) => void;
     onMoveCategory?: (category: string, direction: MoveDirection) => void;
     onMoveProduct?: (productId: string, category: string, direction: MoveDirection) => void;
     onUpdateProduct?: (id: string, field: keyof Product, value: any) => void;
@@ -69,19 +72,15 @@ interface MenuPreviewProps {
     onSplitCategorySwap?: (suggestion: SplitCategorySwap | null) => void;
     onProductEditStart?: (productId: string) => void;
     onProductEditEnd?: (nextObject?: HTMLElement | null) => void;
-    onUploadProductImage?: (productId: string, file: File) => Promise<{ url: string; assetId: string }>;
+    onUploadProductImage?: (productId: string, file: File, type?: PhotoType) => Promise<{ url: string; assetId: string }>;
 }
 
+type PhotoType = 'product' | 'category';
 type ObjectSelectionItem = SelectionItem & { type: 'product' | 'category' | 'freeText' | 'addedImage' };
 type CanvasContextMenuItem = FormatObject;
 
-type ClipboardItem =
-    | { type: 'product'; product: Product }
-    | { type: 'freeText'; product: Product }
-    | { type: 'category'; category: string; products: Product[] }
-    | { type: 'addedImage'; image: AddedImage };
-
 type NativeClipboardPayload =
+    | { type: 'objects'; clip: CanvasClip }
     | { type: 'text'; text: string }
     | { type: 'image'; blob: Blob };
 
@@ -89,6 +88,7 @@ type ObjectMenuState = {
     x: number;
     y: number;
     item: CanvasContextMenuItem | null;
+    pasteAt?: CategoryPosition;
     pageIndex?: number;
 };
 
@@ -164,7 +164,8 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const formatClipboardRef = useRef<{ format: CanvasFormat; source: FormatObject; armed: boolean } | null>(null);
     const skipBackgroundDismissClickRef = useRef(false);
     const productImageInputRef = useRef<HTMLInputElement | null>(null);
-    const pendingProductImageIdRef = useRef<string | null>(null);
+    const photoUploads = useRef(new Map<string, symbol>());
+    const pendingPhoto = useRef<{ type: PhotoType; id: string } | null>(null);
     const handleProductUpdateWithPricePrompt = useCallback((id: string, field: keyof Product, value: any) => {
         if (field !== 'price') {
             props.onUpdateProduct?.(id, field, value);
@@ -193,12 +194,12 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         }
     }, [props.readOnly, props.style.addedImages]);
     const handlers = useMenuInteractions({ ...props, onUpdateProduct: handleProductUpdateWithPricePrompt, onImageEditEnd: finishImageEdit });
-    const clipboardRef = useRef<ClipboardItem[] | null>(null);
     const previewRootRef = useRef<HTMLDivElement | null>(null);
     useReplacePlaceholderOnInput(previewRootRef);
     useResponsivePrices(previewRootRef, props.style);
     const [measuredHeights, setMeasuredHeights] = useState<ReadonlyMap<string, number>>(() => new Map());
     const objectMenuRef = useRef<HTMLDivElement | null>(null);
+    const lastPastePosition = useRef<CategoryPosition | null>(null);
     const lastCanvasPointRef = useRef<{ x: number; y: number } | null>(null);
     const handledExternalActionIdRef = useRef<number | null>(null);
     const marqueeDragRef = useRef<MarqueeDragState | null>(null);
@@ -214,7 +215,6 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const suppressTouchObjectMenuUntilRef = useRef(0);
     const touchStartedOnObjectMenuButtonRef = useRef(false);
     const [, setClipboardVersion] = useState(0);
-    const [nativeClipboardAvailable, setNativeClipboardAvailable] = useState(false);
     const [objectMenu, setObjectMenu] = useState<ObjectMenuState | null>(null);
     (handlers as any).objectMenuOpen = Boolean(objectMenu);
     const [objectMenuPosition, setObjectMenuPosition] = useState<{ left: number; top: number } | null>(null);
@@ -411,53 +411,52 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     }, [pendingPricePropagation, products, props.onUpdateProduct, props.onUpdateProducts]);
 
     (handlers as any).adjustProductPrice = adjustProductPrice;
-    (handlers as any).editProductImage = (productId: string) => {
-        if (!props.onUploadProductImage) return;
-        pendingProductImageIdRef.current = productId;
+    const choosePhoto = (type: PhotoType, id: string) => {
+        pendingPhoto.current = { type, id };
         productImageInputRef.current?.click();
     };
-    (handlers as any).removeProductImage = (productId: string) => {
-        const updates = [
-            { id: productId, field: 'image' as keyof Product, value: '' },
-            { id: productId, field: 'imageAssetId' as keyof Product, value: null },
-        ];
+    const setPhoto = (type: PhotoType, id: string, url: string, assetId: string | null) => {
+        if (type === 'category') {
+            onStyleUpdate?.(prev => ({
+                ...prev, name: 'Custom', categoryImages: {
+                    ...prev.categoryImages, [id]: { ...prev.categoryImages?.[id], url, assetId, crop: undefined },
+                },
+            }));
+            return;
+        }
+        const updates = [{ id, field: 'image' as const, value: url }, { id, field: 'imageAssetId' as const, value: assetId }];
         if (props.onUpdateProducts) props.onUpdateProducts(updates);
-        else updates.forEach(update => props.onUpdateProduct?.(update.id, update.field, update.value));
+        else updates.forEach(update => props.onUpdateProduct?.(id, update.field, update.value));
+        onStyleUpdate?.(prev => {
+            if (url) return { ...prev, productPhotoCrops: { ...prev.productPhotoCrops, [id]: { x: 50, y: 50 } } };
+            if (!prev.productPhotoCrops?.[id]) return prev;
+            const productPhotoCrops = { ...prev.productPhotoCrops };
+            delete productPhotoCrops[id];
+            return { ...prev, productPhotoCrops };
+        });
     };
-    (handlers as any).adjustProductImageScale = (delta: number) => {
-        props.onStyleUpdate?.((current) => ({
-            ...current,
-            imageScale: Math.max(0.5, Math.min(2.5, Number(((current.imageScale || 1) + delta).toFixed(1)))),
-            name: 'Custom',
-        }));
+    (handlers as any).choosePhoto = choosePhoto;
+    (handlers as any).removePhoto = (type: PhotoType, id: string) => {
+        photoUploads.current.delete(`${type}:${id}`);
+        setPhoto(type, id, '', null);
     };
-    (handlers as any).flipProductImage = (id: string, axis: 'horizontal' | 'vertical') => {
-        onStyleUpdate?.((previous) => ({
-            ...previous,
-            productImageFlips: {
-                ...previous.productImageFlips,
-                [id]: { ...previous.productImageFlips?.[id], [axis]: !previous.productImageFlips?.[id]?.[axis] },
-            },
-            name: 'Custom',
-        }));
-    };
-
     const handleProductImageInput = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const productId = pendingProductImageIdRef.current;
+        const target = pendingPhoto.current;
         const file = event.target.files?.[0];
         event.target.value = '';
-        pendingProductImageIdRef.current = null;
-        if (!productId || !file || !props.onUploadProductImage) return;
+        pendingPhoto.current = null;
+        if (!target || !file) return;
+        const key = `${target.type}:${target.id}`;
+        const upload = Symbol();
+        photoUploads.current.set(key, upload);
         try {
-            const uploaded = await props.onUploadProductImage(productId, file);
-            const updates = [
-                { id: productId, field: 'image' as keyof Product, value: uploaded.url },
-                { id: productId, field: 'imageAssetId' as keyof Product, value: uploaded.assetId },
-            ];
-            if (props.onUpdateProducts) props.onUpdateProducts(updates);
-            else updates.forEach(update => props.onUpdateProduct?.(update.id, update.field, update.value));
+            const uploaded = await props.onUploadProductImage?.(target.id, file, target.type);
+            const url = uploaded?.url ?? await blobToDataUrl(file);
+            if (photoUploads.current.get(key) === upload) setPhoto(target.type, target.id, url, uploaded?.assetId ?? null);
         } catch {
-            window.alert('Não foi possível alterar a imagem. Tente novamente.');
+            if (photoUploads.current.get(key) === upload) window.alert('Não foi possível alterar a imagem. Tente novamente.');
+        } finally {
+            if (photoUploads.current.get(key) === upload) photoUploads.current.delete(key);
         }
     };
 
@@ -1153,6 +1152,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         const pageElement = target?.closest<HTMLElement>('[data-menu-print-page="true"][data-page-index]');
         if (pageElement) {
             lastCanvasPointRef.current = { x: event.clientX, y: event.clientY };
+            lastPastePosition.current = pastePosition(lastCanvasPointRef.current);
         }
         if (handlers.editingId && event.button === 0 && pageElement
             && target?.closest('[data-drag-id], [data-category-id], [data-added-image-drag], [data-menu-heading]')
@@ -1185,7 +1185,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 handlers.setEditingId(null);
                 handlers.setSelectedPageIndex(null);
                 setObjectMenuPosition(null);
-                setObjectMenu({ x: startX, y: startY, item: null });
+                setObjectMenu({ x: startX, y: startY, item: null, pasteAt: lastPastePosition.current ?? undefined });
                 window.setTimeout(() => { suppressBackgroundPressClickRef.current = false; }, 800);
             }, 480);
             backgroundPressRef.current = { pointerId, startX, startY, timeoutId };
@@ -1546,81 +1546,26 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         return placement;
     }, [getLastFreeTextPlacement, getFreeTextPlacementBelowSelection, getFreeTextPlacementFromPoint, products]);
 
-    const getImagePastePoint = useCallback((menuPoint?: { x: number; y: number } | null) => {
-        if (menuPoint) return menuPoint;
-
-        const selectedObjects = (handlers.selectedItems || []).filter(isObjectItem);
-        for (const item of selectedObjects) {
-            const element = getObjectElement(item);
-            const pageEl = element?.closest('[data-menu-print-page="true"][data-page-index]') as HTMLElement | null;
-            if (!element || !pageEl) continue;
-
-            const rect = element.getBoundingClientRect();
-            const pageRect = pageEl.getBoundingClientRect();
-            return {
-                x: rect.left + rect.width / 2,
-                y: Math.min(pageRect.bottom - 4, rect.bottom + 12),
-            };
-        }
-
-        if (lastCanvasPointRef.current) return lastCanvasPointRef.current;
-
-        const firstPage = document.querySelector<HTMLElement>('[data-menu-print-page="true"][data-page-index]');
-        const firstRect = firstPage?.getBoundingClientRect();
-        return firstRect
-            ? {
-                x: firstRect.left + resolveMenuMargins(style).left,
-                y: firstRect.top + resolveMenuMargins(style).top,
-            }
-            : null;
-    }, [getObjectElement, handlers.selectedItems, style.margins, style.pagePadding]);
-
-    const addNativeClipboardImage = useCallback(async (blob: Blob, point?: { x: number; y: number } | null) => {
-        if (!onStyleUpdate) return false;
-
-        const dataUrl = await blobToDataUrl(blob);
-        const pageEls = Array.from(document.querySelectorAll<HTMLElement>('[data-menu-print-page="true"][data-page-index]'));
-        if (pageEls.length === 0) return false;
-
-        const targetPoint = getImagePastePoint(point);
-        const pageEl = targetPoint
-            ? pageEls.find((element) => {
-                const rect = element.getBoundingClientRect();
-                return targetPoint.x >= rect.left && targetPoint.x <= rect.right && targetPoint.y >= rect.top && targetPoint.y <= rect.bottom;
-            }) || pageEls[0]
-            : pageEls[0];
-        const pageRect = pageEl.getBoundingClientRect();
-        const currentScale = (typeof props.scale === 'number' && props.scale > 0) ? props.scale : 1;
-        const width = Math.min(300, pageDimensions.widthPx);
-        const x = clamp((((targetPoint?.x ?? pageRect.left + 100) - pageRect.left) / currentScale) - (width / 2), 0, Math.max(0, pageDimensions.widthPx - width));
-        const y = clamp((((targetPoint?.y ?? pageRect.top + 100) - pageRect.top) / currentScale), 0, Math.max(0, pageDimensions.heightPx - 120));
-        const newId = crypto.randomUUID();
-
-        onStyleUpdate((prev) => {
-            const images = prev.addedImages || [];
-            const maxZ = Math.max(40, ...images.map((image) => image.zIndex ?? 11));
-            return {
-                ...prev,
-                addedImages: [
-                    ...images,
-                    {
-                        id: newId,
-                        url: dataUrl,
-                        assetId: null,
-                        x,
-                        y,
-                        width,
-                        pageIndex: Number(pageEl.dataset.pageIndex ?? 0),
-                        zIndex: maxZ + 1,
-                    },
-                ],
-                name: 'Custom',
-            };
-        });
-
-        handlers.handleSelection('addedImage', newId);
-        return true;
-    }, [getImagePastePoint, handlers, onStyleUpdate, pageDimensions.heightPx, pageDimensions.widthPx, props.scale]);
+    const pastePosition = (point: { x: number; y: number } | null, target?: ObjectSelectionItem | null): CategoryPosition => {
+        const rect = target && getObjectElement(target)?.getBoundingClientRect();
+        const location = rect ? { x: rect.left, y: rect.top } : point || lastCanvasPointRef.current;
+        const pages = Array.from(previewRootRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page][data-page-index]') || []);
+        const page = (target && getObjectElement(target)?.closest<HTMLElement>('[data-menu-print-page]')) || pages.find(el => {
+            const r = el.getBoundingClientRect();
+            return location && location.x >= r.left && location.x <= r.right && location.y >= r.top && location.y <= r.bottom;
+        }) || pages[0];
+        if (!page || !location) return { pageIndex: 0, columnIndex: 0, pageX: 48, y: 48 };
+        const bounds = page.getBoundingClientRect();
+        const scale = bounds.width / pageDimensions.widthPx || 1;
+        const columns = Array.from(page.querySelectorAll<HTMLElement>('[data-drag-column-container="category"]'));
+        const column = columns.reduce((nearest, el) => {
+            const distance = (element: HTMLElement) => { const r = element.getBoundingClientRect(); return Math.max(r.left - location.x, location.x - r.right, 0); };
+            return distance(el) < distance(nearest) ? el : nearest;
+        }, columns[0]);
+        return { pageIndex: Number(page.dataset.pageIndex), columnIndex: Number(column?.dataset.dragColumnIndex || 0),
+            pageX: clamp((location.x - bounds.left) / scale, 0, pageDimensions.widthPx - 1),
+            y: clamp((location.y - bounds.top) / scale, 0, pageDimensions.heightPx - 1) };
+    };
 
     const readNativeClipboardPayload = useCallback(async (): Promise<NativeClipboardPayload | null> => {
         const clipboard = navigator.clipboard as (Clipboard & { read?: () => Promise<globalThis.ClipboardItem[]> }) | undefined;
@@ -1629,8 +1574,16 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         try {
             const items = clipboard.read ? await clipboard.read() : [];
             for (const item of items) {
+                if (item.types.includes('text/html')) {
+                    const clip = matchingCanvasCopy(await (await item.getType('text/html')).text());
+                    if (clip) return { type: 'objects', clip };
+                }
                 const imageType = item.types.find((type) => type.startsWith('image/'));
                 if (imageType) return { type: 'image', blob: await item.getType(imageType) };
+                if (item.types.includes('text/plain')) {
+                    const text = await (await item.getType('text/plain')).text();
+                    if (text) return { type: 'text', text };
+                }
             }
         } catch {
             // Browser may only allow text reads without extra permission.
@@ -1646,36 +1599,8 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         return null;
     }, []);
 
-    useEffect(() => {
-        if (!objectMenu) {
-            setNativeClipboardAvailable(false);
-            return;
-        }
-
-        if (objectMenu.item) {
-            setNativeClipboardAvailable(Boolean(navigator.clipboard?.readText || (navigator.clipboard as any)?.read));
-            return;
-        }
-
-        let cancelled = false;
-        void readNativeClipboardPayload().then((payload) => {
-            if (!cancelled) setNativeClipboardAvailable(Boolean(payload));
-        });
-
-        return () => {
-            cancelled = true;
-        };
-    }, [objectMenu, readNativeClipboardPayload]);
-
     const getUniqueCategoryName = useCallback((baseName: string) => {
-        const existing = new Set(products.filter((product) => !product.isFreeText).map((product) => product.category));
-        let candidate = `${baseName} copia`;
-        let index = 2;
-        while (existing.has(candidate)) {
-            candidate = `${baseName} copia ${index}`;
-            index += 1;
-        }
-        return candidate;
+        return categoryKey(categoryName(baseName), products.map(p => p.category));
     }, [products]);
 
     const getCategoryOrder = useCallback(() => {
@@ -1689,42 +1614,43 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     }, [handlers.sortedCategories, style.customCategoryOrder]);
 
     const getProductInitialData = (product: Product, categoryId?: string | null): Partial<Product> => ({
-        name: product.name,
-        description: product.description,
-        price: product.price,
-        image: product.image || '',
-        imageAssetId: product.imageAssetId || null,
+        ...copiedProductFields(product),
         categoryId: categoryId ?? product.categoryId ?? null,
     });
 
-    const buildClipboardItems = useCallback((items: ObjectSelectionItem[]): ClipboardItem[] => (
-        items.flatMap((item): ClipboardItem[] => {
+    const buildClipboardItems = useCallback((items: ObjectSelectionItem[]): CopiedObject[] => (
+        items.flatMap((item): CopiedObject[] => {
             if (item.type === 'category') {
                 return [{
                     type: 'category',
                     category: item.id,
-                    products: products.filter((product) => !product.isFreeText && product.category === item.id),
+                    products: handlers.groupedProducts[item.id] || products.filter(p => p.category === item.id),
                 }];
             }
 
             if (item.type === 'product' || item.type === 'freeText') {
                 const product = products.find((candidate) => candidate.id === item.id);
-                if (!product) return [];
+                if (!product || items.some(entry => entry.type === 'category' && entry.id === product.category)) return [];
                 return [{ type: product.isFreeText ? 'freeText' : 'product', product }];
             }
 
             const image = (style.addedImages || []).find((candidate) => candidate.id === item.id);
             return image ? [{ type: 'addedImage', image }] : [];
         })
-    ), [products, style.addedImages]);
+    ), [handlers.groupedProducts, products, style.addedImages]);
 
-    const copyItems = useCallback((items: ObjectSelectionItem[]) => {
-        const clipboardItems = buildClipboardItems(items);
-        if (clipboardItems.length === 0) return false;
-        clipboardRef.current = clipboardItems;
-        setClipboardVersion((version) => version + 1);
+    const snapshotItems = (items: ObjectSelectionItem[]): CanvasClip => ({
+        items: buildClipboardItems(items), positions: Object.fromEntries(items.map(item => [item.id, pastePosition(null, item)])),
+        style: { categoryImages: style.categoryImages, categoryDividerStyles: style.categoryDividerStyles, productDividerStyles: style.productDividerStyles,
+            hiddenProductIds: style.hiddenProductIds, productPhotoCrops: style.productPhotoCrops, productImageFlips: style.productImageFlips, freeTextBorders: style.freeTextBorders },
+    });
+    const copyItems = (items: ObjectSelectionItem[]) => {
+        const clip = snapshotItems(items);
+        if (!clip.items.length) return false;
+        writeCanvasCopy(clip);
+        setClipboardVersion(version => version + 1);
         return true;
-    }, [buildClipboardItems]);
+    };
 
     const copyFormatting = useCallback((source?: FormatObject | null) => {
         if (!source) return false;
@@ -1831,34 +1757,10 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         return newId;
     }, [handlers.sortedCategories, onAddProduct, onStyleUpdate, products]);
 
-    const addNativeClipboardText = useCallback((
-        text: string,
-        point?: { x: number; y: number } | null,
-        targetItem?: ObjectSelectionItem | null
-    ) => (
-        Boolean(insertFreeTextProduct({
-            id: '',
-            name: text.trim() || 'Novo texto',
-            description: '',
-            price: 0,
-            category: '',
-            isFreeText: true,
-        }, getFreeTextPastePlacement(point, targetItem)))
-    ), [getFreeTextPastePlacement, insertFreeTextProduct]);
-
-    const handleNativeClipboardPayload = useCallback(async (
-        payload: NativeClipboardPayload,
-        point?: { x: number; y: number } | null,
-        targetItem?: ObjectSelectionItem | null
-    ) => {
-        if (payload.type === 'image') return addNativeClipboardImage(payload.blob, point);
-        return addNativeClipboardText(payload.text, point, targetItem);
-    }, [addNativeClipboardImage, addNativeClipboardText]);
-
-    const duplicateClipboardItems = useCallback((clipboardItems: ClipboardItem[], freeTextPlacement?: DraftItem | null, selection?: ObjectSelectionItem[]) => {
+    const duplicateClipboardItems = useCallback((clipboardItems: CopiedObject[], freeTextPlacement?: DraftItem | null, selection?: ObjectSelectionItem[]) => {
         if (clipboardItems.length === 0) return false;
 
-        const addedImages = clipboardItems.filter((item): item is Extract<ClipboardItem, { type: 'addedImage' }> => item.type === 'addedImage');
+        const addedImages = clipboardItems.filter((item): item is Extract<CopiedObject, { type: 'addedImage' }> => item.type === 'addedImage');
         const nonImageItems = clipboardItems.filter((item) => item.type !== 'addedImage');
         const created: ObjectSelectionItem[] = [];
 
@@ -2011,19 +1913,34 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         return true;
     }, [handlers, onDeleteProduct, onStyleUpdate, products]);
 
-    const pasteClipboard = useCallback(async (targetItem?: ObjectSelectionItem | null) => {
-        const clipboard = clipboardRef.current;
-        const menuPoint = objectMenu ? { x: objectMenu.x, y: objectMenu.y } : null;
-
-        if (clipboard) {
-            const hasFreeText = clipboard.some((item) => item.type === 'freeText');
-            const placement = hasFreeText ? getFreeTextPastePlacement(menuPoint, targetItem) : null;
-            return duplicateClipboardItems(clipboard, placement);
-        }
-
-        const nativePayload = await readNativeClipboardPayload();
-        return nativePayload ? handleNativeClipboardPayload(nativePayload, menuPoint, targetItem) : false;
-    }, [duplicateClipboardItems, getFreeTextPastePlacement, handleNativeClipboardPayload, objectMenu, readNativeClipboardPayload]);
+    const commitPaste = (content: PasteContent, target: ObjectSelectionItem | null, position: CategoryPosition) => {
+        const pasted = pasteCanvasObjects(products, style, content, target, position, {
+            categories: handlers.sortedCategories, products: handlers.groupedProducts,
+        });
+        if (!pasted || !props.onPasteObjects) return false;
+        props.onPasteObjects(pasted.products, pasted.style);
+        if (handlers.editingId && !pasted.selection.some(item => item.id === handlers.editingId)) handlers.setEditingId(null);
+        handlers.replaceSelectedItems(pasted.selection);
+        return true;
+    };
+    const latestCommit = useRef(commitPaste);
+    latestCommit.current = commitPaste;
+    const pastePayload = async (payload: NativeClipboardPayload, target: ObjectSelectionItem | null, position: CategoryPosition) => {
+        let content: PasteContent;
+        if (payload.type === 'image') {
+            const image = { id: '', url: await blobToDataUrl(payload.blob), x: 0, y: 0, width: 300, pageIndex: 0 };
+            content = { items: [{ type: 'addedImage', image }], positions: {}, style: {} };
+        } else content = payload.type === 'objects' ? payload.clip : { text: payload.text };
+        return latestCommit.current(content, target, position);
+    };
+    const pasteClipboard = async (targetItem?: ObjectSelectionItem | null) => {
+        const target = targetItem === undefined ? getActiveObjectItems().slice(-1)[0] ?? null : targetItem;
+        const position = objectMenu?.pasteAt ?? (target ? null : lastPastePosition.current) ?? pastePosition(objectMenu, target);
+        const payload = await readNativeClipboardPayload();
+        if (payload) return pastePayload(payload, target, position);
+        const clip = lastCanvasCopy();
+        return clip ? latestCommit.current(clip, target, position) : false;
+    };
 
     const pasteFormattingClipboard = useCallback((targets: FormatObject[]) => {
         const clipboard = formatClipboardRef.current;
@@ -2248,7 +2165,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         handlers.setEditingId(null);
         handlers.setSelectedPageIndex(null);
         setObjectMenuPosition(null);
-        setObjectMenu({ x: event.clientX, y: event.clientY, item: null });
+        setObjectMenu({ x: event.clientX, y: event.clientY, item: null, pasteAt: pastePosition({ x: event.clientX, y: event.clientY }) });
     }, [handlers]);
 
     useEffect(() => {
@@ -2272,26 +2189,22 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     useEffect(() => {
         if (readOnly) return;
         const handleClipboardShortcuts = (event: KeyboardEvent) => {
-            const isDesktop = window.matchMedia('(min-width: 768px)').matches;
-            if (!isDesktop) return;
             if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
 
             const key = event.key.toLowerCase();
-            if (!['c', 'v', 'x'].includes(key)) return;
+            if (!['c', 'x'].includes(key)) return;
 
             const target = event.target as HTMLElement | null;
             if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
             if (document.body.dataset.automenuDeleteContext !== 'canvas') return;
 
             const selectedObjects = (handlers.selectedItems || []).filter(isObjectItem);
-            if (key !== 'v' && selectedObjects.length === 0) return;
-            if (key === 'v' && !clipboardRef.current) return;
+            if (!selectedObjects.length) return;
 
             event.preventDefault();
             event.stopPropagation();
 
             if (key === 'c') runObjectAction('copy');
-            if (key === 'v') runObjectAction('paste');
             if (key === 'x') runObjectAction('cut');
         };
 
@@ -2303,29 +2216,34 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         if (readOnly) return;
         const handleNativePaste = (event: ClipboardEvent) => {
             const target = event.target as HTMLElement | null;
-            if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
-            if (document.body.dataset.automenuDeleteContext !== 'canvas') return;
-
-            const clipboardData = event.clipboardData;
-            if (!clipboardData) return;
-
-            const imageItem = Array.from(clipboardData.items).find((item) => item.kind === 'file' && item.type.startsWith('image/'));
-            const imageFile = imageItem?.getAsFile();
-            const text = clipboardData.getData('text/plain');
-            const payload: NativeClipboardPayload | null = imageFile
-                ? { type: 'image', blob: imageFile }
-                : text.trim()
-                    ? { type: 'text', text }
-                    : null;
-
+            if (target?.closest('input, textarea, select')) return;
+            const field = target?.closest<HTMLElement>('[contenteditable="true"]');
+            if (field ? !previewRootRef.current?.contains(field) : document.body.dataset.automenuDeleteContext !== 'canvas') return;
+            const data = event.clipboardData;
+            if (!data) return;
+            const clip = matchingCanvasCopy(data.getData('text/html'));
+            const image = Array.from(data.items).find(i => i.kind === 'file' && i.type.startsWith('image/'))?.getAsFile();
+            let selected: ObjectSelectionItem | null = getActiveObjectItems().slice(-1)[0] ?? null;
+            if (field) {
+                const id = field.closest<HTMLElement>('[data-drag-type="product"]')?.dataset.dragId;
+                const category = field.closest<HTMLElement>('[data-category-id]')?.dataset.categoryId;
+                selected = id ? { type: products.find(p => p.id === id)?.isFreeText ? 'freeText' : 'product', id }
+                    : category ? { type: 'category', id: category } : null;
+                const first = clip?.items[0];
+                if (!selected || (!image && !(first?.type === 'addedImage' || first?.type === selected.type || (first?.type === 'product' && selected.type === 'category')))) return;
+            }
+            const text = data.getData('text/plain');
+            const payload: NativeClipboardPayload | null = clip ? { type: 'objects', clip } : image ? { type: 'image', blob: image } : text ? { type: 'text', text } : null;
             if (!payload) return;
             event.preventDefault();
-            void handleNativeClipboardPayload(payload, payload.type === 'image' ? getImagePastePoint(null) : null);
+            event.stopPropagation();
+            const position = (selected ? null : lastPastePosition.current) ?? pastePosition(null, selected);
+            if (field) field.blur();
+            void pastePayload(payload, selected, position);
         };
-
-        window.addEventListener('paste', handleNativePaste);
-        return () => window.removeEventListener('paste', handleNativePaste);
-    }, [getImagePastePoint, handleNativeClipboardPayload, readOnly]);
+        window.addEventListener('paste', handleNativePaste, true);
+        return () => window.removeEventListener('paste', handleNativePaste, true);
+    });
 
     const restoreProduct = (id: string) => { onToggleProductVisibility?.(id, true); handlers.setShowAddModal(null); };
     const createNewInModal = () => { if (handlers.showAddModal) { onAddProduct?.(handlers.showAddModal.category); handlers.setShowAddModal(null); } };
@@ -2344,7 +2262,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
     const pendingDeletePageIndexes = getPageIndexesForDeletion();
     const isDeletingSelectedPages = pendingDeletePageIndexes.length > 1;
-    const hasClipboardItems = Boolean(clipboardRef.current) || nativeClipboardAvailable;
+    const hasClipboardItems = Boolean(lastCanvasCopy()) || Boolean(navigator.clipboard?.readText || navigator.clipboard?.read);
     const isBackgroundMenu = Boolean(objectMenu && !objectMenu.item);
     const headingContext = objectMenu?.item?.type === 'menuTitle' || objectMenu?.item?.type === 'menuSubtitle' ? objectMenu.item : null;
     const hasClipboardFormat = formatClipboardRef.current && objectMenu?.item
@@ -2355,6 +2273,10 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const contextImage = contextObjectItem?.type === 'addedImage'
         ? style.addedImages?.find((image) => image.id === contextObjectItem.id)
         : undefined;
+    const photoTarget = contextObjectItem?.type === 'product' || contextObjectItem?.type === 'category' ? contextObjectItem : null;
+    const photoVisibility = photoTarget?.type === 'category' ? 'showCategoryImages' : 'showImages';
+    const photosEnabled = style[photoVisibility] !== false;
+    const hasPhoto = photoTarget?.type === 'category' ? style.categoryImages?.[photoTarget.id]?.url : products.find(p => p.id === photoTarget?.id)?.image;
     const contextFreeTextId = contextObjectItem?.type === 'freeText' ? contextObjectItem.id : null;
     const objectMenuItems = contextObjectItem ? getActiveObjectItems(contextObjectItem) : [];
     const canHideFromObjectMenu = objectMenuItems.some((item) => {
@@ -2541,6 +2463,22 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                             <Edit3 size={15} /> {contextObjectItem.type === 'category' ? 'Editar categoria' : contextFreeTextId ? 'Editar texto' : 'Editar produto'}
                         </button>
                     )}
+                    {photoTarget && <>
+                        {photosEnabled && <button type="button" onClick={event => {
+                            handlers.startEditing(event, photoTarget.id, photoTarget.type === 'category' ? `text-${photoTarget.id}` : `product-name-${photoTarget.id}`);
+                            handlers.setFormattingTarget(null);
+                            choosePhoto(photoTarget.type as PhotoType, photoTarget.id);
+                            setObjectMenu(null);
+                        }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
+                            <Images size={15} /> {hasPhoto ? 'Substituir imagem' : 'Adicionar imagem'}
+                        </button>}
+                        <button type="button" onClick={() => {
+                            onStyleUpdate?.(prev => ({ ...prev, [photoVisibility]: !photosEnabled, name: 'Custom' }));
+                            setObjectMenu(null);
+                        }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
+                            <Images size={15} /> {photosEnabled ? 'Desabilitar imagens' : 'Habilitar imagens'}
+                        </button>
+                    </>}
                     {(contextImage || contextFreeTextId) && (
                         <button type="button" onClick={() => {
                             if (contextImage) setImageBackground(contextImage.id, objectMenu.pageIndex);

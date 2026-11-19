@@ -127,10 +127,10 @@ test('menu selection deletes only the checked menus in a single request and move
   const activeMenuName = page.locator('nav span.truncate').first();
   await profile.click();
   const bulkDelete = page.getByRole('button', { name: 'Excluir cardápios selecionados' });
-  await expect(bulkDelete).toBeDisabled();
-  await expect(bulkDelete).toHaveClass(/disabled:text-red-400/);
+  await expect(bulkDelete).toHaveCount(0);
   await expect(page.getByTitle('Excluir cardápio', { exact: true }).first()).toHaveClass(/text-red-600/);
   await page.getByRole('button', { name: 'Seleção múltipla de cardápios' }).click();
+  await expect(bulkDelete).toBeDisabled();
   await page.getByRole('checkbox', { name: 'Menu ativo' }).check();
   await page.getByRole('checkbox', { name: 'Menu intermediário' }).check();
   await expect(activeMenuName).toHaveText('Menu ativo');

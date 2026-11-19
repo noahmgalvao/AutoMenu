@@ -232,11 +232,13 @@ for (const layout of ['list', 'cards', 'background']) {
     } }));
     await page.route(`**${replacementPath}`, route => route.fulfill({ body: replacement, contentType: 'image/png' }));
     const chooser = page.waitForEvent('filechooser');
-    await imageMenu.getByRole('button', { name: 'Substituir imagem' }).click();
+    await photo.getByRole('button', { name: 'Substituir imagem' }).click();
     await (await chooser).setFiles({ name: 'replacement.png', mimeType: 'image/png', buffer: replacement });
     await expect(photo.getByRole('img')).toHaveAttribute('src', new URL(replacementPath, page.url()).href);
     await expect(title).toHaveAttribute('contenteditable', 'true');
-    await imageMenu.getByRole('button', { name: 'Remover imagem' }).click();
+    await photo.getByRole('button', { name: 'Remover imagem' }).click();
+    await expect(photo.getByRole('button', { name: 'Adicionar imagem' })).toBeVisible();
+    await title.click();
     await expect(photo).toHaveCount(0);
     await expect(title).toHaveAttribute('contenteditable', 'true');
     await page.locator('[data-automenu-editor-canvas]').click({ position: { x: 8, y: 32 } });
@@ -786,4 +788,116 @@ test('the product designer edits the shared price format alongside the price', a
   await expect(product.locator('input[inputmode="decimal"]')).toHaveValue('34');
   await product.getByRole('button', { name: 'Salvar' }).click();
   await expect(page.locator('#product-container-2')).toContainText('£ 59');
+});
+
+test('clipboard replaces a product from its price field and keeps categories with the same name independent', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto('/tests/fixtures/template-editor.html?photos=list&different-categories');
+  const menu = page.locator('[data-canvas-object-menu]');
+  const action = async (selector: string, name: string) => {
+    await page.locator(selector).click({ button: 'right' });
+    await menu.getByRole('button', { name, exact: true }).click();
+  };
+  await action('#product-name-1', 'Copiar');
+  await action('#product-name-3', 'Editar produto');
+  await page.locator('#product-price-3').focus();
+  await page.keyboard.press('Control+v');
+  await expect(page.locator('#product-name-3')).toHaveText('Burrata da casa');
+  await expect(page.locator('#product-description-3')).toHaveText('Com pão e tomatinhos assados.');
+  await expect(page.locator('#product-price-3')).toHaveText(await page.locator('#product-price-1').innerText());
+  await action('#text-Entradas', 'Copiar');
+  await action('#text-Sobremesas', 'Colar');
+  await expect(page.locator('[data-category-id] h2').filter({ hasText: /^Entradas$/ })).toHaveCount(2);
+  await expect(page.locator('[data-category-chunk]').filter({ has: page.getByText('Risoto de abóbora', { exact: true }) })).toHaveCount(2);
+  await page.evaluate(() => navigator.clipboard.writeText('Nome da internet'));
+  await action('#product-name-1', 'Colar');
+  await expect(page.locator('#product-name-1')).toHaveText('Nome da internet');
+  await expect(page.locator('#product-description-1')).toHaveText('Com pão e tomatinhos assados.');
+});
+
+test('background paste anchors a new category at the click and contains only the copied product', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto('/tests/fixtures/template-editor.html?photos=list');
+  await page.locator('#product-name-2').click({ button: 'right' });
+  const menu = page.locator('[data-canvas-object-menu]');
+  await menu.getByRole('button', { name: 'Copiar', exact: true }).click();
+  const paper = page.locator('[data-menu-print-page]').first();
+  await paper.scrollIntoViewIfNeeded();
+  const spot = await paper.evaluate(el => {
+    const box = el.getBoundingClientRect();
+    return { x: Math.round(box.left + box.width * .65), y: Math.round(Math.min(innerHeight - 75, box.top + box.height * .67)) };
+  });
+  await page.mouse.click(spot.x, spot.y, { button: 'right' });
+  await menu.getByRole('button', { name: 'Colar', exact: true }).click();
+  const copy = page.locator('[data-category-chunk][data-free-positioned="true"]').filter({ hasText: 'Risoto de abóbora' });
+  await expect(copy).toHaveCount(1);
+  await expect(copy.locator('[data-drag-type="product"]')).toHaveCount(1);
+  const bounds = await copy.boundingBox();
+  expect(Math.abs(bounds!.x - spot.x)).toBeLessThan(2);
+  expect(Math.abs(bounds!.y - spot.y)).toBeLessThan(2);
+});
+
+test('category photos have resize pins, gallery actions and a temporary empty slot', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=list');
+  const title = page.locator('#text-Entradas');
+  await title.click();
+  await title.evaluate(el => {
+    const data = new DataTransfer();
+    data.items.add(new File(['<svg xmlns="http://www.w3.org/2000/svg" width="96" height="32"><rect width="96" height="32" fill="blue"/></svg>'], 'photo.svg', { type: 'image/svg+xml' }));
+    el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  });
+  await title.click({ button: 'right' });
+  await page.locator('[data-canvas-object-menu]').getByRole('button', { name: 'Editar categoria' }).click();
+  const photo = page.locator('#category-image-Entradas');
+  await expect(photo.getByRole('button', { name: 'Substituir imagem' })).toBeVisible();
+  const pin = photo.locator('[data-photo-corner="3"]');
+  const bounds = (await pin.boundingBox())!;
+  const original = (await photo.boundingBox())!;
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + 18, bounds.y + 18, { steps: 5 });
+  await expect(photo.getByRole('button', { name: 'Substituir imagem' })).toHaveCount(0);
+  await page.mouse.up();
+  await expect(photo.getByRole('button', { name: 'Substituir imagem' })).toBeVisible();
+  const resized = (await photo.boundingBox())!.width;
+  expect(resized).toBeGreaterThan(original.width);
+  await photo.locator('[data-drag-ignore]').evaluate(frame => {
+    const touch = (identifier: number, x: number) => new Touch({ identifier, target: frame, clientX: x, clientY: 0 });
+    const gesture = (type: string, distance: number) => frame.dispatchEvent(new TouchEvent(type, {
+      bubbles: true, touches: distance ? [touch(1, 0), touch(2, distance)] : [],
+    }));
+    gesture('touchstart', 10);
+    gesture('touchmove', 13);
+    gesture('touchend', 0);
+  });
+  expect((await photo.boundingBox())!.width).toBeGreaterThan(resized);
+  await photo.getByRole('button', { name: 'Remover imagem' }).click();
+  await expect(photo.getByRole('button')).toHaveCount(1);
+  await expect(photo.getByRole('button', { name: 'Adicionar imagem' })).toBeVisible();
+  await title.click();
+  await expect(photo).toHaveCount(0);
+});
+
+test('fill uses only the photo area and supports dragging a replacement photo inside its frame', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=background&cols=1');
+  await page.getByRole('combobox', { name: 'Moldura das fotos dos produtos' }).selectOption('fill');
+  const product = page.locator('#product-container-1');
+  const title = product.getByRole('heading');
+  await title.click();
+  await title.evaluate(el => {
+    const data = new DataTransfer();
+    data.items.add(new File(['<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="50"><rect width="2000" height="50" fill="green"/></svg>'], 'wide.svg', { type: 'image/svg+xml' }));
+    el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  });
+  await title.click({ button: 'right' });
+  await page.locator('[data-canvas-object-menu]').getByRole('button', { name: 'Editar produto' }).click();
+  const photo = product.locator('[data-template-image]');
+  await expect(photo.locator('img')).toHaveCSS('object-fit', 'cover');
+  const bounds = (await photo.boundingBox())!;
+  expect((await title.boundingBox())!.y).toBeGreaterThanOrEqual(bounds.y + bounds.height - 1);
+  await page.mouse.move(bounds.x + bounds.width * .25, bounds.y + bounds.height * .65);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width * .25 + 40, bounds.y + bounds.height * .65, { steps: 4 });
+  await page.mouse.up();
+  await expect(photo.locator('img')).not.toHaveCSS('object-position', '50% 50%');
 });

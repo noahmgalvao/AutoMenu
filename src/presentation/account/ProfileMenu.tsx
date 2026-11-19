@@ -155,11 +155,11 @@ export const ProfileMenu: React.FC<ProfileMenuProps> = ({
                     ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-transparent text-slate-500 hover:bg-slate-100'}`}>
                   <CopyCheck size={16} />
                 </button>
-                <button type="button" aria-label="Excluir cardápios selecionados" title="Excluir selecionados"
+                {multiSelect && <button type="button" aria-label="Excluir cardápios selecionados" title="Excluir selecionados"
                   disabled={loading || !selectedMenus.length} onClick={() => setMenusToDelete(selectedMenus)}
                   className="flex h-8 min-w-8 items-center justify-center gap-1 rounded-lg px-1.5 text-red-600 hover:bg-red-50 disabled:bg-transparent disabled:text-red-400">
                   <Trash2 size={16} />{selectedMenus.length > 0 && <span aria-hidden="true" className="text-[11px] font-semibold">{selectedMenus.length}</span>}
-                </button>
+                </button>}
               </div>
             </div>
 

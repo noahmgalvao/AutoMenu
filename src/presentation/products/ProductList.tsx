@@ -1,3 +1,4 @@
+import { categoryName } from '../../domain/menu/categoryName';
 
 import React from 'react';
 import type { CategoryDividerStyle, Product, MenuStyle } from '../../domain/menu/model';
@@ -141,6 +142,21 @@ export const ProductList: React.FC<ProductListProps> = ({
     return () => window.removeEventListener('menu-category-limit-reached', handleLimitReached);
   }, []);
 
+  const imageOptions = (id: string, type: 'category' | 'product', hasPhoto: boolean) => {
+    const key = type === 'category' ? 'showCategoryImages' : 'showImages';
+    const enabled = style[key] !== false;
+    return <>
+      {enabled && <button onPointerDown={e => e.stopPropagation()} onClick={() => {
+        setMenuOpenId(null);
+        (type === 'category' ? onCategoryImageClick : onProductImageClick)(id);
+      }} className="flex items-center gap-2 px-4 py-2 text-left text-xs hover:bg-slate-50"><ImagePlus size={14} />{hasPhoto ? 'Substituir imagem' : 'Adicionar imagem'}</button>}
+      <button onPointerDown={e => e.stopPropagation()} onClick={() => {
+        setMenuOpenId(null);
+        setStyle(prev => ({ ...prev, [key]: !enabled, name: 'Custom' }));
+      }} className="flex items-center gap-2 px-4 py-2 text-left text-xs hover:bg-slate-50"><Eye size={14} />{enabled ? 'Desabilitar imagens' : 'Habilitar imagens'}</button>
+    </>;
+  };
+
   return (
     <div
       className={`w-full min-w-0 overflow-x-hidden ${handlers.multiSelectMode ? 'select-none' : ''}`}
@@ -193,8 +209,13 @@ export const ProductList: React.FC<ProductListProps> = ({
                     type="category" 
                     style={style}
                     setStyle={setStyle}
+                    photoId={cat}
+                    imageSource={categoryImageUpload?.id === cat ? categoryImageUpload.previewUrl : style.categoryImages?.[cat]?.url}
+                    imageUploading={categoryImageUpload?.id === cat}
+                    onImageClick={() => onCategoryImageClick(cat)}
+                    onRemoveImage={() => onRemoveCategoryImage(cat)}
                     autoFocus={editModeId === cat}
-                    formData={{ name: cat, ...existingEdits[cat] }}
+                    formData={{ name: categoryName(cat), ...existingEdits[cat] }}
                     setFormData={update => updateExistingEdit(cat, update)}
                     saveEdit={saveEdit} 
                     cancelEdit={() => cancelEdit(cat)}
@@ -244,7 +265,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                           </button>
                         )}
                       </div>
-                      <span className="truncate">{cat}</span>
+                      <span className="truncate">{categoryName(cat)}</span>
                     </div>
                     <div className="relative">
                       <button
@@ -272,6 +293,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                         <>
                           <div data-product-designer-options-menu="true" className="absolute right-0 top-8 z-50 bg-white shadow-xl border border-slate-100 rounded-lg py-1 w-32 animate-in fade-in zoom-in-95 flex flex-col">
                             <button onPointerDown={(e) => e.stopPropagation()} onClick={() => startEdit(cat)} className="px-4 py-2 text-xs text-left hover:bg-slate-50 flex items-center gap-2"> <Edit3 size={14}/> Editar </button>
+                            {imageOptions(cat, 'category', Boolean(style.categoryImages?.[cat]?.url))}
                             {!isPristineCategory && (
                               <button 
                                   onPointerDown={(e) => e.stopPropagation()} 
@@ -409,6 +431,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                             <>
                               <div data-product-designer-options-menu="true" className="absolute right-0 top-8 z-[140] bg-white shadow-xl border border-slate-100 rounded-lg py-1 w-32 animate-in fade-in zoom-in-95 flex flex-col">
                                 <button onPointerDown={(e) => e.stopPropagation()} onClick={() => startEdit(product.id)} className="px-4 py-2 text-xs text-left hover:bg-slate-50 flex items-center gap-2"> <Edit3 size={14}/> Editar </button>
+                                {imageOptions(product.id, 'product', Boolean(product.image))}
                                 {!isPristineProduct && (
                                   <button 
                                       onPointerDown={(e) => e.stopPropagation()} 

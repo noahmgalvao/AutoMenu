@@ -56,6 +56,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
             const canvas = editedElement?.closest('[data-automenu-editor-canvas]');
             if (dismissOnClickInCanvas && canvas?.contains(target)
                 && !target.closest('button, input, textarea, select, [data-inline-format-toolbar]')) return;
+            if (target.closest('[data-product-image-surface]') && canvas?.contains(target)) return;
             const editedProduct = editedElement?.closest('[data-drag-type="product"]');
             if (editedProduct && target.closest('[data-canvas-history-control]')) return;
             if (editedProduct instanceof HTMLElement

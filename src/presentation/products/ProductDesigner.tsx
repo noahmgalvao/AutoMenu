@@ -159,7 +159,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
             return;
         }
         const saveOnOutsideClick = (event: MouseEvent) => {
-            if (event.target instanceof Element && !event.target.closest('[data-product-designer-edit-form], [data-product-designer-file]')) {
+            if (event.target instanceof Element && !event.target.closest('[data-product-designer-edit-form], [data-product-designer-file], [data-editor-popover][data-product-image-surface]')) {
                 saveOnExit();
             }
         };
@@ -318,7 +318,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
             />
 
             <input type="file" ref={productFileInputRef} data-product-designer-file className="hidden" onChange={handleProductImageUpload} accept="image/*" />
-            <input type="file" ref={categoryFileInputRef} className="hidden" onChange={handleCategoryImageUpload} accept="image/*" />
+            <input type="file" ref={categoryFileInputRef} data-product-designer-file className="hidden" onChange={handleCategoryImageUpload} accept="image/*" />
             <MenuImportFlow
                 ref={importFlowRef}
                 disabled={isUploading}

@@ -1,3 +1,4 @@
+import { categoryName } from './categoryName';
 import type { Product, MenuStyle } from './model';
 import { resolveMenuMargins, resolveMinimumFontSize, resolveMenuContentSpacing, clampFontSize } from './styleRules';
 import { resolveMenuPageDimensions } from './pageSetup';
@@ -377,7 +378,7 @@ const createPageItemHeightCalculator = (
             const letterSpacing = categoryStyle.letterSpacing || 0;
             const categoryCharWidth = (categoryFontSize * 0.6) + letterSpacing;
             const lines = getSafeLineCount(
-                item.data,
+                categoryName(item.data),
                 Math.max(24, categoryColumnWidth - editButtonReserve - dividerReserve - imageReserve),
                 categoryCharWidth
             );
@@ -569,7 +570,7 @@ const buildLockedPagination = (
                 ? { pageIndex: freePosition.pageIndex, columnIndex: freePosition.columnIndex }
                 : assignedPlacement || fallbackPlacement
         );
-        if (!isDetachedFreeText) fallbackPlacement = placement;
+        if (!isDetachedFreeText && freePosition?.pageX === undefined) fallbackPlacement = placement;
 
         if (category.startsWith(FREE_TEXT_PREFIX)) {
             let remainingItems: PageItem[] = visibleProducts.map((product) => ({
@@ -639,6 +640,24 @@ const buildLockedPagination = (
         let remainingItems = [...contentItems];
         let currentPlacement = placement;
         let startsCategory = true;
+
+        if (freePosition?.pageX !== undefined) {
+            const column = ensurePage(placement.pageIndex).columns[placement.columnIndex];
+            const measure = calculators[column.columnIndex];
+            const items: PageItem[] = [headerItem];
+            let height = measure(headerItem);
+            const available = resolveMenuPageDimensions(style).heightPx - margins.bottom - freePosition.y;
+            while (remainingItems.length && height + measure(remainingItems[0]) <= available) {
+                const item = remainingItems.shift()!;
+                items.push(item);
+                height += measure(item);
+            }
+            column.chunks.push({ chunkId: getNextChunkId(category), category, startsCategory: true,
+                columnIndex: placement.columnIndex, items, estimatedHeight: height, flowOffsetBefore: 0 });
+            if (!remainingItems.length) return;
+            startsCategory = false;
+            currentPlacement = advancePlacement(placement);
+        }
 
         while (remainingItems.length > 0) {
             const page = ensurePage(currentPlacement.pageIndex);
@@ -715,7 +734,7 @@ export function finalizeMenuPages(basePages: PageLayout[], style: MenuStyle) {
         const hasImage = style.addedImages?.some((image) => (image.pageIndex || 0) === blankPage.index);
         const existing = pages[blankPage.index];
         if (existing) {
-            const belongsToBlankPage = (chunk: CategoryChunkLayout) => chunk.category.startsWith(FREE_TEXT_PREFIX)
+            const belongsToBlankPage = (chunk: CategoryChunkLayout) => (chunk.category.startsWith(FREE_TEXT_PREFIX) || style.categoryPositions?.[chunk.category]?.pageX !== undefined)
                 && style.categoryPositions?.[chunk.category]?.pageIndex === blankPage.index;
             const remaining = existing.columns.map(column => ({ ...column, chunks: column.chunks.filter(chunk => !belongsToBlankPage(chunk)) }));
             if (!existing.mainHeader && remaining.every(column => !column.chunks.length)) {

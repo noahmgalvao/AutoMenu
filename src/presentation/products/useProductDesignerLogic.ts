@@ -1,3 +1,4 @@
+import { categoryKey, categoryName } from '../../domain/menu/categoryName';
 
 import React, { useState, useRef } from 'react';
 import type { CategoryDividerStyle, Product, MenuStyle, SortOption } from '../../domain/menu/model';
@@ -309,7 +310,7 @@ export const useProductDesignerLogic = ({
     const updateExistingEdit = (id: string, update: React.SetStateAction<Partial<Product>>) => {
         const session = editSessionRef.current;
         if (!session) return;
-        const original: Partial<Product> = products.find(product => product.id === id) || { name: id };
+        const original: Partial<Product> = products.find(product => product.id === id) || { name: categoryName(id) };
         const previous = { ...original, ...session.changes[id] };
         const next = typeof update === 'function' ? update(previous) : update;
         const changes = Object.fromEntries(Object.entries(next).filter(([key, value]) =>
@@ -403,8 +404,8 @@ export const useProductDesignerLogic = ({
                     }
                 }
                 productChanges.set(id, fields);
-            } else if (fields.name && fields.name !== id && handlers.sortedCategories.includes(id)) {
-                renames.set(id, fields.name);
+            } else if (fields.name && fields.name !== categoryName(id) && handlers.sortedCategories.includes(id)) {
+                renames.set(id, categoryKey(fields.name, [...handlers.sortedCategories, ...renames.values()], id));
             }
         }
 

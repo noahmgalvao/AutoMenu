@@ -1,3 +1,4 @@
+import { categoryName } from '../../domain/menu/categoryName';
 import { applyTemplateToCurrentStyle, getAppliedTemplateId } from '../../application/templates/templateApplication';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { flushSync } from 'react-dom';
@@ -747,6 +748,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 categoryPlacements,
                 categoryPositions,
                 categoryDividerStyles,
+                categoryImages: Object.fromEntries(Object.entries(prev.categoryImages || {}).map(([key, image]) => [key === oldName ? newName : key, image])),
                 name: 'Custom',
             };
         });
@@ -1002,16 +1004,16 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         };
     }, [isDesktopViewport, isOpen, isProductDesignerOpen, renderScale, scale]);
 
-    const handleProductImageUpload = async (productId: string, file: File) => {
+    const handleProductImageUpload = async (productId: string, file: File, type: 'product' | 'category' = 'product') => {
         if (!setProducts) throw new Error('Não foi possível alterar a imagem.');
         const optimizedFile = await optimizeImageForUpload(file, 1400);
         const uploaded = await uploadFileAsset({
             workspaceId,
             userId: currentUserId,
-            bucket: 'product-images',
-            assetType: 'product_image',
+            bucket: type === 'category' ? 'menu-assets' : 'product-images',
+            assetType: type === 'category' ? 'added_image' : 'product_image',
             file: optimizedFile,
-            metadata: { product_id: productId },
+            metadata: type === 'category' ? { category_name: productId, role: 'category_image' } : { product_id: productId },
         });
         await preloadImage(uploaded.url);
         return { url: uploaded.url, assetId: uploaded.asset.id };
@@ -1838,7 +1840,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                             <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Manter categoria junta</h3>
                                             <div className="flex items-start gap-3 rounded-xl border border-indigo-200 bg-indigo-50 p-3">
                                                 <p className="min-w-0 flex-1 text-xs leading-relaxed text-slate-700">
-                                                    Troque <strong>{visibleSplitCategorySwap.category}</strong> de lugar com <strong>{visibleSplitCategorySwap.replacement}</strong> para manter os produtos das duas categorias juntos.
+                                                    Troque <strong>{categoryName(visibleSplitCategorySwap.category)}</strong> de lugar com <strong>{categoryName(visibleSplitCategorySwap.replacement)}</strong> para manter os produtos das duas categorias juntos.
                                                 </p>
                                                 <div className="flex shrink-0 gap-1">
                                                     <button type="button" onClick={() => setStyle(current => ({ ...current, ...visibleSplitCategorySwap.layout, name: 'Custom' }))}
@@ -2014,6 +2016,10 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                     >
                         <MenuPreview
                             products={displayProducts}
+                            onPasteObjects={(nextProducts, nextStyle) => {
+                                if (setProductsAndStyle) setProductsAndStyle(nextProducts, nextStyle, 'Colar');
+                                else { setProducts?.(nextProducts); setStyle(nextStyle); }
+                            }}
                             style={style}
                             sortOption={sortOption}
                             productsCanChangeCategory={productsCanChangeCategory}

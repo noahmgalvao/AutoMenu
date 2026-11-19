@@ -26,7 +26,7 @@ export const PRODUCT_CARD_SHAPES = [
 ] as const;
 
 export const PRODUCT_IMAGE_FRAMES = [
-  ['template', 'Do modelo'], ['rounded', 'Arredondada'], ['circle', 'Circular'], ['arch', 'Arco'],
+  ['template', 'Do modelo'], ['fill', 'Preencher'], ['rounded', 'Arredondada'], ['circle', 'Circular'], ['arch', 'Arco'],
 ] as const;
 
 export function getProductCardRadius(style: MenuStyle, shape = style.productCardShape) {

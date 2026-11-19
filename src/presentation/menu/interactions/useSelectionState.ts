@@ -1,3 +1,4 @@
+import { categoryKey } from '../../../domain/menu/categoryName';
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import type { Product } from '../../../domain/menu/model';
@@ -408,7 +409,8 @@ export const useSelectionState = (
     }, [selectedId, selectedItems]);
 
     const handleBlur = useCallback((e: React.FocusEvent<HTMLElement>, type: string, id: string, field?: string) => {
-        const newVal = e.currentTarget.innerText;
+        const text = e.currentTarget.innerText;
+        const newVal = type === 'category' ? categoryKey(text, products.map(p => p.category), id) : text;
         if (type === 'product' && field && onUpdateProduct) {
             const product = products.find(candidate => candidate.id === id);
             if (field === 'name' && product?.isFreeText && newVal.trim() === '') {

@@ -144,6 +144,9 @@ export interface MenuBorder {
 export type MenuMarker = 'none' | 'dot' | 'circle' | 'diamond' | 'arrow' | 'check' | 'dash' | 'number' | 'number-circle' | 'number-square' | 'number-padded';
 
 export interface CategoryImage {
+  crop?: { x: number; y: number };
+  horizontal?: boolean;
+  vertical?: boolean;
   url: string;
   assetId?: string | null;
   width?: number;
@@ -195,8 +198,9 @@ export interface MenuStyle {
   cardBackgroundColor?: string;
   cardBackgroundColorOverride?: boolean;
   productCardShape?: 'template' | 'square' | 'rounded' | 'soft' | 'arch';
-  productImageFrame?: 'template' | 'rounded' | 'circle' | 'arch';
+  productImageFrame?: 'template' | 'fill' | 'rounded' | 'circle' | 'arch';
   productImageFlips?: Record<string, { horizontal?: boolean; vertical?: boolean }>;
+  productPhotoCrops?: Record<string, { x: number; y: number }>;
   imageScale?: number;
   categoryImageScale?: number;
   columnCount: 1 | 2 | 3;
