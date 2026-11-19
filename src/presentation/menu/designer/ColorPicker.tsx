@@ -50,13 +50,14 @@ export const MenuColorContext = React.createContext({ shapes: [] as string[], fa
 export function getMenuPalette(style: MenuStyle, freeTextColors: (string | undefined)[]) {
   const shapes = (style.addedImages || []).flatMap(({ shape }) => {
     if (!shape) return [];
-    return [shape.kind !== 'line' ? shape.fill : '', shape.strokeWidth > 0 ? shape.stroke : ''].filter(Boolean);
+    return [shape.kind !== 'line' ? shape.fill : '', shape.strokeWidth > 0 ? shape.stroke : '', shape.text ? shape.textColor || '' : ''].filter(Boolean);
   });
   const fallback = [
     style.backgroundColor, style.primaryColor, style.textColor, style.cardBackgroundColor,
     ...Object.values(style.elementStyles).map(element => element?.color),
     ...Object.values(style.borders || {}).map(border => border?.sides.length ? border.color : undefined),
     ...Object.values(style.freeTextBorders || {}).map(border => border.sides.length ? border.color : undefined),
+    ...Object.values(style.fills || {}), ...Object.values(style.freeTextFills || {}),
     ...freeTextColors,
   ].filter((color): color is string => Boolean(color));
   return { shapes, fallback };

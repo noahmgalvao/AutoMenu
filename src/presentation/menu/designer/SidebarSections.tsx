@@ -1,7 +1,7 @@
 import { ColorPicker } from './ColorPicker';
 import { DecorationControls } from './Decorations';
-import { ShapePicker, ShapeSettings } from './ShapePicker';
-import { applyCanvasShapeParameters, setCanvasImageBackground } from '../../../domain/menu/canvasShapes';
+import { ShapeChoices, ShapePicker, ShapeSettings } from './ShapePicker';
+import { canvasShapeUrl, applyCanvasShapeParameters, setCanvasImageBackground } from '../../../domain/menu/canvasShapes';
 import type { CanvasShape } from '../../../domain/menu/model';
 
 import React, { useRef } from 'react';
@@ -27,6 +27,8 @@ interface ElementsSectionProps {
   selection: { type: 'product' | 'category' | 'freeText' | 'addedImage' | 'page' | 'menuTitle' | 'menuSubtitle' | null, id: string | null };
   selectedFreeText: Product | null;
   selectedAddedImage: AddedImage | null;
+  shapePickerRequest: { id: string } | null;
+  onChangeShape: (id: string) => void;
   onAddShape: (shape: CanvasShape) => void;
   selectedAddedImageIds: string[];
   safeStyles: MenuStyle['elementStyles'];
@@ -62,7 +64,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
   setPreviewAction,
   onAddedImageUpload,
   isAddingImage,
-  onAddShape,
+  onAddShape, shapePickerRequest, onChangeShape,
   setSelection,
   resizeSelectedAddedImages,
   removeSelectedAddedImages,
@@ -145,7 +147,16 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                     }))}>
                     {selectedAddedImage.repeatAsBackground ? 'Usar só nesta página' : 'Definir como plano de fundo'}
                 </button>
-                {shapeEditor?.shape && <ShapeSettings shape={shapeEditor.shape}
+                {shapeEditor?.shape && shapePickerRequest?.id === shapeEditor.id && <div data-change-shape-picker className="mb-2">
+                    <ShapeChoices selected={shapeEditor.shape.kind} choose={kind => setStyle(previous => ({
+                        ...previous, name: 'Custom', addedImages: previous.addedImages?.map(image => {
+                            if (!image.shape || !layerIds.has(image.id)) return image;
+                            const shape = { ...image.shape, kind };
+                            return { ...image, shape, url: canvasShapeUrl(shape) };
+                        }),
+                    }))} />
+                </div>}
+                {shapeEditor?.shape && <ShapeSettings shape={shapeEditor.shape} onChangeShape={() => onChangeShape(shapeEditor.id)}
                     onChange={patch => setStyle(previous => ({
                         ...previous, name: 'Custom',
                         addedImages: previous.addedImages?.map(image => layerIds.has(image.id)

@@ -41,6 +41,8 @@ interface MenuSidebarProps {
     updateFreeTextStyle: (id: string, newStyle: ElementStyle) => void | boolean;
     updateGlobalElementStyle: (elementType: keyof MenuStyle['elementStyles'], newStyle: ElementStyle) => void | boolean;
     setPreviewAction: React.Dispatch<React.SetStateAction<{ type: string, id: number } | undefined>>;
+    shapePickerRequest: { id: string } | null;
+    onChangeShape: (id: string) => void;
     onAddShape: (shape: CanvasShape) => void;
     handleAddedImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
     isAddingImage: boolean;
@@ -53,11 +55,18 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
     isOpen, onClose, onPdfClick, handleResetDesign,
     style, setStyle, templates, applyTemplate, sortOption, setSortOption, products, currentUserId, splitCategoryAcrossPages,
     selection, setSelection, selectedFreeText, selectedAddedImage, selectedAddedImageIds,
-    updateFreeTextStyle, updateGlobalElementStyle, setPreviewAction, handleAddedImageUpload, isAddingImage, onAddShape,
+    updateFreeTextStyle, updateGlobalElementStyle, setPreviewAction, handleAddedImageUpload, isAddingImage, onAddShape, shapePickerRequest, onChangeShape,
     resizeSelectedAddedImages, removeSelectedAddedImages, layerSelectedAddedImages
 }) => {
     
-    const { height, isDragging, isMobile, isExpanded, toggleExpanded, dragHandlers } = useBottomSheetDrag(isOpen, onClose);
+    const { height, isDragging, isMobile, isExpanded, openPartial, toggleExpanded, dragHandlers } = useBottomSheetDrag(isOpen, onClose);
+
+    React.useEffect(() => {
+        if (shapePickerRequest) {
+            openPartial();
+            document.querySelector('[data-change-shape-picker]')?.scrollIntoView({ block: 'nearest' });
+        }
+    }, [shapePickerRequest, openPartial]);
 
     // Safe accessors with defaults
     const safeStyles = style.elementStyles || {
@@ -123,6 +132,8 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
             setPreviewAction={setPreviewAction}
             onAddedImageUpload={handleAddedImageUpload}
             isAddingImage={isAddingImage}
+            onChangeShape={onChangeShape}
+            shapePickerRequest={shapePickerRequest}
             onAddShape={onAddShape}
             resizeSelectedAddedImages={resizeSelectedAddedImages}
             removeSelectedAddedImages={removeSelectedAddedImages}

@@ -117,6 +117,9 @@ export type CanvasShapeKind = 'rectangle' | 'ellipse' | 'triangle' | 'diamond' |
 
 export interface CanvasShape {
   kind: CanvasShapeKind;
+  text?: string;
+  textColor?: string;
+  textAlign?: 'left' | 'center' | 'right';
   fill: string;
   stroke: string;
   strokeWidth: number;
@@ -169,6 +172,8 @@ export interface MenuStyle {
   design?: TemplateDesign;
   borders?: Partial<Record<Exclude<MenuBorderScope, 'freeText'>, MenuBorder>>;
   freeTextBorders?: Record<string, MenuBorder>;
+  fills?: Partial<Record<Exclude<MenuBorderScope, 'freeText' | 'product'>, string>>;
+  freeTextFills?: Record<string, string>;
   freeTextBackgrounds?: Record<string, { x: number; y: number; width: number; pageIndex: number }>;
   markers?: Partial<Record<'category' | 'product', MenuMarker>>;
   catalogMetadata?: TemplateCatalogMetadata;

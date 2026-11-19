@@ -1,9 +1,10 @@
+import { MenuPhoto, PhotoLoading } from '../menu/canvas/MenuPhoto';
 import { PhotoEditControls } from '../menu/canvas/PhotoEditControls';
 import { copiedProductFields, matchingCanvasCopy } from '../menu/canvas/canvasClipboard';
 
 import React from 'react';
 import type { MenuStyle, Product, CategoryDividerStyle } from '../../domain/menu/model';
-import { AlignCenter, AlignLeft, AlignRight, Check, Loader2, X } from 'lucide-react';
+import { AlignCenter, AlignLeft, AlignRight, Check, X } from 'lucide-react';
 import { formatMenuPriceValue, getMenuPriceSymbol, parseAndRoundPrice } from '../../domain/menu/price';
 import { PriceFormatSettings } from '../menu/designer/PriceFormatSettings';
 import { CategoryDividerPicker } from '../menu/designer/CategoryDividerPicker';
@@ -104,15 +105,15 @@ export const EditForm: React.FC<EditFormProps> = ({
         value={formData.name || ''}
         onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
       />
-      {photoId && (isCategory ? style.showCategoryImages !== false : style.showImages) && (imageSource || photoActive) && (
+      {photoId && (isCategory ? style.showCategoryImages !== false : style.showImages) && (imageSource || photoActive || imageUploading) && (
           <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-2">
             <div id={anchorId} data-product-image-surface={photoId} className="relative shrink-0 rounded-lg bg-slate-100" style={{ width: 48 * scale, height: 48 * scale }}>
-              {imageSource && <img src={imageSource} alt="" draggable={false} className="h-full w-full rounded-[inherit] object-cover"
+              {imageSource && <MenuPhoto showLoading={!imageUploading} src={imageSource} alt="" draggable={false} className="h-full w-full rounded-[inherit] object-cover"
                 style={{ objectPosition: `${crop.x}% ${crop.y}%`, transform: `scale(${flips?.horizontal ? -1 : 1}, ${flips?.vertical ? -1 : 1})` }} />}
               <PhotoEditControls id={photoId} type={type} anchorId={anchorId} active={photoActive} activate={() => setPhotoActive(true)}
                 hasPhoto={Boolean(imageSource)} choose={() => onImageClick?.()} remove={() => onRemoveImage?.()}
                 updateStyle={setStyle} crop={crop} scale={scale} flips={flips} />
-              {imageUploading && <div className="absolute inset-0 z-30 grid place-items-center bg-white/75"><Loader2 size={18} className="animate-spin text-indigo-600" /></div>}
+              {imageUploading && <PhotoLoading blocking />}
             </div>
             {!isCategory && imageSource && <div className="min-w-0 flex-1">
               <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">Alinhamento da imagem</p>

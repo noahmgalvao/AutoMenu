@@ -72,6 +72,7 @@ interface MenuPreviewProps {
     onSplitCategorySwap?: (suggestion: SplitCategorySwap | null) => void;
     onProductEditStart?: (productId: string) => void;
     onProductEditEnd?: (nextObject?: HTMLElement | null) => void;
+    onChangeShape?: (id: string) => void;
     onUploadProductImage?: (productId: string, file: File, type?: PhotoType) => Promise<{ url: string; assetId: string }>;
 }
 
@@ -82,7 +83,14 @@ type CanvasContextMenuItem = FormatObject;
 type NativeClipboardPayload =
     | { type: 'objects'; clip: CanvasClip }
     | { type: 'text'; text: string }
-    | { type: 'image'; blob: Blob };
+    | { type: 'image'; blob: Blob }
+    | { type: 'imageUrl'; url: string };
+
+function clipboardImageUrl(html: string) {
+    if (!html) return null;
+    const source = new DOMParser().parseFromString(html, 'text/html').querySelector('img')?.getAttribute('src');
+    return source && /^(?:https?:\/\/|data:image\/)/i.test(source) ? source : null;
+}
 
 type ObjectMenuState = {
     x: number;
@@ -165,6 +173,8 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const skipBackgroundDismissClickRef = useRef(false);
     const productImageInputRef = useRef<HTMLInputElement | null>(null);
     const photoUploads = useRef(new Map<string, symbol>());
+    const [loadingPhotos, setLoadingPhotos] = useState<ReadonlySet<string>>(() => new Set());
+    const refreshLoadingPhotos = () => setLoadingPhotos(new Set(photoUploads.current.keys()));
     const pendingPhoto = useRef<{ type: PhotoType; id: string } | null>(null);
     const handleProductUpdateWithPricePrompt = useCallback((id: string, field: keyof Product, value: any) => {
         if (field !== 'price') {
@@ -435,9 +445,12 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             return { ...prev, productPhotoCrops };
         });
     };
+    (handlers as any).photoIsLoading = (type: PhotoType, id: string) => loadingPhotos.has(`${type}:${id}`);
+    (handlers as any).changeShape = props.onChangeShape;
     (handlers as any).choosePhoto = choosePhoto;
     (handlers as any).removePhoto = (type: PhotoType, id: string) => {
         photoUploads.current.delete(`${type}:${id}`);
+        refreshLoadingPhotos();
         setPhoto(type, id, '', null);
     };
     const handleProductImageInput = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -449,6 +462,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         const key = `${target.type}:${target.id}`;
         const upload = Symbol();
         photoUploads.current.set(key, upload);
+        refreshLoadingPhotos();
         try {
             const uploaded = await props.onUploadProductImage?.(target.id, file, target.type);
             const url = uploaded?.url ?? await blobToDataUrl(file);
@@ -456,7 +470,10 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         } catch {
             if (photoUploads.current.get(key) === upload) window.alert('Não foi possível alterar a imagem. Tente novamente.');
         } finally {
-            if (photoUploads.current.get(key) === upload) photoUploads.current.delete(key);
+            if (photoUploads.current.get(key) === upload) {
+                photoUploads.current.delete(key);
+                refreshLoadingPhotos();
+            }
         }
     };
 
@@ -1044,6 +1061,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 customProductOrder: nextProductOrder,
                 categoryPlacements: nextCategoryPlacements,
                 categoryPositions: nextCategoryPositions,
+                freeTextFills: prev.freeTextFills && Object.fromEntries(Object.entries(prev.freeTextFills).filter(([id]) => !productIdsToDelete.has(id))),
                 freeTextBackgrounds: prev.freeTextBackgrounds && Object.fromEntries(
                     Object.entries(prev.freeTextBackgrounds).filter(([id]) => !productIdsToDelete.has(id)),
                 ),
@@ -1573,17 +1591,23 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
         try {
             const items = clipboard.read ? await clipboard.read() : [];
+            let htmlImage: string | null = null;
+            for (const item of items.filter(i => i.types.includes('text/html'))) {
+                const html = await item.getType('text/html').then(blob => blob.text()).catch(() => '');
+                const clip = matchingCanvasCopy(html);
+                if (clip) return { type: 'objects', clip };
+                htmlImage ??= clipboardImageUrl(html);
+            }
             for (const item of items) {
-                if (item.types.includes('text/html')) {
-                    const clip = matchingCanvasCopy(await (await item.getType('text/html')).text());
-                    if (clip) return { type: 'objects', clip };
+                for (const type of item.types.filter(type => type.startsWith('image/'))) {
+                    const blob = await item.getType(type).catch(() => null);
+                    if (blob?.size) return { type: 'image', blob };
                 }
-                const imageType = item.types.find((type) => type.startsWith('image/'));
-                if (imageType) return { type: 'image', blob: await item.getType(imageType) };
-                if (item.types.includes('text/plain')) {
-                    const text = await (await item.getType('text/plain')).text();
-                    if (text) return { type: 'text', text };
-                }
+            }
+            if (htmlImage) return { type: 'imageUrl', url: htmlImage };
+            for (const item of items.filter(i => i.types.includes('text/plain'))) {
+                const text = await item.getType('text/plain').then(blob => blob.text()).catch(() => '');
+                if (text) return { type: 'text', text };
             }
         } catch {
             // Browser may only allow text reads without extra permission.
@@ -1642,7 +1666,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const snapshotItems = (items: ObjectSelectionItem[]): CanvasClip => ({
         items: buildClipboardItems(items), positions: Object.fromEntries(items.map(item => [item.id, pastePosition(null, item)])),
         style: { categoryImages: style.categoryImages, categoryDividerStyles: style.categoryDividerStyles, productDividerStyles: style.productDividerStyles,
-            hiddenProductIds: style.hiddenProductIds, productPhotoCrops: style.productPhotoCrops, productImageFlips: style.productImageFlips, freeTextBorders: style.freeTextBorders },
+            hiddenProductIds: style.hiddenProductIds, productPhotoCrops: style.productPhotoCrops, productImageFlips: style.productImageFlips, freeTextBorders: style.freeTextBorders, freeTextFills: style.freeTextFills },
     });
     const copyItems = (items: ObjectSelectionItem[]) => {
         const clip = snapshotItems(items);
@@ -1724,6 +1748,8 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 ...prev,
                 customCategoryOrder: currentOrder,
                 customProductOrder: { ...(prev.customProductOrder || {}), [ghostCategory]: [newId] },
+                freeTextFills: prev.freeTextFills?.[product.id] ? { ...prev.freeTextFills, [newId]: prev.freeTextFills[product.id] } : prev.freeTextFills,
+                freeTextBorders: prev.freeTextBorders?.[product.id] ? { ...prev.freeTextBorders, [newId]: prev.freeTextBorders[product.id] } : prev.freeTextBorders,
                 categoryPlacements: {
                     ...(prev.categoryPlacements || {}),
                     ...shiftedPlacements,
@@ -1898,6 +1924,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 customProductOrder: nextProductOrder,
                 categoryPlacements: nextCategoryPlacements,
                 categoryPositions: nextCategoryPositions,
+                freeTextFills: prev.freeTextFills && Object.fromEntries(Object.entries(prev.freeTextFills).filter(([id]) => !productIdsToDelete.has(id))),
                 freeTextBackgrounds: prev.freeTextBackgrounds && Object.fromEntries(
                     Object.entries(prev.freeTextBackgrounds).filter(([id]) => !productIdsToDelete.has(id)),
                 ),
@@ -1927,19 +1954,21 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     latestCommit.current = commitPaste;
     const pastePayload = async (payload: NativeClipboardPayload, target: ObjectSelectionItem | null, position: CategoryPosition) => {
         let content: PasteContent;
-        if (payload.type === 'image') {
-            const image = { id: '', url: await blobToDataUrl(payload.blob), x: 0, y: 0, width: 300, pageIndex: 0 };
+        if (payload.type === 'image' || payload.type === 'imageUrl') {
+            const url = payload.type === 'imageUrl' ? payload.url : await blobToDataUrl(payload.blob);
+            const image = { id: '', url, x: 0, y: 0, width: 300, pageIndex: 0 };
             content = { items: [{ type: 'addedImage', image }], positions: {}, style: {} };
         } else content = payload.type === 'objects' ? payload.clip : { text: payload.text };
         return latestCommit.current(content, target, position);
     };
+    const [pasteRequest, setPasteRequest] = useState<{ target: ObjectSelectionItem | null; position: CategoryPosition } | null>(null);
     const pasteClipboard = async (targetItem?: ObjectSelectionItem | null) => {
         const target = targetItem === undefined ? getActiveObjectItems().slice(-1)[0] ?? null : targetItem;
         const position = objectMenu?.pasteAt ?? (target ? null : lastPastePosition.current) ?? pastePosition(objectMenu, target);
         const payload = await readNativeClipboardPayload();
         if (payload) return pastePayload(payload, target, position);
-        const clip = lastCanvasCopy();
-        return clip ? latestCommit.current(clip, target, position) : false;
+        setPasteRequest({ target, position });
+        return true;
     };
 
     const pasteFormattingClipboard = useCallback((targets: FormatObject[]) => {
@@ -2217,27 +2246,32 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             const target = event.target as HTMLElement | null;
             if (target?.closest('input, textarea, select')) return;
             const field = target?.closest<HTMLElement>('[contenteditable="true"]');
-            if (field ? !previewRootRef.current?.contains(field) : document.body.dataset.automenuDeleteContext !== 'canvas') return;
+            const requested = target?.closest('[data-native-paste]') ? pasteRequest : null;
+            if (!requested && (field ? !previewRootRef.current?.contains(field) : document.body.dataset.automenuDeleteContext !== 'canvas')) return;
             const data = event.clipboardData;
             if (!data) return;
             const clip = matchingCanvasCopy(data.getData('text/html'));
-            const image = Array.from(data.items).find(i => i.kind === 'file' && i.type.startsWith('image/'))?.getAsFile();
+            const image = Array.from(data.items).find(i => i.kind === 'file' && i.type.startsWith('image/'))?.getAsFile()
+                || Array.from(data.files).find(file => file.type.startsWith('image/'));
+            const imageUrl = clipboardImageUrl(data.getData('text/html'));
             let selected: ObjectSelectionItem | null = getActiveObjectItems().slice(-1)[0] ?? null;
-            if (field) {
+            if (requested) selected = requested.target;
+            else if (field) {
                 const id = field.closest<HTMLElement>('[data-drag-type="product"]')?.dataset.dragId;
                 const category = field.closest<HTMLElement>('[data-category-id]')?.dataset.categoryId;
                 selected = id ? { type: products.find(p => p.id === id)?.isFreeText ? 'freeText' : 'product', id }
                     : category ? { type: 'category', id: category } : null;
                 const first = clip?.items[0];
-                if (!selected || (!image && !(first?.type === 'addedImage' || first?.type === selected.type || (first?.type === 'product' && selected.type === 'category')))) return;
+                if (!selected || (!image && !imageUrl && !(first?.type === 'addedImage' || first?.type === selected.type || (first?.type === 'product' && selected.type === 'category')))) return;
             }
             const text = data.getData('text/plain');
-            const payload: NativeClipboardPayload | null = clip ? { type: 'objects', clip } : image ? { type: 'image', blob: image } : text ? { type: 'text', text } : null;
+            const payload: NativeClipboardPayload | null = clip ? { type: 'objects', clip } : image ? { type: 'image', blob: image } : imageUrl ? { type: 'imageUrl', url: imageUrl } : text ? { type: 'text', text } : null;
             if (!payload) return;
             event.preventDefault();
             event.stopPropagation();
-            const position = (selected ? null : lastPastePosition.current) ?? pastePosition(null, selected);
+            const position = requested?.position ?? (selected ? null : lastPastePosition.current) ?? pastePosition(null, selected);
             if (field) field.blur();
+            setPasteRequest(null);
             void pastePayload(payload, selected, position);
         };
         window.addEventListener('paste', handleNativePaste, true);
@@ -2261,7 +2295,6 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
     const pendingDeletePageIndexes = getPageIndexesForDeletion();
     const isDeletingSelectedPages = pendingDeletePageIndexes.length > 1;
-    const hasClipboardItems = Boolean(lastCanvasCopy()) || Boolean(navigator.clipboard?.readText || navigator.clipboard?.read);
     const isBackgroundMenu = Boolean(objectMenu && !objectMenu.item);
     const headingContext = objectMenu?.item?.type === 'menuTitle' || objectMenu?.item?.type === 'menuSubtitle' ? objectMenu.item : null;
     const hasClipboardFormat = formatClipboardRef.current && objectMenu?.item
@@ -2368,6 +2401,20 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 document.body
             )}
 
+            {pasteRequest && createPortal(<div data-native-paste role="dialog" aria-label="Colar da área de transferência" className="fixed inset-0 z-[1000] grid place-items-center bg-slate-900/30 p-4">
+                <div className="w-full max-w-xs space-y-3 rounded-xl bg-white p-4 shadow-xl">
+                    <p className="text-sm font-semibold">Cole aqui com Ctrl+V, ⌘V ou a opção Colar do celular.</p>
+                    <div contentEditable autoFocus ref={node => node?.focus()} role="textbox" aria-label="Colar imagem ou texto" className="min-h-12 rounded-lg border border-indigo-300 bg-indigo-50 p-2" />
+                    <div className="flex items-center justify-between gap-2">
+                        <button type="button" className="text-sm text-slate-600" onClick={() => setPasteRequest(null)}>Cancelar</button>
+                        {lastCanvasCopy() && <button type="button" className="text-sm font-semibold text-indigo-700" onClick={() => {
+                            const clip = lastCanvasCopy();
+                            if (clip) latestCommit.current(clip, pasteRequest.target, pasteRequest.position);
+                            setPasteRequest(null);
+                        }}>Usar cópia do editor</button>}
+                    </div>
+                </div>
+            </div>, document.body)}
             {!readOnly && handlers.showAddModal && (createPortal(<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm" onClick={() => handlers.setShowAddModal(null)}> <div className="bg-white p-4 rounded-xl shadow-2xl animate-fade-in" onClick={e => e.stopPropagation()}> <h3 className="text-lg font-bold mb-4">Itens ocultos</h3> <div className="space-y-2 max-h-60 overflow-y-auto"> {products.filter(p => p.category === handlers.showAddModal!.category && !handlers.groupedProducts[handlers.showAddModal!.category]?.find(gp => gp.id === p.id)).map(p => (<button key={p.id} onClick={() => restoreProduct(p.id)} className="w-full p-2 text-left hover:bg-slate-100 rounded flex justify-between items-center"> <span>{p.name}</span> <Plus size={14} /> </button>))} </div> <div className="mt-4 pt-4 border-t"> <button onClick={createNewInModal} className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"> Criar novo item </button> </div> </div> </div>, document.body))}
 
             <div className={`relative isolate flex flex-row items-start w-fit mx-auto ${readOnly ? 'gap-4 p-0 min-h-0' : 'gap-8 px-8 pb-20 pt-16 min-h-full'}`}>
@@ -2463,6 +2510,8 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                             <Edit3 size={15} /> {contextObjectItem.type === 'category' ? 'Editar categoria' : contextFreeTextId ? 'Editar texto' : 'Editar produto'}
                         </button>
                     )}
+                    {contextImage?.shape && <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"
+                        onClick={() => { handlers.startImageEditing(contextImage.id); setObjectMenu(null); }}><Edit3 size={15} /> Editar forma</button>}
                     {photoTarget && <>
                         {photosEnabled && <button type="button" onClick={event => {
                             handlers.startEditing(event, photoTarget.id, photoTarget.type === 'category' ? `text-${photoTarget.id}` : `product-name-${photoTarget.id}`);
@@ -2512,7 +2561,6 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     <button disabled={isBackgroundMenu} onClick={() => runObjectAction('copyFormat', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Paintbrush size={15} /> Copiar formatação</button>
                     <button
                         onClick={() => runObjectAction('paste', contextObjectItem)}
-                        disabled={!hasClipboardItems}
                         className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                         <Clipboard size={15} /> Colar

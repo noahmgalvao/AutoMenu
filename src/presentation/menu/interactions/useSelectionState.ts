@@ -186,6 +186,7 @@ export const useSelectionState = (
         if (props.selection) {
             const incomingKey = getSelectionKey(props.selection.type, props.selection.id);
             if (incomingKey === lastEmittedSelectionRef.current) return;
+            lastEmittedSelectionRef.current = incomingKey;
 
             if (props.selection.id === null) {
                 setFormattingTarget(null);
@@ -411,6 +412,7 @@ export const useSelectionState = (
     const isSelected = useCallback((type: SelectionType, id: string | null) => {
         if (!id) return false;
         if (selectedItems.some((item) => item.id === id && item.type === type)) return true;
+        if (type === 'page') return false;
         if (
             selectedItems.some((item) => item.type === 'category') &&
             type !== 'category'
@@ -451,6 +453,7 @@ export const useSelectionState = (
                         customProductOrder: nextProductOrder,
                         categoryPlacements: nextCategoryPlacements,
                         categoryPositions: nextCategoryPositions,
+                        freeTextFills: prev.freeTextFills && Object.fromEntries(Object.entries(prev.freeTextFills).filter(([key]) => key !== id)),
                         freeTextBackgrounds: prev.freeTextBackgrounds && Object.fromEntries(
                             Object.entries(prev.freeTextBackgrounds).filter(([key]) => key !== id),
                         ),

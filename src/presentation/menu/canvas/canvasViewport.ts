@@ -136,6 +136,8 @@ export function bindCanvasZoomGestures(
     };
     const start = (event: TouchEvent) => {
         if (event.touches.length !== 2) return;
+        const photo = (event.target as Element | null)?.closest('[data-photo-gesture]');
+        if (photo && Array.from(event.touches).every(touch => touch.target instanceof Node && photo.contains(touch.target))) return;
         event.preventDefault();
         const { point, distance } = touchZoomGeometry(event.touches);
         pinch = { distance: Math.max(1, distance), scale: getScale(), anchor: getZoomAnchor(layer, point) };

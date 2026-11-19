@@ -15,6 +15,20 @@ body {
   -webkit-touch-callout: none;
 }
 
+[data-automenu-editor-canvas] { overflow-anchor: none; }
+
+.photo-overlay-action {
+  display: grid;
+  flex: 1 1 0;
+  min-width: 0;
+  place-items: center;
+  cursor: grab;
+  touch-action: none;
+}
+.photo-overlay-action:active { cursor: grabbing; }
+.photo-overlay-action:focus-visible { outline: 2px solid currentColor; outline-offset: -3px; }
+.photo-overlay-action > svg { width: min(32px, 72%); height: min(32px, 80%); stroke-width: 1.8; filter: drop-shadow(0 1px 1px rgb(255 255 255 / .7)); }
+
 .automenu-canvas-action {
   width: 28px;
   height: 28px;

@@ -58,6 +58,7 @@ interface MenuDesignerProps {
     onPrintCancel?: () => void;
     silentPrintOptions?: Partial<PrintCanvasOptions>;
     onClose?: () => void;
+    onOpenVisual?: () => void;
     onScrollActivity?: (isScrolling: boolean) => void;
     workspaceId: string;
     currentUserId: string;
@@ -145,11 +146,16 @@ const formatLayoutIssueBreakdown = (categories: number, products: number, freeTe
     return `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`;
 };
 
-const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, onProductEditChange, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions, virtualLinkControls, onClose, onScrollActivity, workspaceId, currentUserId, currentMenuId, splitCategoryAcrossPages = false, productsCanChangeCategory = false }) => {
+const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, onProductEditChange, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions, virtualLinkControls, onClose, onOpenVisual, onScrollActivity, workspaceId, currentUserId, currentMenuId, splitCategoryAcrossPages = false, productsCanChangeCategory = false }) => {
     const { assets: { uploadFileAsset } } = useAppServices();
     const [scale, setScale] = useState(DEFAULT_PREVIEW_ZOOM);
     const [isDesktopViewport, setIsDesktopViewport] = useState(() => window.matchMedia('(min-width: 768px)').matches);
     const renderScale = scale * (isDesktopViewport ? DESKTOP_PREVIEW_ZOOM_RENDER_MULTIPLIER : MOBILE_PREVIEW_ZOOM_RENDER_MULTIPLIER);
+    const [shapePickerRequest, setShapePickerRequest] = useState<{ id: string } | null>(null);
+    const openShapePicker = (id: string) => {
+        onOpenVisual?.();
+        setShapePickerRequest({ id });
+    };
     const [tipsOpen, setTipsOpen] = useState(false);
     const [splitCategorySwap, setSplitCategorySwap] = useState<SplitCategorySwap | null>(null);
     const [fontTips, setFontTips] = useState<FontTip[]>([]);
@@ -1953,22 +1959,24 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                     onPointerMove={handleCanvasPointerMove}
                     onPointerUp={handleCanvasPointerEnd}
                     onPointerCancel={handleCanvasPointerEnd}
-                    onClickCapture={(e) => {
-                        if (!suppressNextCanvasClickRef.current) return;
-                        suppressNextCanvasClickRef.current = false;
-                        e.preventDefault();
-                        e.stopPropagation();
+                    onClickCapture={(event) => {
+                        if (suppressNextCanvasClickRef.current) {
+                            suppressNextCanvasClickRef.current = false;
+                            event.preventDefault();
+                            event.stopPropagation();
+                            return;
+                        }
+                        const target = event.target;
+                        if (target instanceof Element && event.currentTarget.contains(target)
+                            && !target.closest('[data-menu-print-page], [data-print-control], button, input, textarea, select, [contenteditable="true"]')) {
+                            setSelection({ type: null, id: null });
+                        }
                     }}
                     onDoubleClickCapture={(e) => {
                         if (!suppressNextCanvasClickRef.current) return;
                         suppressNextCanvasClickRef.current = false;
                         e.preventDefault();
                         e.stopPropagation();
-                    }}
-                    onClick={(e) => {
-                        if (e.target === e.currentTarget) {
-                            setSelection({ type: null, id: null });
-                        }
                     }}
                 >
                     <div className="w-max flex-none">
@@ -2010,6 +2018,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                 canRedo={canRedo}
                                 scale={renderScale}
                                 splitCategoryAcrossPages={splitCategoryAcrossPages}
+                                onChangeShape={openShapePicker}
                                 onUploadProductImage={handleProductImageUpload}
                                 onProductEditStart={handleCanvasProductEditStart}
                                 onProductEditEnd={handleCanvasProductEditEnd}
@@ -2047,6 +2056,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 setPreviewAction={setPreviewAction}
                 handleAddedImageUpload={handleAddedImageUpload}
                 isAddingImage={isAddingImage}
+                shapePickerRequest={shapePickerRequest}
+                onChangeShape={openShapePicker}
                 onAddShape={handleAddShape}
                 resizeSelectedAddedImages={resizeSelectedAddedImages}
                 removeSelectedAddedImages={removeSelectedAddedImages}

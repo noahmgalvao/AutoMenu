@@ -59,7 +59,7 @@ export function pasteCanvasObjects(products: Product[], style: MenuStyle, conten
         categoryImages: { ...style.categoryImages }, categoryDividerStyles: { ...style.categoryDividerStyles },
         productPhotoCrops: { ...style.productPhotoCrops }, productImageFlips: { ...style.productImageFlips },
         productDividerStyles: { ...style.productDividerStyles }, hiddenProductIds: [...style.hiddenProductIds],
-        freeTextBorders: { ...style.freeTextBorders }, freeTextBackgrounds: { ...style.freeTextBackgrounds }, addedImages: [...(style.addedImages || [])] };
+        freeTextFills: { ...style.freeTextFills }, freeTextBorders: { ...style.freeTextBorders }, freeTextBackgrounds: { ...style.freeTextBackgrounds }, addedImages: [...(style.addedImages || [])] };
     let result = [...products];
     const selection: CanvasObject[] = [];
     const source = 'items' in content ? content.style : {};
@@ -83,6 +83,7 @@ export function pasteCanvasObjects(products: Product[], style: MenuStyle, conten
         delete next.productPhotoCrops[id];
         delete next.productImageFlips[id];
         delete next.freeTextBorders[id];
+        delete next.freeTextFills[id];
         delete next.freeTextBackgrounds[id];
         for (const [key, order] of Object.entries(next.customProductOrder)) {
             if (order.includes(id)) next.customProductOrder[key] = order.filter(value => value !== id);
@@ -104,6 +105,7 @@ export function pasteCanvasObjects(products: Product[], style: MenuStyle, conten
         if (replace && targetProduct && (target?.type === 'product' || target?.type === 'freeText')) {
             result = result.map(p => p.id === target.id ? { ...p, name: text, ...(original && p.isFreeText ? { styles: original.styles, freeTextWidth: original.freeTextWidth } : {}) } : p);
             if (original && target.type === 'freeText') copySetting(next.freeTextBorders, target.id, source.freeTextBorders?.[original.id]);
+            if (original && target.type === 'freeText') copySetting(next.freeTextFills, target.id, source.freeTextFills?.[original.id]);
             selection.push(target); return;
         }
         const id = crypto.randomUUID();
@@ -112,6 +114,7 @@ export function pasteCanvasObjects(products: Product[], style: MenuStyle, conten
         next.customCategoryOrder.push(category);
         next.categoryPositions[category] = at;
         if (original) copySetting(next.freeTextBorders, id, source.freeTextBorders?.[original.id]);
+        if (original) copySetting(next.freeTextFills, id, source.freeTextFills?.[original.id]);
         selection.push({ type: 'freeText', id });
     }
     function putLayer(image: AddedImage, at: CategoryPosition, replace: boolean) {
@@ -153,6 +156,7 @@ export function pasteCanvasObjects(products: Product[], style: MenuStyle, conten
         copySetting(next.productImageFlips, id, source.productImageFlips?.[p.id]);
         copySetting(next.productDividerStyles, id, source.productDividerStyles?.[p.id]);
         copySetting(next.freeTextBorders, id, source.freeTextBorders?.[p.id]);
+        copySetting(next.freeTextFills, id, source.freeTextFills?.[p.id]);
         return id;
     }
     function putCategory(original: string, members: Product[], at: CategoryPosition, replace: boolean, keepHidden: boolean) {

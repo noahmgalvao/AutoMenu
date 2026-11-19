@@ -87,6 +87,7 @@ export const useBottomSheetDrag = (isOpen: boolean, onClose?: () => void) => {
         }
     }, [onClose]);
 
+    const openPartial = useCallback(() => setHeight('50dvh'), []);
     const expand = useCallback(() => {
         if (!isMobile) return;
         setHeight('100dvh');
@@ -102,7 +103,7 @@ export const useBottomSheetDrag = (isOpen: boolean, onClose?: () => void) => {
         isDragging,
         isMobile,
         isExpanded: height === '100dvh',
-        expand,
+        expand, openPartial,
         toggleExpanded,
         dragHandlers: {
             onPointerDown: handlePointerDown,

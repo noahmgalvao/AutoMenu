@@ -15,7 +15,7 @@
 [data-ornamental-divider="left"]::after { left: 0; }
 [data-ornamental-divider="right"]::after { right: 0; }
 [data-design-schema-version="2"] [data-template-card] { border-radius: var(--template-radius); }
-[data-design-card="flat"] [data-template-card]:not([data-card-layout]) { border-color: transparent; background: transparent !important; box-shadow: none; }
+[data-design-card="flat"] [data-template-card]:not([data-card-layout]):not([data-card-color-custom]) { border-color: transparent; background: transparent !important; box-shadow: none; }
 [data-design-card="bordered"] [data-template-card] { border: 1px solid var(--template-accent); box-shadow: none; }
 [data-design-card="soft"] [data-template-card]:not([data-card-color-custom]) { background: var(--automenu-preview-cards, var(--template-tint)) !important; border-color: transparent; box-shadow: none; }
 [data-design-card="elevated"] [data-template-card] { border-color: transparent; box-shadow: 0 5px 12px rgba(10, 10, 10, .14); }
@@ -31,7 +31,7 @@
 [data-design-image="background"] [data-template-card]:has([data-template-image]:not([data-product-photo-frame])) [data-template-content] {
   padding-top: 36px;
   border-radius: inherit;
-  background: linear-gradient(transparent, var(--template-paper));
+  background: linear-gradient(transparent, var(--menu-card-fill, var(--template-paper)));
 }
 [data-design-image="background"] [data-product-image-editing]:has([data-template-image]:not([data-product-photo-frame])) [data-template-content] { pointer-events: none; }
 [data-design-image="background"] [data-product-image-editing] > [data-product-card-content]:has(> [data-template-image]:not([data-product-photo-frame])) { pointer-events: none; }

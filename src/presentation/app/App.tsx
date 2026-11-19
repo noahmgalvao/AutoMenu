@@ -325,6 +325,7 @@ const App: React.FC = () => {
             canRedo={canRedo}
             isOpen={activePanel === 'style'}
             isProductDesignerOpen={activePanel === 'product'}
+            onOpenVisual={() => setActivePanel('style')}
             printRequestId={printRequestId}
             printRequestMode={printRequestMode}
             onPrintComplete={(result, options) => void handlePrintComplete(result, options)}

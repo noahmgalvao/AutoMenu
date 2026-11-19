@@ -3,7 +3,7 @@ import { getTemplateColors, getTemplateDesignAttributes } from './templateStyles
 import '../designer/templateDesign.css';
 import React from 'react';
 import type { AddedImage, Product, MenuStyle } from '../../../domain/menu/model';
-import { BringToFront, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CopyCheck, MoreHorizontal, Plus, SendToBack, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { BringToFront, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CopyCheck, MoreHorizontal, Plus, SendToBack, Edit3, Trash2 } from 'lucide-react';
 import { Resizable } from 're-resizable';
 import { MenuItem } from './MenuItem';
 import { CanvasActionGroup, canvasActionButtonClass } from './CanvasControls';
@@ -16,7 +16,7 @@ import { InlineStyleToolbar } from '../designer/InlineStyleToolbar';
 import { resolveMenuMargins, resolveMinimumFontSize, roundFontSize } from '../../../domain/menu/styleRules';
 import { getColumnGridTemplate, getPageColumnWidths } from '../../../domain/menu/categoryColumns';
 import { ColumnResizeHandles } from './ColumnResizeHandles';
-import { applyCanvasShapeParameters, getSelectedLayerIds } from '../../../domain/menu/canvasShapes';
+import { canvasShapeUrl, applyCanvasShapeParameters, getSelectedLayerIds } from '../../../domain/menu/canvasShapes';
 import { ShapeSettings } from '../designer/ShapePicker';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 import { BorderDecoration } from '../designer/Decorations';
@@ -269,6 +269,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 pageIndex={pageIndex}
                 layoutKey={`${flowIndex}:${categoryColumnWidths.join(',')}`}
                 data-chunk-id={chunk.chunkId}
+                style={isFreeTextTarget ? undefined : { background: renderedStyle.fills?.categoryGroup, borderRadius: renderedStyle.borders?.categoryGroup?.radius }}
                 data-category-chunk={chunk.category}
                 data-active-canvas-drag={isCategoryDragged || undefined}
                 data-menu-border-surface={isFreeTextTarget ? undefined : 'categoryGroup'}
@@ -552,7 +553,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                             onClick={(e) => handleImageClick(e, img.id)}
                             onContextMenu={(e) => handlers.openObjectMenu?.(e, { type: 'addedImage', id: img.id })}
                         >
-                            <img src={img.url} alt={img.shape ? 'Forma adicionada' : 'Imagem adicionada'} className="w-full h-auto pointer-events-none select-none" draggable={false}
+                            <img src={img.url} alt={img.shape ? img.shape.text || 'Forma adicionada' : 'Imagem adicionada'} className="w-full h-auto pointer-events-none select-none" draggable={false}
                                 style={img.flipHorizontal || img.flipVertical
                                     ? { transform: `scale(${img.flipHorizontal ? -1 : 1}, ${img.flipVertical ? -1 : 1})` }
                                     : undefined} />
@@ -651,6 +652,30 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                             <div className="relative w-full">
                                 <img src={img.url} alt="" aria-hidden="true" className="block h-auto w-full opacity-0 pointer-events-none select-none" draggable={false} />
                                 <div className={`absolute inset-0 ring-2 ring-indigo-500 pointer-events-none ${handlers.isReadyToEdit?.('addedImage', img.id) ? 'bg-indigo-500/15' : ''}`} />
+                                {img.shape && formattingShapeId === img.id && activeImage?.id === img.id && <textarea
+                                    aria-label="Texto da forma" placeholder="Digite aqui"
+                                    data-inline-format-target={`added-image-${pageIndex}-${img.id}`} data-drag-ignore="true"
+                                    value={img.shape.text || ''} rows={2}
+                                    onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}
+                                    onKeyDown={event => {
+                                        event.stopPropagation();
+                                        if (event.key === 'Escape' || (event.key === 'Enter' && (event.ctrlKey || event.metaKey))) {
+                                            event.preventDefault(); handlers.setEditingId(null);
+                                        }
+                                    }}
+                                    onChange={event => {
+                                        const text = event.currentTarget.value;
+                                        handlers.updateStyle?.((previous: MenuStyle) => ({ ...previous, name: 'Custom',
+                                            addedImages: previous.addedImages?.map(image => {
+                                                if (image.id !== img.id || !image.shape) return image;
+                                                const shape = { ...image.shape, text };
+                                                return { ...image, shape, url: canvasShapeUrl(shape) };
+                                            }),
+                                        }));
+                                    }}
+                                    className="absolute left-1/2 top-1/2 max-h-full w-4/5 -translate-x-1/2 -translate-y-1/2 resize-none rounded-md border border-indigo-300 bg-white/95 px-1 py-0.5 text-center font-sans text-xs text-slate-900 shadow-sm outline-indigo-500"
+                                />}
+
                             </div>
                         </Resizable>
                     </div>
@@ -729,10 +754,8 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                     kind="quick"
                     className="!z-[100000]"
                 >
-                    <button onClick={(e) => handlers.handleLayerImage(e, activeImage.id, 'back')} className={canvasActionButtonClass} title="Enviar para trás"><SendToBack size={19} /></button>
-                    <button onClick={(e) => handlers.handleLayerImage(e, activeImage.id, 'front')} className={canvasActionButtonClass} title="Trazer à frente"><BringToFront size={19} /></button>
                     {shapeEditor && (
-                        <button type="button" title="Formatar forma" aria-pressed={formattingShapeId === shapeEditor.id}
+                        <button type="button" title="Editar forma" aria-pressed={formattingShapeId === shapeEditor.id}
                             data-inline-format-target={`added-image-${shapeEditor.id === activeImage.id ? pageIndex : shapeEditor.pageIndex || 0}-${shapeEditor.id}`}
                             onPointerDown={(event) => event.stopPropagation()}
                             onClick={(event) => {
@@ -741,9 +764,11 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                                 else handlers.startImageEditing(shapeEditor.id);
                             }}
                             className={`${canvasActionButtonClass} ${formattingShapeId === shapeEditor.id ? 'before:!bg-indigo-50 !text-indigo-700' : ''}`}>
-                            <SlidersHorizontal size={19} />
+                            <Edit3 size={19} />
                         </button>
                     )}
+                    <button onClick={(e) => handlers.handleLayerImage(e, activeImage.id, 'back')} className={canvasActionButtonClass} title="Enviar para trás"><SendToBack size={19} /></button>
+                    <button onClick={(e) => handlers.handleLayerImage(e, activeImage.id, 'front')} className={canvasActionButtonClass} title="Trazer à frente"><BringToFront size={19} /></button>
                     <button type="button" title="Seleção múltipla" aria-pressed={Boolean(handlers.multiSelectMode)}
                         onPointerDown={(event) => event.stopPropagation()}
                         onClick={(event) => {
@@ -764,7 +789,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         <InlineStyleToolbar compact dismissOnClickInCanvas targetElementId={`added-image-${pageIndex}-${activeImage.id}`}
                             onDismiss={() => handlers.setEditingId(null)}>
                             <div className="p-1.5">
-                                <ShapeSettings shape={activeImage.shape}
+                                <ShapeSettings shape={activeImage.shape} onChangeShape={handlers.changeShape && (() => handlers.changeShape(activeImage.id))}
                                     onChange={patch => {
                                         const ids = getSelectedLayerIds(handlers.selectedItems || [], activeImage.id);
                                         handlers.updateStyle?.((previous: MenuStyle) => ({

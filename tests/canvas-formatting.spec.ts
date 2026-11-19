@@ -250,11 +250,19 @@ for (const layout of ['list', 'cards', 'background']) {
       ...route.request().postDataJSON(),
       source_url: new URL(replacementPath, page.url()).href,
     } }));
-    await page.route(`**${replacementPath}`, route => route.fulfill({ body: replacement, contentType: 'image/png' }));
+    let finishLoading!: () => void;
+    const loading = new Promise<void>(resolve => { finishLoading = resolve; });
+    await page.route(`**${replacementPath}`, async route => {
+      await loading;
+      await route.fulfill({ body: replacement, contentType: 'image/png' });
+    });
     const chooser = page.waitForEvent('filechooser');
     await photo.getByRole('button', { name: 'Substituir imagem' }).click();
     await (await chooser).setFiles({ name: 'replacement.png', mimeType: 'image/png', buffer: replacement });
+    try { await expect(photo.getByRole('status', { name: 'Carregando imagem' })).toBeVisible(); }
+    finally { finishLoading(); }
     await expect(photo.getByRole('img')).toHaveAttribute('src', new URL(replacementPath, page.url()).href);
+    await expect(photo.getByRole('status')).toHaveCount(0);
     await expect(title).toHaveAttribute('contenteditable', 'true');
     await photo.getByRole('button', { name: 'Remover imagem' }).click();
     await expect(photo.getByRole('button', { name: 'Adicionar imagem' })).toBeVisible();
@@ -332,7 +340,7 @@ test('the first price saves when selecting another product and selected products
   await expect(second.locator('#product-name-2')).toHaveClass(/bg-indigo-500\/15/);
   await expect(second.locator('#product-price-2')).toHaveClass(/bg-indigo-500\/15/);
   await expect(second.locator('#product-description-2')).toHaveClass(/bg-indigo-500\/15/);
-  await expect(second.locator('[data-template-image]').locator('[class*="bg-indigo-500/15"]')).toBeVisible();
+  await expect(second.locator('[data-template-image]').getByRole('button', { name: 'Substituir imagem' })).toBeVisible();
   await second.getByRole('heading').click();
   await expect(second.getByRole('heading')).toBeFocused();
   await expect(first.getByRole('heading')).toHaveClass(/bg-indigo-500\/15/);
@@ -920,4 +928,11 @@ test('fill uses only the photo area and supports dragging a replacement photo in
   await page.mouse.move(bounds.x + bounds.width * .25 + 40, bounds.y + bounds.height * .65, { steps: 4 });
   await page.mouse.up();
   await expect(photo.locator('img')).not.toHaveCSS('object-position', '50% 50%');
+  const position = await photo.locator('img').evaluate(img => getComputedStyle(img).objectPosition);
+  await page.mouse.move(bounds.x + bounds.width * .75, bounds.y + bounds.height * .65);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width * .75 - 30, bounds.y + bounds.height * .65, { steps: 4 });
+  await page.mouse.up();
+  await expect(photo.locator('img')).not.toHaveCSS('object-position', position);
+  await expect(photo.getByRole('button', { name: 'Remover imagem' })).toBeVisible();
 });

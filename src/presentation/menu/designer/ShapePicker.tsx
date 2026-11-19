@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Shapes } from 'lucide-react';
 import type { CanvasShape, CanvasShapeKind } from '../../../domain/menu/model';
-import { canvasShapeKinds, canvasShapeUrl, createCanvasShape, type CanvasShapeParameters } from '../../../domain/menu/canvasShapes';
+import { canvasShapeKinds, canvasShapeUrl, shapeTextColor, createCanvasShape, type CanvasShapeParameters } from '../../../domain/menu/canvasShapes';
 import { ColorPicker } from './ColorPicker';
 import { FontSizeInput } from './FontSizeInput';
 
@@ -14,10 +14,25 @@ const numberFields = {
   innerRadius: ['Profundidade (%)', 10, 90, 1],
 } as const;
 
-export function ShapeSettings({ shape, onChange, onEditEnd }: {
+export function ShapeChoices({ selected, choose }: { selected: CanvasShapeKind; choose: (kind: CanvasShapeKind) => void }) {
+  return (
+      <div className="grid grid-cols-4 gap-1">
+        {canvasShapeKinds.map(([kind, label]) => (
+          <button key={kind} type="button" aria-pressed={selected === kind} aria-label={label} title={label}
+            onClick={() => choose(kind)}
+            className={`grid h-10 place-items-center rounded-lg border ${selected === kind ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+            <img src={canvasShapeUrl(createCanvasShape(kind, '#4f46e5'))} alt="" className="h-6 w-7 object-contain" />
+          </button>
+        ))}
+      </div>
+  );
+}
+
+export function ShapeSettings({ shape, onChange, onEditEnd, onChangeShape }: {
   shape: CanvasShape;
   onChange: (patch: CanvasShapeParameters) => void;
   onEditEnd?: () => void;
+  onChangeShape?: () => void;
 }) {
   const changedSlider = React.useRef(false);
   const finishSlider = () => {
@@ -30,6 +45,13 @@ export function ShapeSettings({ shape, onChange, onEditEnd }: {
   if (shape.kind === 'star' || shape.kind === 'polygon') fields.push('points');
   if (shape.kind === 'star') fields.push('innerRadius');
   return <div className="space-y-2">
+    {onChangeShape && <button type="button" onClick={onChangeShape} className="flex w-full items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700"><Shapes size={16} />Alterar forma</button>}
+    {shape.text && <div className="flex items-center justify-between gap-2 text-xs text-slate-600">
+      <label className="flex items-center gap-1">Texto <ColorPicker value={shapeTextColor(shape)} label="Cor do texto da forma" onChange={textColor => onChange({ textColor })} /></label>
+      <select aria-label="Alinhamento do texto da forma" value={shape.textAlign || 'center'} onChange={e => onChange({ textAlign: e.target.value as CanvasShape['textAlign'] })} className="rounded-md border border-slate-200 p-1">
+        <option value="left">À esquerda</option><option value="center">Centralizado</option><option value="right">À direita</option>
+      </select>
+    </div>}
     <div className="flex flex-wrap gap-2 text-[11px] text-slate-600">
       {shape.kind !== 'line' && <div className="flex items-center gap-1">Preenchimento
         <ColorPicker value={shape.fill} label="Cor do preenchimento" onChange={fill => {
@@ -80,15 +102,7 @@ export function ShapePicker({ color, onAdd }: { color: string; onAdd: (shape: Ca
       <Shapes size={18} className="text-indigo-600" /> Adicionar forma
     </button>
     {open && <div className="mt-2 space-y-3 rounded-xl border border-slate-200 bg-white p-3">
-      <div className="grid grid-cols-4 gap-1">
-        {canvasShapeKinds.map(([kind, label]) => (
-          <button key={kind} type="button" aria-pressed={shape.kind === kind} aria-label={label} title={label}
-            onClick={() => choose(kind)}
-            className={`grid h-10 place-items-center rounded-lg border ${shape.kind === kind ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'}`}>
-            <img src={canvasShapeUrl(createCanvasShape(kind, '#4f46e5'))} alt="" className="h-6 w-7 object-contain" />
-          </button>
-        ))}
-      </div>
+      <ShapeChoices selected={shape.kind} choose={choose} />
       <div className="grid h-16 place-items-center rounded-lg bg-slate-50">
         <img src={canvasShapeUrl(shape)} alt="Prévia da forma" className="h-12 w-20 object-contain" />
       </div>

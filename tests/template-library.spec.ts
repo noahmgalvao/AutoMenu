@@ -298,7 +298,7 @@ test('the shape prompt remembers an outside dismissal and leaves background and 
   await expect(prompt).toHaveCount(0);
   await controls.getByTitle('Seleção múltipla').click();
   await expect(controls.getByTitle('Seleção múltipla')).toHaveAttribute('aria-pressed', 'true');
-  await controls.getByTitle('Formatar forma').click();
+  await controls.getByTitle('Editar forma').click();
   const rotation = page.locator('[data-inline-format-toolbar]').getByRole('slider', { name: 'Rotação' });
   await page.locator('[data-inline-format-toolbar]').getByRole('button', { name: 'Aumentar Rotação' }).click();
   await expect(rotation).toHaveValue('1');
@@ -357,14 +357,14 @@ test('a mixed selection formats, resizes, layers and duplicates its shapes and i
   await expect(firstPage.locator('[data-image-selection-overlay]')).toHaveCount(3);
 
   const photoUrl = await layer(layers[1]).locator('img').getAttribute('src');
-  await controls.getByTitle('Formatar forma').click();
+  await controls.getByTitle('Editar forma').click();
   const toolbar = page.locator('[data-inline-format-toolbar]');
   await toolbar.getByRole('button', { name: 'Aumentar Rotação' }).click();
   for (const id of ['shape-left', 'shape-right']) {
     await expect.poll(async () => decodeURIComponent((await layer(id).locator('img').getAttribute('src'))!)).toContain('rotate(1)');
   }
   await expect(layer(layers[1]).locator('img')).toHaveAttribute('src', photoUrl!);
-  await controls.getByTitle('Formatar forma').click();
+  await controls.getByTitle('Editar forma').click();
   await expect(controls.getByTitle('Seleção múltipla')).toHaveAttribute('aria-pressed', 'true');
 
   const overlay = firstPage.locator('[data-image-selection-overlay="shape-right"]');

@@ -1,6 +1,6 @@
 import { applyCanvasShapeParameters, getCanvasShapeParameters, type CanvasShapeParameters } from '../../../domain/menu/canvasShapes';
 import type { CategoryDividerStyle, ElementStyle, MenuBorder, MenuMarker, MenuStyle, Product } from '../../../domain/menu/model';
-import { getBorderConfiguration, getMarker } from '../designer/Decorations';
+import { getBorderConfiguration, getMarker, getSurfaceFill, withSurfaceFill } from '../designer/Decorations';
 import { resolveCategoryDivider, resolveProductDivider } from './categoryDividers';
 
 export type FormatObject = {
@@ -10,6 +10,8 @@ export type FormatObject = {
 
 type ProductFormat = Pick<MenuStyle, 'productCardShape' | 'productImageFrame'>
     & Pick<MenuStyle['elementStyles'], 'productPrice' | 'productDescription'> & {
+    priceFill?: string;
+    photoFill?: string;
     priceBorder: MenuBorder;
     photoBorder: MenuBorder;
     photoFlips?: NonNullable<MenuStyle['productImageFlips']>[string];
@@ -17,7 +19,7 @@ type ProductFormat = Pick<MenuStyle, 'productCardShape' | 'productImageFrame'>
 
 export type CanvasFormat =
     | { type: 'addedImage'; width: number; flipHorizontal?: boolean; flipVertical?: boolean; shape?: CanvasShapeParameters }
-    | { type: 'text'; text: ElementStyle; border: MenuBorder; marker?: MenuMarker; divider?: CategoryDividerStyle;
+    | { type: 'text'; text: ElementStyle; border: MenuBorder; fill?: string; groupFill?: string; marker?: MenuMarker; divider?: CategoryDividerStyle;
         groupBorder?: MenuBorder; product?: ProductFormat; freeTextWidth?: number };
 
 const copyBorder = (border: MenuBorder): MenuBorder => ({ ...border, sides: [...border.sides] });
@@ -34,6 +36,7 @@ export function captureCanvasFormat(source: FormatObject, style: MenuStyle, prod
 
     const product = products.find(item => item.id === id);
     const borderScope = type === 'menuTitle' || type === 'menuSubtitle' ? 'header' : type;
+    const fill = getSurfaceFill(style, borderScope, id);
     const border = copyBorder(getBorderConfiguration(style, borderScope, id));
     const textStyle = type === 'freeText' ? product?.styles ?? style.elementStyles.productName
         : style.elementStyles[type === 'product' ? 'productName' : type];
@@ -44,14 +47,16 @@ export function captureCanvasFormat(source: FormatObject, style: MenuStyle, prod
     };
 
     if (type === 'category') return {
-        type: 'text', text, border, marker: getMarker(style, 'category'), divider: resolveCategoryDivider(style, id),
+        type: 'text', text, border, fill, marker: getMarker(style, 'category'), divider: resolveCategoryDivider(style, id),
+        groupFill: getSurfaceFill(style, 'categoryGroup'),
         groupBorder: copyBorder(getBorderConfiguration(style, 'categoryGroup')),
     };
     if (type === 'product') return {
-        type: 'text', text, border, marker: getMarker(style, 'product'), divider: resolveProductDivider(style, id),
+        type: 'text', text, border, fill, marker: getMarker(style, 'product'), divider: resolveProductDivider(style, id),
         product: {
             productPrice: { ...style.elementStyles.productPrice },
             productDescription: { ...style.elementStyles.productDescription },
+            priceFill: getSurfaceFill(style, 'price'), photoFill: getSurfaceFill(style, 'productImage'),
             priceBorder: copyBorder(getBorderConfiguration(style, 'price')),
             photoBorder: copyBorder(getBorderConfiguration(style, 'productImage')),
             productCardShape: style.productCardShape,
@@ -59,7 +64,7 @@ export function captureCanvasFormat(source: FormatObject, style: MenuStyle, prod
             photoFlips: style.productImageFlips?.[id] && { ...style.productImageFlips[id] },
         },
     };
-    return { type: 'text', text, border, freeTextWidth: type === 'freeText' ? product?.freeTextWidth : undefined };
+    return { type: 'text', text, border, fill, freeTextWidth: type === 'freeText' ? product?.freeTextWidth : undefined };
 }
 
 export const acceptsCanvasFormat = (format: CanvasFormat, target: FormatObject) =>
@@ -81,6 +86,8 @@ export function applyCanvasFormat(style: MenuStyle, format: CanvasFormat, target
     const next = { ...style, name: 'Custom', elementStyles: { ...style.elementStyles }, borders: { ...style.borders } };
     for (const { type, id } of targets) {
         if (type === 'addedImage') continue;
+        const scope = type === 'menuTitle' || type === 'menuSubtitle' ? 'header' : type;
+        Object.assign(next, withSurfaceFill(next, scope, id, format.fill));
         if (type === 'freeText') {
             next.freeTextBorders = { ...next.freeTextBorders, [id]: copyBorder(format.border) };
             continue;
@@ -99,13 +106,17 @@ export function applyCanvasFormat(style: MenuStyle, format: CanvasFormat, target
         if (format.marker) next.markers = { ...next.markers, [type]: format.marker };
         if (type === 'category') {
             if (format.divider) next.categoryDividerStyles = { ...next.categoryDividerStyles, [id]: format.divider };
-            if (format.groupBorder) next.borders.categoryGroup = copyBorder(format.groupBorder);
+            if (format.groupBorder) {
+                next.borders.categoryGroup = copyBorder(format.groupBorder);
+                next.fills = { ...next.fills, categoryGroup: format.groupFill };
+            }
         } else {
             if (format.divider) next.productDividerStyle = format.divider;
             if (!format.product) continue;
             const { productPrice, productDescription, priceBorder, photoBorder, photoFlips, productCardShape, productImageFrame } = format.product;
             next.elementStyles.productPrice = { ...productPrice };
             next.elementStyles.productDescription = { ...productDescription };
+            next.fills = { ...next.fills, price: format.product.priceFill, productImage: format.product.photoFill };
             next.borders.price = copyBorder(priceBorder);
             next.borders.productImage = copyBorder(photoBorder);
             next.productCardShape = productCardShape;

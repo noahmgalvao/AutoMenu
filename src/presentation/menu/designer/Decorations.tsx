@@ -1,5 +1,5 @@
 import React from 'react';
-import { List, Minus, Square } from 'lucide-react';
+import { List, Minus, PaintBucket, Square } from 'lucide-react';
 import type { MenuBorder, MenuBorderScope, MenuBorderSide, MenuMarker, MenuStyle } from '../../../domain/menu/model';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 import { resolveMenuMargins } from '../../../domain/menu/styleRules';
@@ -34,6 +34,23 @@ const markers: [MenuMarker, string, string][] = [
 
 function activeBorder(style: MenuStyle, scope: MenuBorderScope, id?: string) {
   return scope === 'freeText' ? style.freeTextBorders?.[id || ''] : style.borders?.[scope];
+}
+
+export function getSurfaceFill(style: MenuStyle, scope: MenuBorderScope, id?: string) {
+  if (scope === 'product') return style.cardBackgroundColorOverride ? style.cardBackgroundColor : undefined;
+  if (scope === 'freeText') return style.freeTextFills?.[id || ''];
+  return style.fills?.[scope];
+}
+
+export function withSurfaceFill(style: MenuStyle, scope: MenuBorderScope, id: string | undefined, color?: string): MenuStyle {
+  if (scope === 'product') return { ...style, cardBackgroundColor: color, cardBackgroundColorOverride: Boolean(color), name: 'Custom' };
+  if (scope === 'freeText' && !id) return style;
+  const field = scope === 'freeText' ? 'freeTextFills' : 'fills';
+  const key = scope === 'freeText' ? id! : scope;
+  const values: Record<string, string> = { ...style[field] };
+  if (color) values[key] = color;
+  else delete values[key];
+  return { ...style, [field]: values, name: 'Custom' };
 }
 
 export function getBorderOverride(style: MenuStyle, scope: MenuBorderScope, id?: string) {
@@ -219,7 +236,7 @@ const borderValues = [
 ] as const;
 
 export function DecorationControls({ style, setStyle, scope: baseScope, id, showBorder = true, showMarker = true, children, targetElementId, sidebar = false, divider, borderTargets, onGroupBorderPanelChange }: DecorationProps) {
-  const [panel, setPanel] = React.useState<'line' | 'border' | 'marker' | null>(null);
+  const [panel, setPanel] = React.useState<'line' | 'border' | 'fill' | 'marker' | null>(null);
   const [targetScope, setTargetScope] = React.useState(baseScope);
   const [customScope, setCustomScope] = React.useState<MenuBorderScope | null>(null);
   const borderTabId = React.useId();
@@ -262,7 +279,7 @@ export function DecorationControls({ style, setStyle, scope: baseScope, id, show
   const iconSize = sidebar ? 16 : 14;
 
   return <div data-sidebar-decorations={sidebar ? baseScope : undefined} className={sidebar ? 'space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5' : 'space-y-2'}>
-    <div className={sidebar ? 'flex items-stretch gap-2' : `flex flex-wrap items-center gap-1 ${children ? 'justify-center' : ''}`}>
+    <div className={sidebar ? 'grid grid-cols-[repeat(auto-fit,minmax(76px,1fr))] gap-1.5' : `flex flex-wrap items-center gap-1 ${children ? 'justify-center' : ''}`}>
       {children}
       {divider && <button type="button" title={divider.label} aria-label={divider.label} aria-expanded={panel === 'line'}
         className={buttonClass(panel === 'line')} onClick={() => setPanel(panel === 'line' ? null : 'line')}>
@@ -275,6 +292,10 @@ export function DecorationControls({ style, setStyle, scope: baseScope, id, show
           if (opening && !activeBorder(style, scope, id) && !border.sides.length) change({ sides: borderPresets[0].sides });
           setPanel(opening ? 'border' : null);
         }}><Square size={iconSize} />{sidebar && 'Borda'}</button>}
+      {showBorder && <button type="button" title="Preenchimento" aria-label="Preenchimento" aria-expanded={panel === 'fill'}
+        className={buttonClass(panel === 'fill')} onClick={() => setPanel(panel === 'fill' ? null : 'fill')}>
+        <PaintBucket size={iconSize} />{sidebar && 'Preenchimento'}
+      </button>}
       {markerScope && showMarker && <button type="button" title={markerLabel} aria-label={markerLabel} aria-expanded={panel === 'marker'}
         className={buttonClass(panel === 'marker')} onClick={() => setPanel(panel === 'marker' ? null : 'marker')}>
         <List size={iconSize} />
@@ -282,9 +303,9 @@ export function DecorationControls({ style, setStyle, scope: baseScope, id, show
       </button>}
     </div>
     {panel === 'line' && divider?.picker}
-    {showBorder && panel === 'border' && <div data-border-panel className="space-y-2 rounded-md border border-slate-200 bg-white p-2">
+    {showBorder && (panel === 'border' || panel === 'fill') && <div data-border-panel className="space-y-2 rounded-md border border-slate-200 bg-white p-2">
       {baseScope === 'category' && (
-        <div role="tablist" aria-label="Borda da categoria" className="flex rounded-md bg-slate-100 p-0.5">
+        <div role="tablist" aria-label={panel === 'fill' ? 'Preenchimento da categoria' : 'Borda da categoria'} className="flex rounded-md bg-slate-100 p-0.5">
           {(['category', 'categoryGroup'] as const).map((tab) => (
             <button key={tab} id={`${borderTabId}-${tab}`} type="button" role="tab"
               aria-selected={scope === tab} aria-controls={borderTabId} tabIndex={scope === tab ? 0 : -1}
@@ -304,11 +325,20 @@ export function DecorationControls({ style, setStyle, scope: baseScope, id, show
       )}
       <div id={baseScope === 'category' ? borderTabId : undefined} role={baseScope === 'category' ? 'tabpanel' : undefined}
         aria-labelledby={baseScope === 'category' ? `${borderTabId}-${scope}` : undefined} className="space-y-2">
-      {borderTargets && borderTargets.length > 1 && <select aria-label="Aplicar borda em" value={scope}
+      {borderTargets && borderTargets.length > 1 && <select aria-label={panel === 'fill' ? 'Aplicar preenchimento em' : 'Aplicar borda em'} value={scope}
         className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
         onChange={(event) => setTargetScope(event.target.value as MenuBorderScope)}>
         {borderTargets.map((target) => <option key={target.scope} value={target.scope}>{target.label}</option>)}
       </select>}
+      {panel === 'fill' ? <div className="flex items-center justify-between gap-2">
+        <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">Cor de preenchimento
+          <ColorPicker label="Cor de preenchimento" value={getSurfaceFill(style, scope, id) || '#ffffff'}
+            onChange={color => setStyle(previous => withSurfaceFill(previous, scope, id, color))} />
+        </label>
+        {getSurfaceFill(style, scope, id) && <button type="button" className="text-xs font-semibold text-indigo-700"
+          onClick={() => setStyle(previous => withSurfaceFill(previous, scope, id))}>Restaurar padrão</button>}
+      </div> : <>
+
       <div className="space-y-1.5">
         {selectedPreset === 'custom' && <div className="flex flex-wrap gap-1" aria-label="Lados individuais da borda" role="group">
           {sides.map(({ id, label }) => {
@@ -361,6 +391,7 @@ export function DecorationControls({ style, setStyle, scope: baseScope, id, show
             ? { ...previous, freeTextBorders: Object.fromEntries(Object.entries(previous.freeTextBorders || {}).filter(([key]) => key !== id)) }
             : { ...previous, borders: { ...previous.borders, [scope]: undefined } });
         }}>Restaurar borda do modelo</button>}
+      </>}
       </div>
     </div>}
     {markerScope && showMarker && panel === 'marker' && <select aria-label={markerLabel} value={getMarker(style, markerScope)}
