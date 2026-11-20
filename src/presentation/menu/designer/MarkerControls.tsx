@@ -5,6 +5,7 @@ import { isMiniFoodKind, miniFoodIconUrl, MINI_FOODS, type MiniFoodKind } from '
 import type { CustomMenuMarker, MenuMarker } from '../../../domain/menu/model';
 import { CustomMarkerLibrary, useLoadCustomMarkerLibrary } from './CustomMarkerLibrary';
 import { MiniFoodChoices } from './MiniFoodChoices';
+import { DesignerOptionSelect } from './SearchableSelects';
 import { ShapeEditor } from './ShapePicker';
 
 export const standardMarkers: [Exclude<MenuMarker, CustomMenuMarker | MiniFoodKind>, string, string][] = [
@@ -36,11 +37,18 @@ export function MarkerControls({ label, color, marker, onChange, onRevert, onRem
   const selectedCustom = typeof marker === 'object' ? marker : undefined;
   const saved = library?.markers.find(item => item.id === selectedCustom?.id);
   const value = submenu || (selectedFood ? 'mini-food' : selectedCustom ? selectedCustom.id : String(marker));
+  const options = [
+    ...standardMarkers.map(([value, name, glyph]) => ({ value, label: `${glyph} ${name}` })),
+    { value: 'mini-food', label: selectedFood ? `Mini comidas · ${MINI_FOODS.find(food => food.kind === selectedFood)?.name}` : 'Mini comidas' },
+    ...(selectedCustom && !saved ? [{ value: selectedCustom.id, label: 'Marcador deste cardápio', disabled: true }] : []),
+    ...(library?.markers.map(({ id, shape }, index) => ({ value: id, label: `Marcador ${index + 1} · ${canvasShapeKinds.find(([kind]) => kind === shape.kind)?.[1]
+      || MINI_FOODS.find(food => food.kind === shape.kind)?.name || 'Forma'}` })) || []),
+    ...(library ? [{ value: 'create', label: 'Personalizado', disabled: !library.ready }] : []),
+  ];
 
   return <div className="space-y-2">
-    <select aria-label={label} value={value} className="h-8 w-full rounded-md border border-slate-200 bg-white px-1 text-xs"
-      onChange={event => {
-        const key = event.currentTarget.value;
+    <DesignerOptionSelect label={label} value={value} options={options}
+      onChange={key => {
         if (key === 'mini-food' || key === 'create') {
           setSubmenu(key);
           return;
@@ -50,18 +58,7 @@ export function MarkerControls({ label, color, marker, onChange, onRevert, onRem
         const standard = standardMarkers.find(([id]) => id === key);
         if (custom) onChange(custom);
         else if (standard) onChange(standard[0]);
-      }}>
-      {standardMarkers.map(([key, name, glyph]) => <option key={key} value={key}>{glyph} {name}</option>)}
-      <option value="mini-food">
-        Mini comidas{selectedFood && ` · ${MINI_FOODS.find(food => food.kind === selectedFood)?.name}`}
-      </option>
-      {selectedCustom && !saved && <option value={selectedCustom.id} disabled>Marcador deste cardápio</option>}
-      {library?.markers.map(({ id, shape }, index) => <option key={id} value={id}>
-        {`Marcador ${index + 1} · ${canvasShapeKinds.find(([kind]) => kind === shape.kind)?.[1]
-          || MINI_FOODS.find(food => food.kind === shape.kind)?.name || 'Forma'}`}
-      </option>)}
-      {library && <option value="create" disabled={!library.ready}>Personalizado</option>}
-    </select>
+      }} />
     {submenu === 'mini-food' && <MiniFoodChoices selected={selectedFood} choose={kind => {
       onChange(kind);
       setSubmenu(null);

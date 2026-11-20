@@ -226,7 +226,7 @@ export const MobileProductEditorModal: React.FC<MobileProductEditorModalProps> =
   const canAdjustPrice = Number.isFinite(Number(priceAdjustment)) && Number(priceAdjustment) > 0;
 
   return createPortal(
-    <div className="fixed inset-0 z-[2147483500] flex flex-col bg-slate-100 md:hidden" onPointerDown={(event) => event.stopPropagation()}>
+    <div data-no-browser-selection className="fixed inset-0 z-[2147483500] flex flex-col bg-slate-100 md:hidden" onPointerDown={(event) => event.stopPropagation()}>
       <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div>
           <h2 className="font-bold text-slate-900">Editar {productIds.length > 1 ? `${productIds.length} produtos` : 'produto'}</h2>

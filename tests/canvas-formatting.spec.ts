@@ -1,3 +1,4 @@
+import { chooseDesignerOption } from './fixtures/designer-picker';
 import { shortcutsFor } from './fixtures/canvas-shortcuts';
 import { expect, test } from '@playwright/test';
 
@@ -62,20 +63,21 @@ test('the border panel starts with a contour and applies sliders and numbers imm
   const presets = toolbar.getByRole('combobox', { name: 'Lados da borda' });
   const sideButtons = toolbar.getByRole('group', { name: 'Lados individuais da borda' });
   await expect(toolbar.locator('[data-menu-border]')).toHaveCount(0);
-  await expect(presets).toHaveValue('outline');
-  await expect(presets.locator('option').last()).toHaveText('Personalizada');
+  await expect(presets).toHaveText('Contorno');
+  await presets.click();
+  await expect(toolbar.getByRole('listbox', { name: 'Lados da borda' }).getByRole('option').last()).toHaveText('Personalizada');
   await expect(sideButtons).toHaveCount(0);
   for (const preset of ['top', 'bottom', 'left', 'right']) {
-    await presets.selectOption(preset);
+    await chooseDesignerOption(presets, preset);
     await expect(sideButtons).toHaveCount(0);
   }
-  await presets.selectOption('custom');
+  await chooseDesignerOption(presets, 'custom');
   await expect(sideButtons.getByRole('button', { name: 'Direita' })).toHaveAttribute('aria-pressed', 'true');
   await sideButtons.getByRole('button', { name: 'Acima' }).click();
   await sideButtons.getByRole('button', { name: 'Direita' }).click();
-  await expect(presets).toHaveValue('custom');
+  await expect(presets).toHaveText('Personalizada');
   await expect(sideButtons.getByRole('button', { name: 'Acima' })).toHaveAttribute('aria-pressed', 'true');
-  await presets.selectOption('outline');
+  await chooseDesignerOption(presets, 'outline');
   await expect(sideButtons).toHaveCount(0);
   const stroke = freeText.locator('[data-menu-border]');
   await expect(stroke).toHaveCSS('border-left-width', '1px');
@@ -108,7 +110,7 @@ test('the safe distance accounts for neighboring text and preserves room for the
   const toolbar = page.locator('[data-inline-format-toolbar]');
   await toolbar.getByRole('button', { name: 'Borda', exact: true }).click();
   const presets = toolbar.getByRole('combobox', { name: 'Lados da borda' });
-  await presets.selectOption('bottom');
+  await chooseDesignerOption(presets, 'bottom');
   const offset = toolbar.getByRole('slider', { name: 'Distância (px)' });
   const stroke = source.locator('[data-menu-border]');
   await expect(stroke).toHaveCSS('border-bottom-width', '1px');
@@ -127,7 +129,7 @@ test('the safe distance accounts for neighboring text and preserves room for the
   await offset.press('Home');
   await expect.poll(outerEdge).toBeGreaterThan(ownText.bottom + 1);
   const bottomMaximum = Number(await offset.getAttribute('max'));
-  await presets.selectOption('top');
+  await chooseDesignerOption(presets, 'top');
   await expect.poll(async () => Number(await offset.getAttribute('max'))).toBeGreaterThan(bottomMaximum);
 });
 
@@ -141,7 +143,7 @@ test('category markers scale with the configured heading size', async ({ page })
   await page.getByRole('button', { name: 'Editar categoria' }).click();
   const toolbar = page.locator('[data-inline-format-toolbar]');
   await toolbar.getByRole('button', { name: 'Marcadores das categorias' }).click();
-  await toolbar.getByRole('combobox', { name: 'Marcadores das categorias' }).selectOption('number-padded');
+  await chooseDesignerOption(toolbar.getByRole('combobox', { name: 'Marcadores das categorias' }), 'number-padded');
   const marker = category.locator('[data-menu-marker]');
   const original = parseFloat(await marker.evaluate((node) => getComputedStyle(node).fontSize));
   await toolbar.getByPlaceholder('Tam.').fill('32');
@@ -171,11 +173,11 @@ test('the designer groups product decorations after its text controls', async ({
   await expect(line).toHaveAttribute('aria-expanded', 'false');
   await expect(decorations.getByRole('combobox', { name: 'Aplicar borda em' })).toHaveValue('product');
   await decorations.getByRole('combobox', { name: 'Aplicar borda em' }).selectOption('price');
-  await decorations.getByRole('combobox', { name: 'Lados da borda' }).selectOption('outline');
+  await chooseDesignerOption(decorations.getByRole('combobox', { name: 'Lados da borda' }), 'outline');
   await expect(product.locator('[data-template-price] [data-menu-border]')).toBeVisible();
   await markers.click();
   await expect(border).toHaveAttribute('aria-expanded', 'false');
-  await decorations.getByRole('combobox', { name: 'Marcadores dos produtos' }).selectOption('dot');
+  await chooseDesignerOption(decorations.getByRole('combobox', { name: 'Marcadores dos produtos' }), 'dot');
   await expect(product.locator('[data-menu-marker]')).toHaveText('•');
 });
 
@@ -231,7 +233,7 @@ for (const layout of ['list', 'cards', 'background']) {
     await options.getByRole('button', { name: 'Editar produto' }).click();
     const toolbar = page.locator('[data-inline-format-toolbar]');
     await toolbar.getByRole('button', { name: 'Linha do produto' }).click();
-    await toolbar.getByRole('combobox', { name: 'Linha do produto' }).selectOption('ornamental');
+    await chooseDesignerOption(toolbar.getByRole('combobox', { name: 'Linha do produto' }), 'ornamental');
     await expect(product.locator('[data-ornamental-divider]')).toHaveCount(1);
     await photo.click({ position: { x: 12, y: 10 } });
     await expect(toolbar).toHaveCount(0);
@@ -523,7 +525,7 @@ test('the card contour stays complete with a photo frame and adjustable border v
   await expect(border).toHaveCount(1);
   await expect(border).toHaveCSS('border-right-width', '2px');
   await expect(border).toHaveCSS('border-right-style', 'dashed');
-  await toolbar.getByRole('combobox', { name: 'Lados da borda' }).selectOption('right');
+  await chooseDesignerOption(toolbar.getByRole('combobox', { name: 'Lados da borda' }), 'right');
   await expect(border).toHaveCSS('border-right-width', '2px');
   await expect(border).toHaveCSS('border-left-width', '0px');
 });
@@ -570,10 +572,10 @@ test('category text and group have independent borders and the formatting panel 
   await toolbar.getByRole('button', { name: 'Borda', exact: true }).click();
   const tabs = toolbar.getByRole('tablist', { name: 'Borda da categoria' });
   await expect(tabs.getByRole('tab', { name: 'Texto da categoria' })).toHaveAttribute('aria-selected', 'true');
-  await toolbar.getByRole('combobox', { name: 'Lados da borda' }).selectOption('bottom');
+  await chooseDesignerOption(toolbar.getByRole('combobox', { name: 'Lados da borda' }), 'bottom');
   await tabs.getByRole('tab', { name: 'Grupo' }).click();
-  await expect(toolbar.getByRole('combobox', { name: 'Lados da borda' })).toHaveValue('none');
-  await toolbar.getByRole('combobox', { name: 'Lados da borda' }).selectOption('outline');
+  await expect(toolbar.getByRole('combobox', { name: 'Lados da borda' })).toHaveText('Sem borda');
+  await chooseDesignerOption(toolbar.getByRole('combobox', { name: 'Lados da borda' }), 'outline');
   const groupBorder = group.locator(':scope > [data-menu-border]');
   await expect(groupBorder).toHaveCSS('border-right-width', '1px');
   const toolbarClearsBorder = async () => {
@@ -587,11 +589,11 @@ test('category text and group have independent borders and the formatting panel 
   await toolbar.getByRole('spinbutton', { name: 'Espessura (px)' }).dblclick();
   await expect(page.getByText('Pressione Enter para salvar')).toHaveCount(0);
   await tabs.getByRole('tab', { name: 'Grupo' }).press('ArrowLeft');
-  await expect(toolbar.getByRole('combobox', { name: 'Lados da borda' })).toHaveValue('bottom');
+  await expect(toolbar.getByRole('combobox', { name: 'Lados da borda' })).toHaveText('Somente inferior');
   await tabs.getByRole('tab', { name: 'Texto da categoria' }).press('ArrowRight');
   await page.setViewportSize({ width: 390, height: 660 });
   await expect.poll(toolbarClearsBorder).toBe(true);
-  await expect(toolbar.getByRole('combobox', { name: 'Lados da borda' })).toHaveValue('outline');
+  await expect(toolbar.getByRole('combobox', { name: 'Lados da borda' })).toHaveText('Contorno');
 });
 
 test('the arch card moves the product title row a little farther inside', async ({ page }) => {
@@ -675,7 +677,7 @@ test('category and product dividers align to the middle of the rendered titles',
   await shortcutsFor(product).getByRole('button', { name: 'Editar produto' }).click();
   const toolbar = page.locator('[data-inline-format-toolbar]');
   await toolbar.getByRole('button', { name: 'Linha do produto' }).click();
-  await toolbar.getByRole('combobox', { name: 'Linha do produto' }).selectOption('ornamental');
+  await chooseDesignerOption(toolbar.getByRole('combobox', { name: 'Linha do produto' }), 'ornamental');
   const getCenterDifference = (node: Element) => {
     const range = document.createRange();
     range.selectNodeContents(node.closest('[data-product-text-row], [data-template-category]')!.querySelector('[data-divider-title]')!);
@@ -792,15 +794,15 @@ test('price format settings apply currency and decimals to every product from th
   const toolbar = page.locator('[data-inline-format-toolbar]');
   await toolbar.getByRole('button', { name: 'Configurações de preço' }).click();
   const format = toolbar.locator('[data-price-format-settings]');
-  await format.getByLabel('Símbolo da moeda').selectOption('$');
+  await chooseDesignerOption(format.getByLabel('Símbolo da moeda'), '$');
   await format.getByLabel('Casas decimais').selectOption('1');
   await format.getByLabel('Separador decimal').selectOption('.');
   await expect(format.locator('output')).toHaveText('$ 12.5');
   await expect(page.locator('[data-price-symbol]')).toHaveText(['$', '$', '$']);
   await expect(page.locator('#product-price-2')).toHaveText('59.0');
-  await format.getByLabel('Símbolo da moeda').selectOption('€');
+  await chooseDesignerOption(format.getByLabel('Símbolo da moeda'), '€');
   await expect(product.locator('[data-price-symbol]')).toHaveText('€');
-  await format.getByLabel('Símbolo da moeda').selectOption('');
+  await chooseDesignerOption(format.getByLabel('Símbolo da moeda'), '');
   await expect(page.locator('[data-price-symbol]')).toHaveCount(0);
 });
 
@@ -811,7 +813,16 @@ test('the product designer edits the shared price format alongside the price', a
   await product.getByRole('button').last().click();
   await product.getByRole('button', { name: 'Editar' }).click();
   await product.getByRole('button', { name: 'Configurações de preço' }).click();
-  await product.getByLabel('Símbolo da moeda').selectOption('£');
+  const currencyPicker = product.getByRole('combobox', { name: 'Símbolo da moeda' });
+  await currencyPicker.click();
+  const currencyList = product.getByRole('listbox', { name: 'Símbolo da moeda' });
+  await currencyList.hover();
+  await currencyList.evaluate(element => { element.scrollTop = element.scrollHeight; });
+  const panel = page.locator('[data-product-designer-scroll-container]');
+  const previousScroll = await panel.evaluate(element => element.scrollTop);
+  await page.mouse.wheel(0, 180);
+  await expect.poll(() => panel.evaluate(element => element.scrollTop)).toBeGreaterThan(previousScroll);
+  await chooseDesignerOption(currencyPicker, '£');
   await product.getByLabel('Casas decimais').selectOption('0');
   await expect(product.locator('input[inputmode="decimal"]')).toHaveValue('34');
   await product.getByRole('button', { name: 'Salvar' }).click();

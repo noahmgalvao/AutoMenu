@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ChevronDown, Minus } from 'lucide-react';
 import type { CategoryDividerStyle } from '../../../domain/menu/model';
 import { CATEGORY_DIVIDER_PRESETS, getCategoryDividerStyle } from '../canvas/categoryDividers';
+import { DesignerOptionSelect } from './SearchableSelects';
 
 interface CategoryDividerPickerProps {
   value: CategoryDividerStyle;
@@ -23,10 +24,7 @@ export const CategoryDividerPicker: React.FC<CategoryDividerPickerProps> = ({ va
   if (compact) return (
     <div className="flex items-center gap-2 rounded border border-slate-200 px-1.5 py-1">
       <span aria-hidden="true" className="min-w-0 flex-1">{renderPreview(value)}</span>
-      <select aria-label={label} value={value} onChange={event => onChange(event.currentTarget.value as CategoryDividerStyle)}
-        className="h-6 rounded border border-slate-200 bg-white px-1 text-[11px] text-slate-700">
-        {CATEGORY_DIVIDER_PRESETS.map((preset) => <option key={preset.value} value={preset.value}>{preset.label}</option>)}
-      </select>
+      <DesignerOptionSelect label={label} value={value} options={CATEGORY_DIVIDER_PRESETS} onChange={onChange} />
     </div>
   );
 

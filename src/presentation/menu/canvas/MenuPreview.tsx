@@ -2483,6 +2483,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 <div
                     ref={backgroundPromptRef}
                     data-background-prompt="true"
+                    data-no-browser-selection
                     role="group"
                     aria-label="Definir como plano de fundo?"
                     className="fixed z-[10021] w-max max-w-[calc(100vw-16px)] rounded-lg border border-slate-200 bg-white p-2 text-xs text-slate-700 shadow-lg"

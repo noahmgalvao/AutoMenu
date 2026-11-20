@@ -162,6 +162,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
             ref={toolbarRef}
             data-drag-ignore="true"
             data-inline-format-toolbar="true"
+            data-no-browser-selection
             className={`fixed z-[10020] rounded-lg border border-slate-200 bg-white shadow-xl ${compact ? 'p-1' : 'p-1.5'}`}
             style={position}
             onPointerDown={(event) => event.stopPropagation()}

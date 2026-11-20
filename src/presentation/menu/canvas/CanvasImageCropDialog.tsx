@@ -36,7 +36,7 @@ export function CanvasImageCropDialog({ image, onClose, onApply }: {
     return () => element?.close();
   }, []);
 
-  return createPortal(<dialog ref={dialog} aria-label="Cortar imagem" data-editor-popover="true"
+  return createPortal(<dialog ref={dialog} aria-label="Cortar imagem" data-editor-popover="true" data-no-browser-selection
     onCancel={event => { event.preventDefault(); onClose(); }}
     onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}
     className="w-[min(42rem,calc(100vw-1rem))] rounded-2xl border border-slate-200 bg-white p-3 text-slate-900 shadow-xl backdrop:bg-black/60 sm:p-5">

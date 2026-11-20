@@ -1,5 +1,6 @@
 import { useId, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { Settings2 } from 'lucide-react';
+import { DesignerOptionSelect } from './SearchableSelects';
 import type { MenuStyle } from '../../../domain/menu/model';
 import {
   formatMenuPrice, getMenuPriceSymbol, PRICE_CURRENCIES,
@@ -8,6 +9,7 @@ import {
 } from '../../../domain/menu/price';
 
 const fieldClass = 'h-8 min-w-0 w-full rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-800 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500';
+const currencyOptions = [{ value: '', label: 'Sem símbolo' }, ...PRICE_CURRENCIES.map(([value, name]) => ({ value, label: `${value} · ${name}` }))];
 
 export function PriceFormatSettings({ style, setStyle, children }: {
   style: MenuStyle;
@@ -29,16 +31,12 @@ export function PriceFormatSettings({ style, setStyle, children }: {
       </button>
     </div>
     {open && <div id={panelId} data-price-format-settings className="my-2 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
-      <label className="grid gap-1 text-[11px] font-medium text-slate-600">
+      <div className="grid gap-1 text-[11px] font-medium text-slate-600">
         Símbolo da moeda
-        <select value={getMenuPriceSymbol(style)} onChange={event => {
-          const symbol = event.target.value;
+        <DesignerOptionSelect label="Símbolo da moeda" value={getMenuPriceSymbol(style)} options={currencyOptions} onChange={symbol => {
           update(symbol ? { showCurrencySymbol: true, priceCurrencySymbol: resolvePriceCurrencySymbol(symbol) } : { showCurrencySymbol: false });
-        }} className={fieldClass}>
-          <option value="">Sem símbolo</option>
-          {PRICE_CURRENCIES.map(([symbol, name]) => <option key={symbol} value={symbol}>{symbol} · {name}</option>)}
-        </select>
-      </label>
+        }} />
+      </div>
       <div className="grid grid-cols-2 gap-2">
         <label className="grid gap-1 text-[11px] font-medium text-slate-600">
           Casas decimais

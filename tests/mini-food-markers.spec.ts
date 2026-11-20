@@ -1,3 +1,4 @@
+import { chooseDesignerOption } from './fixtures/designer-picker';
 import { expect, test } from '@playwright/test';
 import { MINI_FOODS } from '../src/domain/menu/miniFoods';
 
@@ -34,10 +35,10 @@ test('the editor offers the same 50 mini foods as textures, shapes and markers',
   await page.route('**/rest/v1/custom_menu_markers*', route => route.fulfill({ json: [] }));
   const categories = page.locator('[data-sidebar-decorations="category"]');
   await categories.getByRole('button', { name: 'Marcadores das categorias' }).click();
-  await categories.getByRole('combobox').selectOption('mini-food');
+  await chooseDesignerOption(categories.getByRole('combobox'), 'mini-food');
   await expect(choices).toHaveText(foodNames);
   await page.getByRole('group', { name: 'Mini comidas' }).getByRole('button', { name: 'Sushi', exact: true }).click();
-  await expect(categories.getByRole('combobox')).toHaveValue('mini-food');
+  await expect(categories.getByRole('combobox')).toHaveText('Mini comidas · Sushi');
   await expect(page.locator('#category-header-Entradas img[data-menu-marker]')).toHaveAttribute('src', /^data:image\/svg/);
   await expect(choices).toHaveCount(0);
 });
@@ -96,23 +97,27 @@ test('a custom marker applies immediately, survives reload and can be removed', 
   const select = controls.getByRole('combobox', { name: 'Marcadores dos produtos' });
   const applied = page.locator('#product-container-1 img[data-menu-marker]');
   await showMarkers();
-  await select.selectOption('create');
+  await chooseDesignerOption(select, 'create');
   await controls.getByRole('button', { name: 'Estrela', exact: true }).click();
   await controls.getByRole('button', { name: 'Salvar marcador', exact: true }).click();
   await expect(applied).toBeVisible();
-  await expect(select.locator('option').nth(-2)).toHaveText('Marcador 1 · Estrela');
-  await expect(select.locator('option').last()).toHaveText('Personalizado');
+  const options = controls.getByRole('listbox').getByRole('option');
+  await select.click();
+  await expect(options.nth(-2)).toHaveText('Marcador 1 · Estrela');
+  await expect(options.last()).toHaveText('Personalizado');
+  await select.click();
   await expect.poll(() => stored.size).toBe(1);
   const [id] = stored.keys();
-  await expect(select).toHaveValue(id);
+  await expect(select).toHaveText('Marcador 1 · Estrela');
 
   await page.reload();
   await showMarkers();
-  await select.selectOption(id);
+  await chooseDesignerOption(select, id);
   await expect(applied).toBeVisible();
   await controls.getByRole('button', { name: 'Remover marcador da lista' }).click();
   await expect(applied).toHaveCount(0);
-  await expect(select).toHaveValue('none');
-  await expect(select.locator(`option[value="${id}"]`)).toHaveCount(0);
+  await expect(select).toHaveText('— Sem marcador');
+  await select.click();
+  await expect(options.filter({ hasText: 'Marcador 1 · Estrela' })).toHaveCount(0);
   await expect.poll(() => stored.size).toBe(0);
 });

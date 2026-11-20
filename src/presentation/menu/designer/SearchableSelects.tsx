@@ -9,7 +9,7 @@ import {
   SAMPLE_BACKGROUNDS,
 } from '../../../domain/menu/defaults';
 
-type SelectOption = { value: string; label: string };
+type SelectOption<Value extends string = string> = { value: Value; label: string; disabled?: boolean };
 type TextureOption = SelectOption & { url: string };
 
 const chunk = <T,>(items: T[], size: number) => {
@@ -66,15 +66,16 @@ const getTexturePreviewStyle = (url: string): React.CSSProperties => {
 
 const foldSearch = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('pt-BR').trim();
 
-function DesignerPicker<T extends SelectOption>({ label, value, options, choose, render, searchLabel, empty, gap }: {
+function DesignerPicker<T extends SelectOption>({ label, value, options, choose, render, searchLabel, empty, gap, compact = false }: {
   label: string;
   value: T;
-  options: T[];
+  options: readonly T[];
   choose: (option: T) => void;
   render: (option: T) => React.ReactNode;
   searchLabel?: string;
   empty?: string;
   gap?: number;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -103,14 +104,14 @@ function DesignerPicker<T extends SelectOption>({ label, value, options, choose,
     event.preventDefault();
     event.stopPropagation();
     if (!open) { setOpen(true); return; }
-    const items = Array.from(list.current?.querySelectorAll<HTMLElement>('[role="option"]') || []);
+    const items = Array.from(list.current?.querySelectorAll<HTMLElement>('[role="option"]:not(:disabled)') || []);
     const index = items.indexOf(document.activeElement as HTMLElement);
     const next = index < 0 ? (event.key === 'ArrowDown' ? 0 : items.length - 1)
       : Math.max(0, Math.min(items.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)));
     items[next]?.focus();
   }}>
     <button ref={trigger} type="button" role="combobox" aria-label={label} aria-expanded={open} aria-controls={listId}
-      className="flex min-h-9 w-full min-w-0 items-center justify-between gap-1 rounded border border-slate-200 bg-white px-2 text-left text-xs text-slate-700 outline-indigo-500"
+      className={`flex ${compact ? 'min-h-8' : 'min-h-9'} w-full min-w-0 items-center justify-between gap-1 rounded border border-slate-200 bg-white px-2 text-left text-xs text-slate-700 outline-indigo-500`}
       onClick={() => open ? close() : setOpen(true)}>
       <span className="block min-w-0 flex-1 truncate">{render(value)}</span>
       <ChevronDown aria-hidden="true" size={14} className="shrink-0" />
@@ -124,12 +125,23 @@ function DesignerPicker<T extends SelectOption>({ label, value, options, choose,
       </label>}
       <div ref={list} id={listId} role="listbox" aria-label={label} className="max-h-44 touch-pan-y overflow-y-auto p-1">
         {matches.map(option => <button key={option.value} type="button" role="option" aria-selected={option.value === value.value}
-          className="block w-full truncate rounded px-2 py-2 text-left text-slate-700 hover:bg-slate-50 focus:bg-slate-100 aria-selected:bg-indigo-50 aria-selected:text-indigo-700"
+          data-option-value={option.value} disabled={option.disabled}
+          className="block w-full truncate rounded px-2 py-2 text-left text-slate-700 hover:bg-slate-50 focus:bg-slate-100 disabled:opacity-50 aria-selected:bg-indigo-50 aria-selected:text-indigo-700"
           onClick={() => { choose(option); close(); trigger.current?.focus({ preventScroll: true }); }}>{render(option)}</button>)}
         {!matches.length && <div role="status" className="p-2 text-slate-500">{empty}</div>}
       </div>
     </div>}
   </div>;
+}
+
+export function DesignerOptionSelect<Value extends string>({ label, value, options, onChange }: {
+  label: string;
+  value: Value;
+  options: readonly SelectOption<Value>[];
+  onChange: (value: Value) => void;
+}) {
+  return <DesignerPicker compact label={label} value={options.find(option => option.value === value) || { value, label: value }}
+    options={options} choose={option => onChange(option.value)} render={option => option.label} />;
 }
 
 export const FontSelect: React.FC<{

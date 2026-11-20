@@ -11,6 +11,7 @@ import { ColorPicker } from './ColorPicker';
 import { FontSizeInput } from './FontSizeInput';
 import { fitBorder, type BorderGeometry } from '../../../domain/menu/borderFitting';
 import { observeBorderGeometry } from './borderGeometry';
+import { DesignerOptionSelect } from './SearchableSelects';
 
 const sides: { id: MenuBorderSide; label: string }[] = [
   { id: 'top', label: 'Acima' }, { id: 'right', label: 'Direita' },
@@ -334,20 +335,17 @@ export function DecorationControls({ style, setStyle, scope: baseScope, id, show
               onClick={() => change({ sides: active ? border.sides.filter(side => side !== id) : [...border.sides, id] })}>{label}</button>;
           })}
         </div>}
-        <select aria-label="Lados da borda" value={selectedPreset}
-          className="h-8 w-full rounded-md border border-slate-200 text-xs"
-          onChange={(event) => {
-            const preset = borderPresets.find(({ id }) => id === event.target.value);
+        <DesignerOptionSelect label="Lados da borda" value={selectedPreset}
+          options={[...borderPresets.map(({ id, label }) => ({ value: id, label })), { value: 'custom', label: 'Personalizada' }]}
+          onChange={value => {
+            const preset = borderPresets.find(({ id }) => id === value);
             if (preset) {
               if (customScope === scope) setCustomScope(null);
               change({ sides: preset.sides });
             } else {
               setCustomScope(scope);
             }
-          }}>
-          {borderPresets.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
-          <option value="custom">Personalizada</option>
-        </select>
+          }} />
       </div>
       <div className="flex items-center justify-between gap-2 text-xs font-medium text-slate-600">Cor da borda
         <ColorPicker value={border.color} onChange={color => change({ color })} label="Cor da borda" />

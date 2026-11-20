@@ -1,3 +1,4 @@
+import { chooseDesignerOption } from './fixtures/designer-picker';
 import { shortcutsFor } from './fixtures/canvas-shortcuts';
 import { test, expect, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
@@ -372,13 +373,14 @@ test('a mixed selection formats, resizes, layers and duplicates its shapes and i
   await controls.getByTitle('Editar forma').click();
   await expect(controls.getByTitle('Seleção múltipla')).toHaveAttribute('aria-pressed', 'true');
 
+  const width = (id: string) => layer(id).evaluate(node => parseFloat((node as HTMLElement).style.width));
+  const beforeResize = await Promise.all(layers.map(width));
   const overlay = firstPage.locator('[data-image-selection-overlay="shape-right"]');
   const box = (await overlay.boundingBox())!;
   await page.mouse.move(box.x + box.width, box.y + box.height);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width + 24, box.y + box.height + 24, { steps: 5 });
-  const width = (id: string) => layer(id).evaluate(node => parseFloat((node as HTMLElement).style.width));
-  for (const id of layers) await expect.poll(() => width(id)).toBeGreaterThan(100);
+  for (const [index, id] of layers.entries()) await expect.poll(() => width(id)).toBeGreaterThan(beforeResize[index]);
   const resized = await Promise.all(layers.map(width));
   await page.mouse.up();
   for (const [index, id] of layers.entries()) await expect.poll(() => width(id)).toBe(resized[index]);
@@ -456,14 +458,14 @@ test('title and subtitle edit the same border and categories share their marker 
   const borderButton = toolbar.getByRole('button', { name: 'Borda do título e subtítulo', exact: true });
   await borderButton.click();
   const presets = toolbar.getByRole('combobox', { name: 'Lados da borda' });
-  await presets.selectOption('top');
+  await chooseDesignerOption(presets, 'top');
   await expect(canvas.locator('[data-template-header]')).toHaveAttribute('data-custom-border', 'true');
   await canvas.locator('#menu-subtitle-text').focus();
   if (!(await presets.isVisible())) await borderButton.click();
-  await expect(presets).toHaveValue('top');
+  await expect(presets).toHaveText('Somente superior');
   await canvas.getByRole('heading', { name: 'Entradas', exact: true }).click();
   await page.getByRole('button', { name: 'Marcadores das categorias', exact: true }).click();
-  await page.getByRole('combobox', { name: 'Marcadores das categorias', exact: true }).selectOption('number-square');
+  await chooseDesignerOption(page.getByRole('combobox', { name: 'Marcadores das categorias', exact: true }), 'number-square');
   const markers = await canvas.locator('[data-template-category] [data-menu-marker]').allTextContents();
   expect(markers).toEqual(['1', '2', '3']);
 });
@@ -507,7 +509,7 @@ test.describe('mobile product formatting', () => {
     const toolbar = page.locator('[data-inline-format-toolbar]');
     const borderButton = toolbar.getByRole('button', { name: 'Borda', exact: true });
     await borderButton.tap();
-    await toolbar.getByRole('combobox', { name: 'Lados da borda' }).selectOption('left');
+    await chooseDesignerOption(toolbar.getByRole('combobox', { name: 'Lados da borda' }), 'left');
     const scrollLeft = () => canvas.evaluate((element) => element.scrollLeft);
     const stroke = product.locator('[data-menu-border]');
     await expect(stroke).toBeVisible();
@@ -596,7 +598,7 @@ test('PDF page setup updates the editor and restores the portrait columns', asyn
   await page.getByRole('combobox', { name: 'Papel', exact: true }).selectOption('A5');
   await expect(canvasPage).toHaveAttribute('data-menu-page-width-mm', '148');
   await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
-  await expect(page.getByLabel('Tamanho da página')).toHaveValue('A5');
+  await expect(page.getByLabel('Tamanho da página')).toHaveText('A5');
 });
 
 test('the editor uses one landscape column for a single category and restores portrait settings', async ({ page }) => {

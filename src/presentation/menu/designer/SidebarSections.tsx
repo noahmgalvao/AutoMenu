@@ -15,7 +15,7 @@ import { normalizeMenuPageSetup, resolveMenuPageDimensions } from '../../../doma
 import { StyleControls } from './StyleControls';
 import { PriceFormatSettings } from './PriceFormatSettings';
 import { updateCanvasPageSetup } from './updateCanvasPageSetup';
-import { FontSelect, MiniFoodTextureSelect, TextureSelect } from './SearchableSelects';
+import { DesignerOptionSelect, FontSelect, MiniFoodTextureSelect, TextureSelect } from './SearchableSelects';
 import { resolveCategoryDivider, resolveProductDivider } from '../canvas/categoryDividers';
 import { CategoryDividerPicker } from './CategoryDividerPicker';
 import { getProductCardRadius, PRODUCT_CARD_SHAPES, PRODUCT_IMAGE_FRAMES } from '../canvas/templateStyles';
@@ -381,23 +381,15 @@ export const PageSection: React.FC<PageSectionProps> = ({ style, setStyle, produ
       </h3>
 
       <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <label className="block space-y-1">
+        <div className="space-y-1">
           <span className="text-[10px] font-bold uppercase text-slate-500">Tamanho</span>
-          <select
-            value={setup.preset}
-            onChange={(event) => updatePageSetup({
+          <DesignerOptionSelect label="Tamanho da página" value={setup.preset} options={PAGE_PRESET_OPTIONS}
+            onChange={preset => updatePageSetup({
               ...setup,
-              preset: event.target.value as typeof setup.preset,
-              orientation: event.target.value === 'screen' ? 'landscape' : setup.orientation,
-            })}
-            className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
-            aria-label="Tamanho da página"
-          >
-            {PAGE_PRESET_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-        </label>
+              preset,
+              orientation: preset === 'screen' ? 'landscape' : setup.orientation,
+            })} />
+        </div>
 
         <div className="space-y-1">
           <span className="text-[10px] font-bold uppercase text-slate-500">Orientação</span>
