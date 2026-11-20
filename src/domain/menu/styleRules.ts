@@ -87,3 +87,11 @@ export const clampFontSize = (
     Math.min(resolveFontSizeLimits(style)[key], parsed),
   ), fallback);
 };
+
+
+export const usesProductCards = (style: MenuStyle) =>
+  style.layoutMode === 'cards' || (style.design ? style.design.card !== 'flat' : style.layoutMode === 'grid');
+
+export function resolveProductImageFrame(style: MenuStyle, inRow = style.layoutMode !== 'list' || style.columnCount > 1) {
+  return style.productImageFrame ?? (inRow && usesProductCards(style) ? 'fill' : 'template');
+}

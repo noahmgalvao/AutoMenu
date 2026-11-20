@@ -14,6 +14,7 @@ import type { SplitCategorySwap } from '../../domain/menu/splitCategorySwap';
 import { useAppServices } from '../app/AppServicesProvider';
 import { useCanvasPrinting } from './designer/useCanvasPrinting';
 import type { MoveDirection, SelectionItem } from './interactions/types';
+import { CustomMarkerLibraryProvider } from './designer/CustomMarkerLibrary';
 import { canvasShapeUrl, getCanvasShapeDimensions } from '../../domain/menu/canvasShapes';
 import { bindCanvasZoomGestures, getZoomAnchor, restoreZoomAnchor, type CanvasPoint, centerCanvasProduct, getCanvasProduct, getCanvasProductBounds, getCanvasViewportBounds, getCanvasViewportFocus, positionCanvasImage } from './canvas/canvasViewport';
 import { MenuColorContext, getMenuPalette } from './designer/ColorPicker';
@@ -1464,15 +1465,30 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
     const resizeSelectedAddedImages = (delta: number) => {
         const ids = new Set(getTargetAddedImageIds());
-        if (!selectedAddedImage || !ids.size) return;
+        if (!selectedAddedImage || !ids.size) return false;
+        const { widthPx, heightPx } = resolveMenuPageDimensions(style);
+        const widths = new Map<string, number>();
+        for (const image of style.addedImages || []) {
+            if (!ids.has(image.id)) continue;
+            if (delta < 0) {
+                if (image.width > 50) widths.set(image.id, Math.max(50, image.width + delta));
+                continue;
+            }
+            const rendered = document.getElementById(`added-image-${image.pageIndex || 0}-${image.id}`)?.querySelector('img');
+            const dimensions = image.shape ? getCanvasShapeDimensions(image.shape) : undefined;
+            const ratio = dimensions ? dimensions.height / dimensions.width
+                : rendered?.naturalWidth ? rendered.naturalHeight / rendered.naturalWidth : 1;
+            const max = Math.max(50, Math.min(widthPx - image.x, (heightPx - image.y) / ratio));
+            if (image.width < max) widths.set(image.id, Math.min(max, image.width + delta));
+        }
+        if (!widths.size) return false;
         setStyle(prev => ({
             ...prev,
-            addedImages: prev.addedImages?.map(img => ids.has(img.id) ? { ...img, width: Math.max(50, img.width + delta) } : img),
-            name: 'Custom'
+            addedImages: prev.addedImages?.map(image => widths.has(image.id) ? { ...image, width: widths.get(image.id)! } : image),
+            name: 'Custom',
         }));
-        if (selectedAddedImage.width !== Math.max(50, selectedAddedImage.width + delta)) {
-            window.dispatchEvent(new CustomEvent('automenu:image-edit-end', { detail: selectedAddedImage.id }));
-        }
+        window.dispatchEvent(new CustomEvent('automenu:image-edit-end', { detail: selectedAddedImage.id }));
+        return true;
     };
 
     const removeSelectedAddedImages = () => {
@@ -1730,6 +1746,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
     const menuPalette = React.useMemo(() => getMenuPalette(style, products.map(product => product.styles?.color)), [style, products]);
     return (
+        <CustomMarkerLibraryProvider key={currentUserId} userId={currentUserId}>
         <MenuColorContext.Provider value={menuPalette}>
         <div className="flex flex-row-reverse h-full bg-slate-100 overflow-hidden relative">
             {addedImageFeedback && (
@@ -2070,6 +2087,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             )}
         </div>
         </MenuColorContext.Provider>
+        </CustomMarkerLibraryProvider>
     );
 };
 

@@ -1,5 +1,6 @@
 import type { BoundingBox, ExtractedImage } from '../imports/model';
 import type { TemplateDesign, TemplateCatalogMetadata, TemplateScope, TemplateSourceType } from '../templates/model';
+import type { MiniFoodKind } from './miniFoods';
 import type { MenuPageSetup } from './pageModel';
 
 export interface ElementStyle {
@@ -113,7 +114,7 @@ export interface AddedImage {
   boundingBox?: BoundingBox;
 }
 
-export type CanvasShapeKind = 'rectangle' | 'ellipse' | 'triangle' | 'diamond' | 'polygon' | 'star' | 'arrow' | 'line';
+export type CanvasShapeKind = MiniFoodKind | 'rectangle' | 'ellipse' | 'triangle' | 'diamond' | 'polygon' | 'star' | 'arrow' | 'line';
 
 export interface CanvasShape {
   kind: CanvasShapeKind;
@@ -144,7 +145,12 @@ export interface MenuBorder {
   pattern: 'solid' | 'dashed' | 'dotted' | 'double';
 }
 
-export type MenuMarker = 'none' | 'dot' | 'circle' | 'diamond' | 'arrow' | 'check' | 'dash' | 'number' | 'number-circle' | 'number-square' | 'number-padded';
+export interface CustomMenuMarker {
+  id: string;
+  shape: CanvasShape;
+}
+
+export type MenuMarker = CustomMenuMarker | MiniFoodKind | 'none' | 'dot' | 'circle' | 'diamond' | 'arrow' | 'check' | 'dash' | 'number' | 'number-circle' | 'number-square' | 'number-padded';
 
 export interface CategoryImage {
   crop?: { x: number; y: number };

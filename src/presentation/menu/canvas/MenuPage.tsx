@@ -16,7 +16,9 @@ import { InlineStyleToolbar } from '../designer/InlineStyleToolbar';
 import { resolveMenuMargins, resolveMinimumFontSize, roundFontSize } from '../../../domain/menu/styleRules';
 import { getColumnGridTemplate, getPageColumnWidths } from '../../../domain/menu/categoryColumns';
 import { ColumnResizeHandles } from './ColumnResizeHandles';
+import { isMiniFoodKind, MINI_FOODS } from '../../../domain/menu/miniFoods';
 import { canvasShapeUrl, applyCanvasShapeParameters, getSelectedLayerIds } from '../../../domain/menu/canvasShapes';
+import { ShapeTextEditor } from './ShapeTextEditor';
 import { ShapeSettings } from '../designer/ShapePicker';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 import { BorderDecoration } from '../designer/Decorations';
@@ -553,7 +555,9 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                             onClick={(e) => handleImageClick(e, img.id)}
                             onContextMenu={(e) => handlers.openObjectMenu?.(e, { type: 'addedImage', id: img.id })}
                         >
-                            <img src={img.url} alt={img.shape ? img.shape.text || 'Forma adicionada' : 'Imagem adicionada'} className="w-full h-auto pointer-events-none select-none" draggable={false}
+                            <img src={img.url} alt={img.shape ? isMiniFoodKind(img.shape.kind)
+                                ? MINI_FOODS.find(food => food.kind === img.shape?.kind)?.name
+                                : img.shape.text || 'Forma adicionada' : 'Imagem adicionada'} className="w-full h-auto pointer-events-none select-none" draggable={false}
                                 style={img.flipHorizontal || img.flipVertical
                                     ? { transform: `scale(${img.flipHorizontal ? -1 : 1}, ${img.flipVertical ? -1 : 1})` }
                                     : undefined} />
@@ -651,30 +655,21 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         >
                             <div className="relative w-full">
                                 <img src={img.url} alt="" aria-hidden="true" className="block h-auto w-full opacity-0 pointer-events-none select-none" draggable={false} />
-                                <div className={`absolute inset-0 ring-2 ring-indigo-500 pointer-events-none ${handlers.isReadyToEdit?.('addedImage', img.id) ? 'bg-indigo-500/15' : ''}`} />
-                                {img.shape && formattingShapeId === img.id && activeImage?.id === img.id && <textarea
-                                    aria-label="Texto da forma" placeholder="Digite aqui"
-                                    data-inline-format-target={`added-image-${pageIndex}-${img.id}`} data-drag-ignore="true"
-                                    value={img.shape.text || ''} rows={2}
-                                    onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}
-                                    onKeyDown={event => {
-                                        event.stopPropagation();
-                                        if (event.key === 'Escape' || (event.key === 'Enter' && (event.ctrlKey || event.metaKey))) {
-                                            event.preventDefault(); handlers.setEditingId(null);
-                                        }
-                                    }}
-                                    onChange={event => {
-                                        const text = event.currentTarget.value;
-                                        handlers.updateStyle?.((previous: MenuStyle) => ({ ...previous, name: 'Custom',
-                                            addedImages: previous.addedImages?.map(image => {
-                                                if (image.id !== img.id || !image.shape) return image;
-                                                const shape = { ...image.shape, text };
-                                                return { ...image, shape, url: canvasShapeUrl(shape) };
-                                            }),
-                                        }));
-                                    }}
-                                    className="absolute left-1/2 top-1/2 max-h-full w-4/5 -translate-x-1/2 -translate-y-1/2 resize-none rounded-md border border-indigo-300 bg-white/95 px-1 py-0.5 text-center font-sans text-xs text-slate-900 shadow-sm outline-indigo-500"
-                                />}
+                                <div className={`pointer-events-none absolute inset-0 ring-2 ring-indigo-500 ${handlers.isReadyToEdit?.('addedImage', img.id)
+                                    && formattingShapeId !== img.id ? 'bg-indigo-500/15' : ''}`} />
+                                {img.shape && !isMiniFoodKind(img.shape.kind) && formattingShapeId === img.id && activeImage?.id === img.id &&
+                                    <ShapeTextEditor shape={img.shape} imageWidth={img.width}
+                                        targetId={`added-image-${pageIndex}-${img.id}`}
+                                        onClose={() => handlers.setEditingId(null)}
+                                        onChange={text => {
+                                            handlers.updateStyle?.((previous: MenuStyle) => ({ ...previous, name: 'Custom',
+                                                addedImages: previous.addedImages?.map(image => {
+                                                    if (image.id !== img.id || !image.shape || isMiniFoodKind(image.shape.kind)) return image;
+                                                    const shape = { ...image.shape, text };
+                                                    return { ...image, shape, url: canvasShapeUrl(shape) };
+                                                }),
+                                            }));
+                                        }} />}
 
                             </div>
                         </Resizable>

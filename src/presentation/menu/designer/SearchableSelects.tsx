@@ -1,9 +1,10 @@
+import { miniFoodIconUrl } from '../../../domain/menu/miniFoods';
 import React, { useEffect, useRef, useState } from 'react';
 import Select, { components } from 'react-select';
 import type { SingleValue, StylesConfig } from 'react-select';
 import {
   FONTS,
-  isMiniFoodTexture,
+  getMiniFoodTextureKind,
   MINI_FOOD_BACKGROUNDS,
   normalizeTextureUrl,
   SAMPLE_BACKGROUNDS,
@@ -74,32 +75,17 @@ const miniFoodTextureOptions: TextureOption[] = MINI_FOOD_BACKGROUNDS.map((textu
   url: texture.url,
 }));
 
-const getMiniFoodIconPreviewUrl = (url: string) => {
-  const prefix = 'data:image/svg+xml;base64,';
-  if (!url.startsWith(prefix) || typeof atob !== 'function' || typeof btoa !== 'function') return url;
-
-  const svg = atob(url.slice(prefix.length))
-    .replace(/opacity="\.16"/g, 'opacity=".95"')
-    .replace(/opacity="\.12"/g, 'opacity="0"');
-  return `${prefix}${btoa(svg)}`;
+const getTexturePreviewStyle = (url: string): React.CSSProperties => {
+  const kind = getMiniFoodTextureKind(url);
+  const preview = kind ? miniFoodIconUrl(kind) : url;
+  return {
+    backgroundColor: '#ffffff',
+    backgroundImage: preview ? `url(${preview})` : 'none',
+    backgroundPosition: 'center',
+    backgroundRepeat: 'no-repeat',
+    backgroundSize: kind ? 'contain' : 'cover',
+  };
 };
-
-const getTexturePreviewStyle = (url: string, showMiniFoodIcon: boolean): React.CSSProperties => (
-  showMiniFoodIcon
-    ? {
-        backgroundColor: '#ffffff',
-        backgroundImage: `url(${getMiniFoodIconPreviewUrl(url)})`,
-        backgroundPosition: '-8px -8px',
-        backgroundRepeat: 'no-repeat',
-        backgroundSize: '794px 1123px',
-      }
-    : {
-        backgroundColor: '#ffffff',
-        backgroundImage: url ? `url(${url})` : 'none',
-        backgroundPosition: 'center',
-        backgroundSize: 'cover',
-      }
-);
 
 export const FontSelect: React.FC<{
   value?: string;
@@ -227,8 +213,8 @@ export const TextureSelect: React.FC<{
   onChange: (url: string) => void;
 }> = ({ value, onChange }) => {
   const normalizedValue = normalizeTextureUrl(value);
-  const selectedOption = isMiniFoodTexture(normalizedValue)
-    ? textureOptions.find((option) => isMiniFoodTexture(option.value))
+  const selectedOption = getMiniFoodTextureKind(normalizedValue)
+    ? textureOptions.find((option) => getMiniFoodTextureKind(option.value))
     : textureOptions.find((option) => option.value === normalizedValue);
 
   return (
@@ -236,22 +222,17 @@ export const TextureSelect: React.FC<{
       value={selectedOption || textureOptions[0]}
       onChange={(option: SingleValue<TextureOption>) => onChange(option?.value || '')}
       options={textureOptions}
+      aria-label="Textura de fundo"
       placeholder="Buscar textura..."
       styles={selectStyles}
       isSearchable
       noOptionsMessage={() => 'Nenhuma textura encontrada'}
-      formatOptionLabel={(option) => {
-        const showMiniFoodIcon = isMiniFoodTexture(option.url);
-        return (
-          <div className="flex items-center gap-2 min-w-0">
-            <span
-              className={`${showMiniFoodIcon ? 'h-10 w-10' : 'h-5 w-7'} rounded border border-slate-200 shrink-0`}
-              style={getTexturePreviewStyle(option.url, showMiniFoodIcon)}
-            />
-            <span className="truncate">{option.label}</span>
-          </div>
-        );
-      }}
+      formatOptionLabel={(option) => (
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="h-5 w-7 shrink-0 rounded border border-slate-200" style={getTexturePreviewStyle(option.url)} />
+          <span className="truncate">{option.label}</span>
+        </div>
+      )}
     />
   );
 };
@@ -261,21 +242,20 @@ export const MiniFoodTextureSelect: React.FC<{
   onChange: (url: string) => void;
 }> = ({ value, onChange }) => (
   <Select
-    value={miniFoodTextureOptions.find((option) => option.value === normalizeTextureUrl(value)) || miniFoodTextureOptions[0]}
+    value={miniFoodTextureOptions.find((option) => getMiniFoodTextureKind(option.value) === getMiniFoodTextureKind(value)) || miniFoodTextureOptions[0]}
     onChange={(option: SingleValue<TextureOption>) => onChange(option?.value || MINI_FOOD_BACKGROUNDS[0].url)}
     options={miniFoodTextureOptions}
+    aria-label="Mini comida"
     placeholder="Escolher mini comida..."
     styles={selectStyles}
     isSearchable
     noOptionsMessage={() => 'Nenhuma mini comida encontrada'}
-    formatOptionLabel={(option) => (
-      <div className="flex items-center gap-2 min-w-0">
-        <span
-          className="h-10 w-10 rounded border border-slate-200 bg-white shrink-0"
-          style={getTexturePreviewStyle(option.url, true)}
-        />
+    formatOptionLabel={(option) => {
+      const kind = getMiniFoodTextureKind(option.url);
+      return <div className="flex min-w-0 items-center gap-2">
+        {kind && <img src={miniFoodIconUrl(kind)} alt="" className="h-6 w-6 shrink-0" />}
         <span className="truncate">{option.label}</span>
-      </div>
-    )}
+      </div>;
+    }}
   />
 );

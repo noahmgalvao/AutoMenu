@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { Shapes } from 'lucide-react';
+import { ChevronDown, Shapes, Utensils } from 'lucide-react';
 import type { CanvasShape, CanvasShapeKind } from '../../../domain/menu/model';
 import { canvasShapeKinds, canvasShapeUrl, shapeTextColor, createCanvasShape, type CanvasShapeParameters } from '../../../domain/menu/canvasShapes';
+import { isMiniFoodKind } from '../../../domain/menu/miniFoods';
+import { MiniFoodChoices } from './MiniFoodChoices';
 import { ColorPicker } from './ColorPicker';
 import { FontSizeInput } from './FontSizeInput';
 
 const numberFields = {
-  strokeWidth: ['Contorno', 0, 12, 1],
+  strokeWidth: ['Espessura do contorno', 0, 12, 1],
   ratio: ['Proporção', .2, 6, .1],
   rotation: ['Rotação', 0, 360, 1],
   corners: ['Arredondamento', 0, 44, 1],
@@ -15,17 +17,28 @@ const numberFields = {
 } as const;
 
 export function ShapeChoices({ selected, choose }: { selected: CanvasShapeKind; choose: (kind: CanvasShapeKind) => void }) {
-  return (
-      <div className="grid grid-cols-4 gap-1">
-        {canvasShapeKinds.map(([kind, label]) => (
-          <button key={kind} type="button" aria-pressed={selected === kind} aria-label={label} title={label}
-            onClick={() => choose(kind)}
-            className={`grid h-10 place-items-center rounded-lg border ${selected === kind ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'}`}>
-            <img src={canvasShapeUrl(createCanvasShape(kind, '#4f46e5'))} alt="" className="h-6 w-7 object-contain" />
-          </button>
-        ))}
-      </div>
-  );
+  const [miniFoods, setMiniFoods] = useState(false);
+  const miniFood = isMiniFoodKind(selected);
+  return <div className="space-y-1.5">
+    <div className="grid grid-cols-4 gap-1">
+      {canvasShapeKinds.map(([kind, label]) => (
+        <button key={kind} type="button" aria-pressed={selected === kind} aria-label={label} title={label}
+          onClick={() => { choose(kind); setMiniFoods(false); }}
+          className={`grid h-10 place-items-center rounded-lg border ${selected === kind ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+          <img src={canvasShapeUrl(createCanvasShape(kind, '#4f46e5'))} alt="" className="h-6 w-7 object-contain" />
+        </button>
+      ))}
+    </div>
+    <button type="button" aria-expanded={miniFoods} onClick={() => setMiniFoods(!miniFoods)}
+      className={`flex min-h-9 w-full items-center gap-2 rounded-lg border px-2 text-xs font-semibold ${miniFood ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}>
+      <Utensils size={15} aria-hidden="true" /> Mini comidas
+      <ChevronDown size={15} aria-hidden="true" className={`ml-auto ${miniFoods ? 'rotate-180' : ''}`} />
+    </button>
+    {miniFoods && <MiniFoodChoices selected={miniFood ? selected : undefined} choose={kind => {
+      choose(kind);
+      setMiniFoods(false);
+    }} />}
+  </div>;
 }
 
 export function ShapeSettings({ shape, onChange, onEditEnd, onChangeShape }: {
@@ -40,75 +53,94 @@ export function ShapeSettings({ shape, onChange, onEditEnd, onChangeShape }: {
     changedSlider.current = false;
     onEditEnd?.();
   };
-  const fields: (keyof typeof numberFields)[] = ['strokeWidth', 'ratio', 'rotation'];
+  const [showContour, setShowContour] = useState(false);
+  const miniFood = isMiniFoodKind(shape.kind);
+  const fields: (keyof typeof numberFields)[] = ['ratio', 'rotation'];
   if (shape.kind === 'rectangle') fields.push('corners');
   if (shape.kind === 'star' || shape.kind === 'polygon') fields.push('points');
   if (shape.kind === 'star') fields.push('innerRadius');
+  const renderField = (field: keyof typeof numberFields) => {
+    const [label, min, max, step] = numberFields[field];
+    const fieldLabel = field === 'points' && shape.kind === 'polygon' ? 'Lados' : label;
+    const change = (value: number) => {
+      const next = Number((Math.round(value / step) * step).toFixed(1));
+      if (next === shape[field]) return;
+      changedSlider.current = true;
+      onChange({ [field]: next });
+    };
+    return <div key={field} className="flex items-center gap-2">
+      <label className="flex min-w-0 flex-1 flex-col text-[11px] font-medium text-slate-600">
+        {fieldLabel}
+        <input type="range" min={min} max={max} step={step} value={shape[field]}
+          onChange={event => change(event.currentTarget.valueAsNumber)}
+          onPointerUp={finishSlider} onPointerCancel={finishSlider} onKeyUp={finishSlider} onBlur={finishSlider}
+          className="w-full accent-indigo-600" />
+      </label>
+      <FontSizeInput label={fieldLabel} value={shape[field]} min={min} max={max}
+        onChange={change} onEditEnd={finishSlider} className="!w-14" />
+    </div>;
+  };
   return <div className="space-y-2">
     {onChangeShape && <button type="button" onClick={onChangeShape} className="flex w-full items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700"><Shapes size={16} />Alterar forma</button>}
-    {shape.text && <div className="flex items-center justify-between gap-2 text-xs text-slate-600">
+    {!miniFood && shape.text && <div className="flex items-center justify-between gap-2 text-xs text-slate-600">
       <label className="flex items-center gap-1">Texto <ColorPicker value={shapeTextColor(shape)} label="Cor do texto da forma" onChange={textColor => onChange({ textColor })} /></label>
       <select aria-label="Alinhamento do texto da forma" value={shape.textAlign || 'center'} onChange={e => onChange({ textAlign: e.target.value as CanvasShape['textAlign'] })} className="rounded-md border border-slate-200 p-1">
         <option value="left">À esquerda</option><option value="center">Centralizado</option><option value="right">À direita</option>
       </select>
     </div>}
-    <div className="flex flex-wrap gap-2 text-[11px] text-slate-600">
-      {shape.kind !== 'line' && <div className="flex items-center gap-1">Preenchimento
-        <ColorPicker value={shape.fill} label="Cor do preenchimento" onChange={fill => {
-          onChange({ fill });
-          onEditEnd?.();
-        }} />
+    {!miniFood && <div className="space-y-1 rounded-lg border border-slate-200 bg-white p-1.5">
+      <button type="button" aria-expanded={showContour} onClick={() => setShowContour(!showContour)}
+        className="flex min-h-7 w-full items-center justify-between rounded px-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+        Contorno <ChevronDown size={14} aria-hidden="true" className={showContour ? 'rotate-180' : undefined} />
+      </button>
+      {showContour && <div className="grid gap-1 px-1.5 text-xs text-slate-600">
+        <div className="flex items-center justify-between gap-2">Cor do contorno
+          <ColorPicker value={shape.stroke} label="Cor do contorno" onChange={stroke => {
+            onChange({ stroke });
+            onEditEnd?.();
+          }} />
+        </div>
+        {shape.kind !== 'line' && <div className="flex items-center justify-between gap-2">Cor de preenchimento
+          <ColorPicker value={shape.fill} label="Cor de preenchimento" onChange={fill => {
+            onChange({ fill });
+            onEditEnd?.();
+          }} />
+        </div>}
+        {renderField('strokeWidth')}
       </div>}
-      <div className="flex items-center gap-1">Contorno
-        <ColorPicker value={shape.stroke} label="Cor do contorno" onChange={stroke => {
-          onChange({ stroke });
-          onEditEnd?.();
-        }} />
-      </div>
-    </div>
+    </div>}
     <div className="space-y-1">
-      {fields.map(field => {
-        const [label, min, max, step] = numberFields[field];
-        const fieldLabel = field === 'points' && shape.kind === 'polygon' ? 'Lados' : label;
-        const change = (value: number) => {
-          const next = Number((Math.round(value / step) * step).toFixed(1));
-          if (next === shape[field]) return;
-          changedSlider.current = true;
-          onChange({ [field]: next });
-        };
-        return <div key={field} className="flex items-center gap-2">
-          <label className="flex min-w-0 flex-1 flex-col text-[11px] font-medium text-slate-600">
-            {fieldLabel}
-            <input type="range" min={min} max={max} step={step} value={shape[field]}
-              onChange={event => change(event.currentTarget.valueAsNumber)}
-              onPointerUp={finishSlider} onPointerCancel={finishSlider} onKeyUp={finishSlider} onBlur={finishSlider}
-              className="w-full accent-indigo-600" />
-          </label>
-          <FontSizeInput label={fieldLabel} value={shape[field]} min={min} max={max}
-            onChange={change} onEditEnd={finishSlider} className="!w-14" />
-        </div>;
-      })}
+      {fields.map(renderField)}
     </div>
+  </div>;
+}
+
+export function ShapeEditor({ color, onSave, saveLabel, hidden, disabled }: {
+  color: string;
+  onSave: (shape: CanvasShape) => void;
+  saveLabel: string;
+  hidden?: boolean;
+  disabled?: boolean;
+}) {
+  const [shape, setShape] = useState(() => createCanvasShape('rectangle', color));
+  return <div hidden={hidden} className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
+    <ShapeChoices selected={shape.kind} choose={kind => setShape(createCanvasShape(kind, shape.fill))} />
+    <div className="grid h-16 place-items-center rounded-lg bg-slate-50">
+      <img src={canvasShapeUrl(shape)} alt="Prévia da forma" className="h-12 w-20 object-contain" />
+    </div>
+    <ShapeSettings shape={shape} onChange={patch => setShape(current => ({ ...current, ...patch }))} />
+    <button type="button" disabled={disabled} onClick={() => onSave(shape)}
+      className="w-full rounded-lg bg-indigo-700 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-800 disabled:opacity-50">{saveLabel}</button>
   </div>;
 }
 
 export function ShapePicker({ color, onAdd }: { color: string; onAdd: (shape: CanvasShape) => void }) {
   const [open, setOpen] = useState(false);
-  const [shape, setShape] = useState(() => createCanvasShape('rectangle', color));
-  const choose = (kind: CanvasShapeKind) => setShape(createCanvasShape(kind, shape.fill));
-  return <div className="col-span-2">
+  return <div className="col-span-2 space-y-2">
     <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}
       className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white p-2.5 text-sm font-medium text-slate-700 hover:border-indigo-300 hover:bg-indigo-50">
       <Shapes size={18} className="text-indigo-600" /> Adicionar forma
     </button>
-    {open && <div className="mt-2 space-y-3 rounded-xl border border-slate-200 bg-white p-3">
-      <ShapeChoices selected={shape.kind} choose={choose} />
-      <div className="grid h-16 place-items-center rounded-lg bg-slate-50">
-        <img src={canvasShapeUrl(shape)} alt="Prévia da forma" className="h-12 w-20 object-contain" />
-      </div>
-      <ShapeSettings shape={shape} onChange={patch => setShape(current => ({ ...current, ...patch }))} />
-      <button type="button" onClick={() => { onAdd(shape); setOpen(false); }}
-        className="w-full rounded-lg bg-indigo-700 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-800">Inserir forma</button>
-    </div>}
+    <ShapeEditor hidden={!open} color={color} saveLabel="Inserir forma" onSave={shape => { onAdd(shape); setOpen(false); }} />
   </div>;
 }

@@ -19,11 +19,12 @@ export function normalizeTemplateDesign(value?: TemplateDesign): TemplateDesign 
     (options as string[]).includes(value[key as keyof typeof variants])) ? value : undefined;
 }
 
-export function templateProductImageHeight(style: MenuStyle, standardHeight: number) {
+export function templateProductImageHeight(style: MenuStyle, standardHeight: number, round = true) {
   if (!style.design) return standardHeight;
   const [width, height] = style.design.imageRatio.split(':').map(Number);
   const ratioFactor = 4 * height / (3 * width);
-  return Math.round(standardHeight * Math.min(1.5, Math.max(0.7, ratioFactor)));
+  const imageHeight = standardHeight * Math.min(1.5, Math.max(0.7, ratioFactor));
+  return round ? Math.round(imageHeight) : imageHeight;
 }
 
 export const templateHeaderExtra = (style: MenuStyle) =>

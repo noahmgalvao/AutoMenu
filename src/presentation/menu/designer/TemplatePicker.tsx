@@ -1,6 +1,6 @@
 import React, { memo, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDown, ArrowUp, ChevronDown, Grid2X2, Heart, Search, X } from 'lucide-react';
+import { ArrowLeft, ArrowUp, Check, ChevronDown, Grid2X2, Heart, Search, X } from 'lucide-react';
 import type { MenuStyle, Product, SortOption } from '../../../domain/menu/model';
 import { useTemplateFavorites } from './useTemplateFavorites';
 import { getAppliedTemplateId } from '../../../application/templates/templateApplication';
@@ -41,7 +41,7 @@ const Thumbnail = memo(function Thumbnail({ template }: { template: MenuStyle })
   }, []);
 
   return (
-    <div ref={ref} aria-hidden="true" className="grid h-full w-full place-items-center overflow-hidden bg-slate-100 p-1">
+    <div ref={ref} aria-hidden="true" className="template-thumbnail-stage grid h-full w-full place-items-center overflow-hidden bg-slate-100 p-1">
       {visible && <div {...getTemplateDesignAttributes(template)} className="template-thumbnail" style={{
         ...getTemplateColors(template),
         backgroundColor: template.backgroundColor, color: template.textColor,
@@ -69,20 +69,23 @@ const Thumbnail = memo(function Thumbnail({ template }: { template: MenuStyle })
   );
 });
 
-function FavoriteButton({ template, favorites }: { template: MenuStyle; favorites: Favorites }) {
+function FavoriteButton({ template, favorites, discovery = false }: {
+  template: MenuStyle; favorites: Favorites; discovery?: boolean;
+}) {
   const active = favorites.ids.has(template.id);
   return <button type="button" aria-pressed={active}
     aria-label={`${active ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}: ${template.name}`}
-    className={actionStyle + (active ? ' text-rose-600 hover:bg-rose-50' : ' text-slate-500 hover:bg-slate-100')}
+    className={discovery ? 'template-discover-like ' + focusStyle
+      : actionStyle + (active ? ' text-rose-600 hover:bg-rose-50' : ' text-slate-500 hover:bg-slate-100')}
     onClick={() => favorites.toggle(template.id, template.name)}>
-    <Heart size={17} fill={active ? 'currentColor' : 'none'} />
+    <Heart size={discovery ? 29 : 17} strokeWidth={discovery ? 1.8 : 2} fill={active ? 'currentColor' : 'none'} aria-hidden="true" />
   </button>;
 }
 
-function Filters({ query, setQuery, tab, setTab }: {
-  query: string; setQuery: (query: string) => void; tab: TemplateTab; setTab: (tab: TemplateTab) => void;
+function Filters({ query, setQuery, tab, setTab, gallery = false }: {
+  query: string; setQuery: (query: string) => void; tab: TemplateTab; setTab: (tab: TemplateTab) => void; gallery?: boolean;
 }) {
-  return <div className="space-y-2">
+  return <div className={gallery ? 'template-gallery-filters' : 'space-y-2'}>
     <label className="flex min-h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-2.5 focus-within:border-indigo-500">
       <Search size={16} aria-hidden="true" className="shrink-0 text-slate-500" />
       <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Pesquisar modelos"
@@ -99,13 +102,13 @@ function Filters({ query, setQuery, tab, setTab }: {
   </div>;
 }
 
-function TemplateOption({ template, active, favorites, choose, discover, gallery }: {
+function TemplateOption({ template, active, favorites, choose, gallery }: {
   template: MenuStyle; active: boolean; favorites: Favorites;
-  choose: () => void; discover?: boolean; gallery?: boolean;
+  choose: () => void; gallery?: boolean;
 }) {
   const pendingChoice = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(pendingChoice.current), []);
-  return <div data-template-option={template.id} className={`relative flex min-w-0 rounded-lg border ${active ? 'border-indigo-400 bg-indigo-50' : 'border-transparent hover:bg-slate-50'}`}>
+  return <div data-template-option={template.id} className={gallery ? "template-gallery-tile" : `relative flex min-w-0 rounded-lg border ${active ? 'border-indigo-400 bg-indigo-50' : 'border-transparent hover:bg-slate-50'}`} data-current={active || undefined}>
     <button type="button" aria-current={active || undefined}
       className={`flex min-w-0 flex-1 gap-2 rounded-lg p-2 text-left ${gallery ? 'flex-col' : 'items-center'} ${focusStyle}`}
       onClick={(event) => {
@@ -120,12 +123,11 @@ function TemplateOption({ template, active, favorites, choose, discover, gallery
           pendingChoice.current = undefined;
           choose();
         }, 280);
-      }}
-      onDoubleClick={discover && !gallery ? () => favorites.toggle(template.id, template.name) : undefined}>
-      <div className={`shrink-0 overflow-hidden rounded-md ${gallery ? 'h-36 w-full' : 'h-16 w-14'}`}><Thumbnail template={template} /></div>
+      }}>
+      <div className={`shrink-0 overflow-hidden rounded-md ${gallery ? 'template-gallery-thumbnail w-full' : 'h-16 w-14'}`}><Thumbnail template={template} /></div>
       <div className={`min-w-0 ${gallery ? 'pr-9' : ''}`}>
         <div className="truncate text-sm font-semibold">{template.name}</div>
-        <div className="line-clamp-2 text-xs text-slate-600">{template.catalogMetadata?.description || 'Modelo do seu workspace'}</div>
+        <div className="template-option-description line-clamp-2 text-xs text-slate-600">{template.catalogMetadata?.description || 'Modelo do seu workspace'}</div>
         {!gallery && <div className="mt-1 truncate text-[10px] font-semibold text-indigo-700">
           {template.scope === 'system' ? 'Pronto' : template.sourceType === 'ai_import' ? 'Importado' : 'Meu modelo'}
           {template.catalogMetadata?.tags.length ? ' · ' + template.catalogMetadata.tags.join(' · ') : ''}
@@ -148,7 +150,11 @@ function Discover({ current, products, sortOption, splitCategoryAcrossPages, app
   const list = useRef<HTMLDivElement>(null);
   const [focusId, setFocusId] = useState(getAppliedTemplateId(current));
   const [gallery, setGallery] = useState(false);
-  const gesture = useRef<{ x: number; y: number } | null>(null);
+  const gesture = useRef<{ x: number; y: number; pointerId: number } | null>(null);
+  const wheel = useRef({ at: -Infinity, delta: 0, handled: false });
+  const [drag, setDrag] = useState(0);
+  const [direction, setDirection] = useState(0);
+  const [hint, setHint] = useState(results.length > 1);
   const lastTap = useRef(0);
   const pointerKind = useRef('');
   const tapTarget = useRef<{ button: HTMLButtonElement; x: number; y: number; pointerId: number } | null>(null);
@@ -169,7 +175,14 @@ function Discover({ current, products, sortOption, splitCategoryAcrossPages, app
       document.body.style.overflow = previousOverflow;
       node.close();
     };
-  }, [onClose, titleId]);
+  }, [onClose]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setHint(false), 2900);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => { dialog.current?.focus(); }, [gallery]);
 
   useEffect(() => {
     const items = Array.from(list.current?.querySelectorAll<HTMLElement>('[data-template-option]') || []);
@@ -177,8 +190,16 @@ function Discover({ current, products, sortOption, splitCategoryAcrossPages, app
   }, [focused?.id, gallery]);
 
   const step = (delta: number) => {
+    setHint(false);
     const id = stepTemplate(results, focused?.id, delta);
-    if (id) setFocusId(id);
+    if (id && id !== focused?.id) {
+      setDirection(delta);
+      setFocusId(id);
+    }
+  };
+  const openGallery = () => {
+    setHint(false);
+    setGallery(true);
   };
   const apply = () => {
     if (!focused) return;
@@ -187,7 +208,7 @@ function Discover({ current, products, sortOption, splitCategoryAcrossPages, app
   };
 
   return createPortal(
-    <dialog ref={dialog} tabIndex={-1} aria-labelledby={titleId} className="template-discover text-slate-900"
+    <dialog ref={dialog} tabIndex={-1} aria-labelledby={titleId} className="template-discover" style={{ '--discover-accent': focused?.primaryColor } as React.CSSProperties}
       onCancel={(event) => { event.preventDefault(); onClose(); }}
       onPointerDownCapture={(event) => {
         if (event.pointerType !== 'touch' || !event.isPrimary) return;
@@ -219,8 +240,8 @@ function Discover({ current, products, sortOption, splitCategoryAcrossPages, app
         event.stopPropagation();
         if (event.key === 'Escape') { event.preventDefault(); onClose(); return; }
         if ((event.target as HTMLElement).closest('input,textarea,select,[contenteditable]')) return;
-        const target = event.target as HTMLElement;
-        if (event.key === 'Enter' && (!target.closest('button') || target.matches('[data-template-option] > button'))) {
+        if (gallery) return;
+        if (event.key === 'Enter' && !(event.target as HTMLElement).closest('button')) {
           event.preventDefault();
           apply();
         }
@@ -229,76 +250,101 @@ function Discover({ current, products, sortOption, splitCategoryAcrossPages, app
           step(event.key === 'ArrowDown' ? 1 : -1);
         }
       }}>
-      <div className="flex h-full min-h-0 flex-col">
-        <header className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-4 py-2">
-          <h2 id={titleId} className="text-base font-bold">Descobrir modelos</h2>
-          <div className="flex gap-1">
-            <button type="button" className={actionStyle + ' bg-slate-100'} onClick={() => setGallery((open) => !open)}>
-              <Grid2X2 size={16} /> {gallery ? 'Voltar à prévia' : 'Ver todos'}
+      <h2 id={titleId} className="sr-only">Descobrir modelos</h2>
+      {gallery ? <section className="template-gallery" aria-label="Catálogo">
+        <header className="template-gallery-header">
+          <div className="template-gallery-heading">
+            <button type="button" className={`template-gallery-back ${focusStyle}`} aria-label="Voltar à prévia" onClick={() => setGallery(false)}>
+              <ArrowLeft size={21} aria-hidden="true" />
             </button>
-            <button type="button" aria-label="Fechar descoberta" className={actionStyle} onClick={onClose}><X size={20} /></button>
+            <h3>Todos os modelos</h3>
+            <button type="button" className={`template-gallery-back ${focusStyle}`} aria-label="Cancelar" onClick={onClose}>
+              <X size={21} aria-hidden="true" />
+            </button>
           </div>
+          <Filters {...{ query, setQuery, tab, setTab }} gallery />
         </header>
-        <div className="flex min-h-0 flex-1">
-          <aside className={`min-h-0 flex-col gap-2 bg-white p-3 ${gallery ? 'flex w-full' : 'hidden w-[clamp(15rem,26vw,23rem)] border-r border-slate-200 md:flex'}`} aria-label="Catálogo">
-            <Filters {...{ query, setQuery, tab, setTab }} />
-            <div ref={list} className={`min-h-0 flex-1 overflow-auto overscroll-contain p-1 ${gallery ? 'grid grid-cols-2 content-start gap-2 sm:grid-cols-3 lg:grid-cols-5' : 'space-y-1'}`}>
-              {results.map((template) => <TemplateOption key={template.id} template={template} active={focused?.id === template.id}
-                favorites={favorites} discover gallery={gallery} choose={() => { setFocusId(template.id); if (gallery) setGallery(false); }} />)}
-              {!results.length && <p className="p-3 text-sm text-slate-600">Nenhum modelo encontrado.</p>}
-            </div>
-          </aside>
-          {!gallery && <section className="flex min-w-0 flex-1 flex-col gap-2 bg-slate-100 p-3 sm:p-5">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0" aria-live="polite">
-                <h3 className="truncate text-sm font-bold">{focused?.name || 'Nenhum modelo encontrado'}</h3>
-                <p className="line-clamp-1 text-xs text-slate-600">{focused?.catalogMetadata?.description}</p>
-              </div>
-              <div className="flex shrink-0 items-center">
-                <button type="button" onClick={() => step(-1)} className={actionStyle} aria-label="Modelo anterior"><ArrowUp size={17} /></button>
-                <button type="button" onClick={() => step(1)} className={actionStyle} aria-label="Próximo modelo"><ArrowDown size={17} /></button>
-              </div>
-            </div>
-            {focused && <div tabIndex={0} className={`flex min-h-0 flex-1 touch-none flex-col ${focusStyle}`}
-              onDoubleClick={(event) => {
-                if (pointerKind.current !== 'touch' && !(event.target as HTMLElement).closest('[data-template-preview-controls]')) favorites.toggle(focused.id, focused.name);
-              }}
-              onPointerDown={(event) => {
-                if ((event.target as HTMLElement).closest('[data-template-preview-controls]')) return;
-                pointerKind.current = event.pointerType;
-                if (event.pointerType !== 'touch' || !event.isPrimary) return;
-                gesture.current = { x: event.clientX, y: event.clientY };
-                event.currentTarget.setPointerCapture(event.pointerId);
-              }}
-              onPointerCancel={() => { gesture.current = null; }}
-              onPointerUp={(event) => {
-                const start = gesture.current;
-                gesture.current = null;
-                if (!start || event.pointerType !== 'touch') return;
-                const dx = event.clientX - start.x;
-                const dy = event.clientY - start.y;
-                const direction = swipeDirection(dx, dy);
-                if (direction) { lastTap.current = 0; step(direction); return; }
-                if (Math.hypot(dx, dy) > 12) return;
-                const now = Date.now();
-                if (now - lastTap.current < 280) { favorites.toggle(focused.id, focused.name); lastTap.current = 0; }
-                else lastTap.current = now;
-              }}>
-              <TemplatePreviewSurface key={focused.id} current={current} template={focused} products={products}
-                sortOption={sortOption} splitCategoryAcrossPages={splitCategoryAcrossPages} />
-            </div>}
-            {focused && <p className="text-center text-[11px] text-slate-600 md:hidden">Deslize para cima ou para baixo para trocar de modelo.</p>}
-          </section>}
+        <div ref={list} className="template-gallery-list">
+          {results.map(template => <TemplateOption key={template.id} template={template} active={focused?.id === template.id}
+            favorites={favorites} gallery choose={() => { setDirection(0); setFocusId(template.id); setGallery(false); }} />)}
+          {!results.length && <p className="template-gallery-empty">Nenhum modelo encontrado.</p>}
         </div>
-        <footer className="flex shrink-0 items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 pt-2 template-discover-footer">
-          <div>{focused && <FavoriteButton template={focused} favorites={favorites} />}</div>
-          <div className="flex gap-2">
-            <button type="button" className={actionStyle + ' border border-slate-300'} onClick={onClose}>Cancelar</button>
-            <button type="button" className={actionStyle + ' bg-indigo-700 px-5 text-white disabled:opacity-40'} onClick={apply} disabled={!focused}>Aplicar</button>
+      </section> : <>
+        {focused ? <div className="template-discover-surface" aria-label="Prévia do modelo"
+          onDoubleClick={event => {
+            if (pointerKind.current !== 'touch' && !(event.target as HTMLElement).closest('[data-template-preview-controls]')) {
+              favorites.toggle(focused.id, focused.name);
+            }
+          }}
+          onWheel={event => {
+            if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+            const now = performance.now();
+            if (now - wheel.current.at > 220) wheel.current = { at: now, delta: 0, handled: false };
+            wheel.current.at = now;
+            if (wheel.current.handled) return;
+            wheel.current.delta += event.deltaY * (event.deltaMode ? 30 : 1);
+            if (Math.abs(wheel.current.delta) >= 32) {
+              wheel.current.handled = true;
+              step(Math.sign(wheel.current.delta));
+            }
+          }}
+          onPointerDown={event => {
+            if (!event.isPrimary || event.button !== 0 || (event.target as HTMLElement).closest('[data-template-preview-controls]')) return;
+            pointerKind.current = event.pointerType;
+            gesture.current = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={event => {
+            const start = gesture.current;
+            if (!start || event.pointerId !== start.pointerId) return;
+            const dy = event.clientY - start.y;
+            if (Math.abs(dy) < 8 || Math.abs(dy) <= Math.abs(event.clientX - start.x)) return;
+            setHint(false);
+            setDrag(Math.max(-96, Math.min(96, dy * .38)));
+          }}
+          onPointerCancel={() => { gesture.current = null; setDrag(0); }}
+          onPointerUp={event => {
+            const start = gesture.current;
+            if (!start || event.pointerId !== start.pointerId) return;
+            gesture.current = null;
+            setDrag(0);
+            const dx = event.clientX - start.x;
+            const dy = event.clientY - start.y;
+            const next = swipeDirection(dx, dy);
+            if (next) { lastTap.current = 0; step(next); return; }
+            if (event.pointerType !== 'touch' || Math.hypot(dx, dy) > 12) return;
+            const now = Date.now();
+            if (now - lastTap.current < 280) { favorites.toggle(focused.id, focused.name); lastTap.current = 0; }
+            else lastTap.current = now;
+          }}>
+          <div className="template-discover-drag" data-dragging={Boolean(drag)} style={{ transform: `translateY(${drag}px)` }}>
+            <div key={focused.id} className="template-discover-slide" style={{ '--discover-enter': `${direction * 8}vh` } as React.CSSProperties}>
+              <TemplatePreviewSurface current={current} template={focused} products={products}
+                sortOption={sortOption} splitCategoryAcrossPages={splitCategoryAcrossPages} />
+            </div>
           </div>
+        </div> : <p className="template-discover-empty">Nenhum modelo encontrado.</p>}
+        {hint && focused && <div className="template-discover-hint" role="status">
+          <ArrowUp size={26} aria-hidden="true" />
+          <span>Arraste para cima para ver o próximo</span>
+        </div>}
+        <div className="template-discover-actions">
+          {focused && <FavoriteButton discovery template={focused} favorites={favorites} />}
+          <button type="button" className={`template-discover-all ${focusStyle}`} onClick={openGallery}>
+            <Grid2X2 size={21} aria-hidden="true" />
+            Ver todos
+          </button>
+        </div>
+        <footer className="template-discover-footer">
+          <button type="button" className={`template-discover-cancel ${focusStyle}`} onClick={onClose}>
+            <X size={19} aria-hidden="true" /> Cancelar
+          </button>
+          <button type="button" className={`template-discover-apply ${focusStyle}`} onClick={apply} disabled={!focused}>
+            <Check size={21} aria-hidden="true" /> Aplicar
+          </button>
         </footer>
-        <span className="sr-only" role="status">{favorites.announcement}</span>
-      </div>
+      </>}
+      <span className="sr-only" role="status">{favorites.announcement}</span>
     </dialog>, document.body,
   );
 }

@@ -1,6 +1,9 @@
+import { isMiniFoodKind, miniFoodArtwork, type MiniFoodKind } from './miniFoods';
 import type { AddedImage, CanvasShape, CanvasShapeKind } from './model';
 
-export const canvasShapeKinds: [CanvasShapeKind, string][] = [
+type GeometricShape = Exclude<CanvasShapeKind, MiniFoodKind>;
+
+export const canvasShapeKinds: [GeometricShape, string][] = [
   ['rectangle', 'Retângulo'], ['ellipse', 'Elipse'], ['triangle', 'Triângulo'], ['diamond', 'Losango'],
   ['polygon', 'Polígono'], ['star', 'Estrela'], ['arrow', 'Seta'], ['line', 'Linha'],
 ];
@@ -34,14 +37,12 @@ export function shapeTextColor(shape: CanvasShape) {
   return channels[0] * .299 + channels[1] * .587 + channels[2] * .114 > 154 ? '#172033' : '#ffffff';
 }
 
-// SVG text is part of the image, including in exported menus and pasted copies.
-function shapeLabel(shape: CanvasShape) {
-  if (!shape.text?.trim()) return '';
+export function getCanvasShapeTextLayout(shape: CanvasShape) {
   const compact = ['star', 'diamond', 'triangle', 'arrow'].includes(shape.kind);
   const width = (compact ? 39 : shape.kind === 'rectangle' ? 78 : 60) * shape.ratio;
   const height = compact ? 29 : 60;
   const centerY = shape.kind === 'triangle' ? 16 : 0;
-  const paragraphs = shape.text.replace(/\r/g, '').split('\n');
+  const paragraphs = (shape.text || '').replace(/\r/g, '').split('\n');
   let size = Math.min(14, width / 2);
   let lines: string[];
   do {
@@ -64,7 +65,13 @@ function shapeLabel(shape: CanvasShape) {
     size *= .9;
   } while (true);
   size = Math.min(size, height / (1.22 * lines.length));
-  const align = shape.textAlign || 'center';
+  return { width, centerY, size, lines, align: shape.textAlign || 'center' };
+}
+
+// SVG text is part of the image, including in exported menus and pasted copies.
+function shapeLabel(shape: CanvasShape) {
+  if (!shape.text?.trim()) return '';
+  const { width, centerY, size, lines, align } = getCanvasShapeTextLayout(shape);
   const x = align === 'left' ? -width / 2 : align === 'right' ? width / 2 : 0;
   const escape = (line: string) => line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return `<g transform="rotate(${shape.rotation})" fill="${shapeTextColor(shape)}" font-family="Arial,sans-serif" font-size="${size}" font-weight="600" text-anchor="${align === 'left' ? 'start' : align === 'right' ? 'end' : 'middle'}">${lines.map((line, index) =>
@@ -74,7 +81,7 @@ function shapeLabel(shape: CanvasShape) {
 export function canvasShapeUrl(shape: CanvasShape) {
   const hex = (color: string) => /^#[0-9a-f]{6}$/i.test(color) ? color : '#4f46e5';
   const { width, height } = getCanvasShapeDimensions(shape);
-  const geometry: Record<CanvasShapeKind, () => string> = {
+  const geometry: Record<GeometricShape, () => string> = {
     rectangle: () => `<rect x="6" y="6" width="88" height="88" rx="${shape.corners}"/>`,
     ellipse: () => '<ellipse cx="50" cy="50" rx="44" ry="44"/>',
     triangle: () => '<polygon points="50,7 94,93 6,93"/>',
@@ -84,7 +91,12 @@ export function canvasShapeUrl(shape: CanvasShape) {
     arrow: () => '<polygon points="6,35 60,35 60,9 94,50 60,91 60,65 6,65"/>',
     line: () => '<path d="M 6,50 H 94"/>',
   };
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${-width / 2} ${-height / 2} ${width} ${height}"><g transform="rotate(${shape.rotation}) scale(${shape.ratio} 1) translate(-50 -50)" fill="${hex(shape.fill)}" stroke="${hex(shape.stroke)}" stroke-width="${shape.kind === 'line' ? Math.max(1, shape.strokeWidth) : shape.strokeWidth}" stroke-linecap="round" stroke-linejoin="round">${geometry[shape.kind]()}</g>${shapeLabel(shape)}</svg>`;
+  const kind = shape.kind;
+  const miniFood = isMiniFoodKind(kind);
+  const content = miniFood
+    ? `<g transform="scale(4.1666667)">${miniFoodArtwork(kind)}</g>`
+    : geometry[kind]?.() || '';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${-width / 2} ${-height / 2} ${width} ${height}"><g transform="rotate(${shape.rotation}) scale(${shape.ratio} 1) translate(-50 -50)" fill="${hex(shape.fill)}" stroke="${hex(shape.stroke)}" stroke-width="${shape.kind === 'line' ? Math.max(1, shape.strokeWidth) : shape.strokeWidth}" stroke-linecap="round" stroke-linejoin="round">${content}</g>${miniFood ? '' : shapeLabel(shape)}</svg>`;
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
@@ -92,6 +104,7 @@ export type CanvasShapeParameters = Partial<Omit<CanvasShape, 'kind' | 'text'>>;
 
 export function getCanvasShapeParameters(shape: CanvasShape): CanvasShapeParameters {
   const { fill, stroke, strokeWidth, ratio, rotation, corners, points, innerRadius } = shape;
+  if (isMiniFoodKind(shape.kind)) return { ratio, rotation };
   return {
     stroke, strokeWidth, ratio, rotation, textColor: shape.textColor, textAlign: shape.textAlign,
     ...(shape.kind !== 'line' && { fill }),

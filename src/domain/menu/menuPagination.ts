@@ -1,6 +1,6 @@
 import { categoryName } from './categoryName';
 import type { Product, MenuStyle } from './model';
-import { resolveMenuMargins, resolveMinimumFontSize, resolveMenuContentSpacing, clampFontSize } from './styleRules';
+import { resolveMenuMargins, resolveMinimumFontSize, resolveMenuContentSpacing, clampFontSize, resolveProductImageFrame } from './styleRules';
 import { resolveMenuPageDimensions } from './pageSetup';
 import { normalizeColumnWidths } from './categoryColumns';
 import { templateHeaderExtra, templateProductImageHeight, templateCategoryExtra } from '../templates/templateDesign';
@@ -122,11 +122,9 @@ const getProductGridGap = (style: MenuStyle) => {
     return PRODUCT_GRID_GAP_PX;
 };
 
-const getProductCardImageHeight = (style: MenuStyle) => {
+export const getProductCardImageHeight = (style: MenuStyle, imgScale = style.imageScale || 1) => {
     const productColumnCount = style.columnCount || 1;
     const categoryColumnCount = style.categoryColumnCount || 1;
-    const imgScale = style.imageScale || 1;
-
     if (categoryColumnCount >= 3) return 56 * imgScale;
     if (categoryColumnCount === 2) return 72 * imgScale;
     if (productColumnCount >= 3) return 90 * imgScale;
@@ -220,11 +218,11 @@ export const calculateItemHeight = (
         const productGridGap = getProductGridGap(style);
         const usableColWidth = Math.max(40, (containerWidth - (productGridGap * (columnCount - 1))) / columnCount);
         if (style.showImages && product.image) {
-            const frame = style.productImageFrame;
-            const framed = frame && frame !== 'template';
+            const frame = resolveProductImageFrame(style, true);
             const height = templateProductImageHeight(style, getProductCardImageHeight(style));
-            contentHeight += framed ? 8 + (frame === 'circle' ? Math.min(usableColWidth - 16, height) : height)
-                : style.design?.image === 'background' ? 36 : height;
+            if (frame === 'fill') contentHeight += height;
+            else if (frame === 'template') contentHeight += style.design?.image === 'background' ? 36 : height;
+            else contentHeight += 8 + (frame === 'circle' ? Math.min(usableColWidth - 16, height) : height);
         }
         const cardHorizontalPadding = categoryColumnCount > 1 || columnCount > 2 ? 12 : columnCount > 1 ? 16 : 32;
         const textContentWidth = Math.max(32, usableColWidth - cardHorizontalPadding);

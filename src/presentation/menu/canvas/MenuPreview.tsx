@@ -1,5 +1,6 @@
 import { categoryKey, categoryName } from '../../../domain/menu/categoryName';
 import { copiedProductFields, lastCanvasCopy, matchingCanvasCopy, pasteCanvasObjects, writeCanvasCopy, type CanvasClip, type CopiedObject, type PasteContent } from './canvasClipboard';
+import { LIVE_CARD_PHOTO_SCALE } from './PhotoEditControls';
 import React, { useMemo, useEffect, useRef, useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { CategoryPosition, ElementStyle, Product, MenuStyle, SortOption } from '../../../domain/menu/model';
@@ -656,6 +657,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         ));
         let frame = 0;
         const measure = () => {
+            if (root.style.getPropertyValue(LIVE_CARD_PHOTO_SCALE)) return;
             const next = new Map<string, number>();
             if (header?.offsetWidth) next.set('main-header', parseFloat(getComputedStyle(header).height));
             for (const item of items) {
@@ -2337,6 +2339,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     return (
         <div
             ref={previewRootRef}
+            data-menu-preview-canvas
             inert={readOnly ? true : undefined}
             aria-label={readOnly ? 'Pré-visualização do cardápio, somente leitura' : undefined}
             className={`flex justify-start w-full relative ${readOnly ? 'pointer-events-none select-none min-h-0 min-w-0' : 'min-h-full min-w-full md:cursor-grab'}`}

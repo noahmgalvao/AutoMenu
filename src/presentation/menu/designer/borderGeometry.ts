@@ -12,7 +12,7 @@ function measureText(page: HTMLElement): TextBounds[] {
     return Array.from(page.querySelectorAll(textSelector)).flatMap((element) => {
         const css = getComputedStyle(element);
         if (css.visibility === 'hidden' || Number(css.opacity) === 0) return [];
-        if (element.matches('[data-subtitle-placeholder]:empty') && element.getBoundingClientRect().height > 0) {
+        if (element.matches('[data-subtitle-placeholder]:empty, img[data-menu-marker]') && element.getBoundingClientRect().height > 0) {
             return [{ element, box: element.getBoundingClientRect() }];
         }
         range.selectNodeContents(element);

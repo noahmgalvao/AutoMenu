@@ -2,19 +2,19 @@ import { getSurfaceFill } from '../designer/Decorations';
 import { categoryName } from '../../../domain/menu/categoryName';
 import type { MenuStyle, Product, ElementStyle, FontSizeLimitKey, MenuBorderScope } from '../../../domain/menu/model';
 import React from 'react';
-import { resolveFontSizeLimits, resolveMinimumFontSize, resolveMenuContentSpacing, clampFontSize } from '../../../domain/menu/styleRules';
+import { resolveFontSizeLimits, resolveMinimumFontSize, resolveMenuContentSpacing, clampFontSize, resolveProductImageFrame, usesProductCards } from '../../../domain/menu/styleRules';
 import { CategoryDividerPicker } from '../designer/CategoryDividerPicker';
 import { resolveCategoryDivider, resolveProductDivider } from './categoryDividers';
 import { InlineStyleToolbar } from '../designer/InlineStyleToolbar';
 import { DecorationControls, getBorderOverride, BorderDecoration, MenuMarkerGlyph, getMarker } from '../designer/Decorations';
 import type { PriceAdjustmentMode } from '../../../domain/menu/pricePropagation';
 import { MenuPhoto, PhotoLoading } from './MenuPhoto';
-import { PhotoEditControls } from './PhotoEditControls';
+import { PhotoEditControls, LIVE_CARD_PHOTO_SCALE } from './PhotoEditControls';
 import { getProductCardRadius, getProductPhotoFrameRadius, getProductCardCornerRadii } from './templateStyles';
 import { AutoFitText } from './AutoFitText';
 import { CanvasTextDivider } from './CanvasTextDivider';
 import { isHeadingTextHit } from './menuHeadingHit';
-import { getPaginationItemKey } from '../../../domain/menu/menuPagination';
+import { getPaginationItemKey, getProductCardImageHeight } from '../../../domain/menu/menuPagination';
 import { ProductControls, FreeTextResizeHandles, getFreeTextMaximumWidth, getFreeTextContentWidth } from './ProductCanvasControls';
 import { FREE_TEXT_PREFIX } from '../../../domain/menu/flow';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
@@ -290,7 +290,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             >{formatMenuPriceValue(product.price, style)}</span>
         </div>;
     };
-    const photoControls = (type: 'category' | 'product', id: string, hasPhoto: boolean, crop: { x: number; y: number }, flips?: { horizontal?: boolean; vertical?: boolean }) => (
+    const photoControls = (type: 'category' | 'product', id: string, hasPhoto: boolean, crop: { x: number; y: number }, flips?: { horizontal?: boolean; vertical?: boolean }, resizeCard = false) => (
         <PhotoEditControls id={id} anchorId={`${type}-image-${id}`} hasPhoto={hasPhoto} active={imageMenuProductId === id && !formattingTarget}
             scale={(type === 'category' ? style.categoryImageScale : style.imageScale) || 1} crop={crop} flips={flips}
             activate={() => {
@@ -299,20 +299,21 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 setImageMenuProductId(id);
             }}
             choose={() => handlers.choosePhoto(type, id)} remove={() => handlers.removePhoto(type, id)}
-            type={type} updateStyle={handlers.updateStyle} />
+            type={type} resizeCard={resizeCard} updateStyle={handlers.updateStyle} />
     );
-    const renderProductPhoto = (product: Product, height: number, width: string, inCard = false) => {
+    const renderProductPhoto = (product: Product, height: number, width: string, inRow = false, cardBaseHeight?: number) => {
         const isEditable = !handlers.readOnly && handlers.isReadyToEdit?.('product', product.id);
         const loading = handlers.photoIsLoading?.('product', product.id);
         if (!style.showImages || (!product.image && !loading && !(isEditable && imageMenuProductId === product.id))) return null;
         const crop = style.productPhotoCrops?.[product.id] || { x: product.imageAlignment === 'left' ? 0 : product.imageAlignment === 'right' ? 100 : 50, y: 50 };
-        const frame = style.productImageFrame;
-        const hasFrame = frame && frame !== 'template';
+        const frame = resolveProductImageFrame(style, inRow);
+        const hasFrame = frame !== 'template';
+        const resizeCard = cardBaseHeight !== undefined && frame === 'fill';
         const shaped = hasFrame && frame !== 'fill';
-        const background = inCard && style.design?.image === 'background' && !hasFrame;
+        const background = inRow && style.design?.image === 'background' && !hasFrame;
         const imageRadius = style.borders?.productImage?.radius;
         const topRadius = Math.max(imageRadius ?? 0, style.borders?.product?.radius ?? getProductCardRadius(style));
-        const photoRadius = !hasFrame && inCard
+        const photoRadius = !shaped && inRow
             ? background
                 ? 'inherit'
                 : `${topRadius}px ${topRadius}px ${imageRadius ?? 0}px ${imageRadius ?? 0}px`
@@ -328,11 +329,12 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 data-product-photo-frame={hasFrame ? frame : undefined}
                 className={`relative shrink-0 bg-slate-100 select-none ${isEditable ? 'cursor-pointer ring-2 ring-inset ring-indigo-400' : ''}`}
                 style={{
-                    width: inCard && shaped ? 'calc(100% - 16px)' : width,
-                    height: frame === 'circle' ? 'auto' : height,
+                    width: inRow && shaped ? 'calc(100% - 16px)' : width,
+                    height: resizeCard ? `calc(${cardBaseHeight}px * var(${LIVE_CARD_PHOTO_SCALE}, ${style.imageScale || 1}))`
+                        : frame === 'circle' ? 'auto' : height,
                     aspectRatio: frame === 'circle' ? '1' : undefined,
                     maxWidth: shaped ? (frame === 'circle' ? height : height * 1.75) : '100%',
-                    margin: inCard && shaped ? '8px auto 0' : undefined,
+                    margin: inRow && shaped ? '8px auto 0' : undefined,
                     background: getSurfaceFill(style, 'productImage'), borderRadius: photoRadius,
                 }}
                 title={isEditable ? 'Opções da imagem' : undefined}
@@ -341,7 +343,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     {product.image && <MenuPhoto showLoading={!handlers.readOnly && !loading} key={product.image} src={product.image} alt={product.name} draggable={false}
                         className="block h-full w-full"
                         style={{
-                            objectFit: !style.productPhotoCrops?.[product.id] && inCard && !hasFrame && !background && style.design?.image !== 'cover' ? 'contain' : 'cover',
+                            objectFit: !style.productPhotoCrops?.[product.id] && inRow && !hasFrame && !background && style.design?.image !== 'cover' ? 'contain' : 'cover',
                             objectPosition: `${crop.x}% ${crop.y}%`,
                             transform: flips?.horizontal || flips?.vertical
                                 ? `scale(${flips.horizontal ? -1 : 1}, ${flips.vertical ? -1 : 1})`
@@ -351,7 +353,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 </span>
                 <BorderDecoration style={style} scope="productImage" />
                 {loading && <PhotoLoading />}
-                {isEditable && photoControls('product', product.id, Boolean(product.image), crop, flips)}
+                {isEditable && photoControls('product', product.id, Boolean(product.image), crop, flips, resizeCard)}
             </div>
         );
     };
@@ -788,24 +790,14 @@ export const MenuItem: React.FC<MenuItemProps> = ({
     }
 
     if (item.type === 'product-row') {
-        const imgScale = style.imageScale || 1;
         const productColumnCount = style.columnCount || 1;
         const categoryColumnCount = style.categoryColumnCount || 1;
-        const isCardLayout = style.layoutMode === 'cards' || (style.design ? style.design.card !== 'flat' : style.layoutMode === 'grid');
+        const isCardLayout = usesProductCards(style);
         const cardRadius = getProductCardCornerRadii(style, style.borders?.product?.radius ?? getProductCardRadius(style));
         const cardBackgroundColor = style.cardBackgroundColor || '#ffffff';
         const compactControls = categoryColumnCount > 1 || productColumnCount > 1;
-        const cardImageHeight = (
-            categoryColumnCount >= 3
-                ? 56
-                : categoryColumnCount === 2
-                    ? 72
-                    : productColumnCount >= 3
-                        ? 90
-                        : productColumnCount === 2
-                            ? 120
-                            : 168
-        ) * imgScale;
+        const cardImageHeight = templateProductImageHeight(style, getProductCardImageHeight(style));
+        const cardBaseHeight = isCardLayout ? templateProductImageHeight(style, getProductCardImageHeight(style, 1), false) : undefined;
         const productGridGap = categoryColumnCount > 1
             ? (productColumnCount > 2 ? 4 : 8)
             : productColumnCount > 2
@@ -890,7 +882,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                     style={{ '--menu-card-fill': getSurfaceFill(style, 'product'), backgroundColor: isCardLayout ? `var(--automenu-preview-cards, ${cardBackgroundColor})` : getSurfaceFill(style, 'product'), borderRadius: cardRadius } as React.CSSProperties}
                                 >
                                     <div data-product-card-content className="h-full flex flex-col" style={{ borderRadius: 'inherit' }}>
-                                        {renderProductPhoto(product, templateProductImageHeight(style, cardImageHeight), '100%', true)}
+                                        {renderProductPhoto(product, cardImageHeight, '100%', true, cardBaseHeight)}
                                         <div data-template-content className={`${isCardLayout ? (categoryColumnCount > 1 || productColumnCount > 2 ? 'p-1.5' : productColumnCount > 1 ? 'p-2' : 'p-4') : 'py-2'} flex min-w-0 flex-col flex-grow ${textAlignClass}`}>
                                             <div
                                                 data-product-text-row="true"

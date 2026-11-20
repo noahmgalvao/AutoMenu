@@ -67,3 +67,30 @@ test('catalog migration is idempotent and Postgres enforces favorite ownership a
     await db.close();
   }
 });
+
+test('Postgres restricts custom marker reads and writes to their owner', async () => {
+  const db = new PGlite();
+  try {
+    await db.exec(`
+      create role authenticated; create role anon;
+      create schema auth;
+      create table auth.users(id uuid primary key);
+      create function auth.uid() returns uuid language sql stable as
+        $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+      grant usage on schema auth to authenticated;
+      insert into auth.users values ('${user}'), ('${other}');
+    `);
+    await db.exec(await readFile('supabase/migrations/20261120040000_custom_menu_markers.sql', 'utf8'));
+    const id = '00000000-0000-0000-0000-000000000003';
+    await db.exec(`set role authenticated; set request.jwt.claim.sub = '${user}';`);
+    await db.query("insert into public.custom_menu_markers (user_id,id,shape) values ($1,$2,'{\"kind\":\"star\"}')", [user, id]);
+    await assert.rejects(db.query("insert into public.custom_menu_markers (user_id,id,shape) values ($1,$2,'{}')", [other, id]), /row-level security/);
+    await db.exec(`set request.jwt.claim.sub = '${other}';`);
+    assert.equal((await db.query('select id from public.custom_menu_markers')).rows.length, 0);
+    assert.equal((await db.query('delete from public.custom_menu_markers returning id')).rows.length, 0);
+    await db.exec(`set request.jwt.claim.sub = '${user}';`);
+    assert.deepEqual((await db.query('delete from public.custom_menu_markers returning id')).rows, [{ id }]);
+  } finally {
+    await db.close();
+  }
+});

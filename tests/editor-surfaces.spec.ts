@@ -41,7 +41,11 @@ test('shape text survives a change of geometry and keeps existing settings', asy
   await expect(quick.getByRole('button').first()).toHaveAttribute('title', 'Editar forma');
   await quick.getByRole('button', { name: 'Mais opções' }).click();
   await page.locator('[data-canvas-object-menu]').getByRole('button', { name: 'Editar forma' }).click();
-  await page.getByRole('textbox', { name: 'Texto da forma' }).fill('Oferta & café\nHoje');
+  const textField = page.getByRole('textbox', { name: 'Texto da forma' });
+  await textField.fill('Oferta & café\nHoje');
+  await expect(textField).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(textField).toHaveCSS('color', 'rgba(0, 0, 0, 0)');
+  expect(decodeURIComponent((await shape.locator('img').getAttribute('src'))!)).toContain('Oferta');
   const toolbar = page.locator('[data-inline-format-toolbar]');
   await toolbar.getByRole('button', { name: 'Alterar forma' }).click();
   await page.locator('[data-change-shape-picker]').getByRole('button', { name: 'Elipse' }).click();
@@ -55,6 +59,8 @@ test('card photo resize previews the gesture before committing one layout change
   await product.getByRole('heading').click();
   await shortcutsFor(product).getByTitle('Editar produto').click();
   const photo = product.locator('[data-template-image]');
+  await expect(photo).toHaveAttribute('data-product-photo-frame', 'fill');
+  await expect(photo.locator('img')).toHaveCSS('object-fit', 'cover');
   const height = () => product.evaluate(node => (node as HTMLElement).offsetHeight);
   const state = page.getByTestId('editor-state');
   const before = await height();
@@ -64,11 +70,49 @@ test('card photo resize previews the gesture before committing one layout change
   await page.mouse.move(x, y);
   await page.mouse.down();
   await page.mouse.move(x + 20, y + 35, { steps: 6 });
-  expect(await height()).toBe(before);
+  await expect.poll(height).toBeGreaterThan(before);
+  const preview = await height();
+  await expect(photo).toHaveCSS('scale', 'none');
   await expect(state).toHaveAttribute('data-edits', String(edits));
   await page.mouse.up();
-  await expect.poll(height).toBeGreaterThan(before);
+  await expect.poll(height).toBe(preview);
   await expect(state).toHaveAttribute('data-edits', String(edits + 1));
+
+  const gesture = photo.locator('[data-photo-gesture]');
+  await gesture.evaluate(frame => {
+    const touches = (distance: number) => [0, distance].map((clientX, identifier) => new Touch({ identifier, target: frame, clientX }));
+    frame.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, touches: touches(100) }));
+    frame.dispatchEvent(new TouchEvent('touchmove', { bubbles: true, touches: touches(75) }));
+  });
+  await expect.poll(height).toBeLessThan(preview);
+  const reduced = await height();
+  await expect(state).toHaveAttribute('data-edits', String(edits + 1));
+  await gesture.dispatchEvent('touchend', { touches: [] });
+  await expect.poll(height).toBe(reduced);
+  await expect(state).toHaveAttribute('data-edits', String(edits + 2));
+});
+
+test('holding image-size controls repeats and stops at their limits', async ({ page }) => {
+  await page.goto(fixture + '?batch-layers');
+  const shape = page.locator('[data-added-image-id="shape-left"]');
+  const width = () => shape.evaluate(node => (node as HTMLElement).offsetWidth);
+  await shape.click();
+  const minus = page.getByRole('button', { name: 'Diminuir tamanho' });
+  await minus.hover();
+  await page.mouse.down();
+  await expect.poll(width).toBe(50);
+  await page.mouse.up();
+  const plus = page.getByRole('button', { name: 'Aumentar tamanho' });
+  await plus.hover();
+  await page.mouse.down();
+  const bound = await shape.evaluate(node => {
+    const paper = node.closest<HTMLElement>('[data-menu-print-page]')!;
+    const style = (node as HTMLElement).style;
+    return Math.min(paper.offsetWidth - parseFloat(style.left), paper.offsetHeight - parseFloat(style.top));
+  });
+  await expect.poll(width).toBe(bound);
+  await page.mouse.up();
+  await expect.poll(width).toBe(bound);
 });
 
 test('native paste prompt retains the destination when direct clipboard access is unavailable', async ({ page }) => {
@@ -93,7 +137,8 @@ test('a free text fill is local and survives closing the editor', async ({ page 
   await text.click();
   await shortcutsFor(text).getByTitle('Editar texto').click();
   const toolbar = page.locator('[data-inline-format-toolbar]');
-  await toolbar.getByRole('button', { name: 'Preenchimento', exact: true }).click();
+  await expect(toolbar.getByRole('button', { name: 'Cor de preenchimento' })).toHaveCount(0);
+  await toolbar.getByRole('button', { name: 'Borda', exact: true }).click();
   await toolbar.getByRole('button', { name: 'Cor de preenchimento' }).click();
   await page.getByRole('dialog', { name: 'Cor de preenchimento' }).getByRole('button', { name: '#eab308', exact: true }).first().click();
   await page.keyboard.press('Escape');
@@ -108,12 +153,13 @@ test('card fill uses the same surface and outline as the card designer', async (
   await product.getByRole('heading').click();
   await shortcutsFor(product).getByTitle('Editar produto').click();
   const toolbar = page.locator('[data-inline-format-toolbar]');
-  await toolbar.getByRole('button', { name: 'Preenchimento', exact: true }).click();
+  await expect(toolbar.getByRole('button', { name: 'Cor de preenchimento' })).toHaveCount(0);
+  await toolbar.getByRole('button', { name: 'Borda', exact: true }).click();
   await toolbar.getByRole('button', { name: 'Cor de preenchimento' }).click();
   await page.getByRole('dialog', { name: 'Cor de preenchimento' }).getByRole('button', { name: '#92400e', exact: true }).first().click();
   const card = product.locator('[data-template-card]');
   await expect(card).toHaveCSS('background-color', 'rgb(146, 64, 14)');
-  await toolbar.getByRole('button', { name: 'Borda', exact: true }).click();
+  await page.keyboard.press('Escape');
   await toolbar.getByRole('spinbutton', { name: 'Arredondamento (px)' }).fill('14');
   await expect(card).toHaveCSS('border-top-left-radius', '14px');
   await expect(card).toHaveCSS('background-color', 'rgb(146, 64, 14)');

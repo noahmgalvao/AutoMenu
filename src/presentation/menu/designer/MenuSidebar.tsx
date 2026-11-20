@@ -46,7 +46,7 @@ interface MenuSidebarProps {
     onAddShape: (shape: CanvasShape) => void;
     handleAddedImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
     isAddingImage: boolean;
-    resizeSelectedAddedImages: (delta: number) => void;
+    resizeSelectedAddedImages: (delta: number) => boolean;
     removeSelectedAddedImages: () => void;
     layerSelectedAddedImages: (direction: 'front' | 'back') => void;
 }

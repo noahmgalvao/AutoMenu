@@ -9,7 +9,7 @@ type Props = {
     id: string; anchorId: string; hasPhoto: boolean; active: boolean; scale: number;
     crop: Point; flips?: { horizontal?: boolean; vertical?: boolean };
     activate: () => void; choose: () => void; remove: () => void;
-    type: 'product' | 'category';
+    type: 'product' | 'category'; resizeCard?: boolean;
     updateStyle: Dispatch<SetStateAction<MenuStyle>>;
 };
 const corners = [
@@ -18,6 +18,8 @@ const corners = [
     ['bottom-0 left-0 -translate-x-1/2 translate-y-1/2 cursor-nesw-resize', -1, 1],
     ['bottom-0 right-0 translate-x-1/2 translate-y-1/2 cursor-nwse-resize', 1, 1],
 ] as const;
+export const LIVE_CARD_PHOTO_SCALE = '--automenu-live-card-photo-scale';
+
 const percent = (value: number) => Math.min(100, Math.max(0, value));
 
 export function PhotoEditControls(props: Props) {
@@ -29,23 +31,35 @@ export function PhotoEditControls(props: Props) {
     const { id, type, updateStyle } = props;
     const frameRef = useRef<HTMLDivElement>(null);
     const draft = useRef<{ scale?: number; crop?: Point } | null>(null);
-    const limitScale = (value: number) => Math.max(0.5, Math.min(type === 'category' ? 2 : 2.5, Math.round(value * 10) / 10));
-    const setScale = (value: number) => {
-        const field = type === 'category' ? 'categoryImageScale' : 'imageScale';
-        const scale = limitScale(value);
-        updateStyle(prev => prev[field] === scale ? prev : { ...prev, [field]: scale, name: 'Custom' });
+    const previewRoot = useRef<HTMLElement | null>(null);
+    const scaleField = type === 'category' ? 'categoryImageScale' : 'imageScale';
+    const maxScale = type === 'category' ? 2 : 2.5;
+    const limitScale = (value: number) => Math.max(0.5, Math.min(maxScale, Math.round(value * 10) / 10));
+    const setScale = (value: number, increment = false) => {
+        updateStyle(prev => {
+            const previous = prev[scaleField] || 1;
+            const scale = limitScale(increment ? previous + value : value);
+            return previous === scale ? prev : { ...prev, [scaleField]: scale, name: 'Custom' };
+        });
     };
     const previewScale = (value: number) => {
         const surface = frameRef.current?.parentElement;
         if (!surface) return;
         const scale = limitScale(value);
         draft.current = { scale };
-        surface.style.scale = String(scale / props.scale);
+        if (props.resizeCard) {
+            previewRoot.current = surface.closest<HTMLElement>('[data-menu-preview-canvas]');
+            previewRoot.current?.style.setProperty(LIVE_CARD_PHOTO_SCALE, String(scale));
+        } else {
+            surface.style.scale = String(scale / props.scale);
+        }
     };
     useLayoutEffect(() => {
         const surface = frameRef.current?.parentElement;
-        if (!surface) return;
-        return () => { surface.style.removeProperty('scale'); };
+        return () => {
+            surface?.style.removeProperty('scale');
+            previewRoot.current?.style.removeProperty(LIVE_CARD_PHOTO_SCALE);
+        };
     }, []);
     const setCrop = (crop: Point) => updateStyle(prev => {
         if (type === 'product') return { ...prev, name: 'Custom', productPhotoCrops: { ...prev.productPhotoCrops, [id]: crop } };
@@ -63,6 +77,8 @@ export function PhotoEditControls(props: Props) {
     const finish = (commit: boolean) => {
         const surface = frameRef.current?.parentElement;
         surface?.style.removeProperty('scale');
+        previewRoot.current?.style.removeProperty(LIVE_CARD_PHOTO_SCALE);
+        previewRoot.current = null;
         const next = draft.current;
         draft.current = null;
         if (commit && next?.scale !== undefined) setScale(next.scale);
@@ -154,6 +170,6 @@ export function PhotoEditControls(props: Props) {
         {props.hasPhoto && corners.map(([position], index) => <span key={index} data-photo-corner={index}
             className={`absolute h-2 w-2 rounded-full border border-blue-600 bg-white ${position}`} />)}
         {props.active && props.hasPhoto && <ProductImageToolbar productId={props.id} anchorId={props.anchorId} flips={props.flips}
-            onScale={delta => setScale(props.scale + delta)} onFlip={flip} />}
+            scale={props.scale} maxScale={maxScale} onScale={delta => setScale(delta, true)} onFlip={flip} />}
     </div>;
 }

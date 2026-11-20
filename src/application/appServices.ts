@@ -1,3 +1,4 @@
+import type { CustomMenuMarker } from '../domain/menu/model';
 import type { AuthGateway } from './account/authGateway';
 import type { AssetUploads } from './assets/assetUploads';
 import type { ProcessedMenuImport } from './imports/importReview';
@@ -12,5 +13,10 @@ export interface AppServices {
   publications: PublicationGateway;
   assets: Pick<AssetUploads, 'uploadFileAsset'>;
   favorites: TemplateFavoritesGateway;
+  customMarkers: {
+    listCustomMenuMarkers(userId: string): Promise<CustomMenuMarker[]>;
+    saveCustomMenuMarker(userId: string, marker: CustomMenuMarker): Promise<void>;
+    deleteCustomMenuMarker(userId: string, id: string): Promise<void>;
+  };
   prepareMenuImport(options: ProcessMenuImportOptions): Promise<ProcessedMenuImport>;
 }

@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Pipette, X } from 'lucide-react';
 import { HexColorPicker, HexColorInput } from 'react-colorful';
+import { isMiniFoodKind, MINI_FOOD_INK } from '../../../domain/menu/miniFoods';
 import type { MenuStyle } from '../../../domain/menu/model';
 
 const palette = ['#ffffff', '#0f172a', '#64748b', '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#2563eb', '#7c3aed', '#ec4899', '#92400e'];
@@ -50,6 +51,7 @@ export const MenuColorContext = React.createContext({ shapes: [] as string[], fa
 export function getMenuPalette(style: MenuStyle, freeTextColors: (string | undefined)[]) {
   const shapes = (style.addedImages || []).flatMap(({ shape }) => {
     if (!shape) return [];
+    if (isMiniFoodKind(shape.kind)) return [MINI_FOOD_INK];
     return [shape.kind !== 'line' ? shape.fill : '', shape.strokeWidth > 0 ? shape.stroke : '', shape.text ? shape.textColor || '' : ''].filter(Boolean);
   });
   const fallback = [

@@ -76,7 +76,7 @@ export const TemplatePreviewSurface = memo(function TemplatePreviewSurface({
   useLayoutEffect(() => {
     const element = stage.current;
     if (!element) return;
-    const update = () => setScale(Math.min(element.clientWidth / widthPx, element.clientHeight / heightPx, 1));
+    const update = () => setScale(Math.min(element.clientWidth / widthPx, element.clientHeight / heightPx));
     const observer = new ResizeObserver(update);
     observer.observe(element);
     update();
@@ -84,7 +84,7 @@ export const TemplatePreviewSurface = memo(function TemplatePreviewSurface({
   }, [widthPx, heightPx]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
+    <div className="template-immersive-preview">
       <DynamicFontLoader fonts={fonts} />
       <div ref={stage} className="grid min-h-0 flex-1 place-items-center overflow-hidden" role="img" aria-label={`Prévia de ${template.name}, página ${visibleIndex + 1} de ${pages.length}`}>
         {scale > 0 && <div inert style={{ width: widthPx * scale, height: heightPx * scale }}>
@@ -95,11 +95,11 @@ export const TemplatePreviewSurface = memo(function TemplatePreviewSurface({
           </div>
         </div>}
       </div>
-      {pages.length > 1 && <nav aria-label="Páginas da prévia" className="flex items-center justify-center gap-3 text-xs" data-template-preview-controls>
-        <button type="button" className="rounded-md p-2 hover:bg-white disabled:opacity-40" disabled={visibleIndex === 0}
+      {pages.length > 1 && <nav aria-label="Páginas da prévia" className="template-discover-pages" data-template-preview-controls>
+        <button type="button" className="rounded-md p-2 hover:bg-white/15 disabled:opacity-40" disabled={visibleIndex === 0}
           onClick={() => setPageIndex(visibleIndex - 1)} aria-label="Página anterior">←</button>
         <span>Página {visibleIndex + 1} / {pages.length}</span>
-        <button type="button" className="rounded-md p-2 hover:bg-white disabled:opacity-40" disabled={visibleIndex === pages.length - 1}
+        <button type="button" className="rounded-md p-2 hover:bg-white/15 disabled:opacity-40" disabled={visibleIndex === pages.length - 1}
           onClick={() => setPageIndex(visibleIndex + 1)} aria-label="Próxima página">→</button>
       </nav>}
     </div>

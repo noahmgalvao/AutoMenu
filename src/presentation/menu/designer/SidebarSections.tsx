@@ -1,3 +1,4 @@
+import { HoldStepButton } from '../../common/HoldStepButton';
 import { ColorPicker } from './ColorPicker';
 import { DecorationControls } from './Decorations';
 import { ShapeChoices, ShapePicker, ShapeSettings } from './ShapePicker';
@@ -7,7 +8,7 @@ import type { CanvasShape } from '../../../domain/menu/model';
 import React, { useRef } from 'react';
 import type { MenuStyle, Product, ElementStyle, SortOption, AddedImage, FontSizeLimitKey } from '../../../domain/menu/model';
 import { DEFAULT_MINIMUM_FONT_SIZE, isMiniFoodTexture, normalizeTextureUrl } from '../../../domain/menu/defaults';
-import { resolveFontSizeLimits, resolveMenuContentSpacing, resolveMenuMargins, resolveMinimumFontSize, roundFontSize } from '../../../domain/menu/styleRules';
+import { resolveFontSizeLimits, resolveMenuContentSpacing, resolveMenuMargins, resolveMinimumFontSize, roundFontSize, resolveProductImageFrame } from '../../../domain/menu/styleRules';
 import { normalizeMenuPageSetup, resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 import { StyleControls } from './StyleControls';
 import { PriceFormatSettings } from './PriceFormatSettings';
@@ -43,7 +44,7 @@ interface ElementsSectionProps {
   onAddedImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   isAddingImage: boolean;
   setSelection: (selection: { type: 'product' | 'category' | 'freeText' | 'addedImage' | 'page' | 'menuTitle' | 'menuSubtitle' | null, id: string | null }) => void;
-  resizeSelectedAddedImages: (delta: number) => void;
+  resizeSelectedAddedImages: (delta: number) => boolean;
   removeSelectedAddedImages: () => void;
   layerSelectedAddedImages: (direction: 'front' | 'back') => void;
 }
@@ -168,21 +169,15 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                 <div className="flex items-center justify-between bg-slate-50 p-2 rounded">
                     <span className="text-xs font-bold">Tamanho</span>
                     <div className="flex items-center gap-2">
-                        <button 
-                        aria-label="Diminuir tamanho"
-                        onClick={() => resizeSelectedAddedImages(-20)}
-                        className="p-1 bg-white border border-slate-200 rounded hover:bg-slate-100"
-                        >
-                        <Minus size={14} />
-                        </button>
+                        <HoldStepButton label="Diminuir tamanho" onStep={() => resizeSelectedAddedImages(-20)}
+                            className="p-1 bg-white border border-slate-200 rounded hover:bg-slate-100">
+                            <Minus size={14} />
+                        </HoldStepButton>
                         <span className="text-xs w-12 text-center">{Math.round(selectedAddedImage.width)}px</span>
-                        <button 
-                        aria-label="Aumentar tamanho"
-                        onClick={() => resizeSelectedAddedImages(20)}
-                        className="p-1 bg-white border border-slate-200 rounded hover:bg-slate-100"
-                        >
-                        <Plus size={14} />
-                        </button>
+                        <HoldStepButton label="Aumentar tamanho" onStep={() => resizeSelectedAddedImages(20)}
+                            className="p-1 bg-white border border-slate-200 rounded hover:bg-slate-100">
+                            <Plus size={14} />
+                        </HoldStepButton>
                     </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 mt-2">
@@ -529,11 +524,7 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle })
                     {PRODUCT_CARD_SHAPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                 </select>
             </label>
-            <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-500 uppercase">Cor dos cartões</span>
-                <ColorPicker value={style.cardBackgroundColor || '#ffffff'} label="Cor de fundo dos cartões" preview="cards"
-                    onChange={color => setStyle(previous => ({ ...previous, cardBackgroundColor: color, cardBackgroundColorOverride: true, name: 'Custom' }))} />
-            </div>
+            <DecorationControls style={style} setStyle={setStyle} scope="product" showMarker={false} sidebar />
         </div>
     )}
     
@@ -558,7 +549,7 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle })
         {style.showImages && (
             <label className="flex items-center justify-between gap-2 px-1 text-xs font-medium text-slate-600">
                 Moldura das fotos dos produtos
-                <select value={style.productImageFrame || 'template'} className="h-8 rounded border border-slate-200 bg-white px-1.5"
+                <select value={resolveProductImageFrame(style)} className="h-8 rounded border border-slate-200 bg-white px-1.5"
                     onChange={(event) => {
                         const productImageFrame = event.currentTarget.value as MenuStyle['productImageFrame'];
                         setStyle((previous) => ({ ...previous, productImageFrame, name: 'Custom' }));

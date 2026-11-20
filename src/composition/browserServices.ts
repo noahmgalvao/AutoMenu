@@ -2,6 +2,7 @@ import type { AppServices } from '../application/appServices';
 import { readFavoriteCache, writeFavoriteCache } from '../infrastructure/browser/favoriteCache';
 import { updatePortablePublicationMenuSlug } from '../infrastructure/browser/portablePublicationCache';
 import { uploadDataUrlAsset, uploadFileAsset } from '../infrastructure/supabase/assets';
+import { listCustomMenuMarkers, saveCustomMenuMarker, deleteCustomMenuMarker } from '../infrastructure/supabase/customMenuMarkers';
 import * as auth from '../infrastructure/supabase/auth';
 import { isSupabaseConfigured } from '../infrastructure/supabase/client';
 import { fetchFavorites, isPermanentFavoriteError, persistFavorite } from '../infrastructure/supabase/templateFavorites';
@@ -23,6 +24,7 @@ export const browserServices = {
   },
   publications: { getMenuPublication, loadPublicMenuPublication, publishWorkspaceMenu, updatePublicationMenuSlug, updatePortablePublicationMenuSlug },
   assets: { uploadFileAsset },
+  customMarkers: { listCustomMenuMarkers, saveCustomMenuMarker, deleteCustomMenuMarker },
   favorites: { fetchFavorites, isPermanentFavoriteError, persistFavorite, readFavoriteCache, writeFavoriteCache },
   async prepareMenuImport(options) {
     const [workflow, analysis, images, fileReader, jobs] = await Promise.all([
