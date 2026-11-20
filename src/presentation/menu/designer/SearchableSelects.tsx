@@ -176,7 +176,7 @@ export const FontSelect: React.FC<{
   return <div className="automenu-font-select min-w-0">
     <DesignerPicker label="Fonte" searchLabel={placeholder} gap={menuGap}
       value={fontOptions.find(option => option.value === resolvedValue) || { value: resolvedValue, label: resolvedValue }}
-      preferred={{ label: 'Fontes usadas neste cardápio', options: groups.used }}
+      preferred={{ label: 'Neste cardápio', options: groups.used }}
       options={groups.catalog} choose={option => onChange(option.value)} empty="Nenhuma fonte encontrada"
       render={option => <span style={{ fontFamily: option.value }}>{option.label}</span>} />
   </div>;

@@ -6,6 +6,30 @@ test.beforeEach(async ({ page }) => {
   await page.route('https://fonts.googleapis.com/**', (route) => route.fulfill({ body: '', contentType: 'text/css' }));
 });
 
+test('a second click edits the exact field, and the active photo can be replaced anywhere on its face', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=list');
+  const name = page.locator('#product-name-1');
+  const description = page.locator('#product-description-1');
+  const photo = page.locator('#product-image-1');
+  await name.click();
+  await expect(name).toHaveAttribute('contenteditable', 'false');
+  await description.click();
+  await expect(description).toBeFocused();
+  await expect(page.locator('[data-inline-format-toolbar]')).toBeVisible();
+  await photo.click({ position: { x: 8, y: 8 } });
+  const tools = page.locator('[data-editor-popover][data-product-image-surface="1"]');
+  const flip = tools.getByRole('button', { name: 'Inverter horizontalmente' });
+  await flip.click();
+  await expect(flip).not.toHaveAttribute('aria-pressed', /.*/);
+  await expect(photo.getByRole('img')).toHaveCSS('transform', 'matrix(-1, 0, 0, 1, 0, 0)');
+  await flip.click();
+  await expect(photo.getByRole('img')).toHaveCSS('transform', 'none');
+  const choose = page.waitForEvent('filechooser');
+  await photo.getByRole('button', { name: 'Substituir imagem' }).click({ position: { x: 8, y: 8 } });
+  await choose;
+  await expect(tools.getByRole('button').last()).toHaveAttribute('aria-label', 'Remover imagem');
+});
+
 test('product name outlines update across products and stay independent from price and description', async ({ page }) => {
   await page.goto('/tests/fixtures/template-editor.html?photos=list&price-flow');
   const product = page.locator('#product-container-1');
@@ -15,7 +39,7 @@ test('product name outlines update across products and stay independent from pri
   const nameControls = sidebar.getByText('Nomes dos produtos', { exact: true }).locator('..');
   await nameControls.getByRole('combobox', { name: 'Fonte' }).click();
   const fonts = nameControls.getByRole('listbox', { name: 'Fonte' });
-  const used = fonts.getByRole('group', { name: 'Fontes usadas neste cardápio' });
+  const used = fonts.getByRole('group', { name: 'Neste cardápio' });
   await expect(used.getByRole('option', { name: 'Arial', exact: true })).toBeVisible();
   await expect(fonts.getByRole('option', { name: 'Arial', exact: true })).toHaveCount(1);
   await fonts.press('Escape');
@@ -28,6 +52,12 @@ test('product name outlines update across products and stay independent from pri
   await page.mouse.up();
   await expect(underline).toHaveAttribute('aria-pressed', 'true');
   await expect(name).toHaveCSS('text-decoration-line', 'underline');
+  const size = nameControls.getByRole('spinbutton');
+  const originalSize = Number(await size.inputValue());
+  await nameControls.getByRole('button', { name: 'Diminuir tamanho da fonte' }).click();
+  await expect(size).toHaveValue(String(originalSize - 1));
+  await nameControls.getByRole('button', { name: 'Aumentar tamanho da fonte' }).click();
+  await expect(size).toHaveValue(String(originalSize));
 
   await nameControls.getByRole('button', { name: 'Contorno do texto' }).click();
   const outline = page.getByRole('dialog', { name: 'Contorno do texto' });
@@ -312,7 +342,8 @@ for (const layout of ['list', 'cards', 'background']) {
     await expect(photo.getByRole('img')).toHaveAttribute('src', new URL(replacementPath, page.url()).href);
     await expect(photo.getByRole('status')).toHaveCount(0);
     await expect(title).toHaveAttribute('contenteditable', 'true');
-    await photo.getByRole('button', { name: 'Remover imagem' }).click();
+    await expect(imageMenu.getByRole('button').last()).toHaveAttribute('aria-label', 'Remover imagem');
+    await imageMenu.getByRole('button', { name: 'Remover imagem' }).click();
     await expect(photo.getByRole('button', { name: 'Adicionar imagem' })).toBeVisible();
     await title.click();
     await expect(photo).toHaveCount(0);
@@ -668,7 +699,7 @@ test('a narrow two-column card saves a corrected name even after typing an overs
   await title.press('Enter');
   await expect(title).toHaveText('X');
   await title.click();
-  await shortcutsFor(product).getByRole('button', { name: 'Editar produto' }).click();
+  await expect(title).toBeFocused();
   await title.fill('Burrata');
   await page.locator('[data-automenu-editor-canvas]').click({ position: { x: 8, y: 32 } });
   await expect(title).toHaveText('Burrata');
@@ -956,7 +987,8 @@ test('category photos have resize pins, gallery actions and a temporary empty sl
     gesture('touchend', 0);
   });
   expect((await photo.boundingBox())!.width).toBeGreaterThan(resized);
-  await photo.getByRole('button', { name: 'Remover imagem' }).click();
+  await page.locator('[data-editor-popover][data-product-image-surface="Entradas"]')
+    .getByRole('button', { name: 'Remover imagem' }).click();
   await expect(photo.getByRole('button')).toHaveCount(1);
   await expect(photo.getByRole('button', { name: 'Adicionar imagem' })).toBeVisible();
   await title.click();
@@ -991,5 +1023,6 @@ test('fill uses only the photo area and supports dragging a replacement photo in
   await page.mouse.move(bounds.x + bounds.width * .75 - 30, bounds.y + bounds.height * .65, { steps: 4 });
   await page.mouse.up();
   await expect(photo.locator('img')).not.toHaveCSS('object-position', position);
-  await expect(photo.getByRole('button', { name: 'Remover imagem' })).toBeVisible();
+  await expect(page.locator('[data-editor-popover][data-product-image-surface="1"]')
+    .getByRole('button', { name: 'Remover imagem' })).toBeVisible();
 });

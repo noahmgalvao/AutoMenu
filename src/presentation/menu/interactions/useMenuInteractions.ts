@@ -105,6 +105,7 @@ export const useMenuInteractions = (props: InteractionProps) => {
         startEditing: selectionState.startEditing,
         isReadyToEdit: selectionState.isReadyToEdit,
         startImageEditing: selectionState.startImageEditing,
+        startPhotoEditing: selectionState.startPhotoEditing,
         setEditingField: selectionState.setEditingField,
         startMenuTextEditing: selectionState.startMenuTextEditing,
 

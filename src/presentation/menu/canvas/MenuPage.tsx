@@ -382,7 +382,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                     item={page.mainHeader}
                     idx={0}
                     style={renderedStyle}
-                    handlers={handlers}
+                    handlers={page.headerCopy ? { ...handlers, readOnly: true, formattingTarget: null } : handlers}
                     products={products}
                     inGroup={false}
                 />

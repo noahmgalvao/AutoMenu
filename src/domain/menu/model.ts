@@ -185,10 +185,21 @@ export interface PageBackground {
   assetId?: string | null;
 }
 
+export interface CopiedPageLayout {
+  showHeader: boolean;
+  columns: {
+    startsCategory: boolean;
+    flowOffsetBefore?: number;
+    estimatedHeight: number;
+    items: ({ type: 'category-header' } | { type: 'product-item' | 'product-row' | 'free-text-row'; ids: string[] })[];
+  }[][];
+}
+
 export interface BlankPageSlot {
   id: string;
   index: number;
   fixedPosition?: boolean;
+  copiedLayout?: CopiedPageLayout;
 }
 
 export interface MenuStyle {
@@ -219,7 +230,7 @@ export interface MenuStyle {
   miniFoodTextureColor?: string;
   backgroundAssetId?: string | null;
   pageBackgrounds?: PageBackground[];
-  menuBackgroundPhoto?: Pick<AddedImage, 'url' | 'assetId'>;
+  menuBackgroundPhoto?: Pick<AddedImage, 'url' | 'assetId'> & { originKey?: string };
   sourceImage?: string;
   sourceAssetId?: string | null;
   layoutMode: 'list' | 'grid' | 'cards';

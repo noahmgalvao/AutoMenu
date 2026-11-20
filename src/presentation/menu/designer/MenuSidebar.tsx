@@ -1,3 +1,4 @@
+import { DesignerTapButton } from '../../common/DesignerTapButton';
 import { preventBrowserContextMenu } from '../../common/noBrowserSelection';
 import type { CanvasShape } from '../../../domain/menu/model';
 import { TemplatePicker } from './TemplatePicker';
@@ -45,6 +46,7 @@ interface MenuSidebarProps {
     shapePickerRequest: { id: string } | null;
     onChangeShape: (id: string) => void;
     onAddShape: (shape: CanvasShape) => void;
+    onMovePhotoToBackground: (id: string) => void;
     handleAddedImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
     isAddingImage: boolean;
     resizeSelectedAddedImages: (delta: number) => boolean;
@@ -56,11 +58,11 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
     isOpen, onClose, onPdfClick, handleResetDesign,
     style, setStyle, templates, applyTemplate, sortOption, setSortOption, products, currentUserId, splitCategoryAcrossPages,
     selection, setSelection, selectedFreeText, selectedAddedImage, selectedAddedImageIds,
-    updateFreeTextStyle, updateGlobalElementStyle, setPreviewAction, handleAddedImageUpload, isAddingImage, onAddShape, shapePickerRequest, onChangeShape,
+    updateFreeTextStyle, updateGlobalElementStyle, setPreviewAction, onMovePhotoToBackground, handleAddedImageUpload, isAddingImage, onAddShape, shapePickerRequest, onChangeShape,
     resizeSelectedAddedImages, removeSelectedAddedImages, layerSelectedAddedImages
 }) => {
     
-    const { height, isDragging, isMobile, isExpanded, openPartial, toggleExpanded, dragHandlers } = useBottomSheetDrag(isOpen, onClose);
+    const { sheetRef, height, isMobile, isExpanded, openPartial, toggleExpanded, dragHandlers } = useBottomSheetDrag(isOpen, onClose);
 
     React.useEffect(() => {
         if (shapePickerRequest) {
@@ -80,25 +82,17 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
     const minimumFontSize = resolveMinimumFontSize(style);
 
     return (
-        <div data-no-browser-selection onContextMenu={preventBrowserContextMenu}
+        <div ref={sheetRef} id="designer-sheet-visual" data-designer-sheet data-sheet-open={isOpen} inert={!isOpen} data-no-browser-selection onContextMenu={preventBrowserContextMenu}
             className={`
                 flex flex-col bg-white overflow-hidden
                 /* Mobile: Bottom Sheet */
                 fixed bottom-0 left-0 right-0 z-40 max-md:max-h-[var(--automenu-max-sheet-height,100dvh)]
                 rounded-t-2xl shadow-2xl border-t border-slate-200
-                transform transition-transform
-                ${isOpen ? 'translate-y-0' : 'translate-y-full'}
-
-                /* Desktop Overrides */
-                md:translate-y-0 md:transform-none md:transition-all
+                md:transition-all
                 md:relative md:inset-auto md:h-full md:z-20 md:shadow-xl md:rounded-none md:border-t-0 md:border-r md:pt-16
                 ${isOpen ? 'md:w-80 lg:md:w-96 md:opacity-100' : 'md:w-0 md:opacity-0'}
             `}
-            style={{ 
-                // CRITICAL FIX: Always maintain valid height. Visibility is handled by translateY.
-                height: isMobile ? height : undefined,
-                transition: isDragging ? 'none' : 'height 0.28s cubic-bezier(0.22, 1, 0.36, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s ease-out, opacity 0.3s ease-out'
-            }}
+            style={{ height: isMobile ? height : undefined }}
         >
         <div 
             className="p-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center flex-shrink-0 min-w-0 touch-none cursor-grab active:cursor-grabbing"
@@ -109,8 +103,8 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
           </h2>
           <div className="flex shrink-0 gap-1.5">
             <button type="button" onClick={onPdfClick} className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-100 flex items-center gap-1.5 pointer-events-auto" onPointerDown={e => e.stopPropagation()} title="Exportar PDF"><FileText size={14} /> PDF</button>
-            <button type="button" onClick={toggleExpanded} className="md:hidden h-8 w-8 rounded-lg text-slate-500 hover:bg-white hover:text-slate-800 pointer-events-auto flex items-center justify-center" onPointerDown={e => e.stopPropagation()} title={isExpanded ? 'Voltar à visualização parcial' : 'Expandir painel'} aria-label={isExpanded ? 'Voltar à visualização parcial' : 'Expandir painel'}>{isExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}</button>
-            <button type="button" onClick={onClose} className="md:hidden h-8 w-8 rounded-lg text-slate-500 hover:bg-white hover:text-slate-800 pointer-events-auto flex items-center justify-center" onPointerDown={e => e.stopPropagation()} title="Fechar painel" aria-label="Fechar painel"><X size={18} /></button>
+            <DesignerTapButton type="button" onClick={toggleExpanded} aria-expanded={isExpanded} className="md:hidden h-8 w-8 rounded-lg text-slate-500 hover:bg-white hover:text-slate-800 pointer-events-auto flex items-center justify-center" onPointerDown={e => e.stopPropagation()} title={isExpanded ? 'Voltar à visualização parcial' : 'Expandir painel'} aria-label={isExpanded ? 'Voltar à visualização parcial' : 'Expandir painel'}>{isExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}</DesignerTapButton>
+            <DesignerTapButton type="button" onClick={onClose} className="md:hidden h-8 w-8 rounded-lg text-slate-500 hover:bg-white hover:text-slate-800 pointer-events-auto flex items-center justify-center" onPointerDown={e => e.stopPropagation()} title="Fechar painel" aria-label="Fechar painel"><X size={18} /></DesignerTapButton>
           </div>
         </div>
 
@@ -131,6 +125,7 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
             updateFreeTextStyle={updateFreeTextStyle}
             updateGlobalElementStyle={updateGlobalElementStyle}
             setPreviewAction={setPreviewAction}
+            onMovePhotoToBackground={onMovePhotoToBackground}
             onAddedImageUpload={handleAddedImageUpload}
             isAddingImage={isAddingImage}
             onChangeShape={onChangeShape}

@@ -2,7 +2,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import type { MenuStyle } from '../../../domain/menu/model';
 import { clampPhotoScale } from '../../../domain/menu/styleRules';
 import { useLayoutEffect, useRef, useState } from 'react';
-import { Images, ImagePlus, Trash2 } from 'lucide-react';
+import { Images, ImagePlus } from 'lucide-react';
 import { livePhotoScaleVariable } from './photoSizing';
 import { ProductImageToolbar } from './ProductImageToolbar';
 
@@ -145,27 +145,30 @@ export function PhotoEditControls(props: Props) {
         }}
         onPointerUp={event => { event.stopPropagation(); if (!pinch.current && gesture.current?.pointer === event.pointerId) finish(true); }}
         onPointerCancel={event => { if (!pinch.current && gesture.current?.pointer === event.pointerId) finish(false); }}
-        onClickCapture={event => { if (suppressClick.current) { event.stopPropagation(); suppressClick.current = false; } }}
+        onClickCapture={event => {
+            if (suppressClick.current && event.currentTarget.contains(event.target as Node)) {
+                event.stopPropagation();
+                suppressClick.current = false;
+            }
+        }}
         onClick={event => { event.stopPropagation(); props.activate(); }}>
-        <div aria-hidden={moving || undefined} className={`absolute inset-0 flex overflow-hidden rounded-[inherit] bg-blue-500/30 backdrop-saturate-125 ${moving ? 'pointer-events-none opacity-0' : ''}`}>
-            <div className="photo-overlay-slot">
-                <button type="button" className="photo-overlay-action text-blue-900 hover:bg-blue-400/25"
-                    aria-label={props.hasPhoto ? 'Substituir imagem' : 'Adicionar imagem'} title={props.hasPhoto ? 'Substituir imagem' : 'Adicionar imagem'}
-                    onClick={event => { event.stopPropagation(); props.activate(); props.choose(); }}>
-                    {props.hasPhoto ? <Images /> : <ImagePlus />}
-                </button>
-            </div>
-            {props.hasPhoto && <div className="photo-overlay-slot border-l border-blue-100/60">
-                <button type="button" aria-label="Remover imagem" title="Remover imagem"
-                    className="photo-overlay-action text-red-700 hover:bg-red-400/20"
-                    onClick={event => { event.stopPropagation(); props.activate(); props.remove(); }}><Trash2 /></button>
-            </div>}
-        </div>
+        {!moving && <button type="button"
+            className="photo-overlay-slot absolute inset-0 size-full rounded-[inherit] bg-blue-500/20 text-blue-950 hover:bg-blue-400/30"
+            aria-label={props.hasPhoto ? 'Substituir imagem' : 'Adicionar imagem'} title={props.hasPhoto ? 'Substituir imagem' : 'Adicionar imagem'}
+            onClick={event => {
+                event.stopPropagation();
+                if (props.active || !props.hasPhoto) props.choose();
+                else props.activate();
+            }}>
+            <span className="photo-overlay-action pointer-events-none">
+                {props.hasPhoto ? <Images /> : <ImagePlus />}
+            </span>
+        </button>}
         {props.hasPhoto && corners.map(([position], index) => <span key={index} data-photo-corner={index}
             className={`absolute grid size-6 touch-none place-items-center ${position}`}>
             <span className="pointer-events-none size-3 rounded-full border border-blue-600 bg-white" />
         </span>)}
-        {props.active && props.hasPhoto && <ProductImageToolbar productId={props.id} anchorId={props.anchorId} flips={props.flips}
-            scale={props.scale} onScale={delta => setScale(delta, true)} onFlip={flip} />}
+        {props.active && props.hasPhoto && <ProductImageToolbar productId={props.id} anchorId={props.anchorId}
+            scale={props.scale} onScale={delta => setScale(delta, true)} onFlip={flip} onRemove={props.remove} />}
     </div>;
 }

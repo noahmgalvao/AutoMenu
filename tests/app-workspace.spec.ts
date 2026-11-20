@@ -207,3 +207,63 @@ test('mobile header returns after scrolling and stays accessible above either ex
     expect(hit).toBe(true);
   }
 });
+
+test.describe('mobile designer panels', () => {
+  test.use({ viewport: { width: 390, height: 800 }, hasTouch: true, isMobile: true });
+
+  test('both panels open, resize on the compositor and dismiss by touch', async ({ page, context }) => {
+    await openWorkspace(page);
+    const touch = await context.newCDPSession(page);
+    for (const name of ['Produtos', 'Visual']) {
+      const tab = page.locator('[data-mobile-designer-tab]').getByText(name, { exact: true }).locator('..');
+      const sheet = page.locator('#' + await tab.getAttribute('aria-controls'));
+      await tab.tap();
+      await expect(tab).toHaveAttribute('aria-pressed', 'true');
+      await expect.poll(async () => (await sheet.boundingBox())!.y).toBeCloseTo(440, 0);
+
+      const expand = sheet.getByRole('button', { name: 'Expandir painel' });
+      await expand.tap();
+      await expect.poll(async () => (await sheet.boundingBox())!.y).toBeCloseTo(64, 0);
+      await sheet.getByRole('button', { name: 'Voltar à visualização parcial' }).tap();
+      await expect.poll(async () => (await sheet.boundingBox())!.y).toBeCloseTo(440, 0);
+
+      const drag = async (end: number, check: boolean) => {
+        const box = (await sheet.boundingBox())!;
+        const y = Math.round(box.y + 20);
+        await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 170, y }] });
+        const dragLayout = await sheet.evaluate(node => (node as HTMLElement).offsetHeight);
+        for (const dy of [(end - y) / 2, end - y]) {
+          await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 170, y: Math.round(y + dy) }] });
+          if (check) {
+            await expect.poll(async () => (await sheet.boundingBox())!.y).toBeCloseTo(box.y + dy, -1);
+            expect(await sheet.evaluate(node => (node as HTMLElement).offsetHeight)).toBe(dragLayout);
+          }
+        }
+        await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      };
+      await drag(290, true);
+      await expect.poll(async () => (await sheet.boundingBox())!.y).toBeCloseTo(64, 0);
+      await drag(700, false);
+      await expect(tab).toHaveAttribute('aria-pressed', 'false');
+      await expect.poll(async () => (await sheet.boundingBox())!.y).toBeGreaterThanOrEqual(799);
+      const tabBox = (await tab.boundingBox())!;
+      const x = Math.round(tabBox.x + tabBox.width / 2);
+      const y = Math.round(tabBox.y + tabBox.height / 2);
+      await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+      await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y - 90 }] });
+      await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await expect(tab).toHaveAttribute('aria-pressed', 'true');
+      await expect.poll(async () => (await sheet.boundingBox())!.y).toBeCloseTo(440, 0);
+      await sheet.getByRole('button', { name: 'Fechar painel' }).tap();
+      await expect(tab).toHaveAttribute('aria-pressed', 'false');
+    }
+  });
+});
+
+test('starting multi-selection on paper also enables it in the product designer', async ({ page }) => {
+  await openWorkspace(page);
+  await page.locator('[data-menu-print-page]').first().click({ button: 'right', position: { x: 10, y: 125 } });
+  await page.locator('[data-canvas-object-menu]').getByRole('button', { name: 'Seleção múltipla' }).click();
+  await page.getByTitle('Designer de produtos').click();
+  await expect(page.locator('#designer-sheet-products [data-drag-scope][data-drag-column-container]').first()).toHaveClass(/select-none/);
+});

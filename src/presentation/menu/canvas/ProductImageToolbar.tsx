@@ -3,10 +3,11 @@ import React from 'react';
 import { MAX_PHOTO_SCALE, MIN_PHOTO_SCALE } from '../../../domain/menu/styleRules';
 import { HoldStepButton } from '../../common/HoldStepButton';
 import { createPortal } from 'react-dom';
-import { Minus, Plus, FlipHorizontal2, FlipVertical2 } from 'lucide-react';
+import { Minus, Plus, FlipHorizontal2, FlipVertical2, Trash2 } from 'lucide-react';
 
-export const ProductImageToolbar = ({ productId, anchorId, flips, scale, onScale, onFlip }: {
-    productId: string; anchorId: string; flips?: { horizontal?: boolean; vertical?: boolean };
+export const ProductImageToolbar = ({ productId, anchorId, scale, onScale, onFlip, onRemove }: {
+    productId: string; anchorId: string;
+    onRemove: () => void;
     scale: number;
     onScale: (delta: number) => void;
     onFlip: (axis: 'horizontal' | 'vertical') => void;
@@ -55,10 +56,12 @@ export const ProductImageToolbar = ({ productId, anchorId, flips, scale, onScale
                 className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100"><Minus size={16} /></HoldStepButton>
             <HoldStepButton label="Aumentar imagem" disabled={scale >= MAX_PHOTO_SCALE} onStep={() => onScale(0.1)}
                 className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100"><Plus size={16} /></HoldStepButton>
-            <button type="button" aria-pressed={Boolean(flips?.horizontal)} title="Inverter horizontalmente" aria-label="Inverter horizontalmente"
-                onClick={() => onFlip('horizontal')} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 aria-pressed:bg-indigo-50 aria-pressed:text-indigo-700"><FlipHorizontal2 size={16} /></button>
-            <button type="button" aria-pressed={Boolean(flips?.vertical)} title="Inverter verticalmente" aria-label="Inverter verticalmente"
-                onClick={() => onFlip('vertical')} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 aria-pressed:bg-indigo-50 aria-pressed:text-indigo-700"><FlipVertical2 size={16} /></button>
+            <button type="button" title="Inverter horizontalmente" aria-label="Inverter horizontalmente"
+                onClick={() => onFlip('horizontal')} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100"><FlipHorizontal2 size={16} /></button>
+            <button type="button" title="Inverter verticalmente" aria-label="Inverter verticalmente"
+                onClick={() => onFlip('vertical')} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100"><FlipVertical2 size={16} /></button>
+            <button type="button" title="Remover imagem" aria-label="Remover imagem" onClick={onRemove}
+                className="grid size-8 place-items-center rounded-lg text-red-600 hover:bg-red-50"><Trash2 size={16} /></button>
         </div>,
         document.body,
     );

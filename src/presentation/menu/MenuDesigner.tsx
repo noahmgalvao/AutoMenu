@@ -21,7 +21,7 @@ import { CustomMarkerLibraryProvider } from './designer/CustomMarkerLibrary';
 import { canvasShapeUrl, getCanvasShapeDimensions } from '../../domain/menu/canvasShapes';
 import { bindCanvasZoomGestures, getZoomAnchor, restoreZoomAnchor, type CanvasPoint, centerCanvasProduct, getCanvasProduct, getCanvasProductBounds, getCanvasViewportBounds, getCanvasViewportFocus, positionCanvasImage } from './canvas/canvasViewport';
 import { MenuColorContext, getMenuPalette } from './designer/ColorPicker';
-import { getImageLayerIndexes } from '../../domain/menu/imageLayers';
+import { getImageLayerIndexes, moveImageToMenuBackground } from '../../domain/menu/imageLayers';
 import type { PdfExportResult } from '../../infrastructure/browser/pdfExport';
 import {
     canIncreaseCanvasFontSize,
@@ -1456,6 +1456,30 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     };
 
     const backgroundPhotoInput = useRef<HTMLInputElement>(null);
+    const backgroundOrigins = useRef(new Map<string, { image: AddedImage; index: number }>());
+
+    const movePhotoToBackground = (id: string) => {
+        const images = style.addedImages || [];
+        const index = images.findIndex(image => image.id === id && !image.shape);
+        if (index === -1) return;
+        const originKey = crypto.randomUUID();
+        backgroundOrigins.current.set(originKey, { image: images[index], index });
+        setStyle(previous => moveImageToMenuBackground(previous, id, originKey));
+        setSelection({ type: null, id: null });
+    };
+
+    const removeBackgroundPhoto = () => {
+        setStyle(previous => {
+            const origin = backgroundOrigins.current.get(previous.menuBackgroundPhoto?.originKey || '');
+            const images = previous.addedImages || [];
+            if (!origin || images.some(image => image.id === origin.image.id)) {
+                return { ...previous, menuBackgroundPhoto: undefined, name: 'Custom' };
+            }
+            const addedImages = [...images];
+            addedImages.splice(origin.index, 0, origin.image);
+            return { ...previous, addedImages, menuBackgroundPhoto: undefined, name: 'Custom' };
+        });
+    };
     const handleAddedImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, asBackground = false) => {
         const file = e.target.files?.[0];
         e.target.value = '';
@@ -2119,10 +2143,12 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                             <MenuPreview
                                 products={displayProducts}
                                 addedImagePreview={imagePreview}
+                                onMovePhotoToBackground={movePhotoToBackground}
+                                onRemoveBackgroundPhoto={removeBackgroundPhoto}
                                 onChooseBackgroundImage={() => backgroundPhotoInput.current?.click()}
                                 isAddingImage={isAddingImage}
-                                onPasteObjects={(nextProducts, nextStyle) => {
-                                    if (setProductsAndStyle) setProductsAndStyle(nextProducts, nextStyle, 'Colar');
+                                onPasteObjects={(nextProducts, nextStyle, actionLabel = 'Colar') => {
+                                    if (setProductsAndStyle) setProductsAndStyle(nextProducts, nextStyle, actionLabel);
                                     else { setProducts?.(nextProducts); setStyle(nextStyle); }
                                 }}
                                 style={style}
@@ -2187,6 +2213,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 updateFreeTextStyle={updateFreeTextStyle}
                 updateGlobalElementStyle={updateGlobalElementStyle}
                 setPreviewAction={setPreviewAction}
+                onMovePhotoToBackground={movePhotoToBackground}
                 handleAddedImageUpload={handleAddedImageUpload}
                 isAddingImage={isAddingImage}
                 shapePickerRequest={shapePickerRequest}

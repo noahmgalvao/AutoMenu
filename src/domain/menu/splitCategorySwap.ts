@@ -66,7 +66,7 @@ export function findSplitCategorySwap(
             return column.estimatedHeight > Math.max(limit, previousHeight) + 0.5;
         }))) return false;
 
-        const updated = finalizeMenuPages(updatedBase, proposed);
+        const updated = finalizeMenuPages(updatedBase, proposed, products);
         if (updated.length > pages.length) return false;
         const result = readCategorySlots(updated);
         if (result.size !== slots.size) return false;

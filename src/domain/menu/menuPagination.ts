@@ -44,6 +44,7 @@ export interface PageColumnLayout {
 
 export interface PageLayout {
     blankPageId?: string;
+    headerCopy?: boolean;
     mainHeader: PageItem | null;
     columns: PageColumnLayout[];
     flatItems: PageItem[];
@@ -728,7 +729,7 @@ const buildLockedPagination = (
 };
 
 /** Keep explicit pages and pages carrying user assets even after the content reflows. */
-export function finalizeMenuPages(basePages: PageLayout[], style: MenuStyle) {
+export function finalizeMenuPages(basePages: PageLayout[], style: MenuStyle, products: Product[] = []) {
     const columnCount = style.categoryColumnCount || 1;
     const emptyPage = (): PageLayout => ({
         mainHeader: null, columnCount, flatItems: [],
@@ -737,9 +738,47 @@ export function finalizeMenuPages(basePages: PageLayout[], style: MenuStyle) {
         })),
     });
     const pages = [...basePages];
+    const hasPageCopies = style.blankPages?.some(page => page.copiedLayout);
+    const hidden = hasPageCopies ? new Set(style.hiddenProductIds) : undefined;
+    const productsById = new Map(hasPageCopies
+        ? products.filter(product => !hidden?.has(product.id)).map(product => [product.id, product])
+        : []);
     for (const blankPage of [...(style.blankPages || [])].sort((a, b) => a.index - b.index)) {
         const hasImage = style.addedImages?.some((image) => (image.pageIndex || 0) === blankPage.index);
         const existing = pages[blankPage.index];
+        if (blankPage.copiedLayout) {
+            const layout = blankPage.copiedLayout;
+            const columns = layout.columns.map((column, columnIndex) => {
+                const chunks = column.flatMap((chunk, chunkIndex): CategoryChunkLayout[] => {
+                    const retained = chunk.items.flatMap(item => item.type === 'category-header' ? []
+                        : item.ids.map(id => productsById.get(id)).filter((product): product is Product => Boolean(product)));
+                    if (!retained.length) return [];
+                    const category = retained[0].category;
+                    const items = chunk.items.flatMap((item): PageItem[] => {
+                        if (item.type === 'category-header') return [{ type: item.type, data: category, category }];
+                        const data = item.ids.map(id => productsById.get(id)).filter((product): product is Product => Boolean(product));
+                        if (!data.length) return [];
+                        return [item.type === 'product-item' ? { type: item.type, data: data[0], category }
+                            : { type: item.type, data, category }];
+                    });
+                    return [{ ...chunk, category, chunkId: `${blankPage.id}-${columnIndex}-${chunkIndex}`, columnIndex, items }];
+                });
+                return { columnIndex, chunks, estimatedHeight: chunks.reduce((sum, chunk) => sum + chunk.estimatedHeight, 0) };
+            });
+            const copy: PageLayout = {
+                mainHeader: layout.showHeader ? { type: 'main-header' } : null,
+                headerCopy: layout.showHeader,
+                columns,
+                columnCount: columns.length,
+                blankPageId: blankPage.id,
+                flatItems: [],
+            };
+            copy.flatItems = buildPageFlatItems(copy);
+            while (pages.length < blankPage.index) pages.push(emptyPage());
+            const replace = existing && !existing.blankPageId && !existing.flatItems.length ? 1 : 0;
+            pages.splice(blankPage.index, replace, copy);
+            continue;
+        }
         if (existing) {
             const belongsToBlankPage = (chunk: CategoryChunkLayout) => (chunk.category.startsWith(FREE_TEXT_PREFIX) || style.categoryPositions?.[chunk.category]?.pageX !== undefined)
                 && style.categoryPositions?.[chunk.category]?.pageIndex === blankPage.index;
@@ -777,7 +816,13 @@ export const calculatePagination = (
     const baseColumnHeight = getPaginationContentHeight(style);
     const headerHeight = getMainHeaderHeight(style, options.measuredHeights);
     const pageBreaks = new Set(style.pageBreaks || []);
-    const isHidden = (id: string) => style.hiddenProductIds?.includes(id) || Boolean(style.freeTextBackgrounds?.[id]);
+    const hidden = new Set(style.hiddenProductIds);
+    for (const page of style.blankPages || []) {
+        page.copiedLayout?.columns.forEach(column => column.forEach(chunk => chunk.items.forEach(item => {
+            if (item.type !== 'category-header') item.ids.forEach(id => hidden.add(id));
+        })));
+    }
+    const isHidden = (id: string) => hidden.has(id) || Boolean(style.freeTextBackgrounds?.[id]);
 
     if (categoryPlacementAssignments) {
         return buildLockedPagination(

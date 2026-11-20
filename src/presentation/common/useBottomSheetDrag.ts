@@ -1,119 +1,148 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
 
-const EXPAND_GESTURE_PX = 64;
+const PARTIAL_HEIGHT = '45dvh';
+const EXPANDED_HEIGHT = '100dvh';
+const SNAP_DISTANCE = 64;
 
-export const useBottomSheetDrag = (isOpen: boolean, onClose?: () => void) => {
-    const [height, setHeight] = useState('45dvh');
-    const [isDragging, setIsDragging] = useState(false);
-    const [isMobile, setIsMobile] = useState(false);
-    const startY = useRef<number>(0);
-    const startHeight = useRef<number>(0);
-    const expandedByUpwardGesture = useRef(false);
+interface SheetDrag {
+    pointerId: number;
+    startY: number;
+    startHeight: number;
+    fullHeight: number;
+    visibleHeight: number;
+    frame: number;
+}
 
-    // Detect Mobile
-    useEffect(() => {
-        const checkMobile = () => setIsMobile(window.innerWidth < 768);
-        checkMobile();
-        window.addEventListener('resize', checkMobile);
-        return () => window.removeEventListener('resize', checkMobile);
+export function useBottomSheetDrag(isOpen: boolean, onClose?: () => void) {
+    const [height, setHeight] = useState(PARTIAL_HEIGHT);
+    const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
+    const sheetRef = useRef<HTMLDivElement>(null);
+    const dragRef = useRef<SheetDrag | null>(null);
+    const animationRef = useRef<Animation | null>(null);
+
+    useLayoutEffect(() => {
+        const query = window.matchMedia('(max-width: 767px)');
+        const update = () => setIsMobile(query.matches);
+        query.addEventListener('change', update);
+        return () => query.removeEventListener('change', update);
     }, []);
 
-    // Reset to default when opened
-    useEffect(() => {
-        if (isOpen) {
-            setHeight('45dvh');
-        }
-    }, [isOpen]);
-
-    useEffect(() => {
-        if (!isMobile || !isOpen) return;
-        document.documentElement.style.setProperty('--automenu-bottom-sheet-height', height);
+    useLayoutEffect(() => {
+        const sheet = sheetRef.current;
+        if (!sheet || !isMobile || !isOpen) return;
+        sheet.style.height = PARTIAL_HEIGHT;
+        setHeight(PARTIAL_HEIGHT);
         return () => {
-            if (document.documentElement.style.getPropertyValue('--automenu-bottom-sheet-height') === height) {
-                document.documentElement.style.removeProperty('--automenu-bottom-sheet-height');
+            const drag = dragRef.current;
+            if (drag) cancelAnimationFrame(drag.frame);
+            dragRef.current = null;
+            animationRef.current?.cancel();
+            sheet.style.removeProperty('transition');
+            sheet.style.removeProperty('transform');
+            if (!window.matchMedia('(max-width: 767px)').matches) sheet.style.removeProperty('height');
+        };
+    }, [isMobile, isOpen]);
+
+    useLayoutEffect(() => {
+        if (!isMobile || !isOpen) return;
+        const root = document.documentElement.style;
+        root.setProperty('--automenu-bottom-sheet-height', height);
+        return () => {
+            if (root.getPropertyValue('--automenu-bottom-sheet-height') === height) {
+                root.removeProperty('--automenu-bottom-sheet-height');
             }
         };
     }, [height, isMobile, isOpen]);
 
-    const handlePointerDown = (e: React.PointerEvent) => {
-        if (!isMobile) return;
-        
-        e.preventDefault();
-        e.stopPropagation();
-        
-        setIsDragging(true);
-        expandedByUpwardGesture.current = false;
-        startY.current = e.clientY;
-        const currentVh = parseFloat(height);
-        startHeight.current = (window.innerHeight * currentVh) / 100;
-        
-        window.addEventListener('pointermove', handlePointerMove);
-        window.addEventListener('pointerup', handlePointerUp);
-        window.addEventListener('pointercancel', handlePointerUp);
-    };
+    const settleHeight = useCallback((next: string, fromTop?: number) => {
+        const sheet = sheetRef.current;
+        if (!sheet) return;
+        const startTop = fromTop ?? sheet.getBoundingClientRect().top;
+        animationRef.current?.cancel();
+        sheet.style.transition = 'none';
+        sheet.style.transform = 'none';
+        sheet.style.height = next;
+        const offset = startTop - sheet.getBoundingClientRect().top;
+        sheet.style.removeProperty('transform');
+        sheet.style.removeProperty('transition');
+        setHeight(next);
 
-    const handlePointerMove = useCallback((e: PointerEvent) => {
-        const delta = startY.current - e.clientY; // Up is positive
-        expandedByUpwardGesture.current = delta >= EXPAND_GESTURE_PX;
-        const newH = startHeight.current + delta;
-        const newVh = (newH / window.innerHeight) * 100;
-        
-        const clamped = Math.max(0, Math.min(100, newVh));
-        setHeight(`${clamped}dvh`);
+        if (Math.abs(offset) > 1 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            animationRef.current = sheet.animate([
+                { transform: `translate3d(0, ${offset}px, 0)` },
+                { transform: 'translate3d(0, 0, 0)' },
+            ], { duration: 190, easing: 'cubic-bezier(.22, .8, .3, 1)' });
+        }
     }, []);
 
-    const handlePointerUp = useCallback((e: PointerEvent) => {
-        window.removeEventListener('pointermove', handlePointerMove);
-        window.removeEventListener('pointerup', handlePointerUp);
-        window.removeEventListener('pointercancel', handlePointerUp);
-        setIsDragging(false);
+    const dragHeight = (drag: SheetDrag, pointerY: number) =>
+        Math.max(0, Math.min(drag.fullHeight, drag.startHeight + drag.startY - pointerY));
 
-        if (expandedByUpwardGesture.current) {
-            expandedByUpwardGesture.current = false;
-            setHeight('100dvh');
+    const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+        const sheet = sheetRef.current;
+        if (!isMobile || !isOpen || !sheet || event.button !== 0 || dragRef.current) return;
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        const startHeight = Math.max(0, window.innerHeight - sheet.getBoundingClientRect().top);
+        animationRef.current?.cancel();
+        sheet.style.transition = 'none';
+        sheet.style.height = EXPANDED_HEIGHT;
+        const fullHeight = sheet.offsetHeight;
+        sheet.style.transform = `translate3d(0, ${fullHeight - startHeight}px, 0)`;
+        dragRef.current = { pointerId: event.pointerId, startY: event.clientY, startHeight, fullHeight, visibleHeight: startHeight, frame: 0 };
+    };
+
+    const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+        const drag = dragRef.current;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        drag.visibleHeight = dragHeight(drag, event.clientY);
+        if (drag.frame) return;
+        drag.frame = requestAnimationFrame(() => {
+            drag.frame = 0;
+            const sheet = sheetRef.current;
+            if (sheet) sheet.style.transform = `translate3d(0, ${drag.fullHeight - drag.visibleHeight}px, 0)`;
+        });
+    };
+
+    const finish = (event: PointerEvent<HTMLDivElement>, cancelled = false) => {
+        const drag = dragRef.current;
+        const sheet = sheetRef.current;
+        if (!drag || drag.pointerId !== event.pointerId || !sheet) return;
+        dragRef.current = null;
+        cancelAnimationFrame(drag.frame);
+        const visibleHeight = cancelled ? drag.visibleHeight : dragHeight(drag, event.clientY);
+        const delta = drag.startY - event.clientY;
+        if (!cancelled && delta < -8 && visibleHeight < window.innerHeight * .25 && onClose) {
+            sheet.style.height = `${Math.max(1, visibleHeight)}px`;
+            sheet.style.transform = 'none';
+            void sheet.offsetHeight;
+            sheet.style.removeProperty('transform');
+            sheet.style.removeProperty('transition');
+            onClose();
             return;
         }
-        
-        const finalHeight = startHeight.current + (startY.current - e.clientY);
-        const finalVh = (finalHeight / window.innerHeight) * 100;
-        
-        if (finalVh < 25) {
-            if (onClose) onClose();
-            setHeight('0dvh');
-        } else if (finalVh > 75) {
-            setHeight('100dvh');
-        } else {
-            setHeight('45dvh');
-        }
-    }, [onClose]);
+        const next = cancelled || Math.abs(delta) < 8 ? height : (
+            delta >= SNAP_DISTANCE || (delta > -SNAP_DISTANCE && visibleHeight > drag.fullHeight * .78)
+                ? EXPANDED_HEIGHT : PARTIAL_HEIGHT
+        );
+        settleHeight(next, window.innerHeight - visibleHeight);
+    };
 
-    const openPartial = useCallback(() => setHeight('50dvh'), []);
-    const expand = useCallback(() => {
-        if (!isMobile) return;
-        setHeight('100dvh');
-    }, [isMobile]);
-
-    const toggleExpanded = useCallback(() => {
-        if (!isMobile) return;
-        setHeight((current) => current === '100dvh' ? '45dvh' : '100dvh');
-    }, [isMobile]);
+    const openPartial = useCallback(() => {
+        if (isMobile) settleHeight('50dvh');
+    }, [isMobile, settleHeight]);
+    const isExpanded = height === EXPANDED_HEIGHT;
+    const toggleExpanded = () => {
+        if (isMobile) settleHeight(isExpanded ? PARTIAL_HEIGHT : EXPANDED_HEIGHT);
+    };
 
     return {
-        height,
-        isDragging,
-        isMobile,
-        isExpanded: height === '100dvh',
-        expand, openPartial,
-        toggleExpanded,
+        sheetRef, height, isMobile, isExpanded, openPartial, toggleExpanded,
         dragHandlers: {
-            onPointerDown: handlePointerDown,
-            style: {
-                touchAction: 'none',
-                cursor: 'grab',
-                ...(isMobile && height === '100dvh'
-                    ? { paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }
-                    : {}),
-            } as React.CSSProperties
-        }
+            onPointerDown, onPointerMove, onPointerUp: finish,
+            onPointerCancel: (event: PointerEvent<HTMLDivElement>) => finish(event, true),
+            onLostPointerCapture: (event: PointerEvent<HTMLDivElement>) => finish(event, true),
+            style: isMobile && isExpanded ? { paddingTop: 'max(0.75rem, env(safe-area-inset-top))' } : undefined,
+        },
     };
-};
+}

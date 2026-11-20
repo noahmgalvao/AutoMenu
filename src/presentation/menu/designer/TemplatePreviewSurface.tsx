@@ -64,7 +64,7 @@ export const TemplatePreviewSurface = memo(function TemplatePreviewSurface({
       content, style, groupedProductsBase, sortedCategoriesBase,
       Object.keys(placements).length > 0 ? placements : null, { splitCategoryAcrossPages },
     );
-    return finalizeMenuPages(calculated, style);
+    return finalizeMenuPages(calculated, style, content);
   }, [content, style, groupedProductsBase, sortedCategoriesBase, splitCategoryAcrossPages]);
   const { widthPx, heightPx } = resolveMenuPageDimensions(style);
   const stage = useRef<HTMLDivElement>(null);

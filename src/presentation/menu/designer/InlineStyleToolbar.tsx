@@ -86,7 +86,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
 
         const updatePosition = () => {
             const toolbarHeight = (contentRef.current?.offsetHeight || 76) + (compact ? 10 : 14);
-            const preferredWidth = !hasTextControls ? 200 : hasHeader ? (compact ? 180 : 242) : isSizeColorOnly ? 155 : hasPriceAdjustment ? 334 : 304;
+            const preferredWidth = !hasTextControls ? 200 : hasHeader ? (compact ? 224 : 266) : isSizeColorOnly ? 199 : hasPriceAdjustment ? 364 : 344;
             const width = Math.min(preferredWidth, window.innerWidth - 16);
             const borderSurface = groupSurface || (hasDecoration
                 ? document.getElementById(targetElementId)?.closest('[data-menu-border-surface]')
@@ -189,7 +189,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                         />
                     </div>
                 )}
-                <FontSizeInput
+                <FontSizeInput showStepButtons
                     value={value.fontSize}
                     max={maxFontSize}
                     min={minFontSize}

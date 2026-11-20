@@ -1,3 +1,5 @@
+import { DesignerTapButton } from '../common/DesignerTapButton';
+import { MenuMultiSelectionProvider } from '../menu/interactions/MenuMultiSelection';
 import { preventBrowserContextMenu } from '../common/noBrowserSelection';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, ChefHat, History, Loader2, Paintbrush, Plus, Send, ShoppingCart, X } from 'lucide-react';
@@ -85,12 +87,14 @@ const App: React.FC = () => {
   };
 
   const toggleProductDesigner = () => {
-    if (activePanel !== 'product') setHasOpenedProductDesigner(true);
-    setActivePanel(activePanel === 'product' ? null : 'product');
+    restoreNavigation();
+    setHasOpenedProductDesigner(true);
+    setActivePanel(current => current === 'product' ? null : 'product');
   };
 
   const toggleMenuDesigner = () => {
-    setActivePanel(activePanel === 'style' ? null : 'style');
+    restoreNavigation();
+    setActivePanel(current => current === 'style' ? null : 'style');
   };
 
   const {
@@ -160,6 +164,7 @@ const App: React.FC = () => {
   };
 
   return (
+    <MenuMultiSelectionProvider>
     <div className="h-screen bg-slate-50 flex flex-col font-sans text-slate-900 overflow-hidden relative"
       style={{ '--automenu-max-sheet-height': 'calc(100dvh - 4rem)' } as React.CSSProperties}>
       <nav data-site-header data-no-browser-selection onContextMenu={preventBrowserContextMenu} className={`absolute top-0 left-0 right-0 bg-white border-b border-slate-200 h-16 ${isMenuImportOpen ? 'z-[1100]' : 'z-[60]'} transition-transform duration-300 ${isMenuImportOpen ? 'translate-y-0' : isScrolling ? '-translate-y-full md:translate-y-0' : 'translate-y-0'}`}>
@@ -376,22 +381,22 @@ const App: React.FC = () => {
         className={`md:hidden fixed bottom-0 left-0 right-0 flex h-16 bg-white border-t border-slate-200 z-50 transition-transform duration-300 ${isScrolling && !activePanel ? 'translate-y-full' : 'translate-y-0'}`}
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        <button
-          onClick={toggleMenuDesigner}
-          className={`flex-1 flex flex-col items-center justify-center gap-1 ${activePanel === 'style' ? 'text-indigo-600 bg-indigo-50/50' : 'text-slate-400'}`}
-        >
-          <Paintbrush size={20} />
-          <span className="text-[10px] font-bold">Visual</span>
-        </button>
-        <button
-          onClick={toggleProductDesigner}
-          className={`flex-1 flex flex-col items-center justify-center gap-1 ${activePanel === 'product' ? 'text-indigo-600 bg-indigo-50/50' : 'text-slate-400'}`}
-        >
-          <ShoppingCart size={20} />
-          <span className="text-[10px] font-bold">Produtos</span>
-        </button>
+        <DesignerTapButton type="button" data-mobile-designer-tab aria-controls="designer-sheet-visual"
+          onClick={toggleMenuDesigner} onSwipeUp={() => setActivePanel('style')} aria-pressed={activePanel === 'style'}>
+          <span className="designer-tab-icon"><Paintbrush size={18} /></span>
+          <span>Visual</span>
+        </DesignerTapButton>
+        <DesignerTapButton type="button" data-mobile-designer-tab aria-controls="designer-sheet-products"
+          onClick={toggleProductDesigner} onSwipeUp={() => {
+            setHasOpenedProductDesigner(true);
+            setActivePanel('product');
+          }} aria-pressed={activePanel === 'product'}>
+          <span className="designer-tab-icon"><ShoppingCart size={18} /></span>
+          <span>Produtos</span>
+        </DesignerTapButton>
       </div>
     </div>
+    </MenuMultiSelectionProvider>
   );
 };
 

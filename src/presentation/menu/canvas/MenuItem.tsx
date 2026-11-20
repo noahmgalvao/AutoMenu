@@ -10,6 +10,7 @@ import { CategoryDividerPicker } from '../designer/CategoryDividerPicker';
 import { resolveCategoryDivider, resolveProductDivider } from './categoryDividers';
 import { InlineStyleToolbar } from '../designer/InlineStyleToolbar';
 import { DecorationControls, getBorderOverride, BorderDecoration, getMarker } from '../designer/Decorations';
+import type { FormattingField } from '../interactions/types';
 import type { PriceAdjustmentMode } from '../../../domain/menu/pricePropagation';
 import { MenuPhoto, PhotoLoading } from './MenuPhoto';
 import { livePhotoScaleVariable, photoDimensions } from './photoSizing';
@@ -83,11 +84,19 @@ export const MenuItem: React.FC<MenuItemProps> = ({
     backgroundText,
 }) => {
     const formattingTarget = handlers.formattingTarget;
-    const formattingClick = (event: React.MouseEvent<HTMLElement>, type: 'product' | 'category', id: string) => {
-        if (!event.currentTarget.isContentEditable) return;
+    const canStartEditingAtClick = (event: React.MouseEvent, type: 'product' | 'category' | 'freeText', id: string) =>
+        !handlers.readOnly && !handlers.multiSelectMode && !event.shiftKey && !event.ctrlKey && !event.metaKey
+        && handlers.isSelected?.(type, id);
+
+    const formattingClick = (event: React.MouseEvent<HTMLElement>, type: 'product' | 'category' | 'freeText', id: string, field: FormattingField) => {
         const elementId = event.currentTarget.id;
-        handleEditableFieldClick(event);
-        if (!formattingTarget) handlers.setEditingField?.(type, id, type === 'category' ? 'category' : 'name', elementId);
+        if (!elementId) return;
+        if (event.currentTarget.isContentEditable) {
+            handleEditableFieldClick(event);
+            handlers.setEditingField?.(type, id, field, elementId);
+        } else if (canStartEditingAtClick(event, type, id)) {
+            handlers.startEditing(event, id, elementId, field);
+        }
     };
     const fontSizeLimits = resolveFontSizeLimits(style);
     const minimumFontSize = resolveMinimumFontSize(style);
@@ -294,18 +303,25 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 onPaste={event => handlePricePaste(event, product.id)}
                 onFocus={event => handlePriceFocus(event, product.id)}
                 onPointerDown={event => { if (isEditable) event.stopPropagation(); }}
-                onClick={handleEditableFieldClick}
+                onClick={event => formattingClick(event, 'product', product.id, 'price')}
             >{formatMenuPriceValue(product.price, style)}</span>
         </div>;
     };
+    const activatePhoto = (type: 'product' | 'category', id: string) => {
+        handlers.startPhotoEditing?.(type, id);
+        setImageMenuProductId(id);
+    };
+
+    const handlePhotoClick = (event: React.MouseEvent, type: 'product' | 'category', id: string) => {
+        if (!canStartEditingAtClick(event, type, id)) return;
+        event.stopPropagation();
+        activatePhoto(type, id);
+    };
+
     const photoControls = (type: 'category' | 'product', id: string, hasPhoto: boolean, crop: { x: number; y: number }, flips?: { horizontal?: boolean; vertical?: boolean }) => (
         <PhotoEditControls id={id} anchorId={`${type}-image-${id}`} hasPhoto={hasPhoto} active={imageMenuProductId === id && !formattingTarget}
             scale={(type === 'category' ? style.categoryImageScale : style.imageScale) || 1} crop={crop} flips={flips}
-            activate={() => {
-                if (handlers.editingId !== id) handlers.setEditingField(type, id, type === 'category' ? 'category' : 'name', type === 'category' ? `text-${id}` : `product-name-${id}`);
-                handlers.setFormattingTarget(null);
-                setImageMenuProductId(id);
-            }}
+            activate={() => activatePhoto(type, id)}
             choose={() => handlers.choosePhoto(type, id)} remove={() => handlers.removePhoto(type, id)}
             type={type} updateStyle={handlers.updateStyle} />
     );
@@ -340,6 +356,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     margin: inRow && !background ? '0 auto' : undefined,
                     background: getSurfaceFill(style, 'productImage'), borderRadius: photoRadius,
                 }}
+                onClick={event => handlePhotoClick(event, 'product', product.id)}
                 title={isEditable ? 'Opções da imagem' : undefined}
             >
                 <span className="absolute inset-0 block overflow-hidden" style={{ borderRadius: 'inherit' }}>
@@ -532,6 +549,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     {style.showCategoryImages !== false && (categoryImage?.url || handlers.photoIsLoading?.('category', item.data) || (isEditable && imageMenuProductId === item.data)) && (
                         <div id={handlers.readOnly ? undefined : `category-image-${item.data}`} data-product-image-surface={item.data}
                             data-auto-photo-ratio className="relative mr-2 shrink-0"
+                            onClick={event => handlePhotoClick(event, 'category', item.data)}
                             style={photoDimensions('category', categoryImageScale, photoLimit,
                                 `min(${widthFraction * 100}%, max(0px, calc(100% - ${titleReserve}px)))`, undefined, (categoryImage?.width || 1) / (categoryImage?.height || 1))}>
                             {categoryImage?.url && <MenuPhoto showLoading={!handlers.readOnly && !handlers.photoIsLoading?.('category', item.data)} src={categoryImage.url} alt="" draggable={false} className="h-full w-full object-cover"
@@ -566,7 +584,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             textTransform: catStyle.textTransform,
                             letterSpacing: catStyle.letterSpacing ? `${catStyle.letterSpacing}px` : undefined
                         }}
-                        contentEditable={Boolean(isEditable)} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'category', item.data)} onKeyDown={handlers.handleKeyDown} onFocus={() => handlers.setEditingField?.('category', item.data, 'category', elementId)} onMouseDown={(e) => { if (!isEditable) e.preventDefault(); }} onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }} onClick={event => formattingClick(event, 'category', item.data)}
+                        contentEditable={Boolean(isEditable)} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'category', item.data)} onKeyDown={handlers.handleKeyDown} onFocus={() => handlers.setEditingField?.('category', item.data, 'category', elementId)} onMouseDown={(e) => { if (!isEditable) e.preventDefault(); }} onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }} onClick={event => formattingClick(event, 'category', item.data, 'category')}
                     />
                     {(categoryAlign === 'left' || categoryAlign === 'center') && renderCategoryDivider('after')}
                 </div>
@@ -707,7 +725,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 const nextWidth = getFreeTextContentWidth(e.currentTarget, maximumWidth);
                                 container.style.width = `${nextWidth}px`;
                                 container.dataset.pendingFreeTextWidth = String(nextWidth);
-                            }} onFocus={() => handlers.setEditingField?.('freeText', product.id, 'freeText', `product-name-${product.id}`)} onMouseDown={(e) => { if (!isEditable) e.preventDefault(); }} onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }} onClick={handleEditableFieldClick}
+                            }} onFocus={() => handlers.setEditingField?.('freeText', product.id, 'freeText', `product-name-${product.id}`)} onMouseDown={(e) => { if (!isEditable) e.preventDefault(); }} onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }} onClick={event => formattingClick(event, 'freeText', product.id, 'freeText')}
                             />
                     </div>
                 ) : (
@@ -752,7 +770,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                         textTransform: nameStyle.textTransform,
                                         letterSpacing: nameStyle.letterSpacing ? `${nameStyle.letterSpacing}px` : undefined
                                     }}
-                                    contentEditable={Boolean(isEditable)} tabIndex={isEditable ? 0 : undefined} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'name')} onKeyDown={handlers.handleKeyDown} onFocus={() => handlers.setEditingField?.('product', product.id, 'name', `product-name-${product.id}`)} onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }} onClick={event => formattingClick(event, 'product', product.id)}
+                                    contentEditable={Boolean(isEditable)} tabIndex={isEditable ? 0 : undefined} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'name')} onKeyDown={handlers.handleKeyDown} onFocus={() => handlers.setEditingField?.('product', product.id, 'name', `product-name-${product.id}`)} onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }} onClick={event => formattingClick(event, 'product', product.id, 'name')}
                                 />
                             </div>
                             {showProductDivider && (
@@ -780,7 +798,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 fontStyle: descStyle.italic ? 'italic' : 'normal',
                                 textDecoration: descStyle.underline ? 'underline' : 'none'
                             }}
-                            contentEditable={Boolean(isEditable)} tabIndex={isEditable ? 0 : undefined} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'description')} onKeyDown={handlers.handleKeyDown} onFocus={() => handlers.setEditingField?.('product', product.id, 'description', `product-description-${product.id}`)} onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }} onClick={handleEditableFieldClick}
+                            contentEditable={Boolean(isEditable)} tabIndex={isEditable ? 0 : undefined} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'description')} onKeyDown={handlers.handleKeyDown} onFocus={() => handlers.setEditingField?.('product', product.id, 'description', `product-description-${product.id}`)} onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }} onClick={event => formattingClick(event, 'product', product.id, 'description')}
                         />
                     </div>
                     </div>
@@ -943,7 +961,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         onFocus={() => handlers.setEditingField?.('product', product.id, 'name', `product-name-${product.id}`)}
                                                         tabIndex={isEditable ? 0 : undefined}
                                                         onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }}
-                                                        onClick={event => formattingClick(event, 'product', product.id)}
+                                                        onClick={event => formattingClick(event, 'product', product.id, 'name')}
                                                     />
                                                 </div>
                                                 {showProductDivider && (
@@ -973,7 +991,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                 onKeyDown={handlers.handleKeyDown}
                                                 onFocus={() => handlers.setEditingField?.('product', product.id, 'description', `product-description-${product.id}`)}
                                                 onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }}
-                                                onClick={handleEditableFieldClick}
+                                                onClick={event => formattingClick(event, 'product', product.id, 'description')}
                                             />
                                         </div>
                                     </div>

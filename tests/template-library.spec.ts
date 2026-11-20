@@ -148,7 +148,7 @@ test('canvas colors come first and recently picked colors are ordered without du
   const setColor = async (color: string) => {
     await hex.fill(color);
     await hex.press('Enter');
-    await expect(picker.getByRole('group', { name: 'Cores do cardápio' }).getByRole('button', { name: color })).toBeVisible();
+    await expect(picker.getByRole('group', { name: 'Neste cardápio' }).getByRole('button', { name: color })).toBeVisible();
   };
   for (const color of ['#117abc', '#784edd', '#c54637', '#117abc', '#234856']) await setColor(color);
   const recent = picker.getByRole('group', { name: 'Cores recentes' });
@@ -289,6 +289,7 @@ test('using a free image as the full background locks the paper color until remo
   const photos = page.locator('[data-menu-background-image]');
   const image = page.locator('[data-added-image-id="batch-photo"]');
   const source = await image.locator('img').getAttribute('src');
+  const position = await image.evaluate(element => ({ left: element.style.left, top: element.style.top, width: element.style.width }));
   await image.click({ button: 'right' });
   const menu = page.locator('[data-canvas-object-menu]');
   await menu.getByRole('button', { name: 'Definir imagem de fundo', exact: true }).click();
@@ -300,12 +301,53 @@ test('using a free image as the full background locks the paper color until remo
   await expect(paperColor).toBeDisabled();
   await sheet.click({ button: 'right', position: { x: 8, y: 350 } });
   const remove = menu.getByRole('button', { name: 'Remover imagem de fundo', exact: true });
-  await expect(menu.getByRole('button').last()).toHaveText('Remover imagem de fundo');
+  await expect(menu.getByRole('button').last()).toHaveText('Remover página');
   await remove.click();
   await expect(photos).toHaveCount(0);
+  await expect(image).toHaveCount(1);
+  expect(await image.evaluate(element => ({ left: element.style.left, top: element.style.top, width: element.style.width }))).toEqual(position);
   await expect(paperColor).toBeEnabled();
   await sheet.click({ button: 'right', position: { x: 8, y: 350 } });
   await expect(menu.getByRole('button', { name: 'Definir imagem de fundo', exact: true })).toBeEnabled();
+});
+
+test('a background from another editing session is removed without creating an image object', async ({ page }) => {
+  await page.goto(`${url}?existing-background`);
+  await expect(page.locator('[data-menu-background-image]')).toBeVisible();
+  await page.locator('[data-menu-print-page]').first().click({ button: 'right', position: { x: 10, y: 125 } });
+  await page.getByRole('button', { name: 'Remover imagem de fundo', exact: true }).click();
+  await expect(page.locator('[data-menu-background-image], [data-added-image-id]')).toHaveCount(0);
+});
+
+test('the paper menu activates multi-select and duplicates and removes the requested page', async ({ page }) => {
+  await page.goto(`${url}?batch-layers&editable`);
+  const pages = page.locator('[data-menu-print-page]');
+  const menu = page.locator('[data-canvas-object-menu]');
+  const openPaper = (index: number) => pages.nth(index).click({ button: 'right', position: { x: 10, y: 125 } });
+  await openPaper(0);
+  await expect(menu.getByRole('button')).toHaveText([
+    'Seleção múltipla', 'Duplicar', 'Colar', 'Definir imagem de fundo', 'Remover página',
+  ]);
+  const multiselect = menu.getByRole('button', { name: 'Seleção múltipla' });
+  await multiselect.click();
+  for (const index of [0, 1]) await pages.nth(index).click({ position: { x: 12, y: 160 } });
+  for (const index of [0, 1]) await expect(pages.nth(index)).toHaveClass(/ring-blue-500/);
+  await openPaper(0);
+  await expect(multiselect).toHaveAttribute('aria-pressed', 'true');
+  await multiselect.click();
+  await openPaper(0);
+  await menu.getByRole('button', { name: 'Duplicar' }).click();
+  await expect(pages).toHaveCount(3);
+  await expect(pages.nth(1).getByText('Casa São Bento', { exact: true })).toBeVisible();
+  await expect(pages.nth(1).getByText('Burrata da casa', { exact: true })).toBeVisible();
+  await expect(pages.nth(1).locator('[data-added-image-id]')).toHaveCount(4);
+  await expect(pages.nth(2)).toHaveAttribute('data-blank-page-id', 'layers-page');
+  await openPaper(1);
+  await menu.getByRole('button', { name: 'Remover página' }).click();
+  await page.getByRole('button', { name: 'Sim, excluir', exact: true }).click();
+  await expect(pages).toHaveCount(2);
+  await expect(pages.nth(0).getByText('Burrata da casa', { exact: true })).toBeVisible();
+  await expect(pages.nth(1)).toHaveAttribute('data-blank-page-id', 'layers-page');
 });
 
 test.describe('background image upload from touch canvas', () => {

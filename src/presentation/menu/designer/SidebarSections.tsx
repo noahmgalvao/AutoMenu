@@ -1,4 +1,4 @@
-import { canMoveImageLayer, moveImageToMenuBackground } from '../../../domain/menu/imageLayers';
+import { canMoveImageLayer } from '../../../domain/menu/imageLayers';
 import { MINI_FOOD_INK } from '../../../domain/menu/miniFoods';
 import { HoldStepButton } from '../../common/HoldStepButton';
 import { ColorPicker } from './ColorPicker';
@@ -43,6 +43,7 @@ interface ElementsSectionProps {
   updateFreeTextStyle: (id: string, newStyle: ElementStyle) => void | boolean;
   updateGlobalElementStyle: (elementType: keyof MenuStyle['elementStyles'], newStyle: ElementStyle) => void | boolean;
   setPreviewAction: React.Dispatch<React.SetStateAction<{ type: string, id: number } | undefined>>;
+  onMovePhotoToBackground: (id: string) => void;
   onAddedImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   isAddingImage: boolean;
   setSelection: (selection: { type: 'product' | 'category' | 'freeText' | 'addedImage' | 'page' | 'menuTitle' | 'menuSubtitle' | null, id: string | null }) => void;
@@ -65,6 +66,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
   updateFreeTextStyle,
   updateGlobalElementStyle,
   setPreviewAction,
+  onMovePhotoToBackground,
   onAddedImageUpload,
   isAddingImage,
   onAddShape, shapePickerRequest, onChangeShape,
@@ -151,7 +153,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                     {selectedAddedImage.repeatAsBackground ? 'Usar só nesta página' : 'Integrar ao plano de fundo'}
                 </button>
                 {!selectedAddedImage.shape && <button type="button"
-                    onClick={() => setStyle(previous => moveImageToMenuBackground(previous, selectedAddedImage.id))}
+                    onClick={() => onMovePhotoToBackground(selectedAddedImage.id)}
                     className="mb-2 flex w-full items-center justify-center gap-2 rounded-md border border-slate-200 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 active:bg-indigo-50">
                     <Wallpaper size={15} /> Definir imagem de fundo
                 </button>}

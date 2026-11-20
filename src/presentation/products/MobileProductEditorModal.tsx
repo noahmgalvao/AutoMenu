@@ -254,9 +254,9 @@ export const MobileProductEditorModal: React.FC<MobileProductEditorModalProps> =
           </div>
         ) : (
           <>
-        <div className="grid grid-cols-[minmax(0,1fr)_4rem_2.25rem_2.25rem] gap-1.5">
+        <div className="grid grid-cols-[minmax(0,1fr)_7.25rem_2.25rem_2.25rem] gap-1.5">
           <FontSelect value={currentStyle.fontFamily || style.fontFamily} fallbackFontFamily={style.fontFamily} placeholder="Fonte..." onChange={(font) => onStyleChange(formattingField, { ...currentStyle, fontFamily: font }, referenceProductId || productIds[0])} />
-          <FontSizeInput value={currentStyle.fontSize} onChange={(fontSize) => onStyleChange(formattingField, { ...currentStyle, fontSize }, referenceProductId || productIds[0])} className="!w-16" />
+          <FontSizeInput showStepButtons value={currentStyle.fontSize} onChange={(fontSize) => onStyleChange(formattingField, { ...currentStyle, fontSize }, referenceProductId || productIds[0])} className="!w-16" />
           <ColorPicker value={currentStyle.color} onChange={color => onStyleChange(formattingField, { ...currentStyle, color }, referenceProductId || productIds[0])} />
           <TextOutlinePicker value={currentStyle.textOutline}
             onChange={textOutline => onStyleChange(formattingField, { ...currentStyle, textOutline }, referenceProductId || productIds[0])} />

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, Minus, Plus } from 'lucide-react';
 import { roundFontSize } from '../../../domain/menu/styleRules';
 
 interface FontSizeInputProps {
@@ -12,6 +12,7 @@ interface FontSizeInputProps {
     min?: number;
     onEditEnd?: () => void;
     commitOnBlur?: boolean;
+    showStepButtons?: boolean;
 }
 
 const toInputValue = (value?: number): string => Number.isFinite(value) ? String(value) : '';
@@ -26,6 +27,7 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
     min = 1,
     onEditEnd,
     commitOnBlur = false,
+    showStepButtons = false,
 }) => {
     const inputRef = useRef<HTMLInputElement>(null);
     const repeatTimer = useRef<number | undefined>(undefined);
@@ -82,9 +84,10 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
     };
     useEffect(() => () => window.clearTimeout(repeatTimer.current), []);
 
-    const renderArrow = (direction: 1 | -1, Arrow: typeof ChevronUp, title: string) => (
+    const renderStep = (direction: 1 | -1, Icon: typeof ChevronUp, title: string, side = false) => (
         <button type="button" aria-label={label ? `${title} ${label}` : title}
-            className="grid h-3.5 w-4 touch-none place-items-center rounded-sm text-slate-600 hover:bg-indigo-100 focus-visible:bg-indigo-100"
+            className={`grid touch-none place-items-center text-slate-600 hover:bg-indigo-100 focus-visible:bg-indigo-100 ${side
+                ? 'size-6 rounded border border-slate-200 bg-white' : 'h-3.5 w-4 rounded-sm'}`}
             onPointerDown={(event) => {
                 if (event.button !== 0 || repeatTimer.current !== undefined) return;
                 event.preventDefault();
@@ -102,11 +105,13 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
                 stepRef.current(direction);
                 onEditEnd?.();
             }}
-        ><Arrow size={12} /></button>
+        ><Icon size={12} /></button>
     );
 
     return (
-        <span className="relative inline-flex shrink-0">
+        <span className="inline-flex shrink-0 items-center gap-0.5">
+        {showStepButtons && renderStep(-1, Minus, 'Diminuir tamanho da fonte', true)}
+        <span className="relative inline-flex">
         <input
             ref={inputRef}
             type="number"
@@ -164,9 +169,11 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
             }}
         />
         <span className="absolute inset-y-0 right-0.5 flex flex-col justify-center">
-            {renderArrow(1, ChevronUp, 'Aumentar')}
-            {renderArrow(-1, ChevronDown, 'Diminuir')}
+            {renderStep(1, ChevronUp, 'Aumentar')}
+            {renderStep(-1, ChevronDown, 'Diminuir')}
         </span>
+        </span>
+        {showStepButtons && renderStep(1, Plus, 'Aumentar tamanho da fonte', true)}
         </span>
     );
 };

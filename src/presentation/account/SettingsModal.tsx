@@ -59,6 +59,7 @@ const RuleGroup = <T extends object>({
   normalizeValue,
   onChange,
   headerContent,
+  showStepButtons = false,
 }: {
   title: string;
   rows: Array<[keyof T & string, string]>;
@@ -68,6 +69,7 @@ const RuleGroup = <T extends object>({
   normalizeValue?: (value: number) => number;
   onChange: (key: keyof T & string, value: number) => void;
   headerContent?: React.ReactNode;
+  showStepButtons?: boolean;
 }) => (
   <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
     <h3 className="mb-3 text-sm font-bold text-slate-800">{title}</h3>
@@ -76,7 +78,7 @@ const RuleGroup = <T extends object>({
       {rows.map(([key, label]) => (
         <label key={key} className="flex items-center justify-between gap-3 text-sm text-slate-600">
           <span>{label}</span>
-          <FontSizeInput label={label} min={min} max={max} value={Number(values[key])} commitOnBlur
+          <FontSizeInput showStepButtons={showStepButtons} label={label} min={min} max={max} value={Number(values[key])} commitOnBlur
             onChange={value => onChange(key, normalizeValue ? normalizeValue(value) : value)}
             className="!h-9 !w-20 bg-white text-right !text-sm font-semibold text-slate-700" />
         </label>
@@ -377,6 +379,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
               <RuleGroup
                 title="Limite de tamanho das fontes"
+                showStepButtons
                 rows={[
                   ['menuTitle', 'Título'],
                   ['menuSubtitle', 'Subtítulo'],
@@ -393,7 +396,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 headerContent={(
                   <label className="mb-3 flex items-center justify-between gap-3 border-b border-slate-200 pb-3 text-sm font-semibold text-slate-700">
                     <span>Mínimo geral</span>
-                    <FontSizeInput label="Mínimo geral" min={DEFAULT_MINIMUM_FONT_SIZE} max={300} value={minimumFontSize} commitOnBlur
+                    <FontSizeInput showStepButtons label="Mínimo geral" min={DEFAULT_MINIMUM_FONT_SIZE} max={300} value={minimumFontSize} commitOnBlur
                       className="!h-9 !w-20 bg-white text-right !text-sm font-semibold text-slate-700"
                       onChange={value => {
                         setMinimumFontSize(value);

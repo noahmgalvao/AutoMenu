@@ -1,6 +1,7 @@
+import { MenuMultiSelection } from './MenuMultiSelection';
 import { isDefaultFreeText } from '../../../domain/menu/pristineItems';
 import { categoryKey } from '../../../domain/menu/categoryName';
-import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import type { Product } from '../../../domain/menu/model';
 import type { FormattingField, FormattingTarget, InteractionProps, SelectableType, SelectionItem, SelectionType } from './types';
@@ -37,7 +38,10 @@ export const useSelectionState = (
     const [editingId, setActiveEditingId] = useState<string | null>(null);
     const [editingItems, setEditingItems] = useState<SelectionItem[]>([]);
     const [formattingTarget, setFormattingTarget] = useState<FormattingTarget | null>(null);
-    const [multiSelectMode, setMultiSelectModeState] = useState(false);
+    const [localMultiSelect, setLocalMultiSelect] = useState(false);
+    const sharedMultiSelect = React.useContext(MenuMultiSelection);
+    const multiSelectMode = sharedMultiSelect?.enabled ?? localMultiSelect;
+    const setMultiSelectModeState = sharedMultiSelect?.setEnabled ?? setLocalMultiSelect;
     const [showAddModal, setShowAddModal] = useState<{category: string, rect: DOMRect} | null>(null);
     const [selectedPageIndex, setSelectedPageIndex] = useState<number | null>(null);
     const lastRangeAnchorRef = useRef<SelectionItem | null>(null);
@@ -50,16 +54,8 @@ export const useSelectionState = (
     const editingKeys = useMemo(() => new Set(editingItems.map(item => getSelectionKey(item.type, item.id))), [editingItems]);
     const isReadyToEdit = (type: EditableItemType, id: string) => editingKeys.has(getSelectionKey(type, id));
 
-    const setMultiSelectMode = useCallback((enabled: boolean) => {
-        setMultiSelectModeState(Boolean(enabled && selectedItems.length > 0));
-    }, [selectedItems.length]);
+    const setMultiSelectMode = setMultiSelectModeState;
 
-    useEffect(() => {
-        if (multiSelectMode && selectedItems.length === 0) {
-            setMultiSelectModeState(false);
-        }
-    }, [multiSelectMode, selectedItems.length]);
-    
     // Delete Confirmation State
     const [showDeletePageConfirm, setShowDeletePageConfirm] = useState(false);
     const [pageToDelete, setPageToDelete] = useState<number | null>(null);
@@ -252,7 +248,6 @@ export const useSelectionState = (
             const activePageItem = nextPageItems[nextPageItems.length - 1] || null;
             setSelectedId(null);
             setSelectedItems(nextPageItems);
-            if (nextPageItems.length === 0) setMultiSelectMode(false);
             lastRangeAnchorRef.current = pageItem;
             setSelectedPageIndex(activePageItem ? parseInt(activePageItem.id) : null);
             emitSelection(activePageItem?.type || null, activePageItem?.id || null);
@@ -311,7 +306,6 @@ export const useSelectionState = (
             const activeItem = nextSelectedItems[nextSelectedItems.length - 1] || null;
 
             setSelectedItems(nextSelectedItems);
-            if (nextSelectedItems.length === 0) setMultiSelectMode(false);
             lastRangeAnchorRef.current = nextItem;
             setSelectedId(activeItem?.id || null);
             setSelectedPageIndex(null);
@@ -408,7 +402,7 @@ export const useSelectionState = (
         setSelectedId(activeItem?.type === 'page' ? null : activeItem?.id || null);
         setSelectedPageIndex(activeItem?.type === 'page' ? Number(activeItem.id) : null);
         emitSelection(activeItem?.type || null, activeItem?.id || null);
-    }, [emitSelection]);
+    }, [emitSelection, setMultiSelectModeState]);
 
     const isSelected = useCallback((type: SelectionType, id: string | null) => {
         if (!id) return false;
@@ -570,6 +564,12 @@ export const useSelectionState = (
         if (item.type !== 'addedImage') setMultiSelectModeState(false);
     };
 
+    const startPhotoEditing = (type: 'product' | 'category', id: string) => {
+        if (editingId) blurEditingField(editingId);
+        prepareEditing({ type, id });
+        activateEditingItem(type, id);
+    };
+
     const startImageEditing = (id: string) => {
         if (editingId) blurEditingField(editingId);
         prepareEditing({ type: 'addedImage', id });
@@ -603,7 +603,7 @@ export const useSelectionState = (
         handleBlur,
         handleKeyDown,
         startEditing,
-        isReadyToEdit, startImageEditing, setEditingField,
+        isReadyToEdit, startImageEditing, startPhotoEditing, setEditingField,
         startMenuTextEditing
     };
 };

@@ -1,3 +1,4 @@
+import { duplicateMenuPage } from '../../../domain/menu/duplicateMenuPage';
 import { isCanvasObjectOrControlTarget } from './canvasHitTargets';
 import { CanvasImageCropDialog } from './CanvasImageCropDialog';
 import type { CanvasImageCrop } from '../../../domain/menu/model';
@@ -44,11 +45,13 @@ import { applyFontToMenuStyle, getConfiguredCanvasFonts } from '../../../domain/
 interface MenuPreviewProps {
     addedImagePreview?: AddedImagePreview;
     onChooseBackgroundImage?: () => void;
+    onMovePhotoToBackground?: (id: string) => void;
+    onRemoveBackgroundPhoto?: () => void;
     isAddingImage?: boolean;
     products: Product[];
     style: MenuStyle;
     sortOption: SortOption;
-    onPasteObjects?: (products: Product[], style: MenuStyle) => void;
+    onPasteObjects?: (products: Product[], style: MenuStyle, actionLabel?: string) => void;
     onMoveCategory?: (category: string, direction: MoveDirection) => void;
     onMoveProduct?: (productId: string, category: string, direction: MoveDirection) => void;
     onUpdateProduct?: (id: string, field: keyof Product, value: any) => void;
@@ -700,7 +703,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const canvasStyle = useMemo(() => handlers.liveCanvasLayers
         ? { ...style, ...handlers.liveCanvasLayers } : style, [handlers.liveCanvasLayers, style]);
     const pages = useMemo(() => finalizeMenuPages(basePages, handlers.liveCategoryPositions
-        ? { ...canvasStyle, categoryPositions: handlers.liveCategoryPositions } : canvasStyle), [basePages, canvasStyle, handlers.liveCategoryPositions]);
+        ? { ...canvasStyle, categoryPositions: handlers.liveCategoryPositions } : canvasStyle, products), [basePages, canvasStyle, handlers.liveCategoryPositions, products]);
 
     useEffect(() => {
         if (!props.onSplitCategorySwap) return;
@@ -989,6 +992,25 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         }, 80);
     };
 
+    const openPageRemoval = (index: number) => {
+        handlers.setPageToDelete(index);
+        handlers.setShowDeletePageConfirm(true);
+        setObjectMenu(null);
+    };
+
+    const duplicatePage = (index: number) => {
+        const page = pages[index];
+        if (!page || !props.onPasteObjects) return;
+        const copy = duplicateMenuPage(page, index, products, style);
+        props.onPasteObjects(copy.products, copy.style, 'Duplicar página');
+        handlers.replaceSelectedItems([{ type: 'page', id: String(copy.index) }]);
+        setObjectMenu(null);
+        requestAnimationFrame(() => {
+            previewRootRef.current?.querySelector(`[data-blank-page-id="${copy.duplicateId}"]`)
+                ?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        });
+    };
+
     const handleDeletePage = useCallback(() => {
         const pageIndexesToDelete = getPageIndexesForDeletion();
         if (pageIndexesToDelete.length === 0) return;
@@ -1009,7 +1031,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             (pageToDelete.flatItems || []).forEach((item: any) => {
                 if (item.category) categoriesOnDeletedPages.add(item.category);
 
-                if (item.type === 'product-item' || item.type === 'product-row') {
+                if (item.type === 'product-item' || item.type === 'product-row' || item.type === 'free-text-row') {
                     const data = Array.isArray(item.data) ? item.data : [item.data];
                     data.forEach((p: Product) => {
                         if (p.isFreeText) freeTextIdsToDelete.add(p.id);
@@ -1034,7 +1056,25 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                             : blankPage;
                     });
 
-                return { ...prev, hiddenProductIds: Array.from(currentHidden), pageBreaks: newPageBreaks, blankPages, name: 'Custom' };
+                const removedPages = new Set(pageIndexesToDelete);
+                const shift = <T extends { pageIndex: number }>(value: T): T => ({
+                    ...value, pageIndex: value.pageIndex - pageIndexesToDelete.filter(index => index < value.pageIndex).length,
+                });
+                const remainingAssets = <T extends { pageIndex: number }>(assets?: T[]) =>
+                    assets?.filter(asset => !removedPages.has(asset.pageIndex)).map(shift);
+                const shiftRecord = <T extends { pageIndex: number }>(record?: Record<string, T>) =>
+                    record && Object.fromEntries(Object.entries(record).map(([id, value]) => [id, shift(value)]));
+
+                return {
+                    ...prev, hiddenProductIds: Array.from(currentHidden), pageBreaks: newPageBreaks, blankPages,
+                    addedImages: prev.addedImages?.filter(image => image.repeatAsBackground || !removedPages.has(image.pageIndex)).map(shift),
+                    floatingText: remainingAssets(prev.floatingText),
+                    pageBackgrounds: remainingAssets(prev.pageBackgrounds),
+                    categoryPlacements: shiftRecord(prev.categoryPlacements),
+                    categoryPositions: shiftRecord(prev.categoryPositions),
+                    freeTextBackgrounds: shiftRecord(prev.freeTextBackgrounds),
+                    name: 'Custom',
+                };
             });
         }
 
@@ -1262,11 +1302,11 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 if (!press || press.pointerId !== pointerId) return;
                 backgroundPressRef.current = null;
                 suppressBackgroundPressClickRef.current = true;
-                handlers.handleSelection(null, null);
+                if (!handlers.multiSelectMode) handlers.handleSelection(null, null);
                 handlers.setEditingId(null);
-                handlers.setSelectedPageIndex(null);
                 setObjectMenuPosition(null);
-                setObjectMenu({ x: startX, y: startY, item: null, pasteAt: lastPastePosition.current ?? undefined });
+                setObjectMenu({ x: startX, y: startY, item: null, pageIndex: Number(pageElement?.dataset.pageIndex),
+                    pasteAt: lastPastePosition.current ?? undefined });
                 window.setTimeout(() => { suppressBackgroundPressClickRef.current = false; }, 800);
             }, 480);
             backgroundPressRef.current = { pointerId, startX, startY, timeoutId };
@@ -2261,11 +2301,13 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
         event.preventDefault();
         event.stopPropagation();
-        handlers.handleSelection(null, null);
+        if (!handlers.multiSelectMode) handlers.handleSelection(null, null);
         handlers.setEditingId(null);
-        handlers.setSelectedPageIndex(null);
         setObjectMenuPosition(null);
-        setObjectMenu({ x: event.clientX, y: event.clientY, item: null, pasteAt: pastePosition({ x: event.clientX, y: event.clientY }) });
+        const pasteAt = pastePosition({ x: event.clientX, y: event.clientY });
+        const page = target?.closest<HTMLElement>('[data-menu-print-page]');
+        setObjectMenu({ x: event.clientX, y: event.clientY, item: null,
+            pageIndex: page ? Number(page.dataset.pageIndex) : pasteAt.pageIndex, pasteAt });
     }, [handlers]);
 
     useEffect(() => {
@@ -2368,6 +2410,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const pendingDeletePageIndexes = getPageIndexesForDeletion();
     const isDeletingSelectedPages = pendingDeletePageIndexes.length > 1;
     const isBackgroundMenu = Boolean(objectMenu && !objectMenu.item);
+    const contextPageIndex = objectMenu?.pageIndex ?? objectMenu?.pasteAt?.pageIndex ?? 0;
     const headingContext = objectMenu?.item?.type === 'menuTitle' || objectMenu?.item?.type === 'menuSubtitle' ? objectMenu.item : null;
     const hasClipboardFormat = formatClipboardRef.current && objectMenu?.item
         ? acceptsCanvasFormat(formatClipboardRef.current.format, objectMenu.item) : false;
@@ -2521,7 +2564,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                         needsOverlay={!!style.sourceImage}
                         pageCount={pages.length}
                         onAddPage={handleAddPage}
-                        onDeletePage={(idx) => { handlers.setShowDeletePageConfirm(true); handlers.setPageToDelete(idx); }}
+                        onDeletePage={openPageRemoval}
                         onSetPageNumbersVisible={(visible) => onStyleUpdate?.((previous) => ({
                             ...previous,
                             showPageNumbers: visible,
@@ -2566,7 +2609,44 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     onPointerDown={(event) => event.stopPropagation()}
                     onContextMenu={(event) => event.preventDefault()}
                 >
-                    {headingContext ? (
+                    {isBackgroundMenu ? (
+                    <>
+                        <button type="button" aria-pressed={handlers.multiSelectMode} onClick={() => {
+                            handlers.setMultiSelectMode(!handlers.multiSelectMode);
+                            setObjectMenu(null);
+                        }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 aria-pressed:bg-indigo-50 aria-pressed:text-indigo-700">
+                            <CopyCheck size={15} /> Seleção múltipla
+                        </button>
+                        <button type="button" onClick={() => duplicatePage(contextPageIndex)} disabled={!props.onPasteObjects}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-40">
+                            <CopyPlus size={15} /> Duplicar
+                        </button>
+                        <button type="button" onClick={() => runObjectAction('paste')}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
+                            <Clipboard size={15} /> Colar
+                        </button>
+                        {style.menuBackgroundPhoto ? (
+                            <button type="button" onClick={() => {
+                                if (props.onRemoveBackgroundPhoto) props.onRemoveBackgroundPhoto();
+                                else onStyleUpdate?.(previous => ({ ...previous, menuBackgroundPhoto: undefined, name: 'Custom' }));
+                                setObjectMenu(null);
+                            }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-red-600 hover:bg-red-50">
+                                <Trash2 size={15} /> Remover imagem de fundo
+                            </button>
+                        ) : props.onChooseBackgroundImage && (
+                            <button type="button" disabled={props.isAddingImage} onClick={() => {
+                                props.onChooseBackgroundImage?.();
+                                setObjectMenu(null);
+                            }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-40">
+                                <Wallpaper size={15} /> Definir imagem de fundo
+                            </button>
+                        )}
+                        <button type="button" onClick={() => openPageRemoval(contextPageIndex)}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-red-600 hover:bg-red-50">
+                            <Trash2 size={15} /> Remover página
+                        </button>
+                    </>
+                    ) : headingContext ? (
                         <>
                         {headingContext.type === 'menuTitle' && !style.menuSubtitle?.trim() && (
                         <button
@@ -2635,7 +2715,8 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     {contextImage && (
                         <>
                             {!contextImage.shape && <button type="button" onClick={() => {
-                                onStyleUpdate?.(previous => moveImageToMenuBackground(previous, contextImage.id));
+                                if (props.onMovePhotoToBackground) props.onMovePhotoToBackground(contextImage.id);
+                                else onStyleUpdate?.(previous => moveImageToMenuBackground(previous, contextImage.id));
                                 handlers.handleSelection(null, null);
                                 setObjectMenu(null);
                             }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 active:bg-indigo-50">
@@ -2643,14 +2724,14 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                             </button>}
                             {!contextImage.shape && <button type="button" onClick={() => openImageCrop(contextImage.id)}
                                 className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"><Crop size={15} /> Cortar</button>}
-                            <button type="button" aria-pressed={Boolean(contextImage.flipHorizontal)} onClick={() => flipImage(contextImage.id, 'flipHorizontal')}
+                            <button type="button" onClick={() => flipImage(contextImage.id, 'flipHorizontal')}
                                 className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"><FlipHorizontal2 size={15} /> Inverter horizontalmente</button>
-                            <button type="button" aria-pressed={Boolean(contextImage.flipVertical)} onClick={() => flipImage(contextImage.id, 'flipVertical')}
+                            <button type="button" onClick={() => flipImage(contextImage.id, 'flipVertical')}
                                 className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"><FlipVertical2 size={15} /> Inverter verticalmente</button>
                         </>
                     )}
-                    <button disabled={isBackgroundMenu} onClick={() => runObjectAction('copy', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Copy size={15} /> Copiar</button>
-                    <button disabled={isBackgroundMenu} onClick={() => runObjectAction('copyFormat', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Paintbrush size={15} /> Copiar formatação</button>
+                    <button onClick={() => runObjectAction('copy', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Copy size={15} /> Copiar</button>
+                    <button onClick={() => runObjectAction('copyFormat', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Paintbrush size={15} /> Copiar formatação</button>
                     <button
                         onClick={() => runObjectAction('paste', contextObjectItem)}
                         className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -2659,15 +2740,15 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     </button>
                     <button
                         onClick={() => runObjectAction('pasteFormat', contextObjectItem)}
-                        disabled={isBackgroundMenu || !hasClipboardFormat}
+                        disabled={!hasClipboardFormat}
                         className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                         <Paintbrush size={15} /> Colar formatação
                     </button>
-                    <button disabled={isBackgroundMenu} onClick={() => runObjectAction('cut', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Scissors size={15} /> Recortar</button>
-                    <button disabled={isBackgroundMenu} onClick={() => runObjectAction('duplicate', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><CopyPlus size={15} /> Duplicar</button>
-                    {(canHideFromObjectMenu || isBackgroundMenu) && (
-                        <button disabled={isBackgroundMenu} onClick={() => runObjectAction('hide', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><EyeOff size={15} /> Ocultar</button>
+                    <button onClick={() => runObjectAction('cut', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Scissors size={15} /> Recortar</button>
+                    <button onClick={() => runObjectAction('duplicate', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><CopyPlus size={15} /> Duplicar</button>
+                    {canHideFromObjectMenu && (
+                        <button onClick={() => runObjectAction('hide', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><EyeOff size={15} /> Ocultar</button>
                     )}
                     <div className="my-1 h-px bg-slate-100" />
                     <button disabled={!canLayerMenuItems('front')} onClick={() => runObjectAction('front', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><BringToFront size={15} /> Trazer para frente</button>
@@ -2683,21 +2764,6 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                             <Trash2 size={15} /> {contextImage ? contextImage.shape ? 'Remover forma' : 'Remover imagem' : 'Remover'}
                         </button>
                     )}
-                    {isBackgroundMenu && (style.menuBackgroundPhoto ? (
-                        <button type="button" onClick={() => {
-                            onStyleUpdate?.(previous => ({ ...previous, menuBackgroundPhoto: undefined, name: 'Custom' }));
-                            setObjectMenu(null);
-                        }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-red-600 hover:bg-red-50 active:bg-red-100">
-                            <Trash2 size={15} /> Remover imagem de fundo
-                        </button>
-                    ) : props.onChooseBackgroundImage && (
-                        <button type="button" disabled={props.isAddingImage} onClick={() => {
-                            props.onChooseBackgroundImage?.();
-                            setObjectMenu(null);
-                        }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 active:bg-indigo-50 disabled:opacity-40">
-                            <Wallpaper size={15} /> Definir imagem de fundo
-                        </button>
-                    ))}
                     </>
                     )}
                 </div>,

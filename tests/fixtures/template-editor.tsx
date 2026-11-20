@@ -55,6 +55,9 @@ function Fixture() {
     } : params.has('background-text') ? {
       ...initial, design: undefined, blankPages: [{ id: 'background-second', index: 1, fixedPosition: true }],
       freeTextBackgrounds: { 'background-text': { x: 100, y: 500, pageIndex: 0, width: 160 } },
+    } : params.has('existing-background') ? {
+      ...initial,
+      menuBackgroundPhoto: { url: samplePhoto, originKey: 'previous-session' },
     } : params.has('added-image') ? {
       ...initial, addedImages: [
         { id: 'sample-image', url: samplePhoto, x: 290, y: 600, width: 128, pageIndex: 0 },

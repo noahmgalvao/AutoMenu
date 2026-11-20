@@ -42,7 +42,7 @@ export const StyleControls: React.FC<StyleControlsProps> = ({
                         onChange={(font) => onChange({...value, fontFamily: font})}
                     />
                 </div>
-                <FontSizeInput
+                <FontSizeInput showStepButtons
                     value={value.fontSize}
                     onChange={(fontSize) => onChange({...value, fontSize})}
                     max={maxFontSize}
