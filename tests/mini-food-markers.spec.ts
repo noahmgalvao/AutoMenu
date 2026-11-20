@@ -54,10 +54,10 @@ test('a mini food hides the shape text and a geometric shape restores it', async
   await field.fill('Prato da casa');
   await field.press('Escape');
   const settings = page.locator('[data-inline-format-toolbar]');
-  await expect(settings.getByRole('button', { name: 'Cor de preenchimento' })).toHaveCount(0);
-  await settings.getByRole('button', { name: 'Contorno', exact: true }).click();
-  await expect(settings.getByRole('button', { name: 'Cor do contorno' })).toBeVisible();
-  await expect(settings.getByRole('button', { name: 'Cor de preenchimento' })).toBeVisible();
+  await expect(settings.getByRole('button', { name: 'Contorno', exact: true })).toHaveCount(0);
+  await expect(settings.getByRole('button', { name: 'Cor do contorno', exact: true })).toBeVisible();
+  await expect(settings.getByRole('slider', { name: 'Espessura do contorno' })).toBeVisible();
+  await expect(settings.getByRole('button', { name: 'Cor', exact: true })).toBeVisible();
 
   await settings.getByRole('button', { name: 'Alterar forma' }).click();
   const picker = page.locator('[data-change-shape-picker]');
@@ -66,6 +66,11 @@ test('a mini food hides the shape text and a geometric shape restores it', async
   await expect(field).toHaveCount(0);
   await expect(shape.locator('img')).toHaveAttribute('alt', 'Coxinha');
   expect(decodeURIComponent((await shape.locator('img').getAttribute('src'))!)).not.toContain('Prato da casa');
+  const sidebar = page.locator('[data-designer-scroll-container]');
+  await expect(sidebar.getByRole('button', { name: 'Cor do contorno', exact: true })).toHaveCount(0);
+  await sidebar.getByRole('button', { name: 'Cor', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Cor', exact: true }).getByRole('button', { name: '#22c55e', exact: true }).first().click();
+  await expect.poll(async () => decodeURIComponent((await shape.locator('img').getAttribute('src'))!)).toContain('stroke="#22c55e"');
   await picker.getByRole('button', { name: 'Losango', exact: true }).click();
   await expect(shape.locator('img')).toHaveAttribute('alt', 'Prato da casa');
   const svg = decodeURIComponent((await shape.locator('img').getAttribute('src'))!);

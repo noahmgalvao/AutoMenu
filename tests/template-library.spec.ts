@@ -418,7 +418,7 @@ test('shape formatting applies on the next click and stays available after valid
   await copy();
   await clickLayer('shape-right');
   await expect.poll(() => svg('shape-right')).toContain('rotate(25)');
-  expect(await svg('shape-right')).toContain('<polygon');
+  expect(await svg('shape-right')).toContain('Q 50 7 ');
   await clickLayer('batch-photo', 'right');
   await expect(menu.getByRole('button', { name: 'Colar formatação' })).toBeEnabled();
   await page.keyboard.press('Escape');

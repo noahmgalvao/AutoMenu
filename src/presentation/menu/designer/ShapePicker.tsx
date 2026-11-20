@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ChevronDown, Shapes, Utensils } from 'lucide-react';
 import type { CanvasShape, CanvasShapeKind } from '../../../domain/menu/model';
-import { canvasShapeKinds, canvasShapeUrl, createCanvasShape, getCanvasShapeDimensions, type CanvasShapeParameters } from '../../../domain/menu/canvasShapes';
+import { canvasShapeKinds, canvasShapeUrl, createCanvasShape, getCanvasShapeDimensions, getCanvasShapeParameters, type CanvasShapeParameters } from '../../../domain/menu/canvasShapes';
 import { isMiniFoodKind } from '../../../domain/menu/miniFoods';
 import { MiniFoodChoices } from './MiniFoodChoices';
 import { ColorPicker } from './ColorPicker';
@@ -52,12 +52,8 @@ export function ShapeSettings({ shape, onChange, onEditEnd, onChangeShape }: {
     changedSlider.current = false;
     onEditEnd?.();
   };
-  const [showContour, setShowContour] = useState(false);
-  const miniFood = isMiniFoodKind(shape.kind);
-  const fields: (keyof typeof numberFields)[] = ['rotation'];
-  if (shape.kind === 'rectangle') fields.push('corners');
-  if (shape.kind === 'star' || shape.kind === 'polygon') fields.push('points');
-  if (shape.kind === 'star') fields.push('innerRadius');
+  const parameters = getCanvasShapeParameters(shape);
+  const fields = (Object.keys(numberFields) as (keyof typeof numberFields)[]).filter(field => field in parameters);
   const renderField = (field: keyof typeof numberFields) => {
     const [label, min, max, step] = numberFields[field];
     const fieldLabel = field === 'points' && shape.kind === 'polygon' ? 'Lados' : label;
@@ -81,26 +77,19 @@ export function ShapeSettings({ shape, onChange, onEditEnd, onChangeShape }: {
   };
   return <div className="space-y-2">
     {onChangeShape && <button type="button" onClick={onChangeShape} className="flex w-full items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700"><Shapes size={16} />Alterar forma</button>}
-    {!miniFood && <div className="space-y-1 rounded-lg border border-slate-200 bg-white p-1.5">
-      <button type="button" aria-expanded={showContour} onClick={() => setShowContour(!showContour)}
-        className="flex min-h-7 w-full items-center justify-between rounded px-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-        Contorno <ChevronDown size={14} aria-hidden="true" className={showContour ? 'rotate-180' : undefined} />
-      </button>
-      {showContour && <div className="grid gap-1 px-1.5 text-xs text-slate-600">
-        <div className="flex items-center justify-between gap-2">Cor do contorno
-          <ColorPicker value={shape.stroke} label="Cor do contorno" onChange={stroke => {
-            onChange({ stroke });
-            onEditEnd?.();
-          }} />
-        </div>
-        {shape.kind !== 'line' && <div className="flex items-center justify-between gap-2">Cor de preenchimento
-          <ColorPicker value={shape.fill} label="Cor de preenchimento" onChange={fill => {
-            onChange({ fill });
-            onEditEnd?.();
-          }} />
-        </div>}
-        {renderField('strokeWidth')}
-      </div>}
+    {'fill' in parameters && <div className="flex items-center justify-between gap-2 px-1 text-xs text-slate-600">
+      Cor
+      <ColorPicker value={shape.fill} label="Cor" onChange={fill => {
+        onChange({ fill });
+        onEditEnd?.();
+      }} />
+    </div>}
+    {'stroke' in parameters && <div className="flex items-center justify-between gap-2 px-1 text-xs text-slate-600">
+      Cor do contorno
+      <ColorPicker value={shape.stroke} label="Cor do contorno" onChange={stroke => {
+        onChange({ stroke });
+        onEditEnd?.();
+      }} />
     </div>}
     <div className="space-y-1">
       {fields.map(renderField)}

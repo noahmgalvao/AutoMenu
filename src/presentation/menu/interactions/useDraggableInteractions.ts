@@ -358,6 +358,7 @@ export const useDraggableInteractions = (
     const liveCategoryPageAssignmentsRef = useRef<Record<string, CategoryPlacementAssignment> | null>(null);
     const liveCategoryPositionsRef = useRef<Record<string, CategoryPosition> | null>(null);
     const liveProductOrderRef = useRef<Record<string, string[]> | null>(null);
+    const initialProductOrdersRef = useRef<Record<string, string[]> | null>(null);
     const dragSourceContextRef = useRef<string | null>(null);
     const touchCancelCommitTimeoutRef = useRef<number | null>(null);
     const freeTextActiveCategoryRef = useRef<Record<string, string>>({});
@@ -798,6 +799,7 @@ export const useDraggableInteractions = (
         liveCategoryPageAssignmentsRef.current = null;
         liveCategoryPositionsRef.current = null;
         liveProductOrderRef.current = null;
+        initialProductOrdersRef.current = null;
         dragSourceContextRef.current = null;
         if (productDesignerAutoScrollFrameRef.current !== null && typeof window !== 'undefined') {
             window.cancelAnimationFrame(productDesignerAutoScrollFrameRef.current);
@@ -933,8 +935,11 @@ export const useDraggableInteractions = (
             }
 
             if (liveProductOrderRef.current && onCommitProductOrder) {
+                const movedProduct = draggedItems.some(item => item.type === 'product'
+                    && products.some(product => product.id === item.id && !product.isFreeText));
                 Object.entries(liveProductOrderRef.current).forEach(([category, order]) => {
-                    onCommitProductOrder(category, order);
+                    const initial = initialProductOrdersRef.current?.[category] || [];
+                    onCommitProductOrder(category, order, movedProduct && !areOrdersEqual(initial, order));
                 });
             }
         }
@@ -1066,6 +1071,7 @@ export const useDraggableInteractions = (
     const initializeProductDragState = useCallback(
         (productId: string, group?: string, pointer?: { x: number; y: number }) => {
             const initialOrder = createProductOrderSnapshot();
+            initialProductOrdersRef.current ??= initialOrder;
             motionRef.current.productInsertionIndex = group
                 ? initialOrder[group]?.indexOf(productId) ?? null
                 : null;

@@ -11,6 +11,10 @@ const positiveNumber = (value: unknown, fallback: number) => {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 };
 
+export const MIN_PHOTO_SCALE = 0.5;
+export const MAX_PHOTO_SCALE = 2.5;
+export const clampPhotoScale = (value: number) => Math.max(MIN_PHOTO_SCALE, Math.min(MAX_PHOTO_SCALE, value));
+
 export const roundFontSize = (value: unknown, fallback = 1): number => {
   const parsed = Number(value);
   const safeValue = Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;

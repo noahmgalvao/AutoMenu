@@ -179,3 +179,31 @@ test('settings keeps its close buttons visible and numeric typing commits at the
   await footer.click();
   await expect(settings).toHaveCount(0);
 });
+
+test('mobile header returns after scrolling and stays accessible above either expanded panel', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await openWorkspace(page);
+  const header = page.locator('[data-site-header]');
+  const canvas = page.locator('[data-automenu-editor-canvas]');
+  await canvas.evaluate(element => {
+    element.scrollTop += 90;
+    element.dispatchEvent(new Event('scroll'));
+    const pulse = setInterval(() => element.dispatchEvent(new Event('scroll')), 80);
+    setTimeout(() => clearInterval(pulse), 2400);
+  });
+  await expect.poll(async () => (await header.boundingBox())!.y).toBeLessThan(-30);
+  await expect.poll(async () => (await header.boundingBox())!.y, { timeout: 1800 }).toBe(0);
+
+  for (const panel of ['Visual', 'Produtos']) {
+    if (panel === 'Produtos') await page.getByRole('button', { name: 'Produtos', exact: true }).last().click();
+    const heading = page.getByRole('heading', { name: panel, exact: true });
+    const expand = heading.locator('..').getByRole('button', { name: 'Expandir painel' });
+    await expand.click();
+    await expect.poll(async () => (await heading.locator('../..').boundingBox())!.y).toBeCloseTo(64, 0);
+    const hit = await header.evaluate(element => {
+      const rect = element.getBoundingClientRect();
+      return element.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2));
+    });
+    expect(hit).toBe(true);
+  }
+});

@@ -85,10 +85,11 @@ export const useProductDesignerLogic = ({
         setStyle(prev => ({ ...prev, customCategoryOrder: newOrder, name: 'Custom' }));
     };
 
-    const handleCommitProductOrder = (category: string, newOrder: string[]) => {
+    const handleCommitProductOrder = (category: string, newOrder: string[], manuallyChanged: boolean) => {
         setStyle(prev => ({
             ...prev,
             customProductOrder: { ...prev.customProductOrder, [category]: newOrder },
+            manualProductOrder: manuallyChanged || prev.manualProductOrder,
             name: 'Custom'
         }));
     };
@@ -208,6 +209,7 @@ export const useProductDesignerLogic = ({
                 updateExistingEdit(targetId, previous => ({ ...previous, ...image }));
             } else if (session?.closed?.cancelledId !== targetId) {
                 setProducts(prev => prev.map(p => p.id === targetId ? { ...p, ...image } : p));
+                setStyle(prev => prev.showImages ? prev : { ...prev, showImages: true, name: 'Custom' });
             }
             await preloadImage(url);
         } catch (err) {
@@ -256,17 +258,17 @@ export const useProductDesignerLogic = ({
                     },
                 }),
             ]);
-            const scale = 40 / Math.max(1, imageDimensions.width, imageDimensions.height);
             setStyle(prev => ({
                 ...prev,
                 name: 'Custom',
+                showCategoryImages: true,
                 categoryImages: {
                     ...(prev.categoryImages || {}),
                     [targetCategory]: {
                         url,
                         assetId: asset.id,
-                        width: Math.max(12, Math.round(imageDimensions.width * scale)),
-                        height: Math.max(12, Math.round(imageDimensions.height * scale)),
+                        width: imageDimensions.width,
+                        height: imageDimensions.height,
                     },
                 },
             }));
@@ -416,12 +418,14 @@ export const useProductDesignerLogic = ({
                 return fields || category ? { ...product, ...fields, category: category ?? product.category } : product;
             }));
         }
-        if (renames.size || divider !== undefined) {
+        const hasAddedProductPhoto = [...productChanges.values()].some(fields => Boolean(fields.image));
+        if (renames.size || divider !== undefined || (hasAddedProductPhoto && !style.showImages)) {
             const rename = (category: string) => renames.get(category) ?? category;
             setStyle(previous => {
                 const order = [...new Set([...(previous.customCategoryOrder || []), ...handlers.sortedCategories])];
                 return {
                     ...previous,
+                    showImages: hasAddedProductPhoto || previous.showImages,
                     customCategoryOrder: renames.size ? [...new Set(order.map(rename))] : previous.customCategoryOrder,
                     customProductOrder: renames.size ? Object.fromEntries(Object.entries(previous.customProductOrder || {})
                         .map(([category, order]) => [rename(category), order])) : previous.customProductOrder,

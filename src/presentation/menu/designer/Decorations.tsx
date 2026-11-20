@@ -302,7 +302,7 @@ export function DecorationControls({ style, setStyle, scope: baseScope, id, show
     {panel === 'line' && divider?.picker}
     {showBorder && panel === 'border' && <div data-border-panel className="space-y-2 rounded-md border border-slate-200 bg-white p-2">
       {baseScope === 'category' && (
-        <div role="tablist" aria-label="Borda da categoria" className="flex rounded-md bg-slate-100 p-0.5">
+        <div role="tablist" aria-label="Borda da categoria" className="inline-flex gap-0.5 rounded-md bg-slate-100 p-0.5">
           {(['category', 'categoryGroup'] as const).map((tab) => (
             <button key={tab} id={`${borderTabId}-${tab}`} type="button" role="tab"
               aria-selected={scope === tab} aria-controls={borderTabId} tabIndex={scope === tab ? 0 : -1}
@@ -314,7 +314,7 @@ export function DecorationControls({ style, setStyle, scope: baseScope, id, show
                 setTargetScope(next);
                 document.getElementById(`${borderTabId}-${next}`)?.focus();
               }}
-              className={`flex-1 rounded px-2 py-1.5 text-xs font-medium ${scope === tab ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'}`}>
+              className={`rounded px-1.5 py-0.5 text-[10px] font-medium leading-4 ${scope === tab ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'}`}>
               {tab === 'category' ? 'Texto da categoria' : 'Grupo'}
             </button>
           ))}

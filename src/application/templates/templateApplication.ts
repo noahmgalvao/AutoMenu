@@ -76,7 +76,7 @@ export function applyTemplateToCurrentStyle(current: MenuStyle, template: MenuSt
     layoutMode: visual.layoutMode,
     showImages: visual.showImages,
     showCategoryImages: visual.showCategoryImages,
-    categoryImageScale: visual.categoryImageScale,
+    categoryImageScale: visual.categoryImageScale ?? visual.imageScale,
     columnCount: visual.columnCount,
     categoryColumnCount: visual.categoryColumnCount,
     categoryColumnWidths: visual.categoryColumnWidths?.length === (visual.categoryColumnCount || 1)

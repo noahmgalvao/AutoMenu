@@ -1,11 +1,12 @@
 import React from 'react';
+import { MAX_PHOTO_SCALE, MIN_PHOTO_SCALE } from '../../../domain/menu/styleRules';
 import { HoldStepButton } from '../../common/HoldStepButton';
 import { createPortal } from 'react-dom';
 import { Minus, Plus, FlipHorizontal2, FlipVertical2 } from 'lucide-react';
 
-export const ProductImageToolbar = ({ productId, anchorId, flips, scale, maxScale, onScale, onFlip }: {
+export const ProductImageToolbar = ({ productId, anchorId, flips, scale, onScale, onFlip }: {
     productId: string; anchorId: string; flips?: { horizontal?: boolean; vertical?: boolean };
-    scale: number; maxScale: number;
+    scale: number;
     onScale: (delta: number) => void;
     onFlip: (axis: 'horizontal' | 'vertical') => void;
 }) => {
@@ -49,9 +50,9 @@ export const ProductImageToolbar = ({ productId, anchorId, flips, scale, maxScal
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
         >
-            <HoldStepButton label="Diminuir imagem" disabled={scale <= 0.5} onStep={() => onScale(-0.1)}
+            <HoldStepButton label="Diminuir imagem" disabled={scale <= MIN_PHOTO_SCALE} onStep={() => onScale(-0.1)}
                 className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100"><Minus size={16} /></HoldStepButton>
-            <HoldStepButton label="Aumentar imagem" disabled={scale >= maxScale} onStep={() => onScale(0.1)}
+            <HoldStepButton label="Aumentar imagem" disabled={scale >= MAX_PHOTO_SCALE} onStep={() => onScale(0.1)}
                 className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100"><Plus size={16} /></HoldStepButton>
             <button type="button" aria-pressed={Boolean(flips?.horizontal)} title="Inverter horizontalmente" aria-label="Inverter horizontalmente"
                 onClick={() => onFlip('horizontal')} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 aria-pressed:bg-indigo-50 aria-pressed:text-indigo-700"><FlipHorizontal2 size={16} /></button>

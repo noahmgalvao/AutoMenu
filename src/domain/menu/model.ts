@@ -236,6 +236,7 @@ export interface MenuStyle {
   categoryPositions?: Record<string, CategoryPosition>;
   customCategoryOrder?: string[];
   customProductOrder?: Record<string, string[]>;
+  manualProductOrder?: boolean;
   hiddenProductIds: string[];
   floatingText?: FloatingTextItem[];
   addedImages?: AddedImage[];

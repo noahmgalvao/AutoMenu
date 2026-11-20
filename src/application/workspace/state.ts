@@ -3,7 +3,7 @@ import type { WorkspaceBootstrapData, MenuEditorState } from '../../domain/works
 import { PRESET_TEMPLATES, INITIAL_STYLE } from '../../domain/menu/defaults';
 import { FREE_TEXT_PREFIX } from '../../domain/menu/flow';
 import { roundPrice, resolvePriceCurrencySymbol, resolvePriceDecimalPlaces, resolvePriceDecimalSeparator } from '../../domain/menu/price';
-import { roundFontSize, resolveFontSizeLimits, resolveMinimumFontSize } from '../../domain/menu/styleRules';
+import { roundFontSize, resolveFontSizeLimits, resolveMinimumFontSize, clampPhotoScale } from '../../domain/menu/styleRules';
 import { normalizeTemplateDesign } from '../../domain/templates/templateDesign';
 import { normalizeMenuPageSetup } from '../../domain/menu/pageSetup';
 
@@ -94,6 +94,7 @@ export const withStyleDefaults = (style: MenuStyle | null | undefined): MenuStyl
     hiddenProductIds: stringArray(source.hiddenProductIds),
     customCategoryOrder: stringArray(source.customCategoryOrder),
     customProductOrder,
+    manualProductOrder: source.manualProductOrder === true || undefined,
     categoryPlacements: isRecord(source.categoryPlacements)
       ? source.categoryPlacements as MenuStyle['categoryPlacements']
       : {},
@@ -115,9 +116,10 @@ export const withStyleDefaults = (style: MenuStyle | null | undefined): MenuStyl
     showCurrencySymbol: source.showCurrencySymbol !== false,
     showPageNumbers: source.showPageNumbers !== false,
     showCategoryImages: source.showCategoryImages !== false,
-    categoryImageScale: Number.isFinite(Number(source.categoryImageScale))
-      ? Math.max(0.5, Math.min(2, Number(source.categoryImageScale)))
-      : 1,
+    categoryImageScale: clampPhotoScale(
+      [source.categoryImageScale, source.imageScale, base.imageScale]
+        .map(value => Number(value ?? NaN)).find(Number.isFinite) ?? 1
+    ),
     margins: {
       ...(base.margins || {}),
       ...(isRecord(source.margins) ? source.margins : {}),

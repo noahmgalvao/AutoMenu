@@ -122,16 +122,22 @@ const getProductGridGap = (style: MenuStyle) => {
     return PRODUCT_GRID_GAP_PX;
 };
 
-export const getProductCardImageLimit = (style: MenuStyle) => {
+export const getProductCardImageLimit = (style: MenuStyle, categoryColumnCount: number = style.categoryColumnCount || 1) => {
     const productColumnCount = style.columnCount || 1;
-    const categoryColumnCount = style.categoryColumnCount || 1;
     if (categoryColumnCount > 1 || productColumnCount >= 3) return 96;
     if (productColumnCount === 2) return 120;
     return PRODUCT_CARD_IMAGE_HEIGHT_PX;
 };
 
 export const getProductListImageLimit = (categoryColumnCount: number) => categoryColumnCount === 2 ? 88 : 112;
-export const CATEGORY_IMAGE_LIMIT = 64;
+export function getCategoryPhotoSizing(style: MenuStyle, categoryColumnCount: number = style.categoryColumnCount || 1) {
+    const usesProductRows = style.layoutMode !== 'list' || (style.columnCount || 1) > 1;
+    return {
+        limit: usesProductRows ? getProductCardImageLimit(style, categoryColumnCount) : getProductListImageLimit(categoryColumnCount),
+        widthFraction: usesProductRows || categoryColumnCount >= 3 ? 1 : 0.42,
+        titleReserve: 64,
+    };
+}
 
 export const getPaginationBottomInset = (style: MenuStyle) => {
     const margin = resolveMenuMargins(style).bottom;
@@ -372,7 +378,9 @@ const createPageItemHeightCalculator = (
             const categoryImage = style.showCategoryImages !== false ? style.categoryImages?.[item.data] : undefined;
             const categoryImageScale = style.categoryImageScale || 1;
             const aspect = Math.min(3, Math.max(.375, (categoryImage?.width || 1) / (categoryImage?.height || 1)));
-            const imageWidth = categoryImage?.url ? Math.min(categoryColumnWidth * .35, CATEGORY_IMAGE_LIMIT * categoryImageScale * Math.min(aspect, 1)) : 0;
+            const { limit, widthFraction, titleReserve } = getCategoryPhotoSizing(style, categoryColumnCount);
+            const maxImageWidth = Math.min(categoryColumnWidth * widthFraction, Math.max(0, categoryColumnWidth - titleReserve));
+            const imageWidth = categoryImage?.url ? Math.min(maxImageWidth, limit * categoryImageScale * Math.min(aspect, 1)) : 0;
             const imageReserve = imageWidth ? imageWidth + 8 : 0;
             const letterSpacing = categoryStyle.letterSpacing || 0;
             const categoryCharWidth = (categoryFontSize * 0.6) + letterSpacing;

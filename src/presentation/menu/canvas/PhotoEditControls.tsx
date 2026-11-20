@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react';
 import type { MenuStyle } from '../../../domain/menu/model';
+import { clampPhotoScale } from '../../../domain/menu/styleRules';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { Images, ImagePlus, Trash2 } from 'lucide-react';
 import { livePhotoScaleVariable } from './photoSizing';
@@ -32,20 +33,18 @@ export function PhotoEditControls(props: Props) {
     const draft = useRef<{ scale?: number; crop?: Point } | null>(null);
     const previewRoot = useRef<HTMLElement | null>(null);
     const scaleField = type === 'category' ? 'categoryImageScale' : 'imageScale';
-    const maxScale = type === 'category' ? 2 : 2.5;
     const liveScale = livePhotoScaleVariable(type);
-    const limitScale = (value: number) => Math.max(0.5, Math.min(maxScale, value));
     const setScale = (value: number, increment = false) => {
         updateStyle(prev => {
             const previous = prev[scaleField] || 1;
-            const scale = limitScale(increment ? Math.round((previous + value) * 1000) / 1000 : value);
+            const scale = clampPhotoScale(increment ? Math.round((previous + value) * 1000) / 1000 : value);
             return previous === scale ? prev : { ...prev, [scaleField]: scale, name: 'Custom' };
         });
     };
     const previewScale = (value: number) => {
         const surface = frameRef.current?.parentElement;
         if (!surface) return;
-        const scale = limitScale(value);
+        const scale = clampPhotoScale(value);
         draft.current = { scale };
         previewRoot.current = surface.closest<HTMLElement>('[data-menu-preview-canvas], [data-product-designer-edit-form]') || surface;
         previewRoot.current.style.setProperty(liveScale, String(scale));
@@ -167,6 +166,6 @@ export function PhotoEditControls(props: Props) {
             <span className="pointer-events-none size-3 rounded-full border border-blue-600 bg-white" />
         </span>)}
         {props.active && props.hasPhoto && <ProductImageToolbar productId={props.id} anchorId={props.anchorId} flips={props.flips}
-            scale={props.scale} maxScale={maxScale} onScale={delta => setScale(delta, true)} onFlip={flip} />}
+            scale={props.scale} onScale={delta => setScale(delta, true)} onFlip={flip} />}
     </div>;
 }

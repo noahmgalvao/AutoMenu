@@ -62,7 +62,8 @@ function Fixture() {
       ],
     } : initial,
   ] : [{
-    ...initial, showImages: !splitCategory && !priceFlow,
+    ...initial, showImages: !splitCategory && !priceFlow && !params.has('hide-photos'),
+    showCategoryImages: params.has('hide-photos') ? false : initial.showCategoryImages,
     ...(priceFlow ? {
       productDividerStyle: 'dashed',
       elementStyles: {
@@ -104,7 +105,8 @@ function Fixture() {
     name: defaultFields ? 'Novo item' : params.has('long-name') && product.id === '1' ? 'Burratacomtomatemarinado'.repeat(4) : product.name,
     description: defaultFields ? 'Descrição' : product.description,
     price: params.has('zero-price') && product.id === '1' ? 0 : product.price,
-    category: defaultFields ? 'Nova categoria 12' : params.has('different-categories') && product.id === '3' ? product.category : 'Entradas', image: samplePhoto,
+    category: defaultFields ? 'Nova categoria 12' : params.has('different-categories') && product.id === '3' ? product.category : 'Entradas',
+    image: params.has('no-photos') ? undefined : samplePhoto,
   })));
   const [future, setFuture] = useState<MenuStyle[]>([]);
   const editSession = useRef(0);

@@ -1,5 +1,5 @@
 import { preventBrowserContextMenu } from '../common/noBrowserSelection';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, ChefHat, History, Loader2, Paintbrush, Plus, Send, ShoppingCart, X } from 'lucide-react';
 import MenuDesigner from '../menu/MenuDesigner';
 import { AuthScreen } from '../account/AuthScreen';
@@ -28,6 +28,18 @@ const App: React.FC = () => {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
+  const scrollIdleTimer = useRef<number | undefined>(undefined);
+  const restoreNavigation = useCallback(() => {
+    window.clearTimeout(scrollIdleTimer.current);
+    scrollIdleTimer.current = undefined;
+    setIsScrolling(false);
+  }, []);
+  const handleCanvasScroll = useCallback(() => {
+    setIsScrolling(true);
+    window.clearTimeout(scrollIdleTimer.current);
+    scrollIdleTimer.current = window.setTimeout(restoreNavigation, 500);
+  }, [restoreNavigation]);
+
   const [isMenuImportOpen, setIsMenuImportOpen] = useState(false);
   const {
     session, isAuthLoading, isWorkspaceLoading, isAuthSubmitting, authError, loadError, setLoadError, workspaceLoadError, isConfigured,
@@ -40,6 +52,20 @@ const App: React.FC = () => {
     closeProfileMenu: () => setIsProfileMenuOpen(false),
     closeCreateMenu: () => setIsCreateMenuOpen(false),
   });
+
+  useEffect(() => {
+    restoreNavigation();
+  }, [workspaceData?.menu.id, isMenuImportOpen, restoreNavigation]);
+
+  useEffect(() => {
+    window.addEventListener('focus', restoreNavigation);
+    document.addEventListener('visibilitychange', restoreNavigation);
+    return () => {
+      window.clearTimeout(scrollIdleTimer.current);
+      window.removeEventListener('focus', restoreNavigation);
+      document.removeEventListener('visibilitychange', restoreNavigation);
+    };
+  }, [restoreNavigation]);
 
   useEffect(() => {
     if (!workspaceData || hasOpenedProductDesigner) return;
@@ -134,8 +160,9 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="h-screen bg-slate-50 flex flex-col font-sans text-slate-900 overflow-hidden relative">
-      <nav data-no-browser-selection onContextMenu={preventBrowserContextMenu} className={`absolute top-0 left-0 right-0 bg-white border-b border-slate-200 h-16 ${isMenuImportOpen ? 'z-[1100]' : 'z-30'} transition-transform duration-300 ${isMenuImportOpen ? 'translate-y-0' : isScrolling ? '-translate-y-full md:translate-y-0' : 'translate-y-0'}`}>
+    <div className="h-screen bg-slate-50 flex flex-col font-sans text-slate-900 overflow-hidden relative"
+      style={{ '--automenu-max-sheet-height': 'calc(100dvh - 4rem)' } as React.CSSProperties}>
+      <nav data-site-header data-no-browser-selection onContextMenu={preventBrowserContextMenu} className={`absolute top-0 left-0 right-0 bg-white border-b border-slate-200 h-16 ${isMenuImportOpen ? 'z-[1100]' : 'z-[60]'} transition-transform duration-300 ${isMenuImportOpen ? 'translate-y-0' : isScrolling ? '-translate-y-full md:translate-y-0' : 'translate-y-0'}`}>
         <div className="w-full px-4 h-full flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
             <div className="hidden md:block bg-indigo-600 p-2 rounded-lg">
@@ -335,7 +362,7 @@ const App: React.FC = () => {
             silentPrintOptions={(publication?.pdfOptions || {}) as Partial<PrintCanvasOptions>}
             virtualLinkControls={virtualLinkControls}
             onClose={() => setActivePanel(null)}
-            onScrollActivity={setIsScrolling}
+            onCanvasScroll={handleCanvasScroll}
             workspaceId={workspaceData.workspace.id}
             currentUserId={session.user.id}
             currentMenuId={workspaceData.menu.id}

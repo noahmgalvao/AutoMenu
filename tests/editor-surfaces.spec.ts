@@ -176,6 +176,6 @@ test.describe('mobile visual designer', () => {
     await page.locator('[data-inline-format-toolbar]').getByRole('button', { name: 'Alterar forma' }).tap();
     await expect.poll(() => page.evaluate(() => document.documentElement.style.getPropertyValue('--automenu-bottom-sheet-height'))).toBe('50dvh');
     await page.locator('[data-change-shape-picker]').getByRole('button', { name: 'Losango' }).tap();
-    expect(decodeURIComponent((await shape.locator('img').getAttribute('src'))!)).toContain('50,6 94,50');
+    expect(decodeURIComponent((await shape.locator('img').getAttribute('src'))!)).toMatch(/Q 50 6 .* Q 94 50 /);
   });
 });

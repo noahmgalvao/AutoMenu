@@ -2,7 +2,7 @@ import { CanvasImageCropDialog } from './CanvasImageCropDialog';
 import type { CanvasImageCrop } from '../../../domain/menu/model';
 import { categoryKey, categoryName } from '../../../domain/menu/categoryName';
 import { copiedProductFields, lastCanvasCopy, matchingCanvasCopy, pasteCanvasObjects, writeCanvasCopy, type CanvasClip, type CopiedObject, type PasteContent } from './canvasClipboard';
-import { livePhotoScaleVariable } from './photoSizing';
+import { hasPhotosForType, livePhotoScaleVariable, type PhotoType } from './photoSizing';
 import React, { useMemo, useEffect, useRef, useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { CategoryPosition, ElementStyle, Product, MenuStyle, SortOption } from '../../../domain/menu/model';
@@ -52,7 +52,7 @@ interface MenuPreviewProps {
     onUpdateCategoryName?: (oldName: string, newName: string) => void;
     onUpdateMenuText?: (field: 'menuTitle' | 'menuSubtitle', value: string) => void;
     onCommitCategoryOrder?: (newOrder: string[]) => void;
-    onCommitProductOrder?: (category: string, newOrder: string[]) => void;
+    onCommitProductOrder?: (category: string, newOrder: string[], manuallyChanged: boolean) => void;
     onToggleProductVisibility?: (productId: string, visible: boolean) => void;
     onAddProduct?: (category: string, productId?: string, isFreeText?: boolean, specificId?: string, initialData?: Partial<Product>, options?: { index?: number }) => void;
     onAddCategory?: (nearCategory: string, position: 'before' | 'after') => void;
@@ -79,7 +79,6 @@ interface MenuPreviewProps {
     onUploadProductImage?: (productId: string, file: File, type?: PhotoType) => Promise<{ url: string; assetId: string }>;
 }
 
-type PhotoType = 'product' | 'category';
 type ObjectSelectionItem = SelectionItem & { type: 'product' | 'category' | 'freeText' | 'addedImage' };
 type CanvasContextMenuItem = FormatObject;
 
@@ -460,7 +459,8 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const setPhoto = (type: PhotoType, id: string, url: string, assetId: string | null) => {
         if (type === 'category') {
             onStyleUpdate?.(prev => ({
-                ...prev, name: 'Custom', categoryImages: {
+                ...prev, name: 'Custom', showCategoryImages: url ? true : prev.showCategoryImages,
+                categoryImages: {
                     ...prev.categoryImages, [id]: { ...prev.categoryImages?.[id], url, assetId, crop: undefined },
                 },
             }));
@@ -470,7 +470,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         if (props.onUpdateProducts) props.onUpdateProducts(updates);
         else updates.forEach(update => props.onUpdateProduct?.(id, update.field, update.value));
         onStyleUpdate?.(prev => {
-            if (url) return { ...prev, productPhotoCrops: { ...prev.productPhotoCrops, [id]: { x: 50, y: 50 } } };
+            if (url) return { ...prev, showImages: true, productPhotoCrops: { ...prev.productPhotoCrops, [id]: { x: 50, y: 50 } } };
             if (!prev.productPhotoCrops?.[id]) return prev;
             const productPhotoCrops = { ...prev.productPhotoCrops };
             delete productPhotoCrops[id];
@@ -2375,10 +2375,12 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const contextImage = contextObjectItem?.type === 'addedImage'
         ? style.addedImages?.find((image) => image.id === contextObjectItem.id)
         : undefined;
-    const photoTarget = contextObjectItem?.type === 'product' || contextObjectItem?.type === 'category' ? contextObjectItem : null;
+    const photoTarget = contextObjectItem?.type === 'product' || contextObjectItem?.type === 'category'
+        ? { id: contextObjectItem.id, type: contextObjectItem.type } : null;
     const photoVisibility = photoTarget?.type === 'category' ? 'showCategoryImages' : 'showImages';
     const photosEnabled = style[photoVisibility] !== false;
     const hasPhoto = photoTarget?.type === 'category' ? style.categoryImages?.[photoTarget.id]?.url : products.find(p => p.id === photoTarget?.id)?.image;
+    const groupHasPhoto = photoTarget && hasPhotosForType(photoTarget.type, style, products);
     const contextFreeTextId = contextObjectItem?.type === 'freeText' ? contextObjectItem.id : null;
     const objectMenuItems = contextObjectItem ? getActiveObjectItems(contextObjectItem) : [];
     const canLayerMenuItems = (direction: 'front' | 'back') => canLayerObjects(style, objectMenuItems, direction);
@@ -2588,20 +2590,20 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     {contextImage?.shape && <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"
                         onClick={() => { handlers.startImageEditing(contextImage.id); setObjectMenu(null); }}><Edit3 size={15} /> Editar forma</button>}
                     {photoTarget && <>
-                        {photosEnabled && <button type="button" onClick={event => {
+                        {(!hasPhoto || photosEnabled) && <button type="button" onClick={event => {
                             handlers.startEditing(event, photoTarget.id, photoTarget.type === 'category' ? `text-${photoTarget.id}` : `product-name-${photoTarget.id}`);
                             handlers.setFormattingTarget(null);
-                            choosePhoto(photoTarget.type as PhotoType, photoTarget.id);
+                            choosePhoto(photoTarget.type, photoTarget.id);
                             setObjectMenu(null);
                         }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
                             <Images size={15} /> {hasPhoto ? 'Substituir imagem' : 'Adicionar imagem'}
                         </button>}
-                        <button type="button" onClick={() => {
+                        {groupHasPhoto && <button type="button" onClick={() => {
                             onStyleUpdate?.(prev => ({ ...prev, [photoVisibility]: !photosEnabled, name: 'Custom' }));
                             setObjectMenu(null);
                         }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
                             <Images size={15} /> {photosEnabled ? 'Desabilitar imagens' : 'Habilitar imagens'}
-                        </button>
+                        </button>}
                     </>}
                     {(contextImage || contextFreeTextId) && (
                         <button type="button" onClick={() => {

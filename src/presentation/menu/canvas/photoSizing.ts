@@ -1,7 +1,13 @@
 import type { CSSProperties } from 'react';
-import type { MenuStyle } from '../../../domain/menu/model';
+import type { MenuStyle, Product } from '../../../domain/menu/model';
+import { MAX_PHOTO_SCALE } from '../../../domain/menu/styleRules';
 
 export type PhotoType = 'category' | 'product';
+
+export const hasPhotosForType = (type: PhotoType, style: MenuStyle, products: Product[]) =>
+  type === 'category'
+    ? Object.values(style.categoryImages || {}).some(image => Boolean(image.url))
+    : products.some(product => !product.isFreeText && Boolean(product.image));
 
 export const livePhotoScaleVariable = (type: PhotoType) =>
   type === 'category' ? '--automenu-live-category-photo-scale' : '--automenu-live-product-photo-scale';
@@ -14,9 +20,9 @@ export function photoDimensions(type: PhotoType, scale: number, limit: number, m
   if (frame !== 'circle') return { width: `min(${maxWidth}, calc(${size} * ${amount}))`, aspectRatio: aspect };
 
   const base = `min(${size}, calc(${maxWidth} * .72))`;
-  const max = `min(${maxWidth}, calc(${size} * 2.5))`;
+  const max = `min(${maxWidth}, calc(${size} * ${MAX_PHOTO_SCALE}))`;
   return {
-    width: `calc(${base} * min(1, ${amount}) + (${max} - ${base}) * (max(0, ${amount} - 1) / 1.5))`,
+    width: `calc(${base} * min(1, ${amount}) + (${max} - ${base}) * (max(0, ${amount} - 1) / ${MAX_PHOTO_SCALE - 1}))`,
     aspectRatio: aspect,
   };
 }

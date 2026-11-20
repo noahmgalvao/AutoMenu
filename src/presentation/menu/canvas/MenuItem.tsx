@@ -16,7 +16,7 @@ import { getProductCardRadius, getProductPhotoFrameRadius, getProductCardCornerR
 import { AutoFitText } from './AutoFitText';
 import { CanvasTextDivider } from './CanvasTextDivider';
 import { isHeadingTextHit } from './menuHeadingHit';
-import { getPaginationItemKey, getProductCardImageLimit, getProductListImageLimit, CATEGORY_IMAGE_LIMIT } from '../../../domain/menu/menuPagination';
+import { getPaginationItemKey, getProductCardImageLimit, getProductListImageLimit, getCategoryPhotoSizing } from '../../../domain/menu/menuPagination';
 import { ProductControls, FreeTextResizeHandles, getFreeTextMaximumWidth, getFreeTextContentWidth } from './ProductCanvasControls';
 import { FREE_TEXT_PREFIX } from '../../../domain/menu/flow';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
@@ -492,6 +492,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const categoryAlign = catStyle.textAlign || 'left';
         const categoryImage = style.categoryImages?.[item.data];
         const categoryImageScale = style.categoryImageScale || 1;
+        const { limit: photoLimit, widthFraction, titleReserve } = getCategoryPhotoSizing(style);
         const categoryDividerPreset = resolveCategoryDivider(style, item.data);
         const renderCategoryDivider = (key: 'before' | 'after') => (
             <CanvasTextDivider preset={categoryDividerPreset} color="var(--template-accent)" titleEdge={key === 'before' ? 'right' : 'left'} />
@@ -526,7 +527,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     {style.showCategoryImages !== false && (categoryImage?.url || handlers.photoIsLoading?.('category', item.data) || (isEditable && imageMenuProductId === item.data)) && (
                         <div id={handlers.readOnly ? undefined : `category-image-${item.data}`} data-product-image-surface={item.data}
                             data-auto-photo-ratio className="relative mr-2 shrink-0"
-                            style={photoDimensions('category', categoryImageScale, CATEGORY_IMAGE_LIMIT, '35%', undefined, (categoryImage?.width || 1) / (categoryImage?.height || 1))}>
+                            style={photoDimensions('category', categoryImageScale, photoLimit,
+                                `min(${widthFraction * 100}%, max(0px, calc(100% - ${titleReserve}px)))`, undefined, (categoryImage?.width || 1) / (categoryImage?.height || 1))}>
                             {categoryImage?.url && <MenuPhoto showLoading={!handlers.readOnly && !handlers.photoIsLoading?.('category', item.data)} src={categoryImage.url} alt="" draggable={false} className="h-full w-full object-cover"
                                 style={{ objectPosition: `${categoryImage.crop?.x ?? 50}% ${categoryImage.crop?.y ?? 50}%`,
                                     transform: `scale(${categoryImage.horizontal ? -1 : 1}, ${categoryImage.vertical ? -1 : 1})` }} />}

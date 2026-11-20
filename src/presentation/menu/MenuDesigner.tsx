@@ -61,7 +61,7 @@ interface MenuDesignerProps {
     silentPrintOptions?: Partial<PrintCanvasOptions>;
     onClose?: () => void;
     onOpenVisual?: () => void;
-    onScrollActivity?: (isScrolling: boolean) => void;
+    onCanvasScroll?: () => void;
     workspaceId: string;
     currentUserId: string;
     currentMenuId?: string;
@@ -148,7 +148,7 @@ const formatLayoutIssueBreakdown = (categories: number, products: number, freeTe
     return `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`;
 };
 
-const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, onProductEditChange, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions, virtualLinkControls, onClose, onOpenVisual, onScrollActivity, workspaceId, currentUserId, currentMenuId, splitCategoryAcrossPages = false, productsCanChangeCategory = false }) => {
+const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, onProductEditChange, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions, virtualLinkControls, onClose, onOpenVisual, onCanvasScroll, workspaceId, currentUserId, currentMenuId, splitCategoryAcrossPages = false, productsCanChangeCategory = false }) => {
     const { assets: { uploadFileAsset } } = useAppServices();
     const [scale, setScale] = useState(DEFAULT_PREVIEW_ZOOM);
     const [isDesktopViewport, setIsDesktopViewport] = useState(() => window.matchMedia('(min-width: 768px)').matches);
@@ -180,7 +180,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     // Zoom Indicator State
     const [showZoomInfo, setShowZoomInfo] = useState(false);
     const zoomTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const canvasScrollPosition = useRef({ left: 0, top: 0 });
     const containerRef = useRef<HTMLDivElement>(null);
     const tipsAnchorRef = useRef<HTMLDivElement>(null);
     const canvasPanRef = useRef<{
@@ -622,15 +622,11 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         clearCanvasSelection: () => setSelection({ type: null, id: null }),
     });
 
-    // Scroll Activity Handler
-    const handleScroll = () => {
-        if (onScrollActivity) {
-            onScrollActivity(true);
-            if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-            scrollTimeoutRef.current = setTimeout(() => {
-                onScrollActivity(false);
-            }, 500); // UI reappears after 500ms of no scroll
-        }
+    const handleScroll = (event: React.UIEvent<HTMLDivElement>) => {
+        const { scrollLeft: left, scrollTop: top } = event.currentTarget;
+        if (left === canvasScrollPosition.current.left && top === canvasScrollPosition.current.top) return;
+        canvasScrollPosition.current = { left, top };
+        onCanvasScroll?.();
     };
 
     const handleCanvasPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -1340,7 +1336,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 if (idx === newOrder.length - 1) return prev;
                 [newOrder[idx + 1], newOrder[idx]] = [newOrder[idx], newOrder[idx + 1]];
             }
-            return { ...prev, customProductOrder: { ...prev.customProductOrder, [category]: newOrder }, name: 'Custom' };
+            if (newOrder.every((id, index) => id === currentOrder[index])) return prev;
+            return { ...prev, customProductOrder: { ...prev.customProductOrder, [category]: newOrder }, manualProductOrder: true, name: 'Custom' };
         });
     };
 
@@ -1348,8 +1345,9 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         setStyle(prev => ({ ...prev, customCategoryOrder: newOrder, name: 'Custom' }));
     };
 
-    const handleCommitProductOrder = (category: string, newOrder: string[]) => {
-        setStyle(prev => ({ ...prev, customProductOrder: { ...prev.customProductOrder, [category]: newOrder }, name: 'Custom' }));
+    const handleCommitProductOrder = (category: string, newOrder: string[], manuallyChanged: boolean) => {
+        setStyle(prev => ({ ...prev, customProductOrder: { ...prev.customProductOrder, [category]: newOrder },
+            manualProductOrder: manuallyChanged || prev.manualProductOrder, name: 'Custom' }));
     };
 
     const updateGlobalElementStyle = (elementType: keyof MenuStyle['elementStyles'], newStyle: ElementStyle) => {

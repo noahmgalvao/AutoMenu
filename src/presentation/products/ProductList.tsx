@@ -1,3 +1,4 @@
+import { hasPhotosForType, type PhotoType } from '../menu/canvas/photoSizing';
 import { categoryName } from '../../domain/menu/categoryName';
 
 import React from 'react';
@@ -142,18 +143,19 @@ export const ProductList: React.FC<ProductListProps> = ({
     return () => window.removeEventListener('menu-category-limit-reached', handleLimitReached);
   }, []);
 
-  const imageOptions = (id: string, type: 'category' | 'product', hasPhoto: boolean) => {
+  const imageOptions = (id: string, type: PhotoType, hasPhoto: boolean) => {
     const key = type === 'category' ? 'showCategoryImages' : 'showImages';
     const enabled = style[key] !== false;
+    const groupHasPhoto = hasPhotosForType(type, style, Object.values(grouped).flat());
     return <>
-      {enabled && <button onPointerDown={e => e.stopPropagation()} onClick={() => {
+      {(!hasPhoto || enabled) && <button onPointerDown={e => e.stopPropagation()} onClick={() => {
         setMenuOpenId(null);
         (type === 'category' ? onCategoryImageClick : onProductImageClick)(id);
       }} className="flex items-center gap-2 px-4 py-2 text-left text-xs hover:bg-slate-50"><ImagePlus size={14} />{hasPhoto ? 'Substituir imagem' : 'Adicionar imagem'}</button>}
-      <button onPointerDown={e => e.stopPropagation()} onClick={() => {
+      {groupHasPhoto && <button onPointerDown={e => e.stopPropagation()} onClick={() => {
         setMenuOpenId(null);
         setStyle(prev => ({ ...prev, [key]: !enabled, name: 'Custom' }));
-      }} className="flex items-center gap-2 px-4 py-2 text-left text-xs hover:bg-slate-50"><Eye size={14} />{enabled ? 'Desabilitar imagens' : 'Habilitar imagens'}</button>
+      }} className="flex items-center gap-2 px-4 py-2 text-left text-xs hover:bg-slate-50"><Eye size={14} />{enabled ? 'Desabilitar imagens' : 'Habilitar imagens'}</button>}
     </>;
   };
 

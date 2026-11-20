@@ -200,7 +200,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                 className={`
                 flex flex-col bg-slate-50 overflow-hidden
                 /* Mobile: Bottom Sheet */
-                fixed bottom-0 left-0 right-0 z-40
+                fixed bottom-0 left-0 right-0 z-40 max-md:max-h-[var(--automenu-max-sheet-height,100dvh)]
                 rounded-t-2xl shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] border-t border-slate-200
                 transform transition-transform
                 ${isOpen ? 'translate-y-0' : 'translate-y-full'}

@@ -10,7 +10,7 @@ import type { CanvasShape } from '../../../domain/menu/model';
 import React, { useRef } from 'react';
 import type { MenuStyle, Product, ElementStyle, SortOption, AddedImage, FontSizeLimitKey } from '../../../domain/menu/model';
 import { DEFAULT_MINIMUM_FONT_SIZE, isMiniFoodTexture, normalizeTextureUrl } from '../../../domain/menu/defaults';
-import { resolveFontSizeLimits, resolveMenuContentSpacing, resolveMenuMargins, resolveMinimumFontSize, roundFontSize, resolveProductImageFrame } from '../../../domain/menu/styleRules';
+import { resolveFontSizeLimits, resolveMenuContentSpacing, resolveMenuMargins, resolveMinimumFontSize, roundFontSize, resolveProductImageFrame, clampPhotoScale, MIN_PHOTO_SCALE, MAX_PHOTO_SCALE } from '../../../domain/menu/styleRules';
 import { normalizeMenuPageSetup, resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 import { StyleControls } from './StyleControls';
 import { PriceFormatSettings } from './PriceFormatSettings';
@@ -462,7 +462,7 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle })
   const updateImageScale = (field: 'imageScale' | 'categoryImageScale', delta: number) => {
     setStyle((previous) => ({
       ...previous,
-      [field]: Math.max(0.5, Math.min(field === 'categoryImageScale' ? 2 : 2.5, Math.round(((previous[field] || 1) + delta) * 1000) / 1000)),
+      [field]: clampPhotoScale(Math.round(((previous[field] || 1) + delta) * 1000) / 1000),
       name: 'Custom',
     }));
   };
@@ -575,9 +575,9 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle })
             <div className="flex items-center justify-between gap-2">
               <span className="text-[10px] font-medium uppercase text-slate-400">Tamanho</span>
               <div className="flex items-center gap-2">
-                <HoldStepButton onStep={() => updateImageScale(control.scaleField, -0.1)} disabled={control.scale <= 0.5} className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white hover:bg-slate-100" label={`Diminuir imagens de ${control.label.toLowerCase()}`}><Minus size={14} /></HoldStepButton>
+                <HoldStepButton onStep={() => updateImageScale(control.scaleField, -0.1)} disabled={control.scale <= MIN_PHOTO_SCALE} className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white hover:bg-slate-100" label={`Diminuir imagens de ${control.label.toLowerCase()}`}><Minus size={14} /></HoldStepButton>
                 <span className="w-10 text-center font-mono text-xs text-slate-600">{Math.round(control.scale * 100)}%</span>
-                <HoldStepButton onStep={() => updateImageScale(control.scaleField, 0.1)} disabled={control.scale >= (control.scaleField === 'categoryImageScale' ? 2 : 2.5)} className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white hover:bg-slate-100" label={`Aumentar imagens de ${control.label.toLowerCase()}`}><Plus size={14} /></HoldStepButton>
+                <HoldStepButton onStep={() => updateImageScale(control.scaleField, 0.1)} disabled={control.scale >= MAX_PHOTO_SCALE} className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white hover:bg-slate-100" label={`Aumentar imagens de ${control.label.toLowerCase()}`}><Plus size={14} /></HoldStepButton>
               </div>
             </div>
           </div>
@@ -879,16 +879,18 @@ export const StyleSection: React.FC<StyleSectionProps> = ({ style, setStyle }) =
 // --- SORTING SECTION ---
 interface SortingSectionProps {
   sortOption: SortOption;
+  manualProductOrder?: boolean;
   setSortOption: React.Dispatch<React.SetStateAction<SortOption>>;
   setStyle: React.Dispatch<React.SetStateAction<MenuStyle>>;
 }
 
-export const SortingSection: React.FC<SortingSectionProps> = ({ sortOption, setSortOption, setStyle }) => {
+export const SortingSection: React.FC<SortingSectionProps> = ({ sortOption, manualProductOrder, setSortOption, setStyle }) => {
   const applySort = (nextSort: SortOption) => {
     setSortOption(nextSort);
     setStyle(prev => ({
       ...prev,
       customProductOrder: {},
+      manualProductOrder: undefined,
       name: 'Custom',
     }));
   };
@@ -897,7 +899,10 @@ export const SortingSection: React.FC<SortingSectionProps> = ({ sortOption, setS
   <section className="space-y-3">
     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2"> <ArrowUpAZ size={14} /> Ordenação de produtos </h3>
     <div className="flex items-center gap-2">
-    <select className="flex-1 p-2 bg-slate-50 border border-slate-200 rounded text-xs font-medium text-slate-700" value={sortOption.field === 'price' ? 'price' : 'name'} onChange={(e) => applySort({ ...sortOption, field: e.target.value as SortOption['field'] })}>
+    <select aria-label="Ordenação de produtos" className="flex-1 p-2 bg-slate-50 border border-slate-200 rounded text-xs font-medium text-slate-700"
+      value={manualProductOrder ? 'custom' : sortOption.field === 'price' ? 'price' : 'name'}
+      onChange={event => applySort({ ...sortOption, field: event.target.value === 'price' ? 'price' : 'name' })}>
+        {manualProductOrder && <option value="custom" disabled hidden>Personalizada</option>}
         <option value="name">Nome</option>
         <option value="price">Preço</option>
     </select>

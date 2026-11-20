@@ -16,12 +16,30 @@ export function createCanvasShape(kind: CanvasShapeKind, fill: string): CanvasSh
   };
 }
 
-function polygonPoints(count: number, inner: number) {
+type Point = [number, number];
+
+function polygonPoints(count: number, inner: number): Point[] {
   return Array.from({ length: count }, (_, index) => {
     const angle = 2 * Math.PI * index / count - Math.PI / 2;
     const radius = index % 2 ? inner : 43;
-    return `${50 + Math.cos(angle) * radius},${50 + Math.sin(angle) * radius}`;
-  }).join(' ');
+    return [50 + Math.cos(angle) * radius, 50 + Math.sin(angle) * radius];
+  });
+}
+
+function polygonShape(points: Point[], rounding: number) {
+  if (!(rounding > 0)) return `<polygon points="${points.map(point => point.join(',')).join(' ')}"/>`;
+
+  const path = points.map((point, index) => {
+    const previous = points[(index + points.length - 1) % points.length];
+    const next = points[(index + 1) % points.length];
+    const approach = (neighbor: Point) => {
+      const distance = Math.hypot(neighbor[0] - point[0], neighbor[1] - point[1]);
+      const fraction = distance > 0 ? Math.min(.5, rounding / distance) : 0;
+      return point.map((coordinate, axis) => +(coordinate + (neighbor[axis] - coordinate) * fraction).toFixed(3)).join(' ');
+    };
+    return `${index === 0 ? 'M' : 'L'} ${approach(previous)} Q ${point.join(' ')} ${approach(next)}`;
+  });
+  return `<path d="${path.join(' ')} Z"/>`;
 }
 
 export function getCanvasShapeDimensions(shape: CanvasShape) {
@@ -91,16 +109,16 @@ export function canvasShapeUrl(shape: CanvasShape) {
     rectangle: () => `<rect x="6" y="6" width="88" height="88" rx="${shape.corners}"/>`,
     ellipse: () => '<ellipse cx="50" cy="50" rx="44" ry="44"/>',
     triangle: () => '<polygon points="50,7 94,93 6,93"/>',
-    diamond: () => '<polygon points="50,6 94,50 50,94 6,50"/>',
-    polygon: () => `<polygon points="${polygonPoints(shape.points, 43)}"/>`,
-    star: () => `<polygon points="${polygonPoints(shape.points * 2, shape.innerRadius * .43)}"/>`,
-    arrow: () => '<polygon points="6,35 60,35 60,9 94,50 60,91 60,65 6,65"/>',
+    diamond: () => polygonShape([[50, 6], [94, 50], [50, 94], [6, 50]], shape.corners),
+    polygon: () => polygonShape(polygonPoints(shape.points, 43), shape.corners),
+    star: () => polygonShape(polygonPoints(shape.points * 2, shape.innerRadius * .43), shape.corners),
+    arrow: () => polygonShape([[6, 35], [60, 35], [60, 9], [94, 50], [60, 91], [60, 65], [6, 65]], shape.corners),
     line: () => '<path d="M 6,50 H 94"/>',
   };
   const kind = shape.kind;
   const miniFood = isMiniFoodKind(kind);
   const content = miniFood
-    ? `<g transform="scale(4.1666667)">${miniFoodArtwork(kind)}</g>`
+    ? `<g transform="scale(4.1666667)">${miniFoodArtwork(kind, hex(shape.fill))}</g>`
     : geometry[kind]?.() || '';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${-width / 2} ${-height / 2} ${width} ${height}"><g transform="rotate(${shape.rotation}) scale(${shape.ratio} 1) translate(-50 -50)" fill="${hex(shape.fill)}" stroke="${hex(shape.stroke)}" stroke-width="${shape.kind === 'line' ? Math.max(1, shape.strokeWidth) : shape.strokeWidth}" stroke-linecap="round" stroke-linejoin="round">${content}</g>${miniFood ? '' : shapeLabel(shape)}</svg>`;
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
@@ -110,11 +128,12 @@ export type CanvasShapeParameters = Partial<Omit<CanvasShape, 'kind' | 'text' | 
 
 export function getCanvasShapeParameters(shape: CanvasShape): CanvasShapeParameters {
   const { fill, stroke, strokeWidth, rotation, corners, points, innerRadius } = shape;
-  if (isMiniFoodKind(shape.kind)) return { rotation };
+  if (isMiniFoodKind(shape.kind)) return { rotation, fill };
   return {
-    stroke, strokeWidth, rotation, textColor: shape.textColor, textAlign: shape.textAlign, textStyle: shape.textStyle,
+    stroke, strokeWidth, textColor: shape.textColor, textAlign: shape.textAlign, textStyle: shape.textStyle,
+    ...(shape.kind !== 'ellipse' && { rotation }),
     ...(shape.kind !== 'line' && { fill }),
-    ...(shape.kind === 'rectangle' && { corners }),
+    ...(['rectangle', 'diamond', 'polygon', 'star', 'arrow'].includes(shape.kind) && { corners }),
     ...((shape.kind === 'star' || shape.kind === 'polygon') && { points }),
     ...(shape.kind === 'star' && { innerRadius }),
   };
