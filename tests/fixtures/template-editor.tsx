@@ -22,6 +22,7 @@ const products: Product[] = [
   {id:'3', category:'Sobremesas', name:'Tarte de maçã', price:24, description:'Massa crocante e baunilha.'},
 ];
 const samplePhoto = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jBXsAAAAASUVORK5CYII=';
+const lowContrastShape = { ...createCanvasShape('rectangle', '#ffffff'), text: 'Rótulo claro', textColor: '#eeeeee' };
 const batchShapes = [
   { id: 'shape-left', x: 115, shape: { ...createCanvasShape('rectangle', '#4f46e5'), rotation: 25, corners: 12 } },
   { id: 'shape-right', x: 325, shape: createCanvasShape('star', '#dc2626') },
@@ -40,15 +41,24 @@ function Fixture() {
       ...initial,
       addedImages: [
         ...batchShapes.map(shape => ({
-          ...shape, y: 475, width: 100, url: canvasShapeUrl(shape.shape), pageIndex: 0, backgroundPromptDismissed: true,
+          ...shape, y: 690, width: 100, url: canvasShapeUrl(shape.shape), pageIndex: 0, backgroundPromptDismissed: true,
         })),
-        { id: 'batch-photo', x: 325, y: 640, width: 100, url: samplePhoto, pageIndex: 0, backgroundPromptDismissed: true },
+        { id: 'batch-photo', x: 325, y: 815, width: 100, url: samplePhoto, pageIndex: 0, backgroundPromptDismissed: true },
       ],
       blankPages: [{ id: 'layers-page', index: 1, fixedPosition: true }],
+    } : params.has('low-contrast') ? {
+      ...initial, design: undefined, backgroundColor: '#ffffff', textColor: '#eeeeee', primaryColor: '#eeeeee',
+      addedImages: [{ id: 'shape-contrast', x: 155, y: 685, width: 180, pageIndex: 0,
+        shape: lowContrastShape, url: canvasShapeUrl(lowContrastShape) }],
+      elementStyles: { ...initial.elementStyles, menuTitle: { ...initial.elementStyles.menuTitle, color: '#eeeeee' },
+        productName: { ...initial.elementStyles.productName, color: '#eeeeee' } },
+    } : params.has('background-text') ? {
+      ...initial, design: undefined, blankPages: [{ id: 'background-second', index: 1, fixedPosition: true }],
+      freeTextBackgrounds: { 'background-text': { x: 100, y: 500, pageIndex: 0, width: 160 } },
     } : params.has('added-image') ? {
       ...initial, addedImages: [
-        { id: 'sample-image', url: samplePhoto, x: 290, y: 360, width: 128, pageIndex: 0 },
-        ...(params.has('image-pair') ? [{ id: 'second-image', url: samplePhoto, x: 470, y: 460, width: 128, pageIndex: 0 }] : []),
+        { id: 'sample-image', url: samplePhoto, x: 290, y: 600, width: 128, pageIndex: 0 },
+        ...(params.has('image-pair') ? [{ id: 'second-image', url: samplePhoto, x: 470, y: 685, width: 128, pageIndex: 0 }] : []),
       ],
     } : initial,
   ] : [{
@@ -83,7 +93,10 @@ function Fixture() {
     { id: 'a1', category: 'A', name: 'A1', price: 12, description: '', customMarginTop: 350 },
     ...[1, 2, 3].map(index => ({ id: `b${index}`, category: 'B', name: `B${index}`, price: 12, description: '', customMarginTop: 190 })),
     { id: 'c1', category: 'C', name: 'C1', price: 12, description: '', customMarginTop: 130 },
-  ] : params.has('dense-list') ? Array.from({ length: 22 }, (_, i) => ({
+  ] : params.has('background-text') ? [...products, {
+    id: 'background-text', category: 'ft_zone_background-text', name: 'Texto de fundo',
+    description: '', price: 0, isFreeText: true, freeTextWidth: 160,
+  }] : params.has('dense-list') ? Array.from({ length: 22 }, (_, i) => ({
     id: `side-${i + 1}`, category: 'Acompanhamentos', name: i === 0 ? 'Batata Trufada' : `Novo item ${i}`,
     description: 'Descrição', price: 6.5,
   })) : !photoMode ? products : (params.has('single-product') ? products.slice(0, 1) : products).map(product => ({
@@ -116,7 +129,7 @@ function Fixture() {
       futureActions.current = [];
       setFuture([]);
       setHistory((current) => [...current, typeof patch === 'function' ? patch(current[current.length - 1]) : patch]);
-    }} products={items} setProducts={photoMode ? setItems : undefined} sortOption={sortOption} setSortOption={setSortOption}
+    }} products={items} setProducts={photoMode || params.has('background-text') || params.has('editable') ? setItems : undefined} sortOption={sortOption} setSortOption={setSortOption}
       templates={[...PRESET_TEMPLATES, imported]} workspaceId="test-workspace" currentUserId="test-user"
       onProductEditChange={handleEditChange}
       undo={() => {
@@ -139,19 +152,25 @@ function Fixture() {
   </>;
 }
 
-function LayoutFixture({ categories, adjacent, productsInCategory, closeTexts, topText, layer }: {
+function LayoutFixture({ categories, adjacent, productsInCategory, closeTexts, topText, layer, between }: {
   categories: boolean; adjacent: boolean; productsInCategory: boolean; closeTexts: boolean; topText?: 'detached' | 'attached';
   layer?: 'image' | 'shape';
+  between?: boolean;
 }) {
   const [style, setStyle] = useState<MenuStyle>((): MenuStyle => {
     const shape = layer === 'shape' ? createCanvasShape('rectangle', '#4f46e5') : undefined;
     return {
-      ...initial, categoryColumnCount: 2,
-      addedImages: layer ? [{ id: 'test-layer', url: shape ? canvasShapeUrl(shape) : samplePhoto, shape, x: 105, y: 410, width: 128, pageIndex: 0 }] : undefined,
-      customCategoryOrder: categories ? ['Principais', 'Sobremesas', 'Entradas'] : topText === 'detached'
+      ...initial, categoryColumnCount: between ? 1 : 2,
+      addedImages: layer ? [{ id: 'test-layer', url: shape ? canvasShapeUrl(shape) : samplePhoto, shape, x: 105, y: between ? 282 : 410, width: 128, pageIndex: 0 }] : undefined,
+      customCategoryOrder: between ? ['Entradas', 'Principais', 'Sobremesas', 'ft_zone_a'] : categories ? ['Principais', 'Sobremesas', 'Entradas'] : topText === 'detached'
         ? ['ft_zone_a', 'Entradas'] : ['Entradas', 'ft_zone_a', 'ft_zone_b'],
       customProductOrder: topText === 'attached' ? { Entradas: ['text-a', '1'] } : undefined,
-      categoryPositions: categories ? {
+      categoryPositions: between ? {
+        Entradas: { pageIndex: 0, columnIndex: 0, y: 150 },
+        Principais: { pageIndex: 0, columnIndex: 0, y: 430 },
+        Sobremesas: { pageIndex: 0, columnIndex: 0, y: 660 },
+        ft_zone_a: { pageIndex: 0, columnIndex: 0, y: 880, pageX: 130 },
+      } : categories ? {
         Principais: { pageIndex: 0, columnIndex: 1, y: 210 },
         Sobremesas: { pageIndex: 0, columnIndex: 1, y: adjacent ? 330 : 690 },
         Entradas: { pageIndex: 0, columnIndex: 0, y: 210 },
@@ -164,7 +183,9 @@ function LayoutFixture({ categories, adjacent, productsInCategory, closeTexts, t
       },
     };
   });
-  const [items, setItems] = useState<Product[]>(categories ? products : [
+  const [items, setItems] = useState<Product[]>(between ? [...products, {
+    id: 'text-a', category: 'ft_zone_a', name: 'Aviso', description: '', price: 0, isFreeText: true, freeTextWidth: 52,
+  }] : categories ? products : [
     ...(productsInCategory ? products.map(product => ({ ...product, category: 'Entradas' })) : [products[0]]),
     { id: 'text-a', category: topText === 'attached' ? 'Entradas' : 'ft_zone_a', name: 'A', description: '', price: 0, isFreeText: true, freeTextWidth: 44 },
     ...(productsInCategory || topText ? [] : [
@@ -205,6 +226,6 @@ createRoot(document.getElementById('root')!).render(<React.StrictMode>
   <AppServicesProvider services={services}>
     {layout !== null ? <LayoutFixture categories={layout === 'categories'} adjacent={params.has('adjacent')} productsInCategory={layout === 'products'} closeTexts={layout === 'borders'}
       layer={params.has('shape') ? 'shape' : params.has('image') ? 'image' : undefined}
-      topText={layout === 'top-detached' ? 'detached' : layout === 'top-attached' ? 'attached' : undefined} /> : <Fixture />}
+      between={layout === 'free-text-between'} topText={layout === 'top-detached' ? 'detached' : layout === 'top-attached' ? 'attached' : undefined} /> : <Fixture />}
   </AppServicesProvider>
 </React.StrictMode>);

@@ -155,12 +155,27 @@ function Discover({ current, products, sortOption, splitCategoryAcrossPages, app
   const [drag, setDrag] = useState(0);
   const [direction, setDirection] = useState(0);
   const [hint, setHint] = useState(results.length > 1);
-  const lastTap = useRef(0);
+  const lastTap = useRef<{ at: number; x: number; y: number } | null>(null);
+  const [previewPage, setPreviewPage] = useState(0);
+  const [heart, setHeart] = useState(0);
+  const heartId = useRef(0);
+  const lastLiked = useRef(0);
   const pointerKind = useRef('');
   const tapTarget = useRef<{ button: HTMLButtonElement; x: number; y: number; pointerId: number } | null>(null);
   const lastTouchClick = useRef<{ button: HTMLButtonElement; at: number } | null>(null);
   const titleId = useId();
   const focused = results.find((template) => template.id === focusId) || results[0];
+  useEffect(() => {
+    lastTap.current = null;
+    setPreviewPage(0);
+    setHeart(0);
+  }, [focused?.id]);
+  const likePreview = () => {
+    if (!focused) return;
+    lastLiked.current = performance.now();
+    favorites.toggle(focused.id, focused.name, true);
+    setHeart(++heartId.current);
+  };
 
   useEffect(() => {
     const node = dialog.current;
@@ -272,8 +287,9 @@ function Discover({ current, products, sortOption, splitCategoryAcrossPages, app
       </section> : <>
         {focused ? <div className="template-discover-surface" aria-label="Prévia do modelo"
           onDoubleClick={event => {
-            if (pointerKind.current !== 'touch' && !(event.target as HTMLElement).closest('[data-template-preview-controls]')) {
-              favorites.toggle(focused.id, focused.name);
+            if (pointerKind.current !== 'touch' && performance.now() - lastLiked.current > 80
+              && !(event.target as HTMLElement).closest('[data-template-preview-controls]')) {
+              likePreview();
             }
           }}
           onWheel={event => {
@@ -311,16 +327,28 @@ function Discover({ current, products, sortOption, splitCategoryAcrossPages, app
             const dx = event.clientX - start.x;
             const dy = event.clientY - start.y;
             const next = swipeDirection(dx, dy);
-            if (next) { lastTap.current = 0; step(next); return; }
-            if (event.pointerType !== 'touch' || Math.hypot(dx, dy) > 12) return;
-            const now = Date.now();
-            if (now - lastTap.current < 280) { favorites.toggle(focused.id, focused.name); lastTap.current = 0; }
-            else lastTap.current = now;
+            if (next) { lastTap.current = null; step(next); return; }
+            if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+              lastTap.current = null;
+              setPreviewPage(index => Math.max(0, index + (dx < 0 ? 1 : -1)));
+              return;
+            }
+            if (Math.hypot(dx, dy) > 12) {
+              lastTap.current = null;
+              return;
+            }
+            const tap = { at: Date.now(), x: event.clientX, y: event.clientY };
+            const previous = lastTap.current;
+            if (previous && tap.at - previous.at < 300 && Math.hypot(tap.x - previous.x, tap.y - previous.y) < 40) {
+              likePreview();
+              lastTap.current = null;
+            } else lastTap.current = tap;
           }}>
           <div className="template-discover-drag" data-dragging={Boolean(drag)} style={{ transform: `translateY(${drag}px)` }}>
             <div key={focused.id} className="template-discover-slide" style={{ '--discover-enter': `${direction * 8}vh` } as React.CSSProperties}>
               <TemplatePreviewSurface current={current} template={focused} products={products}
-                sortOption={sortOption} splitCategoryAcrossPages={splitCategoryAcrossPages} />
+                sortOption={sortOption} splitCategoryAcrossPages={splitCategoryAcrossPages} pageIndex={previewPage}
+                onPageChange={setPreviewPage} heart={heart} onHeartEnd={() => setHeart(0)} />
             </div>
           </div>
         </div> : <p className="template-discover-empty">Nenhum modelo encontrado.</p>}

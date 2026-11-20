@@ -75,6 +75,7 @@ test('dragging a shape near the page center snaps it and clears the dashed guide
   await page.goto(fixture + '?batch-layers');
   const paper = page.locator('[data-menu-print-page]').first();
   const layer = paper.locator('[data-added-image-id="shape-left"]');
+  await layer.scrollIntoViewIfNeeded();
   const box = (await layer.boundingBox())!;
   const sheet = (await paper.boundingBox())!;
   const center = sheet.x + sheet.width / 2;
@@ -96,10 +97,8 @@ test('an untouched free text keeps its label until the first typed character', a
   await page.getByRole('button', { name: 'Adicionar texto', exact: true }).click();
   const text = page.locator('[data-canvas-free-text-id]').getByText('Novo texto', { exact: true });
   await expect(text).toBeVisible();
-  const container = page.locator('[data-canvas-free-text-id]');
-  await container.click({ button: 'right' });
-  await page.locator('[data-canvas-object-menu]').getByRole('button', { name: 'Editar texto' }).click();
-  const field = container.locator('[contenteditable="true"]');
+  const field = page.locator('[data-canvas-free-text-id] [contenteditable="true"]');
+  await expect(field).toBeFocused();
   await expect(field).toHaveText('Novo texto');
   await field.press('Home');
   await field.press('ArrowRight');

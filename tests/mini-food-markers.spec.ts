@@ -23,12 +23,14 @@ test('the editor offers the same 50 mini foods as textures, shapes and markers',
   await expect(page.locator('[data-menu-print-page]').first()).toHaveCSS('background-image', /data:image\/svg\+xml/);
 
   await page.getByRole('button', { name: 'Adicionar forma' }).click();
+  await expect(page.getByAltText('Forma adicionada')).toBeVisible();
+  await page.locator('[data-object-page-index]').getByTitle('Editar forma').click();
+  await page.locator('[data-inline-format-toolbar]').getByRole('button', { name: 'Alterar forma' }).click();
   await expect(page.getByRole('button', { name: 'Batata frita' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Mini comidas', exact: true }).click();
   const choices = page.getByRole('group', { name: 'Mini comidas' }).getByRole('button');
   await expect(choices).toHaveText(foodNames);
   await page.getByRole('group', { name: 'Mini comidas' }).getByRole('button', { name: 'Batata frita', exact: true }).click();
-  await page.getByRole('button', { name: 'Inserir forma' }).click();
   await expect(page.locator('[data-added-image-id] img[alt="Batata frita"]')).toBeVisible();
 
   await page.reload();
@@ -120,4 +122,30 @@ test('a custom marker applies immediately, survives reload and can be removed', 
   await select.click();
   await expect(options.filter({ hasText: 'Marcador 1 · Estrela' })).toHaveCount(0);
   await expect.poll(() => stored.size).toBe(0);
+});
+
+
+test('a marker can be created while its server library is unavailable and syncs on reconnect', async ({ page }) => {
+  let available = false;
+  const stored: Array<{ id: string; shape: unknown }> = [];
+  await page.route('**/rest/v1/custom_menu_markers*', async route => {
+    if (!available) return route.fulfill({ status: 404, json: { code: 'PGRST205', message: 'Table unavailable' } });
+    if (route.request().method() === 'POST') stored.push(route.request().postDataJSON());
+    await route.fulfill({ json: route.request().method() === 'GET' ? stored : [] });
+  });
+  await page.goto(fixture);
+  const section = page.locator('[data-sidebar-decorations="product"]');
+  const markers = section.getByRole('button', { name: 'Marcadores dos produtos' });
+  const picker = section.getByRole('combobox', { name: 'Marcadores dos produtos' });
+  await markers.click();
+  await chooseDesignerOption(picker, 'create');
+  await section.getByRole('button', { name: 'Salvar marcador' }).click();
+  await expect(picker).toHaveText('Marcador 1 · Retângulo');
+  await page.reload();
+  await markers.click();
+  await picker.click();
+  await expect(section.getByRole('option', { name: 'Marcador 1 · Retângulo' })).toBeVisible();
+  available = true;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect.poll(() => stored.length).toBe(1);
 });

@@ -258,3 +258,28 @@
 [data-template-image][data-custom-border] { border-width: 0 !important; }
 [data-design-header="centered"] [data-template-header][data-custom-border]::before { visibility: hidden; }
 [data-color-preview] [data-template-card] { transition-property: box-shadow; }
+
+.template-discover-like-heart {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  color: #ff386b;
+  animation: template-like-heart 760ms both;
+}
+.template-discover-like-heart svg {
+  width: clamp(5rem, 23vmin, 9rem);
+  height: auto;
+  filter: drop-shadow(0 2px 9px rgb(0 0 0 / .35));
+}
+@keyframes template-like-heart {
+  0% { opacity: 0; transform: scale(.45); }
+  22% { opacity: 1; transform: scale(1.17); }
+  42%, 72% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(.94); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .template-discover-like-heart { animation-name: template-like-fade; }
+}
+@keyframes template-like-fade { 0%, 75% { opacity: 1; } 100% { opacity: 0; } }

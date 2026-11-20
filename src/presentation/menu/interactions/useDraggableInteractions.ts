@@ -41,6 +41,7 @@ interface DragMotion {
     productInitialTargetById: Map<string, { rect: DOMRect; laneKey: string }>;
     freeTextPointerOffsetY: number | null;
     freeTextPointerOffsetX: number | null;
+    freeTextGrab: PointerPosition | null;
     freeTextDragSlot: FreeTextDragSlot | null;
     freeTextSwapLock: {
         sourceId: string;
@@ -71,6 +72,7 @@ const createDragMotion = (): DragMotion => ({
     productInitialTargetById: new Map(),
     freeTextPointerOffsetY: null,
     freeTextPointerOffsetX: null,
+    freeTextGrab: null,
     freeTextDragSlot: null,
     freeTextSwapLock: null,
     freeTextSwapRebase: null,
@@ -1653,6 +1655,25 @@ export const useDraggableInteractions = (
         if (sameColumn && categoryPosition.y >= textPosition.y) {
             nextText.y = Math.max(nextText.y, nextCategory.y + categoryHeight + gap);
         }
+        if (textOrigin) {
+            const sameLane = sameColumn && categorySlot.position.pageIndex === textSlot.position.pageIndex;
+            if (!sameLane) return null;
+            const destinationTop = textSlot.pageRect.top + nextCategory.y * textSlot.scale;
+            const destinationBottom = destinationTop + categoryHeight * textSlot.scale;
+            if (destinationTop < textSlot.pageRect.top || destinationBottom > textSlot.pageRect.bottom) return null;
+            const bounds = category.getBoundingClientRect();
+            const coversAnotherCategory = Array.from(textSlot.page.querySelectorAll<HTMLElement>('[data-category-chunk], [data-block-id="main-header"]'))
+                .some(element => {
+                    if (element === category || element === text) return false;
+                    const rect = element.getBoundingClientRect();
+                    const intersectsColumn = rect.left < bounds.right - 1 && rect.right > bounds.left + 1;
+                    const overlaps = rect.top < destinationBottom + gap * textSlot.scale && rect.bottom > destinationTop - gap * textSlot.scale;
+                    const isBetween = rect.bottom > Math.min(textRect.bottom, categoryRect.bottom)
+                        && rect.top < Math.max(textRect.top, categoryRect.top);
+                    return intersectsColumn && (overlaps || isBetween);
+                });
+            if (coversAnotherCategory) return null;
+        }
         const page = categorySlot.position.pageIndex === nextText.pageIndex ? categorySlot.page
             : document.querySelector<HTMLElement>(
                 `[data-drag-scope="${escapeSelectorValue(dragScope)}"][data-drag-page-container="category"][data-drag-page-index="${nextText.pageIndex}"]`,
@@ -2359,7 +2380,8 @@ export const useDraggableInteractions = (
             if (typeof document === 'undefined') return null;
             const scope = escapeSelectorValue(dragScope);
             const blocksCategoryDrop = Array.from(document.querySelectorAll<HTMLElement>(
-                '[data-added-image-drag="true"]:not([data-canvas-background-layer]), #menu-title-text, #menu-subtitle-text'
+                options.includeFreeTextTargets ? '#menu-title-text, #menu-subtitle-text'
+                    : '[data-added-image-drag="true"]:not([data-canvas-background-layer]), #menu-title-text, #menu-subtitle-text'
             )).some((element) => {
                 const rect = element.getBoundingClientRect();
                 return pointer.x >= rect.left && pointer.x <= rect.right && pointer.y >= rect.top && pointer.y <= rect.bottom;
@@ -2792,6 +2814,9 @@ export const useDraggableInteractions = (
             const currentRect = currentElement?.getBoundingClientRect();
             motionRef.current.freeTextPointerOffsetY = currentRect ? pointer.y - currentRect.top : null;
             motionRef.current.freeTextPointerOffsetX = currentRect ? pointer.x - currentRect.left : null;
+            if (currentRect && !motionRef.current.freeTextGrab) {
+                motionRef.current.freeTextGrab = { x: pointer.x - currentRect.left, y: pointer.y - currentRect.top };
+            }
             freeTextActiveCategoryRef.current[product.id] = group;
             const rawProductMargin = Number(product.customMarginTop);
             const productMargin = getSafeFreeTextMargin(rawProductMargin, pageHeightPx);
@@ -2879,7 +2904,7 @@ export const useDraggableInteractions = (
                 if (selection && isDraggableSelectionItem(selection.source)) {
                     activeSelectionCanvasRef.current = selection.canvas;
                     if (selection.clear) collapseSelection?.(selection.source.type, selection.source.id);
-                    if (selection.items.length > 1 || pending.type === 'addedImage') {
+                    if (selection.items.length > 1 || pending.type === 'addedImage' || style.freeTextBackgrounds?.[pending.id]) {
                         const pressed = pending.element.getBoundingClientRect();
                         const relativeX = (pointer.x - pressed.left) / Math.max(1, pressed.width);
                         const relativeY = (pointer.y - pressed.top) / Math.max(1, pressed.height);
@@ -3029,29 +3054,30 @@ export const useDraggableInteractions = (
                         if (slot) {
                             const before = deltaY < 0;
                             const { page, pageRect, scale, position } = slot;
-                            const columnRect = categoryElement.parentElement?.getBoundingClientRect() || pageRect;
                             const textHeight = currentRect.height;
-                            const freeGap = 8 * scale;
-                            const candidate = categoryRect.top - textHeight - freeGap;
-                            const safeBefore = before && candidate >= columnRect.top ? getCollisionSafeFreeTextTop({
-                                root: page, desiredTop: candidate, pointerY: candidate, height: textHeight,
-                                minTop: columnRect.top, maxBottom: categoryRect.top - freeGap,
-                                minLeft: currentRect.left, maxRight: currentRect.right,
+                            const freeGap = 4 * scale;
+                            const grab = motionRef.current.freeTextGrab;
+                            const clientLeft = Math.max(pageRect.left, Math.min(pageRect.right - currentRect.width,
+                                grab ? pointer.x - grab.x : currentRect.left));
+                            const clientTop = getCollisionSafeFreeTextTop({
+                                root: page, desiredTop: pointer.y - (grab?.y ?? textHeight / 2), pointerY: pointer.y,
+                                height: textHeight, minTop: before ? pageRect.top : categoryRect.bottom - textHeight + freeGap,
+                                maxBottom: before ? categoryRect.top - freeGap : pageRect.bottom,
+                                minLeft: clientLeft, maxRight: clientLeft + currentRect.width,
                                 excludeProductId: activeProduct.id, excludeCategoryId: currentCategory,
-                            }) : null;
-                            const clientTop = before ? safeBefore ?? categoryRect.top
-                                : Math.min(categoryRect.bottom + freeGap, pageRect.bottom - textHeight);
+                            });
+                            if (clientTop === null) {
+                                motionRef.current.lastPointer = pointer;
+                                return;
+                            }
                             const textPosition = {
                                 ...position, y: (clientTop - pageRect.top) / scale,
-                                pageX: Math.max(0, (currentRect.left - pageRect.left) / scale),
+                                pageX: Math.max(0, (clientLeft - pageRect.left) / scale),
                             };
                             let freeTextCategory = currentCategory;
                             flushSync(() => {
                                 freeTextCategory = ensureFreeTextCategoryDragState(activeProduct, pointer, currentCategory, before ? 'before' : 'after', 0);
                                 const positions = { ...(liveCategoryPositionsRef.current || style.categoryPositions), [freeTextCategory]: textPosition };
-                                if (before && safeBefore === null) {
-                                    positions[currentCategory] = { ...position, y: position.y + (textHeight + freeGap) / scale };
-                                }
                                 liveCategoryPositionsRef.current = positions;
                                 setLiveCategoryPositions(positions);
                                 initializeLiveCategoryPageAssignments({
@@ -3070,7 +3096,7 @@ export const useDraggableInteractions = (
                         }
                     }
 
-                    if (isGhostFreeText && currentElement && deltaY) {
+                    if (isGhostFreeText && currentElement && deltaY > 0) {
                         const textElement = getRenderedDragElement('category', currentCategory);
                         const candidate = getOrderedCategoryTargets()
                             .filter(target => !target.id.startsWith(FREE_TEXT_PREFIX) && !isSelectedCategoryTarget(target.id))
@@ -4013,6 +4039,10 @@ export const useDraggableInteractions = (
                 const clear = productCategories.size > 1;
                 canvasSelection = { canvas, source, items: clear ? [source] : items, clear };
             }
+            if (canvas && !canvasSelection && draggedProduct?.isFreeText && style.freeTextBackgrounds?.[id]) {
+                const background = { type: 'freeText' as const, id };
+                canvasSelection = { canvas, source: background, items: [background], clear: true };
+            }
             if (!canvasSelection && (multiSelectMode || type === 'addedImage')) return;
 
             event.stopPropagation();
@@ -4044,8 +4074,9 @@ export const useDraggableInteractions = (
                     if (pending.element.dataset.dragContext !== 'product-designer') {
                         pending.longPressReady = true;
                         pending.activationTimeoutId = null;
-                        if (pending.canvasSelection) return;
-                        handleSelection(sourceType, pending.id);
+                        if ((pending.canvasSelection?.items.length || 0) > 1) return;
+                        const pageIndex = Number(pending.element.closest<HTMLElement>('[data-menu-print-page]')?.dataset.pageIndex);
+                        handleSelection(sourceType, pending.id, { backgroundPage: Number.isFinite(pageIndex) ? pageIndex : undefined });
                         window.dispatchEvent(new CustomEvent('automenu:canvas-drag-ready', {
                             detail: {
                                 type: pending.type === 'product' && draggedProduct?.isFreeText ? 'freeText' : pending.type,
@@ -4066,7 +4097,7 @@ export const useDraggableInteractions = (
                 handleSelection(sourceType, id);
             }
         },
-        [activateDrag, attachGlobalListeners, cancelAndCleanup, clearPendingActivation, editingId, handleSelection, multiSelectMode, products, selectedItems]
+        [activateDrag, attachGlobalListeners, cancelAndCleanup, clearPendingActivation, editingId, handleSelection, multiSelectMode, products, selectedItems, style.freeTextBackgrounds]
     );
 
     const handleNativeDragStart = useCallback(

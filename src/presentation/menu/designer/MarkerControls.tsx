@@ -22,12 +22,11 @@ export const standardMarkers: [Exclude<MenuMarker, CustomMenuMarker | MiniFoodKi
   ['number-padded', 'Número com zero', '01'],
 ];
 
-export function MarkerControls({ label, color, marker, onChange, onRevert, onRemove }: {
+export function MarkerControls({ label, color, marker, onChange, onRemove }: {
   label: string;
   color: string;
   marker: MenuMarker;
   onChange: (marker: MenuMarker) => void;
-  onRevert: (id: string, fallback: MenuMarker) => void;
   onRemove: (id: string) => void;
 }) {
   const library = useContext(CustomMarkerLibrary);
@@ -68,22 +67,18 @@ export function MarkerControls({ label, color, marker, onChange, onRevert, onRem
       <img src={miniFoodIconUrl(selectedFood)} alt="" width={19} height={19} />
       Trocar mini comida
     </button>}
-    {submenu === 'create' && library && <ShapeEditor color={color} saveLabel="Salvar marcador" disabled={library.pending} onSave={shape => {
+    {submenu === 'create' && library && <ShapeEditor color={color} saveLabel="Salvar marcador" disabled={!library.ready} onSave={shape => {
       const next = { id: crypto.randomUUID(), shape };
-      if (!library.save(next, () => onRevert(next.id, marker))) return;
+      if (!library.save(next)) return;
       onChange(next);
       setSubmenu(null);
     }} />}
     {saved && !submenu && <div className="flex items-center justify-between gap-2 rounded-md bg-slate-50 px-2 py-1">
       <img src={canvasShapeUrl(saved.shape)} alt="Prévia do marcador" width={22} height={22} className="h-[22px] w-[22px] object-contain" />
-      <button type="button" disabled={library?.pending} onClick={() => library?.remove(saved.id, () => onRemove(saved.id))}
+      <button type="button" onClick={() => library?.remove(saved.id, () => onRemove(saved.id))}
         className="flex min-h-8 items-center gap-1 text-xs font-semibold text-red-700 disabled:opacity-50">
         <Trash2 size={14} aria-hidden="true" /> Remover marcador da lista
       </button>
-    </div>}
-    {library?.error && <div role="alert" className="text-xs text-red-700">
-      {library.error}
-      {!library.ready && <button type="button" onClick={library.load} className="ml-1 font-semibold underline">Tentar novamente</button>}
     </div>}
   </div>;
 }

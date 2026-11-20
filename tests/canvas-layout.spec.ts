@@ -559,7 +559,6 @@ test.describe('shape toolbar on a narrow touchscreen', () => {
   test('keeps the remaining buttons reachable without shrinking their touch targets', async ({ page }) => {
     await page.goto('/tests/fixtures/template-editor.html');
     await page.getByRole('button', { name: 'Adicionar forma' }).tap();
-    await page.getByRole('button', { name: 'Inserir forma' }).tap();
     const buttons = page.locator('[data-object-page-index] > button');
     await expect(buttons).toHaveCount(4);
     const buttonLayout = () => buttons.evaluateAll(elements => {
@@ -594,20 +593,20 @@ test('a fast drag across detached text at the top swaps the category into its pl
   await expect.poll(async () => (await category.boundingBox())!.y - (await text.boundingBox())!.y).toBeLessThan(-10);
 });
 
-test('detached text swaps with a category even when the pointer skips past the whole heading', async ({ page }) => {
+test('detached text crosses the whole heading without moving a category that would collide', async ({ page }) => {
   await page.goto('/tests/fixtures/template-editor.html?layout=top-detached');
   const category = page.locator('[data-category-chunk="Entradas"]');
   const text = page.locator('#product-container-text-a');
-  const header = (await category.locator('[data-category-id="Entradas"]').boundingBox())!;
+  const originalCategory = (await category.boundingBox())!;
   const start = (await text.boundingBox())!;
   const x = start.x + start.width / 2;
-  const y = header.y + header.height + 8;
+  const y = originalCategory.y + originalCategory.height + 26;
   await page.mouse.move(x, start.y + start.height / 2);
   await page.mouse.down();
   await page.mouse.move(x, y);
   await page.mouse.move(x + 1, y + 1);
   await page.mouse.up();
-  await expect.poll(async () => Math.abs((await category.boundingBox())!.y - start.y)).toBeLessThan(5);
+  await expect.poll(async () => Math.abs((await category.boundingBox())!.y - originalCategory.y)).toBeLessThan(2);
   await expect.poll(async () => (await text.boundingBox())!.y - (await category.boundingBox())!.y).toBeGreaterThan(10);
 });
 

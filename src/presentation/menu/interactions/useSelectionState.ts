@@ -532,8 +532,8 @@ export const useSelectionState = (
         }
     };
 
-    const startEditing = (e: React.MouseEvent, id: string, elementIdToFocus?: string, field: FormattingField = 'name') => {
-        e.stopPropagation();
+    const startEditing = (e: React.MouseEvent | null, id: string, elementIdToFocus?: string, field: FormattingField = 'name') => {
+        e?.stopPropagation();
         const product = products.find(p => p.id === id);
         const type = elementIdToFocus?.startsWith('text-') ? 'category' : product ? (product.isFreeText ? 'freeText' : 'product') : 'category';
         const targetField: FormattingField = product?.isFreeText ? 'freeText' : type === 'category' ? 'category' : field;

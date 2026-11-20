@@ -1,3 +1,4 @@
+import { readCustomMarkerCache, writeCustomMarkerCache } from '../infrastructure/browser/customMarkerCache';
 import type { AppServices } from '../application/appServices';
 import { readFavoriteCache, writeFavoriteCache } from '../infrastructure/browser/favoriteCache';
 import { updatePortablePublicationMenuSlug } from '../infrastructure/browser/portablePublicationCache';
@@ -24,7 +25,7 @@ export const browserServices = {
   },
   publications: { getMenuPublication, loadPublicMenuPublication, publishWorkspaceMenu, updatePublicationMenuSlug, updatePortablePublicationMenuSlug },
   assets: { uploadFileAsset },
-  customMarkers: { listCustomMenuMarkers, saveCustomMenuMarker, deleteCustomMenuMarker },
+  customMarkers: { listCustomMenuMarkers, saveCustomMenuMarker, deleteCustomMenuMarker, readCustomMarkerCache, writeCustomMarkerCache },
   favorites: { fetchFavorites, isPermanentFavoriteError, persistFavorite, readFavoriteCache, writeFavoriteCache },
   async prepareMenuImport(options) {
     const [workflow, analysis, images, fileReader, jobs] = await Promise.all([

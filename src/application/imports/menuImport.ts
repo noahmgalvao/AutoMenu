@@ -546,7 +546,6 @@ export const processMenuImport = async ({
       addedImages: processedImages
         .filter(({ addedImage }) => !categoryLinkedImageIds.has(addedImage.id))
         .map(({ addedImage }) => addedImage),
-      contentLayer: 'front',
       layoutMode: 'list',
       showImages: false,
       columnCount: 1,

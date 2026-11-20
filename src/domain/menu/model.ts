@@ -129,6 +129,7 @@ export interface CanvasShape {
   kind: CanvasShapeKind;
   text?: string;
   textColor?: string;
+  textBackground?: string;
   textStyle?: ElementStyle;
   textAlign?: 'left' | 'center' | 'right';
   fill: string;
@@ -256,6 +257,8 @@ export interface MenuStyle {
     };
   };
   contentLayer?: 'front' | 'back';
+  freeTextLayers?: Record<string, 2 | 4>;
+  textContrastFills?: Record<string, string>;
   pagePadding?: number;
   globalRadius?: number;
   itemGap?: number;

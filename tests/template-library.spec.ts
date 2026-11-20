@@ -164,7 +164,6 @@ test('adding a shape, free text and an image uses the page in view', async ({ pa
     node.scrollLeft += target.left + target.width / 2 - (viewport.left + viewport.width / 2);
   });
   await page.getByRole('button', { name: 'Adicionar forma' }).click();
-  await page.getByRole('button', { name: 'Inserir forma' }).click();
   await expect(pages.last().getByAltText('Forma adicionada')).toBeVisible();
   await pages.nth(1).dispatchEvent('click');
   await page.getByTitle('Adicionar página depois').click();
@@ -266,10 +265,9 @@ test('adding an image shows a preview through upload and canvas preparation', as
 
 test('a shape becomes the same editable background on newly added pages', async ({ page }) => {
   await page.getByRole('button', { name: 'Adicionar forma' }).click();
-  await page.getByRole('button', { name: 'Estrela', exact: true }).click();
-  await page.getByRole('button', { name: 'Inserir forma' }).click();
+  await page.locator('[data-object-page-index]').getByTitle('Editar forma').click();
   await expect(page.getByAltText('Forma adicionada')).toHaveCount(1);
-  await page.getByRole('slider', { name: 'Rotação' }).press('ArrowRight');
+  await page.locator('[data-inline-format-toolbar]').getByRole('slider', { name: 'Rotação' }).press('ArrowRight');
   const prompt = page.getByRole('group', { name: 'Definir como plano de fundo?' });
   await prompt.getByRole('button', { name: 'Sim', exact: true }).click();
   const pages = page.locator('[data-menu-print-page]');
@@ -287,7 +285,6 @@ test('a shape becomes the same editable background on newly added pages', async 
 
 test('the shape prompt remembers an outside dismissal and leaves background and flip actions in the menu', async ({ page }) => {
   await page.getByRole('button', { name: 'Adicionar forma' }).click();
-  await page.getByRole('button', { name: 'Inserir forma' }).click();
   const shape = page.getByAltText('Forma adicionada');
   const controls = page.locator('[data-object-page-index]');
   const prompt = page.getByRole('group', { name: 'Definir como plano de fundo?' });
@@ -299,7 +296,8 @@ test('the shape prompt remembers an outside dismissal and leaves background and 
   await page.mouse.click(x - 45, y + height / 2);
   await expect(prompt).toHaveCount(0);
   await expect(controls).toBeVisible();
-  await expect(controls.locator(':scope > button').last()).toHaveAttribute('title', 'Remover forma');
+  await expect(controls.locator(':scope > button').nth(-2)).toHaveAttribute('title', 'Remover forma');
+  await expect(controls.locator(':scope > button').last()).toHaveAttribute('title', 'Mais opções');
   await releaseShape();
   await expect(prompt).toHaveCount(0);
   await controls.getByTitle('Seleção múltipla').click();
@@ -338,7 +336,7 @@ test('an added image can use the background prompt and keeps its More options ac
   const menu = page.locator('[data-canvas-object-menu]');
   await expect(menu.getByRole('button', { name: 'Remover imagem' })).toBeVisible();
   await menu.getByRole('button', { name: 'Usar só nesta página' }).click();
-  const removeImage = controls.locator(':scope > button').last();
+  const removeImage = controls.locator(':scope > button').nth(-2);
   await expect(removeImage).toHaveAttribute('title', 'Remover imagem');
   await removeImage.click();
   await expect(image).toHaveCount(0);
@@ -389,9 +387,9 @@ test('a mixed selection formats, resizes, layers and duplicates its shapes and i
   await menuAction('Inverter verticalmente');
   for (const id of layers) await expect(layer(id).locator('img')).toHaveCSS('transform', 'matrix(-1, 0, 0, -1, 0, 0)');
   await menuAction('Trazer para frente');
-  for (const id of layers) await expect.poll(() => layer(id).evaluate(node => Number(getComputedStyle(node).zIndex))).toBeGreaterThan(40);
-  await menuAction('Trazer para trás');
-  for (const id of layers) await expect(layer(id)).toHaveCSS('z-index', '1');
+  for (const id of layers) await expect(layer(id)).toHaveAttribute('data-canvas-layer', '3');
+  await menuAction('Enviar para trás');
+  for (const id of layers) await expect(layer(id)).toHaveAttribute('data-canvas-layer', '1');
 
   await menuAction('Definir como plano de fundo');
   await expect(secondPage.locator('[data-added-image-id]')).toHaveCount(3);
@@ -426,7 +424,7 @@ test('shape formatting applies on the next click and stays available after valid
   await page.keyboard.press('Escape');
 
   await copy();
-  await page.locator('[data-menu-print-page]').first().click({ position: { x: 30, y: 410 } });
+  await page.locator('[data-menu-print-page]').first().click({ position: { x: 12, y: 300 } });
   await clickLayer('shape-other');
   expect(await svg('shape-other')).toContain('rotate(0)');
   await copy();
@@ -530,7 +528,6 @@ test.describe('mobile product formatting', () => {
 
   test('a quick touch drag moves a shape and only a held touch opens its menu', async ({ page }) => {
     await page.getByRole('button', { name: 'Adicionar forma' }).tap();
-    await page.getByRole('button', { name: 'Inserir forma' }).tap();
     const shape = page.getByAltText('Forma adicionada');
     const menu = page.locator('[data-canvas-object-menu]');
     const { x, y, width, height } = (await shape.boundingBox())!;

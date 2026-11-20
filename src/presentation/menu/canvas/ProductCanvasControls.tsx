@@ -217,7 +217,7 @@ export const ProductControls = ({
                         onClick={() => handlers.removeCanvasObject?.({ type: selectionType, id: selectionId })} title="Remover">
                         <Trash2 size={19} />
                     </button>
-                    <button type="button" data-open-object-menu="true" className={canvasActionButtonClass}
+                    <button type="button" data-open-object-menu="true" data-object-menu-type={selectionType} data-object-menu-id={selectionId} className={canvasActionButtonClass}
                         onClick={event => handlers.openObjectMenu?.(event, { type: selectionType, id: selectionId })} title="Mais opções">
                         <MoreHorizontal size={20} />
                     </button>

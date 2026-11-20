@@ -130,12 +130,10 @@ export function ShapeEditor({ color, onSave, saveLabel, hidden, disabled }: {
 }
 
 export function ShapePicker({ color, onAdd }: { color: string; onAdd: (shape: CanvasShape) => void }) {
-  const [open, setOpen] = useState(false);
-  return <div className="col-span-2 space-y-2">
-    <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}
+  return <div className="col-span-2">
+    <button type="button" onClick={() => onAdd(createCanvasShape('rectangle', color))}
       className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white p-2.5 text-sm font-medium text-slate-700 hover:border-indigo-300 hover:bg-indigo-50">
       <Shapes size={18} className="text-indigo-600" /> Adicionar forma
     </button>
-    <ShapeEditor hidden={!open} color={color} saveLabel="Inserir forma" onSave={shape => { onAdd(shape); setOpen(false); }} />
   </div>;
 }

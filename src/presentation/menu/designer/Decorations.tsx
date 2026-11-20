@@ -1,3 +1,4 @@
+import { getContentLayer } from '../../../domain/menu/imageLayers';
 import React from 'react';
 import { List, Minus, Square } from 'lucide-react';
 import { canvasShapeUrl } from '../../../domain/menu/canvasShapes';
@@ -139,17 +140,17 @@ function SafeBorder({ border, scope, style }: { border: MenuBorder; scope: MenuB
   }
   return <>
     <span ref={anchor} hidden />
-    {fitted && <BorderShape border={fitted.border} outsets={fitted.outsets} cornerRadii={cornerRadii} />}
+    {fitted && <BorderShape border={fitted.border} outsets={fitted.outsets} cornerRadii={cornerRadii} zIndex={scope === 'categoryGroup' ? getContentLayer(style) * 10 : undefined} />}
   </>;
 }
 
-function BorderShape({ border, outsets, cornerRadii }: { border: MenuBorder; outsets?: Record<MenuBorderSide, number>; cornerRadii?: string }) {
+function BorderShape({ border, outsets, cornerRadii, zIndex }: { border: MenuBorder; outsets?: Record<MenuBorderSide, number>; cornerRadii?: string; zIndex?: number }) {
   if (!border.sides.length) return null;
   const stroke = `${border.thickness}px ${border.pattern} ${border.color}`;
   const inset = (side: MenuBorderSide) => -(outsets?.[side] ?? border.offset);
   if (border.length === 100) {
     return <span data-menu-border aria-hidden="true" className="pointer-events-none absolute z-[1]" style={{
-      top: inset('top'), right: inset('right'), bottom: inset('bottom'), left: inset('left'),
+      zIndex, top: inset('top'), right: inset('right'), bottom: inset('bottom'), left: inset('left'),
       borderTop: border.sides.includes('top') ? stroke : undefined,
       borderRight: border.sides.includes('right') ? stroke : undefined,
       borderBottom: border.sides.includes('bottom') ? stroke : undefined,
@@ -160,7 +161,7 @@ function BorderShape({ border, outsets, cornerRadii }: { border: MenuBorder; out
   return <>{border.sides.map(side => {
     const horizontal = side === 'top' || side === 'bottom';
     return <span key={side} data-menu-border aria-hidden="true" className="pointer-events-none absolute z-[1]" style={{
-      [side]: inset(side),
+      zIndex, [side]: inset(side),
       [horizontal ? 'left' : 'top']: `${(100 - border.length) / 2}%`,
       [horizontal ? 'width' : 'height']: `${border.length}%`,
       [horizontal ? 'height' : 'width']: border.thickness,
@@ -389,11 +390,6 @@ export function DecorationControls({ style, setStyle, scope: baseScope, id, show
     {markerScope && showMarker && panel === 'marker' && <MarkerControls label={markerLabel} color={style.primaryColor}
       marker={getMarker(style, markerScope)}
       onChange={marker => setStyle(previous => ({ ...previous, markers: { ...previous.markers, [markerScope]: marker }, name: 'Custom' }))}
-      onRevert={(id, fallback) => setStyle(previous => {
-        const current = getMarker(previous, markerScope);
-        if (typeof current !== 'object' || current.id !== id) return previous;
-        return { ...previous, markers: { ...previous.markers, [markerScope]: fallback }, name: 'Custom' };
-      })}
       onRemove={id => setStyle(previous => {
         const category = getMarker(previous, 'category');
         const product = getMarker(previous, 'product');

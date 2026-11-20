@@ -16,7 +16,7 @@ import { useReplacePlaceholderOnInput } from '../interactions/useReplacePlacehol
 import { useResponsivePrices } from './useResponsivePrices';
 import { NUDGE_STEP, type DraftItem, type MoveDirection, type SelectionItem } from '../interactions/types';
 import { MenuPage } from './MenuPage';
-import { canMoveImageLayer, getImageLayerIndexes } from '../../../domain/menu/imageLayers';
+import { canMoveImageLayer, getContentLayer, getFreeTextLayer, getImageLayerIndexes, hasForegroundImage } from '../../../domain/menu/imageLayers';
 import { getCanvasViewportFocus } from './canvasViewport';
 import { getSelectedLayerIds, setCanvasImageBackground } from '../../../domain/menu/canvasShapes';
 import { acceptsCanvasFormat, applyCanvasFormat, captureCanvasFormat, type CanvasFormat, type FormatObject } from './canvasFormatting';
@@ -100,6 +100,7 @@ type ObjectMenuState = {
     y: number;
     item: CanvasContextMenuItem | null;
     pasteAt?: CategoryPosition;
+    anchored?: boolean;
     pageIndex?: number;
 };
 
@@ -267,7 +268,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             if (!detail || !['product', 'category', 'freeText', 'addedImage'].includes(detail.type)) return;
             setObjectMenuPosition(null);
             const page = previewRootRef.current && document.elementFromPoint(detail.x, detail.y)?.closest<HTMLElement>('[data-page-index]');
-            setObjectMenu({ x: detail.x, y: detail.y, item: { type: detail.type, id: detail.id }, pageIndex: page ? Number(page.dataset.pageIndex) : undefined });
+            setObjectMenu({ x: detail.x, y: detail.y, item: { type: detail.type, id: detail.id }, anchored: true, pageIndex: page ? Number(page.dataset.pageIndex) : undefined });
         };
         const closeTouchMenu = () => setObjectMenu(null);
         window.addEventListener('automenu:canvas-drag-ready', openTouchMenu);
@@ -535,10 +536,22 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     }, []);
 
     const focusedProductRef = useRef<string | null>(null);
+    const [newTextToEdit, setNewTextToEdit] = useState<string | null>(null);
+    const focusedNewText = useRef<string | null>(null);
+
+    useEffect(() => {
+        if (!newTextToEdit || !products.some(product => product.id === newTextToEdit)) return;
+        const frame = requestAnimationFrame(() => {
+            focusedNewText.current = newTextToEdit;
+            handlers.startEditing(null, newTextToEdit);
+            setNewTextToEdit(null);
+        });
+        return () => cancelAnimationFrame(frame);
+    }, [handlers.startEditing, newTextToEdit, products]);
     useEffect(() => {
         if (readOnly) return;
         const editingProductId = handlers.editingId
-            && products.some((product) => product.id === handlers.editingId && !product.isFreeText)
+            && products.some((product) => product.id === handlers.editingId && (!product.isFreeText || focusedNewText.current === product.id))
             ? handlers.editingId
             : null;
 
@@ -549,6 +562,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             const clicked = handlers.selectedItems.find(item => item.id === handlers.selectedId && item.id !== focusedProductRef.current);
             const target = clicked && isObjectItem(clicked) ? getObjectElement(clicked) : null;
             focusedProductRef.current = null;
+            focusedNewText.current = null;
             props.onProductEditEnd?.(target);
         }
     }, [getObjectElement, handlers.editingId, handlers.selectedId, handlers.selectedItems, products, props.onProductEditEnd, props.onProductEditStart, readOnly]);
@@ -597,9 +611,20 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             if (!menu) return;
 
             const rect = menu.getBoundingClientRect();
+            const item = objectMenu.item;
+            const buttons = item && objectMenu.anchored ? Array.from(previewRootRef.current?.querySelectorAll<HTMLElement>(
+                `[data-object-menu-type="${item.type}"][data-object-menu-id="${CSS.escape(item.id)}"]`
+            ) || []).filter(button => button.getBoundingClientRect().width && getComputedStyle(button).visibility === 'visible') : [];
+            const button = buttons.find(button => Number(button.closest<HTMLElement>('[data-shortcut-page]')?.dataset.shortcutPage) === objectMenu.pageIndex) || buttons[0];
+            const anchor = button?.getBoundingClientRect();
+            const fallback = !anchor && objectMenu.anchored && item && isObjectItem(item) ? getObjectElement(item)?.getBoundingClientRect() : undefined;
+            const x = anchor?.left ?? fallback?.left ?? objectMenu.x;
+            const y = anchor ? (anchor.bottom + 6 + rect.height <= window.innerHeight - 8
+                ? anchor.bottom + 6 : anchor.top - rect.height - 6)
+                : fallback ? fallback.top - rect.height - 8 : objectMenu.y;
             const nextPosition = {
-                left: clamp(objectMenu.x, 8, Math.max(8, window.innerWidth - rect.width - 8)),
-                top: clamp(objectMenu.y, 8, Math.max(8, window.innerHeight - rect.height - 8)),
+                left: clamp(x, 8, Math.max(8, window.innerWidth - rect.width - 8)),
+                top: clamp(y, 8, Math.max(8, window.innerHeight - rect.height - 8)),
             };
             setObjectMenuPosition((current) => (
                 current?.left === nextPosition.left && current?.top === nextPosition.top
@@ -609,15 +634,19 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         };
 
         reposition();
+        let pending = 0;
+        const frame = requestAnimationFrame(() => { pending = requestAnimationFrame(reposition); });
         const resizeObserver = new ResizeObserver(reposition);
         if (objectMenuRef.current) resizeObserver.observe(objectMenuRef.current);
         window.addEventListener('resize', reposition);
 
         return () => {
+            cancelAnimationFrame(frame);
+            cancelAnimationFrame(pending);
             resizeObserver.disconnect();
             window.removeEventListener('resize', reposition);
         };
-    }, [objectMenu]);
+    }, [getObjectElement, objectMenu]);
 
     // 2. Add wrapper handlers for clicking actions that need direct props access
     // This allows MenuItem to call handlers.handleAddClick
@@ -1832,8 +1861,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             created.push(...clones.map(image => ({ type: 'addedImage' as const, id: image.id })));
             onStyleUpdate(prev => {
                 const images = prev.addedImages || [];
-                const maxZ = Math.max(40, ...images.map((image) => image.zIndex ?? 11));
-                return { ...prev, addedImages: [...images, ...clones.map((image, index) => ({ ...image, zIndex: maxZ + index + 1 }))], name: 'Custom' };
+                return { ...prev, addedImages: [...images, ...clones.map(image => ({ ...image, zIndex: 1 }))], name: 'Custom' };
             });
         }
 
@@ -2054,33 +2082,42 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         }
     };
 
+    function canLayerObjects(current: MenuStyle, items: ObjectSelectionItem[], direction: 'front' | 'back') {
+        const imageIds = items.filter(item => item.type === 'addedImage').map(item => item.id);
+        const contentCanMove = items.some(item => {
+            if (item.type === 'addedImage') return false;
+            if (item.type === 'freeText' && current.freeTextBackgrounds?.[item.id]) return false;
+            const layer = item.type === 'freeText' ? getFreeTextLayer(current, item.id) : getContentLayer(current);
+            return direction === 'front' ? layer === 2 && hasForegroundImage(current) : layer === 4;
+        });
+        return contentCanMove || canMoveImageLayer(current.addedImages || [], imageIds, direction);
+    }
+
     const layerObjectItems = useCallback((items: ObjectSelectionItem[], direction: 'front' | 'back') => {
-        if (items.length === 0) return false;
-
-        const imageIds = new Set(items.filter((item) => item.type === 'addedImage').map((item) => item.id));
-        const hasContentItems = items.some((item) => item.type !== 'addedImage');
-
-        onStyleUpdate?.((prev) => {
-            const images = prev.addedImages || [];
-            const nextImageLayers = getImageLayerIndexes(images, Array.from(imageIds), direction);
-
+        if (!canLayerObjects(style, items, direction)) return false;
+        onStyleUpdate?.(previous => {
+            const images = previous.addedImages || [];
+            const imageIds = items.filter(item => item.type === 'addedImage').map(item => item.id);
+            const nextImageLayers = getImageLayerIndexes(images, imageIds, direction);
+            const layer = direction === 'front' ? 4 : 2;
+            const canRaise = direction === 'back' || hasForegroundImage(previous);
+            const freeTexts = canRaise ? items.filter(item => item.type === 'freeText' && !previous.freeTextBackgrounds?.[item.id]) : [];
             return {
-                ...prev,
-                contentLayer: hasContentItems ? (direction === 'front' ? 'front' : 'back') : prev.contentLayer,
-                addedImages: imageIds.size > 0
-                    ? images.map((image) => {
-                        if (nextImageLayers.has(image.id)) {
-                            return { ...image, zIndex: nextImageLayers.get(image.id) ?? image.zIndex };
-                        }
-                        return image;
-                    })
-                    : prev.addedImages,
+                ...previous,
+                contentLayer: canRaise && items.some(item => item.type === 'category' || item.type === 'product')
+                    ? direction : previous.contentLayer,
+                freeTextLayers: freeTexts.length ? {
+                    ...previous.freeTextLayers, ...Object.fromEntries(freeTexts.map(item => [item.id, layer])),
+                } : previous.freeTextLayers,
+                addedImages: nextImageLayers.size ? images.map(image => {
+                    const zIndex = nextImageLayers.get(image.id);
+                    return zIndex === undefined ? image : { ...image, zIndex };
+                }) : previous.addedImages,
                 name: 'Custom',
             };
         });
-
         return true;
-    }, [onStyleUpdate]);
+    }, [onStyleUpdate, style]);
 
     const hideObjectItems = useCallback((items: ObjectSelectionItem[]) => {
         const productIdsToHide = new Set<string>();
@@ -2168,7 +2205,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             ceilingId: nearby?.ceilingId ?? null,
             ceilingTop: nearby?.ceilingTop ?? pageDimensions.heightPx,
         } : nearby;
-        insertFreeTextProduct({
+        const id = insertFreeTextProduct({
             id: '',
             name: 'Novo texto',
             description: '',
@@ -2176,6 +2213,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             category: '',
             isFreeText: true,
         }, placement);
+        if (id) setNewTextToEdit(id);
     }, [getLastFreeTextPlacement, getFreeTextPlacementFromPoint, insertFreeTextProduct, pageDimensions.heightPx, pageDimensions.widthPx, props.externalAction, readOnly]);
 
     const openObjectMenu = useCallback((event: React.MouseEvent, item: CanvasContextMenuItem) => {
@@ -2199,7 +2237,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         if (!isTargetSelected) handlers.handleSelection(item.type, item.id, { backgroundPage: pageIndex });
 
         setObjectMenuPosition(null);
-        setObjectMenu({ x: event.clientX, y: event.clientY, item, pageIndex });
+        setObjectMenu({ x: event.clientX, y: event.clientY, item, pageIndex, anchored: true });
     }, [handlers]);
 
     (handlers as any).openObjectMenu = openObjectMenu;
@@ -2343,11 +2381,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const hasPhoto = photoTarget?.type === 'category' ? style.categoryImages?.[photoTarget.id]?.url : products.find(p => p.id === photoTarget?.id)?.image;
     const contextFreeTextId = contextObjectItem?.type === 'freeText' ? contextObjectItem.id : null;
     const objectMenuItems = contextObjectItem ? getActiveObjectItems(contextObjectItem) : [];
-    const canLayerMenuItems = (direction: 'front' | 'back') => {
-        const ids = objectMenuItems.filter(item => item.type === 'addedImage').map(item => item.id);
-        return (objectMenuItems.some(item => item.type !== 'addedImage') && style.contentLayer !== direction)
-            || canMoveImageLayer(style.addedImages || [], ids, direction);
-    };
+    const canLayerMenuItems = (direction: 'front' | 'back') => canLayerObjects(style, objectMenuItems, direction);
     const canHideFromObjectMenu = objectMenuItems.some((item) => {
         if (item.type === 'category') return !isPristineNewCategory(item.id, products);
         if (item.type === 'product') {
@@ -2611,7 +2645,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     )}
                     <div className="my-1 h-px bg-slate-100" />
                     <button disabled={!canLayerMenuItems('front')} onClick={() => runObjectAction('front', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><BringToFront size={15} /> Trazer para frente</button>
-                    <button disabled={!canLayerMenuItems('back')} onClick={() => runObjectAction('back', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><SendToBack size={15} /> Trazer para trás</button>
+                    <button disabled={!canLayerMenuItems('back')} onClick={() => runObjectAction('back', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><SendToBack size={15} /> Enviar para trás</button>
                     {contextObjectItem && (
                         <button type="button" onClick={(event) => {
                             if (contextImage) {

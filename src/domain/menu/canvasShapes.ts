@@ -78,7 +78,9 @@ function shapeLabel(shape: CanvasShape) {
   const weight = shape.textStyle?.fontWeight === 'bold' || shape.textStyle?.fontWeight === '700' ? '700'
     : shape.textStyle?.fontWeight === '400' ? '400' : '600';
   const escape = (line: string) => line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  return `<g transform="rotate(${shape.rotation})" fill="${shapeTextColor(shape)}" font-family="${font},Arial,sans-serif" font-size="${size}" font-weight="${weight}" font-style="${shape.textStyle?.italic ? 'italic' : 'normal'}" text-decoration="${shape.textStyle?.underline ? 'underline' : 'none'}" text-anchor="${align === 'left' ? 'start' : align === 'right' ? 'end' : 'middle'}">${lines.map((line, index) =>
+  const background = shape.textBackground && /^#[0-9a-f]{6}$/i.test(shape.textBackground)
+    ? `<rect x="${-width / 2 - 2}" y="${centerY - lines.length * size * .61 - 2}" width="${width + 4}" height="${lines.length * size * 1.22 + 4}" rx="2" fill="${shape.textBackground}"/>` : '';
+  return `<g transform="rotate(${shape.rotation})" fill="${shapeTextColor(shape)}" font-family="${font},Arial,sans-serif" font-size="${size}" font-weight="${weight}" font-style="${shape.textStyle?.italic ? 'italic' : 'normal'}" text-decoration="${shape.textStyle?.underline ? 'underline' : 'none'}" text-anchor="${align === 'left' ? 'start' : align === 'right' ? 'end' : 'middle'}">${background}${lines.map((line, index) =>
     `<text x="${x}" y="${centerY + (index - (lines.length - 1) / 2) * size * 1.22 + size * .34}">${escape(line)}</text>`).join('')}</g>`;
 }
 
@@ -150,7 +152,7 @@ export function setCanvasImageBackground(image: AddedImage, enabled: boolean, pa
   return enabled
     ? { ...image, backgroundPromptDismissed: true, repeatAsBackground: true, previousZIndex: image.zIndex, zIndex: 1 }
     : { ...image, backgroundPromptDismissed: true, pageIndex, repeatAsBackground: false,
-      zIndex: image.previousZIndex ?? (image.shape ? 1 : 11), previousZIndex: undefined };
+      zIndex: image.previousZIndex ?? 1, previousZIndex: undefined };
 }
 
 export function getSelectedLayerIds(items: readonly { type: string; id: string }[], sourceId: string): Set<string> {

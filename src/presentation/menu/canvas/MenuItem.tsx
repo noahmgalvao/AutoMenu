@@ -1,3 +1,4 @@
+import { getContentLayer, getFreeTextLayer } from '../../../domain/menu/imageLayers';
 import { getSurfaceFill } from '../designer/Decorations';
 import { categoryName } from '../../../domain/menu/categoryName';
 import type { MenuStyle, Product, ElementStyle, FontSizeLimitKey, MenuBorderScope } from '../../../domain/menu/model';
@@ -250,6 +251,10 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 priceAdjustmentCurrency={getMenuPriceSymbol(style)}
             />;
     };
+    const textContrastFill = (key: string): React.CSSProperties | undefined => {
+        const backgroundColor = style.textContrastFills?.[key];
+        return backgroundColor ? { backgroundColor, opacity: 1 } : undefined;
+    };
     const renderProductPrice = (product: Product, isEditable: boolean, badgeClass = '') => {
         if (style.showPrices === false) return null;
         const priceStyle = style.elementStyles?.productPrice || {};
@@ -260,6 +265,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             className={`relative ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap ${badgeClass}`}
             style={{
                 background: getSurfaceFill(style, 'price'), borderRadius: style.borders?.price?.radius,
+                ...textContrastFill('productPrice'),
                 color: `var(--automenu-preview-text, ${priceStyle.color || style.textColor})`,
                 fontFamily: priceStyle.fontFamily,
                 fontSize: `var(--automenu-fitted-price-size, ${baseSize}px)`,
@@ -375,7 +381,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 data-template-header
                 data-menu-border-surface="header" data-custom-border={getBorderOverride(style, 'header')}
                 className={`text-center group relative pointer-events-auto ${isTitleSelected || isSubtitleSelected ? 'ring-2 ring-indigo-500' : ''}`}
-                style={{ marginBottom: 0, background: getSurfaceFill(style, 'header'), borderRadius: style.borders?.header?.radius }}
+                style={{ marginBottom: 0, zIndex: 20, background: getSurfaceFill(style, 'header'), borderRadius: style.borders?.header?.radius }}
             >
             <BorderDecoration style={style} scope="header" />
             {heroImage && <img src={heroImage} data-template-hero-image alt="" draggable={false} onError={(event) => { event.currentTarget.hidden = true; }} />}
@@ -394,6 +400,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 className={`tracking-tight outline-none focus:bg-blue-50/50 rounded cursor-text ${isTitleSelected ? 'ring-2 ring-indigo-500 bg-indigo-50/20' : ''}`}
                 style={{ 
                     color: `var(--automenu-preview-primary, ${titleStyle.color || style.primaryColor})`,
+                    ...textContrastFill('menuTitle'),
                     fontFamily: titleStyle.fontFamily || style.fontFamily,
                     fontSize: `${clampFontSize(style, 'menuTitle', titleStyle.fontSize, 48)}px`,
                     fontWeight: titleStyle.fontWeight || '700',
@@ -442,6 +449,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 className={`opacity-90 outline-none focus:bg-blue-50/50 rounded cursor-text empty:before:pointer-events-none empty:before:opacity-50 empty:before:content-[attr(data-subtitle-placeholder)] ${showSubtitleDraft ? `empty:w-fit ${subtitlePlaceholderAlignment}` : ''} ${isSubtitleSelected ? 'ring-2 ring-indigo-500 bg-indigo-50/20' : ''}`}
                 style={{
                     color: `var(--automenu-preview-primary, ${subStyle.color || style.textColor})`,
+                    ...textContrastFill('menuSubtitle'),
                     fontFamily: subStyle.fontFamily || style.fontFamily,
                     fontSize: `${clampFontSize(style, 'menuSubtitle', subStyle.fontSize, 18)}px`,
                     fontWeight: subStyle.fontWeight,
@@ -493,12 +501,14 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             <div 
                 key={`cat-header-${item.data}`}
                 id={handlers.readOnly ? undefined : `category-header-${item.data}`}
+                data-canvas-layer={getContentLayer(style)}
                 data-category-id={item.data} 
                 data-pagination-item={getPaginationItemKey(item)}
                 onPointerDown={(e) => handlers.handleDragStart(e, 'category', item.data)}
                 onDragStart={(e) => e.preventDefault()}
                 className={`automenu-drag-item relative group transition-all duration-200 select-none touch-auto cursor-grab pointer-events-auto ${isSelected || isEditable ? 'z-[60]' : 'z-[1]'} ${inGroup ? 'px-2 pt-2' : 'hover:bg-black/5 rounded-lg'}`}
                 style={{ 
+                    zIndex: isBeingDragged ? 65 : getContentLayer(style) * 10 + (isSelected || isEditable ? 1 : 0),
                     marginBottom: `${contentSpacing.categoryToProduct}px`,
                     touchAction: isEditable ? undefined : 'none'
                 }}
@@ -538,6 +548,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                         className={`min-w-0 max-w-full shrink whitespace-normal break-words [overflow-wrap:anywhere] [word-break:normal] outline-none rounded ${isEditable ? `${editableTextClassName} z-10` : ''}`}
                         style={{ 
                             color: `var(--automenu-preview-primary, ${catStyle.color || style.primaryColor})`,
+                            ...textContrastFill('category'),
                             fontFamily: catStyle.fontFamily,
                             fontSize: `${clampFontSize(style, 'category', catStyle.fontSize, 24)}px`,
                             fontWeight: catStyle.fontWeight,
@@ -589,6 +600,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             ? Math.max(0, Math.min(pageHeight, rawCustomMarginTop))
             : 0;
         const productAddControls = handlers.getSelectionAddControls?.(productSelectionType, product.id) || { top: true, bottom: true };
+        const layer = product.isFreeText ? getFreeTextLayer(style, product.id) : getContentLayer(style);
         return (
                 <div 
                     key={product.id}
@@ -598,18 +610,19 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     data-drag-id={backgroundText && (handlers.readOnly || !primary) ? undefined : product.id}
                     data-template-product={product.isFreeText ? undefined : true}
                     data-canvas-free-text-id={product.isFreeText ? product.id : undefined}
+                    data-canvas-layer={layer}
                     data-menu-border-surface={product.isFreeText ? 'freeText' : 'product'} data-custom-border={getBorderOverride(style, product.isFreeText ? 'freeText' : 'product', product.id)}
                     data-pagination-item={getPaginationItemKey(item)}
                     data-drag-group={item.category}
                     data-active-canvas-drag={isBeingDragged || undefined}
-                    onPointerDown={backgroundText && (!isSelected || (handlers.selectedItems?.length || 0) < 2)
-                        ? undefined : (e) => handlers.handleDragStart(e, 'product', product.id, item.category)}
+                    onPointerDown={handlers.readOnly ? undefined : (e) => handlers.handleDragStart(e, 'product', product.id, item.category)}
                     onDragStart={(e) => e.preventDefault()}
                     onContextMenu={(e) => handlers.openObjectMenu?.(e, { type: productSelectionType, id: product.id })} 
                     onClick={(e) => handleItemClick(e, productSelectionType, product.id)}
                     onDoubleClick={(e) => e.stopPropagation()} 
-                    className={`automenu-drag-item relative group rounded-lg transition-all duration-200 ${handlers.readOnly && backgroundText ? 'pointer-events-none' : 'pointer-events-auto'} ${product.isFreeText ? 'p-1' : 'p-2'} ${isEditable ? 'select-text touch-auto cursor-text' : backgroundText ? 'select-none touch-auto cursor-pointer' : 'select-none touch-auto cursor-grab'} ${isSelected || isEditable ? 'z-[60]' : 'z-[1]'} ${inGroup ? 'ml-0 mb-0' : '-ml-2 mb-2 hover:bg-black/5'} ${isSelected && !isEditable ? 'bg-indigo-50/30' : ''} ${product.isFreeText ? 'transition-none flex-none' : ''}`}
+                    className={`automenu-drag-item relative group rounded-lg transition-all duration-200 ${handlers.readOnly && backgroundText ? 'pointer-events-none' : 'pointer-events-auto'} ${product.isFreeText ? 'p-1' : 'p-2'} ${isEditable ? 'select-text touch-auto cursor-text' : 'select-none touch-auto cursor-grab'} ${isSelected || isEditable ? 'z-[60]' : 'z-[1]'} ${inGroup ? 'ml-0 mb-0' : '-ml-2 mb-2 hover:bg-black/5'} ${isSelected && !isEditable ? 'bg-indigo-50/30' : ''} ${product.isFreeText ? 'transition-none flex-none' : ''}`}
                     style={{
+                        zIndex: isBeingDragged ? 65 : layer * 10 + (isSelected || isEditable ? 1 : 0),
                         background: getSurfaceFill(style, productSelectionType === 'freeText' ? 'freeText' : 'product', product.id),
                         borderRadius: product.isFreeText ? style.freeTextBorders?.[product.id]?.radius : style.borders?.product?.radius,
                         width: product.isFreeText ? (product.freeTextWidth ? `${product.freeTextWidth}px` : 'fit-content') : undefined,
@@ -660,6 +673,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             id={handlers.readOnly || !primary ? undefined : `product-name-${product.id}`} data-product-edit-id={product.id} data-placeholder-field="free-text" className={`whitespace-pre-wrap break-words [overflow-wrap:anywhere] outline-none rounded ${isEditable ? editableTextClassName : ''}`}
                             style={{ 
                                 color: nameStyle.color || style.textColor,
+                                ...textContrastFill(`freeText:${product.id}`),
                                 fontFamily: nameStyle.fontFamily,
                                 fontSize: `${clampFontSize(style, 'freeText', nameStyle.fontSize, 18)}px`,
                                 fontWeight: nameStyle.fontWeight,
@@ -718,6 +732,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                     id={handlers.readOnly ? undefined : `product-name-${product.id}`} data-product-edit-id={product.id} data-placeholder-field="product-name" className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditable ? editableTextClassName : ''}`}
                                     style={{ 
                                         color: nameStyle.color || style.textColor,
+                                        ...textContrastFill('productName'),
                                         fontFamily: nameStyle.fontFamily,
                                         fontSize: `${clampFontSize(style, 'productName', nameStyle.fontSize, 18)}px`,
                                         fontWeight: nameStyle.fontWeight,
@@ -746,6 +761,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             data-template-description id={handlers.readOnly ? undefined : `product-description-${product.id}`} data-product-edit-id={product.id} data-placeholder-field="product-description" className={`max-w-full opacity-80 break-words [overflow-wrap:anywhere] [word-break:normal] leading-relaxed outline-none rounded ${isEditable ? `min-h-[1.5em] ${editableTextClassName}` : ''}`}
                             style={{ 
                                 color: `var(--automenu-preview-text, ${descStyle.color || style.textColor})`,
+                                ...textContrastFill('productDescription'),
                                 fontFamily: descStyle.fontFamily,
                                 fontSize: `${clampFontSize(style, 'productDescription', descStyle.fontSize, 14)}px`,
                                 fontWeight: descStyle.fontWeight,
@@ -843,6 +859,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 data-drag-scope={handlers.dragScope}
                                 data-drag-type="product"
                                 data-drag-id={product.id}
+                                data-canvas-layer={getContentLayer(style)}
                                 data-template-product={product.isFreeText ? undefined : true}
                                 data-menu-border-surface="product" data-custom-border={getBorderOverride(style, 'product')}
                                 data-product-card-surface={isCardLayout || undefined}
@@ -854,7 +871,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 onContextMenu={(e) => handlers.openObjectMenu?.(e, { type: 'product', id: product.id })} 
                                 onClick={(e) => handleItemClick(e, 'product', product.id)}
                                 className={`automenu-drag-item relative group min-w-0 transition-colors pointer-events-auto p-0 ${isEditable ? 'select-text touch-auto cursor-text' : 'select-none touch-auto cursor-grab'} ${isCardLayout ? 'rounded-xl' : 'rounded-lg'} ${isSelected || isEditable ? 'z-[60] bg-indigo-50/30' : 'z-[1] hover:bg-black/5'}`}
-                                style={isCardLayout ? { borderRadius: cardRadius } : undefined}
+                                style={{ zIndex: isBeingDragged ? 65 : getContentLayer(style) * 10 + (isSelected || isEditable ? 1 : 0), borderRadius: isCardLayout ? cardRadius : undefined }}
                             >
                                 <BorderDecoration style={style} scope="product" />
                                 {isSelected && handlers.selectedId === product.id && !handlers.editingId && !handlers.multiSelectMode && (
@@ -907,7 +924,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         data-placeholder-field="product-name"
                                                         data-product-edit-id={product.id}
                                                         className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditable ? editableTextClassName : ''}`}
-                                                        style={{ color: `var(--automenu-preview-text, ${nameStyle.color || style.textColor})`, fontFamily: nameStyle.fontFamily, fontSize: clampFontSize(style, 'productName', nameStyle.fontSize, 18), fontWeight: nameStyle.fontWeight, fontStyle: nameStyle.italic ? 'italic' : 'normal', textDecoration: nameStyle.underline ? 'underline' : 'none', textAlign: nameStyle.textAlign, textTransform: nameStyle.textTransform }}
+                                                        style={{ ...textContrastFill('productName'), color: `var(--automenu-preview-text, ${nameStyle.color || style.textColor})`, fontFamily: nameStyle.fontFamily, fontSize: clampFontSize(style, 'productName', nameStyle.fontSize, 18), fontWeight: nameStyle.fontWeight, fontStyle: nameStyle.italic ? 'italic' : 'normal', textDecoration: nameStyle.underline ? 'underline' : 'none', textAlign: nameStyle.textAlign, textTransform: nameStyle.textTransform }}
                                                         contentEditable={Boolean(isEditable)}
                                                         suppressContentEditableWarning
                                                         onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'name')}
@@ -937,7 +954,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                 data-placeholder-field="product-description"
                                                 data-product-edit-id={product.id}
                                                 className={`max-w-full opacity-75 break-words [overflow-wrap:anywhere] [word-break:normal] flex-grow outline-none rounded ${isEditable ? `min-h-[1.5em] ${editableTextClassName}` : 'line-clamp-4'}`}
-                                                style={{ color: `var(--automenu-preview-text, ${descStyle.color || style.textColor})`, fontFamily: descStyle.fontFamily, fontSize: clampFontSize(style, 'productDescription', descStyle.fontSize, 14), fontWeight: descStyle.fontWeight, fontStyle: descStyle.italic ? 'italic' : 'normal', textDecoration: descStyle.underline ? 'underline' : 'none', textAlign: descStyle.textAlign }}
+                                                style={{ ...textContrastFill('productDescription'), color: `var(--automenu-preview-text, ${descStyle.color || style.textColor})`, fontFamily: descStyle.fontFamily, fontSize: clampFontSize(style, 'productDescription', descStyle.fontSize, 14), fontWeight: descStyle.fontWeight, fontStyle: descStyle.italic ? 'italic' : 'normal', textDecoration: descStyle.underline ? 'underline' : 'none', textAlign: descStyle.textAlign }}
                                                 contentEditable={Boolean(isEditable)}
                                                 tabIndex={isEditable ? 0 : undefined}
                                                 suppressContentEditableWarning

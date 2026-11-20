@@ -134,7 +134,7 @@ export function pasteCanvasObjects(products: Product[], style: MenuStyle, conten
         const id = old?.id || crypto.randomUUID();
         next.addedImages.push({ ...image, id, pageIndex: at.pageIndex, x: at.pageX ?? 0, y: at.y,
             width: old?.width ?? image.width, repeatAsBackground: old?.repeatAsBackground ?? false,
-            zIndex: old?.zIndex ?? Math.max(40, ...next.addedImages.map(i => i.zIndex ?? 11)) + 1 });
+            zIndex: old?.zIndex ?? 1 });
         selection.push({ type: 'addedImage', id });
     }
     function copySetting<T>(map: Record<string, T>, id: string, value?: T) {

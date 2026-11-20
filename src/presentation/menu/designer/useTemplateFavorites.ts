@@ -85,8 +85,10 @@ export function useTemplateFavorites(userId: string) {
 
   return {
     ids: visibleFavorites(session.cache), announcement,
-    toggle(id: string, name: string) {
-      const on = !visibleFavorites(session.cache).has(id);
+    toggle(id: string, name: string, desired?: boolean) {
+      const favorite = visibleFavorites(session.cache).has(id);
+      const on = desired ?? !favorite;
+      if (on === favorite) return;
       update({ ...session.cache, pending: { ...session.cache.pending, [id]: on } });
       setAnnouncement(name + (on ? ' adicionado aos favoritos.' : ' removido dos favoritos.'));
       void sync();

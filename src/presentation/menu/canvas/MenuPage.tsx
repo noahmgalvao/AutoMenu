@@ -1,3 +1,4 @@
+import { getContentLayer, getImageLayer } from '../../../domain/menu/imageLayers';
 import { CanvasLayerImage } from './CanvasLayerImage';
 import type { SelectionItem } from '../interactions/types';
 import { getTemplateColors, getTemplateDesignAttributes } from './templateStyles';
@@ -279,7 +280,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 pageIndex={pageIndex}
                 layoutKey={`${flowIndex}:${categoryColumnWidths.join(',')}`}
                 data-chunk-id={chunk.chunkId}
-                style={isFreeTextTarget ? undefined : { background: renderedStyle.fills?.categoryGroup, borderRadius: renderedStyle.borders?.categoryGroup?.radius }}
+                style={isFreeTextTarget ? undefined : { borderRadius: renderedStyle.borders?.categoryGroup?.radius }}
                 data-category-chunk={chunk.category}
                 data-active-canvas-drag={isCategoryDragged || undefined}
                 data-menu-border-surface={isFreeTextTarget ? undefined : 'categoryGroup'}
@@ -293,7 +294,12 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 className={`relative rounded-xl ${!isFreeTextTarget && ((renderedStyle.fills?.categoryGroup && renderedStyle.fills.categoryGroup !== 'transparent')
                     || renderedStyle.borders?.categoryGroup?.sides.length) ? 'p-1.5' : ''} ${isCategoryDragged || Number.isFinite(desiredPageY) ? 'transition-none' : 'transition-all duration-200'} pointer-events-none ${isCategorySelected || isCategoryDragged ? `ring-2 ring-indigo-500 bg-indigo-50/10 ${selectionLayerClasses.outline}` : ''}`}
             >
-                {!isFreeTextTarget && <BorderDecoration style={renderedStyle} scope="categoryGroup" />}
+                {!isFreeTextTarget && <>
+                    {renderedStyle.fills?.categoryGroup && <div data-category-group-paint aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 rounded-[inherit]"
+                        style={{ zIndex: getContentLayer(style) * 10, background: renderedStyle.fills.categoryGroup }} />}
+                    <BorderDecoration style={renderedStyle} scope="categoryGroup" />
+                </>}
                 {isCategorySelected && isCategoryControlAnchor && !isCategoryDragged && !handlers.editingId && !handlers.multiSelectMode && (
                     <ColumnResizeHandles
                         columnIndex={chunk.columnIndex}
@@ -536,13 +542,14 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                             id={readOnly ? undefined : `added-image-${pageIndex}-${img.id}`}
                             data-added-image-drag="true"
                             data-added-image-id={img.id}
-                            data-canvas-background-layer={img.repeatAsBackground || (img.shape && (img.zIndex ?? 1) <= 1) ? 'true' : undefined}
+                            data-canvas-layer={getImageLayer(img)}
+                            data-canvas-background-layer={getImageLayer(img) === 1 ? 'true' : undefined}
                             className="automenu-drag-item absolute group cursor-move"
                             style={{
                                 left: `${img.x}px`,
                                 top: `${img.y}px`,
                                 width: `${img.width}px`,
-                                zIndex: img.repeatAsBackground ? 1 : (img.zIndex ?? 11),
+                                zIndex: getImageLayer(img) * 10,
                                 touchAction: 'none',
                             }}
                             onPointerDown={(e) => {
@@ -566,7 +573,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                     const pages: number[] = selected?.backgroundPages?.filter((index: number) => index < pageCount) ?? [];
                     const primaryPage = pages[pages.length - 1] ?? Math.min(layer.pageIndex, pageCount - 1);
                     return (
-                        <div key={product.id} data-canvas-background-layer="true" data-page-positioned-text="true" className="pointer-events-none absolute z-[1]"
+                        <div key={product.id} data-canvas-background-layer="true" data-page-positioned-text="true" className="pointer-events-none absolute z-[11]"
                             style={{ left: layer.x, top: layer.y, width: Math.max(1, pageDimensions.widthPx - layer.x) }}>
                             <MenuItem
                                 item={{ type: 'product-item', data: { ...product, customMarginTop: 0, freeTextWidth: product.freeTextWidth || layer.width }, category: product.category }}
@@ -589,7 +596,6 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         paddingBottom: `${margins.bottom}px`,
                         paddingLeft: `${margins.left}px`,
                         paddingRight: `${margins.right}px`,
-                        zIndex: style.contentLayer === 'front' ? 30 : style.contentLayer === 'back' ? 2 : 10,
                     }}
                 >
                     {renderPageContent()}
@@ -772,12 +778,12 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         className={`${canvasActionButtonClass} ${handlers.multiSelectMode ? 'before:!bg-indigo-50 !text-indigo-700' : ''}`}>
                         <CopyCheck size={19} />
                     </button>
-                    <button data-open-object-menu="true" onClick={(e) => handlers.openObjectMenu?.(e, { type: 'addedImage', id: activeImage.id })} className={canvasActionButtonClass} title="Mais opções"><MoreHorizontal size={20} /></button>
                     <button type="button" className={`${canvasActionButtonClass} !text-red-600 hover:before:!border-red-300 hover:before:!bg-red-50`}
                         aria-hidden={handlers.objectMenuOpen || undefined} tabIndex={handlers.objectMenuOpen ? -1 : undefined}
                         onClick={(event) => handlers.handleRemoveImage(event, activeImage.id)} title={activeImage.shape ? 'Remover forma' : 'Remover imagem'}>
                         <Trash2 size={19} />
                     </button>
+                    <button data-open-object-menu="true" data-object-menu-type="addedImage" data-object-menu-id={activeImage.id} onClick={(e) => handlers.openObjectMenu?.(e, { type: 'addedImage', id: activeImage.id })} className={canvasActionButtonClass} title="Mais opções"><MoreHorizontal size={20} /></button>
                     {activeImage.shape && formattingShapeId === activeImage.id && (
                         shapeTextEditingId === activeImage.id && !isMiniFoodKind(activeImage.shape.kind) ?
                         <InlineStyleToolbar targetElementId={`added-image-${pageIndex}-${activeImage.id}`} dismissOnClickInCanvas

@@ -1,3 +1,4 @@
+import { applyContrastTip, scanBackgroundTextOverlap, scanTextContrast, type ContrastTip, type OverlapTip } from './canvas/canvasTextTips';
 import { categoryName } from '../../domain/menu/categoryName';
 import { applyTemplateToCurrentStyle, getAppliedTemplateId } from '../../application/templates/templateApplication';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
@@ -158,6 +159,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         setShapePickerRequest({ id });
     };
     const [tipsOpen, setTipsOpen] = useState(false);
+    const [contrastTips, setContrastTips] = useState<ContrastTip[]>([]);
+    const [backgroundOverlapTips, setBackgroundOverlapTips] = useState<OverlapTip[]>([]);
     const [splitCategorySwap, setSplitCategorySwap] = useState<SplitCategorySwap | null>(null);
     const [fontTips, setFontTips] = useState<FontTip[]>([]);
     const [pendingFontPropagation, setPendingFontPropagation] = useState<FontPropagationRequest | null>(null);
@@ -239,7 +242,41 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const visibleSplitCategorySwap = splitCategoryTipKey && !dismissedTips.has(splitCategoryTipKey) ? splitCategorySwap : null;
     const configuredCanvasFonts = getConfiguredCanvasFonts(style, products);
     const showMixedFontTip = configuredCanvasFonts.length > 1 && !dismissedTips.has('mixed-fonts');
-    const hasVisibleTips = visibleFontTips.length > 0 || showMixedFontTip || showOverlapTip || showOffCanvasTip || showPositionedCategoryTip || Boolean(visibleSplitCategorySwap);
+    const hasVisibleTips = visibleFontTips.length > 0 || showMixedFontTip || showOverlapTip || showOffCanvasTip
+        || showPositionedCategoryTip || Boolean(visibleSplitCategorySwap) || contrastTips.length > 0 || backgroundOverlapTips.length > 0;
+
+    useEffect(() => {
+        const root = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas]');
+        if (!root) return;
+        let timer: number | undefined;
+        let detection: AbortController | undefined;
+        const schedule = () => {
+            window.clearTimeout(timer);
+            detection?.abort();
+            timer = window.setTimeout(() => {
+                const run = new AbortController();
+                detection = run;
+                setBackgroundOverlapTips(scanBackgroundTextOverlap(root, style));
+                void scanTextContrast(root, style, run.signal).then(tips => {
+                    if (!run.signal.aborted) setContrastTips(tips);
+                }).catch(() => undefined);
+            }, 400);
+        };
+        const observer = new ResizeObserver(schedule);
+        const zoomLayer = root.querySelector('[data-canvas-zoom-layer]');
+        if (zoomLayer) observer.observe(zoomLayer);
+        root.addEventListener('load', schedule, true);
+        document.fonts?.addEventListener('loadingdone', schedule);
+        schedule();
+        return () => {
+            observer.disconnect();
+            root.removeEventListener('load', schedule, true);
+            document.fonts?.removeEventListener('loadingdone', schedule);
+            window.clearTimeout(timer);
+            detection?.abort();
+        };
+    }, [products, style, isOpen]);
+
 
     useEffect(() => {
         const mediaQuery = window.matchMedia('(min-width: 768px)');
@@ -1384,13 +1421,17 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         const shapeSize = getCanvasShapeDimensions(shape);
         setStyle(previous => {
             const dimensions = resolveMenuPageDimensions(previous);
-            return {
-                ...previous, name: 'Custom',
-                addedImages: [...(previous.addedImages || []), {
-                    id, shape, url: canvasShapeUrl(shape), zIndex: 1,
-                    ...positionCanvasImage(focus, dimensions, Math.min(180, dimensions.widthPx / 3), shapeSize.height / shapeSize.width),
-                }],
-            };
+            const images = previous.addedImages || [];
+            const position = positionCanvasImage(focus, dimensions, Math.min(180, dimensions.widthPx / 3), shapeSize.height / shapeSize.width);
+            const maxX = dimensions.widthPx - position.width;
+            const maxY = dimensions.heightPx - position.width * shapeSize.height / shapeSize.width;
+            for (let attempt = 0; attempt < images.length; attempt++) {
+                if (!images.some(image => image.pageIndex === position.pageIndex
+                    && Math.abs(image.x - position.x) < 2 && Math.abs(image.y - position.y) < 2)) break;
+                position.x += position.x + 14 <= maxX ? 14 : -14;
+                position.y += position.y + 14 <= maxY ? 14 : -14;
+            }
+            return { ...previous, name: 'Custom', addedImages: [...images, { id, shape, url: canvasShapeUrl(shape), zIndex: 1, ...position }] };
         });
         setSelection({ type: 'addedImage', id });
     };
@@ -1421,13 +1462,12 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
             setStyle(prev => {
                 const currentImages = prev.addedImages || [];
-                const maxZ = Math.max(40, ...currentImages.map(img => img.zIndex ?? 11));
                 const newImage: AddedImage = {
                     id: newId,
                     url: uploaded.url,
                     assetId: uploaded.asset.id,
                     ...positionCanvasImage(focus, resolveMenuPageDimensions(prev), 300, size ? size.height / size.width : 1),
-                    zIndex: maxZ + 1
+                    zIndex: 1
                 };
 
                 return {
@@ -1635,6 +1675,29 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         setTipsOpen(false);
     };
 
+    const resolveBackgroundOverlap = (current: MenuStyle, ids: ReadonlySet<string>) => {
+        const canvas = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas]');
+        if (!canvas || !ids.size) return current;
+        const positions = { ...current.freeTextBackgrounds };
+        let changed = false;
+        for (const { id, position } of scanBackgroundTextOverlap(canvas, current, ids)) {
+            if (!position || !positions[id]) continue;
+            positions[id] = { ...positions[id], ...position };
+            changed = true;
+        }
+        return changed ? { ...current, name: 'Custom', freeTextBackgrounds: positions } : current;
+    };
+
+    const applySingleContrastTip = (tip: ContrastTip, choice: 'color' | 'fill') => {
+        const next = applyContrastTip(style, products, tip, choice);
+        if (setProductsAndStyle && next.products !== products) setProductsAndStyle(next.products, next.style, 'Contraste ajustado');
+        else {
+            if (next.products !== products) setProducts?.(next.products);
+            if (next.style !== style) setStyle(next.style);
+        }
+        setContrastTips(current => current.filter(item => item.key !== tip.key));
+    };
+
     const applyAllSuggestions = () => {
         let nextProducts = products;
         let nextStyle = style;
@@ -1731,6 +1794,13 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         if (visibleSplitCategorySwap && nextProducts === products && nextStyle === style) {
             nextStyle = { ...style, ...visibleSplitCategorySwap.layout, name: 'Custom' };
         }
+        nextStyle = resolveBackgroundOverlap(nextStyle, new Set(backgroundOverlapTips.map(tip => tip.id)));
+        for (const tip of contrastTips) {
+            const next = applyContrastTip(nextStyle, nextProducts, tip, 'color');
+            nextStyle = next.style;
+            nextProducts = next.products;
+        }
+        setContrastTips([]);
         if (nextProducts !== products || nextStyle !== style) {
             if (setProductsAndStyle) {
                 setProductsAndStyle(nextProducts, nextStyle, 'Ajustes sugeridos aplicados');
@@ -1825,6 +1895,37 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                 </div>
 
                                 <div className="max-h-[min(60vh,32rem)] space-y-4 overflow-y-auto p-4">
+                                    {backgroundOverlapTips.length > 0 && <section>
+                                        <h3 className="mb-2 text-xs font-semibold text-slate-800">Textos sobrepostos no plano de fundo</h3>
+                                        <div className="space-y-2">
+                                            {backgroundOverlapTips.map(tip => <div key={tip.id} className="flex items-center justify-between gap-2 rounded-xl bg-indigo-50 p-3 text-xs">
+                                                <span className="min-w-0 break-words">{tip.label}{!tip.position && ' · Sem espaço livre em todas as páginas'}</span>
+                                                <button type="button" disabled={!tip.position}
+                                                    onClick={() => setStyle(current => resolveBackgroundOverlap(current, new Set([tip.id])))}
+                                                    className="shrink-0 rounded-lg border border-indigo-200 bg-white px-2.5 py-1.5 font-semibold text-indigo-800 disabled:opacity-40">
+                                                    Ajustar posição
+                                                </button>
+                                            </div>)}
+                                        </div>
+                                    </section>}
+                                    {contrastTips.length > 0 && <section>
+                                        <h3 className="mb-2 text-xs font-semibold text-slate-800">Textos com pouco contraste</h3>
+                                        <div className="space-y-2">
+                                            {contrastTips.map(tip => <div key={tip.key} className="space-y-2 rounded-xl bg-amber-50 p-3 text-xs text-slate-700">
+                                                <p className="break-words font-semibold">{tip.label}</p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    <button type="button" onClick={() => applySingleContrastTip(tip, 'color')}
+                                                        className="rounded-lg bg-indigo-700 px-2.5 py-1.5 font-semibold text-white">
+                                                        {tip.color ? 'Ajustar cor do texto' : 'Ajustar com preenchimento'}
+                                                    </button>
+                                                    {tip.color && <button type="button" onClick={() => applySingleContrastTip(tip, 'fill')}
+                                                        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 font-semibold text-slate-700">
+                                                        Adicionar preenchimento
+                                                    </button>}
+                                                </div>
+                                            </div>)}
+                                        </div>
+                                    </section>}
                                     {visibleSplitCategorySwap && (
                                         <section>
                                             <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Manter categoria junta</h3>

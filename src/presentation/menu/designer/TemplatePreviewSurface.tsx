@@ -1,3 +1,4 @@
+import { Heart } from 'lucide-react';
 import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MenuStyle, Product, SortOption } from '../../../domain/menu/model';
 import { useMenuData } from '../interactions/useMenuData';
@@ -41,10 +42,14 @@ interface TemplatePreviewProps {
   products: Product[];
   sortOption: SortOption;
   splitCategoryAcrossPages?: boolean;
+  pageIndex: number;
+  onPageChange: (index: number) => void;
+  heart: number;
+  onHeartEnd: () => void;
 }
 
 export const TemplatePreviewSurface = memo(function TemplatePreviewSurface({
-  current, template, products, sortOption, splitCategoryAcrossPages,
+  current, template, products, sortOption, splitCategoryAcrossPages, pageIndex, onPageChange, heart, onHeartEnd,
 }: TemplatePreviewProps) {
   const sample = products.length === 0;
   const content = sample ? sampleProducts : products;
@@ -65,8 +70,11 @@ export const TemplatePreviewSurface = memo(function TemplatePreviewSurface({
   const stage = useRef<HTMLDivElement>(null);
   useResponsivePrices(stage, style);
   const [scale, setScale] = useState(0);
-  const [pageIndex, setPageIndex] = useState(0);
-  const visibleIndex = Math.min(pageIndex, pages.length - 1);
+  const lastPage = Math.max(0, pages.length - 1);
+  const visibleIndex = Math.min(pageIndex, lastPage);
+  useLayoutEffect(() => {
+    if (pageIndex !== visibleIndex) onPageChange(visibleIndex);
+  }, [onPageChange, pageIndex, visibleIndex]);
   const fonts = useMemo(() => [style.fontFamily, ...Object.values(style.elementStyles)
     .flatMap((element) => element?.fontFamily ? [element.fontFamily] : [])], [style]);
   const readOnlyHandlers = useMemo(() => ({
@@ -86,7 +94,7 @@ export const TemplatePreviewSurface = memo(function TemplatePreviewSurface({
   return (
     <div className="template-immersive-preview">
       <DynamicFontLoader fonts={fonts} />
-      <div ref={stage} className="grid min-h-0 flex-1 place-items-center overflow-hidden" role="img" aria-label={`Prévia de ${template.name}, página ${visibleIndex + 1} de ${pages.length}`}>
+      <div ref={stage} className="relative grid min-h-0 flex-1 place-items-center overflow-hidden" role="img" aria-label={`Prévia de ${template.name}, página ${visibleIndex + 1} de ${pages.length}`}>
         {scale > 0 && <div inert style={{ width: widthPx * scale, height: heightPx * scale }}>
           <div style={{ width: widthPx, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
             <MenuPage pageIndex={visibleIndex} page={pages[visibleIndex]} style={style} products={content}
@@ -94,13 +102,15 @@ export const TemplatePreviewSurface = memo(function TemplatePreviewSurface({
               onAddPage={() => undefined} onDeletePage={() => undefined} onSetPageNumbersVisible={() => undefined} readOnly />
           </div>
         </div>}
+        {heart > 0 && <div key={heart} data-discover-like-heart className="template-discover-like-heart"
+          aria-hidden="true" onAnimationEnd={onHeartEnd}><Heart fill="currentColor" /></div>}
       </div>
       {pages.length > 1 && <nav aria-label="Páginas da prévia" className="template-discover-pages" data-template-preview-controls>
         <button type="button" className="rounded-md p-2 hover:bg-white/15 disabled:opacity-40" disabled={visibleIndex === 0}
-          onClick={() => setPageIndex(visibleIndex - 1)} aria-label="Página anterior">←</button>
+          onClick={() => onPageChange(visibleIndex - 1)} aria-label="Página anterior">←</button>
         <span>Página {visibleIndex + 1} / {pages.length}</span>
         <button type="button" className="rounded-md p-2 hover:bg-white/15 disabled:opacity-40" disabled={visibleIndex === pages.length - 1}
-          onClick={() => setPageIndex(visibleIndex + 1)} aria-label="Próxima página">→</button>
+          onClick={() => onPageChange(visibleIndex + 1)} aria-label="Próxima página">→</button>
       </nav>}
     </div>
   );

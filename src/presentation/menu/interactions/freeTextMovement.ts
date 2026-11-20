@@ -82,7 +82,7 @@ export const getCollisionSafeFreeTextTop = ({
         ...excludeProductIds.map((productId) => `product-container-${productId}`),
     ]);
     const objects = Array.from(root.querySelectorAll<HTMLElement>(
-        '[id^="product-container-"], [id^="category-header-"], #menu-title-text, #menu-subtitle-text, [data-added-image-drag="true"]'
+        '[id^="product-container-"], [id^="category-header-"], #menu-title-text, #menu-subtitle-text'
     ))
         .filter((element) => (
             element.isConnected &&
@@ -99,6 +99,7 @@ export const getCollisionSafeFreeTextTop = ({
     const overlaps = (top: number, rect: DOMRect) => (
         top < rect.bottom + gap && top + height > rect.top - gap
     );
+    if (maxBottom - minTop < height) return null;
     const boundedDesiredTop = clampTop(desiredTop);
     const collision = objects.find((rect) => overlaps(boundedDesiredTop, rect));
     if (!collision) return boundedDesiredTop;
