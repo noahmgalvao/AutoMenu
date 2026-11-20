@@ -1,3 +1,4 @@
+import { observeAnchorScroll } from './canvasViewport';
 import React from 'react';
 import { MAX_PHOTO_SCALE, MIN_PHOTO_SCALE } from '../../../domain/menu/styleRules';
 import { HoldStepButton } from '../../common/HoldStepButton';
@@ -31,11 +32,11 @@ export const ProductImageToolbar = ({ productId, anchorId, flips, scale, onScale
         observer.observe(anchor);
         observer.observe(menu);
         window.addEventListener('resize', updatePosition);
-        window.addEventListener('scroll', updatePosition, true);
+        const stopObservingScroll = observeAnchorScroll(anchor, updatePosition);
         return () => {
             observer.disconnect();
             window.removeEventListener('resize', updatePosition);
-            window.removeEventListener('scroll', updatePosition, true);
+            stopObservingScroll();
         };
     }, [anchorId]);
 

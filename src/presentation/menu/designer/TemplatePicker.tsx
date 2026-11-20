@@ -162,7 +162,7 @@ function Discover({ current, products, sortOption, splitCategoryAcrossPages, app
   const lastLiked = useRef(0);
   const pointerKind = useRef('');
   const tapTarget = useRef<{ button: HTMLButtonElement; x: number; y: number; pointerId: number } | null>(null);
-  const lastTouchClick = useRef<{ button: HTMLButtonElement; at: number } | null>(null);
+  const handledTouchAt = useRef(-Infinity);
   const titleId = useId();
   const focused = results.find((template) => template.id === focusId) || results[0];
   useEffect(() => {
@@ -226,6 +226,7 @@ function Discover({ current, products, sortOption, splitCategoryAcrossPages, app
     <dialog ref={dialog} data-no-browser-selection tabIndex={-1} aria-labelledby={titleId} className="template-discover" style={{ '--discover-accent': focused?.primaryColor } as React.CSSProperties}
       onCancel={(event) => { event.preventDefault(); onClose(); }}
       onPointerDownCapture={(event) => {
+        handledTouchAt.current = -Infinity;
         if (event.pointerType !== 'touch' || !event.isPrimary) return;
         const button = (event.target as HTMLElement).closest('button');
         tapTarget.current = button?.disabled || !button ? null : {
@@ -240,13 +241,13 @@ function Discover({ current, products, sortOption, splitCategoryAcrossPages, app
         if (Math.hypot(event.clientX - tap.x, event.clientY - tap.y) > 12) return;
         if (!tap.button.contains(event.target as Node)) return;
         // Touch browsers can suppress the compatibility click following a swipe.
-        lastTouchClick.current = { button: tap.button, at: performance.now() };
+        handledTouchAt.current = performance.now();
         tap.button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }));
       }}
       onClickCapture={(event) => {
-        const tap = lastTouchClick.current;
-        if (event.nativeEvent.isTrusted && event.detail > 0 && tap?.button.contains(event.target as Node)
-            && performance.now() - tap.at < 550) {
+        if (event.nativeEvent.isTrusted && event.detail > 0 && performance.now() - handledTouchAt.current < 550) {
+          // The gallery can replace the tapped button before the browser dispatches its click.
+          handledTouchAt.current = -Infinity;
           event.preventDefault();
           event.stopPropagation();
         }

@@ -1,3 +1,4 @@
+import { hasMenuContentMutation } from './canvas/menuContentMutations';
 import { applyContrastTip, scanBackgroundTextOverlap, scanTextContrast, type ContrastTip, type OverlapTip } from './canvas/canvasTextTips';
 import { categoryName } from '../../domain/menu/categoryName';
 import { applyTemplateToCurrentStyle, getAppliedTemplateId } from '../../application/templates/templateApplication';
@@ -6,7 +7,7 @@ import { flushSync } from 'react-dom';
 import type { Product, MenuStyle, SortOption, ElementStyle, AddedImage, CanvasShape } from '../../domain/menu/model';
 import { PRESET_TEMPLATES } from '../../domain/menu/defaults';
 import { MenuPreview } from './canvas/MenuPreview';
-import { Undo, Redo, AlertCircle, Check, Loader2, X } from 'lucide-react';
+import { Undo, Redo, AlertCircle, Check, X } from 'lucide-react';
 import { ZoomControls } from './designer/ZoomControls';
 import { MenuSidebar } from './designer/MenuSidebar';
 import type { PrintCanvasOptions } from './designer/PrintCanvasModal';
@@ -74,7 +75,7 @@ const MOBILE_PREVIEW_ZOOM_RENDER_MULTIPLIER = 0.36;
 const DESKTOP_PREVIEW_ZOOM_RENDER_MULTIPLIER = MOBILE_PREVIEW_ZOOM_RENDER_MULTIPLIER * 1.7;
 
 type AddedImageFeedback =
-    | { phase: 'uploading' | 'preparing'; filename: string; previewUrl: string }
+    | { phase: 'loading'; previewUrl: string; focus: ReturnType<typeof getCanvasViewportFocus>; aspect: number }
     | { phase: 'error'; filename: string };
 
 interface FontTip {
@@ -166,7 +167,17 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const [pendingFontPropagation, setPendingFontPropagation] = useState<FontPropagationRequest | null>(null);
     const [addedImageFeedback, setAddedImageFeedback] = useState<AddedImageFeedback | null>(null);
     const pendingImagePreview = useRef<string | null>(null);
-    const isAddingImage = Boolean(addedImageFeedback && addedImageFeedback.phase !== 'error');
+    const pendingImage = addedImageFeedback?.phase === 'loading' ? addedImageFeedback : null;
+    const isAddingImage = pendingImage !== null;
+    const updateImagePreviewAspect = useCallback((aspect: number) => {
+        setAddedImageFeedback(current => current?.phase === 'loading' && current.aspect !== aspect ? { ...current, aspect } : current);
+    }, []);
+    const imagePreview = React.useMemo(() => pendingImage ? {
+        url: pendingImage.previewUrl,
+        ...positionCanvasImage(pendingImage.focus, resolveMenuPageDimensions(style), 300, pendingImage.aspect),
+        aspect: pendingImage.aspect,
+        onAspect: updateImagePreviewAspect,
+    } : undefined, [pendingImage, style, updateImagePreviewAspect]);
     React.useLayoutEffect(() => {
         setAddedImageFeedback(null);
         return () => {
@@ -195,9 +206,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const knownProductIdsRef = useRef(new Set(products.map(product => product.id)));
     const productEditViewRef = useRef<{ scale: number; scrollLeft: number; scrollTop: number } | null>(null);
     const editingProductRef = useRef<string | null>(null);
-    const productFocusTimer = useRef<number | undefined>(undefined);
+    const pendingCanvasFocus = useRef<{ scale: number; apply: () => void } | null>(null);
     const borderFocusFrame = useRef<number | undefined>(undefined);
-    const [productToCenter, setProductToCenter] = useState<string | null>(null);
 
     useEffect(() => {
         if (!tipsOpen) return;
@@ -213,7 +223,13 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
     // State for selection context (What element is user clicking?)
     const [selection, setSelection] = useState<{ type: 'product' | 'category' | 'freeText' | 'addedImage' | 'page' | 'menuTitle' | 'menuSubtitle' | null, id: string | null }>({ type: null, id: null });
-    const [selectedCanvasItems, setSelectedCanvasItems] = useState<SelectionItem[]>([]);
+    const [selectedAddedImageIds, setSelectedAddedImageIds] = useState<string[]>([]);
+    const handleCanvasSelectedItems = useCallback((items: SelectionItem[]) => {
+        const ids = items.filter(item => item.type === 'addedImage').map(item => item.id);
+        setSelectedAddedImageIds(previous => previous.length === ids.length && previous.every((id, index) => id === ids[index])
+            ? previous
+            : ids);
+    }, []);
     const currentPrintPageIndex = selection.type === 'page' && selection.id !== null ? Number(selection.id) : null;
     // State to trigger imperative actions in Preview from Sidebar
     const [previewAction, setPreviewAction] = useState<{ type: string, id: number } | undefined>(undefined);
@@ -240,7 +256,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         && !dismissedTips.has('free-categories');
     const splitCategoryTipKey = splitCategorySwap ? `split-category:${splitCategorySwap.category}` : null;
     const visibleSplitCategorySwap = splitCategoryTipKey && !dismissedTips.has(splitCategoryTipKey) ? splitCategorySwap : null;
-    const configuredCanvasFonts = getConfiguredCanvasFonts(style, products);
+    const configuredCanvasFonts = React.useMemo(() => getConfiguredCanvasFonts(style, products), [style, products]);
     const showMixedFontTip = configuredCanvasFonts.length > 1 && !dismissedTips.has('mixed-fonts');
     const hasVisibleTips = visibleFontTips.length > 0 || showMixedFontTip || showOverlapTip || showOffCanvasTip
         || showPositionedCategoryTip || Boolean(visibleSplitCategorySwap) || contrastTips.length > 0 || backgroundOverlapTips.length > 0;
@@ -265,12 +281,15 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         const observer = new ResizeObserver(schedule);
         const zoomLayer = root.querySelector('[data-canvas-zoom-layer]');
         if (zoomLayer) observer.observe(zoomLayer);
-        root.addEventListener('load', schedule, true);
+        const onImageLoad = (event: Event) => {
+            if (event.target instanceof Element && !event.target.closest('[data-print-control]')) schedule();
+        };
+        root.addEventListener('load', onImageLoad, true);
         document.fonts?.addEventListener('loadingdone', schedule);
         schedule();
         return () => {
             observer.disconnect();
-            root.removeEventListener('load', schedule, true);
+            root.removeEventListener('load', onImageLoad, true);
             document.fonts?.removeEventListener('loadingdone', schedule);
             window.clearTimeout(timer);
             detection?.abort();
@@ -347,7 +366,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             if (frameId !== null) window.cancelAnimationFrame(frameId);
             frameId = window.requestAnimationFrame(scanFontTips);
         };
-        const observer = new MutationObserver(scheduleScan);
+        const observer = new MutationObserver(records => { if (hasMenuContentMutation(records)) scheduleScan(); });
         observer.observe(root, {
             subtree: true,
             childList: true,
@@ -497,7 +516,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 });
             });
         };
-        const observer = new MutationObserver(scheduleScan);
+        const observer = new MutationObserver(records => { if (hasMenuContentMutation(records)) scheduleScan(); });
         observer.observe(root, { childList: true, subtree: true });
         window.addEventListener('resize', scheduleScan);
         scheduleScan();
@@ -572,7 +591,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             animationFrame = window.requestAnimationFrame(updatePosition);
         };
         const resizeObserver = new ResizeObserver(schedulePosition);
-        const mutationObserver = new MutationObserver(schedulePosition);
+        const mutationObserver = new MutationObserver(records => { if (hasMenuContentMutation(records)) schedulePosition(); });
 
         resizeObserver.observe(container);
         resizeObserver.observe(canvas);
@@ -879,75 +898,77 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         });
     };
 
+    const updateCanvasFocus = useCallback((nextScale: number, apply: () => void) => {
+        pendingCanvasFocus.current = null;
+        if (Math.abs(nextScale - scaleRef.current) < 0.001) {
+            apply();
+        } else {
+            pendingCanvasFocus.current = { scale: nextScale, apply };
+            setScale(nextScale);
+        }
+    }, []);
+
+    React.useLayoutEffect(() => {
+        const pending = pendingCanvasFocus.current;
+        if (pending?.scale !== scale) return;
+        pendingCanvasFocus.current = null;
+        pending.apply();
+    }, [scale]);
+
     const handleCanvasProductEditStart = useCallback((productId: string) => {
         editingProductRef.current = productId;
         onProductEditChange?.(productId);
-        window.clearTimeout(productFocusTimer.current);
-        const canvas = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas="true"]');
+        pendingCanvasFocus.current = null;
+        const canvas = canvasZoomRef.current;
         if (!canvas) return;
         const target = getCanvasProduct(canvas, productId);
-        const layer = canvas.querySelector<HTMLElement>('[data-canvas-zoom-layer]');
-        if (!target || !layer) return;
+        if (!target) return;
         const viewport = getCanvasViewportBounds(canvas);
         const bounds = getCanvasProductBounds(target);
-        const renderMultiplier = isDesktopViewport ? DESKTOP_PREVIEW_ZOOM_RENDER_MULTIPLIER : MOBILE_PREVIEW_ZOOM_RENDER_MULTIPLIER;
-        const currentScale = (layer.getBoundingClientRect().width / Math.max(1, layer.offsetWidth)) / renderMultiplier;
         const usableWidth = Math.max(1, viewport.right - viewport.left - 20);
         const usableHeight = Math.max(1, viewport.bottom - viewport.top - 20);
+        const scale = scaleRef.current;
         const preferredScale = isDesktopViewport ? productEditViewRef.current?.scale ?? scale : 1.6;
         const nextScale = Math.max(0.3, Math.min(
             preferredScale,
-            currentScale * usableWidth / Math.max(1, bounds.right - bounds.left),
-            currentScale * usableHeight / Math.max(1, bounds.bottom - bounds.top),
+            scale * usableWidth / Math.max(1, bounds.right - bounds.left),
+            scale * usableHeight / Math.max(1, bounds.bottom - bounds.top),
         ));
-        const changeScale = Math.abs(nextScale - scale) > 0.001;
-        if (changeScale) {
+        if (Math.abs(nextScale - scale) >= 0.001) {
             productEditViewRef.current ??= { scale, scrollLeft: canvas.scrollLeft, scrollTop: canvas.scrollTop };
-            setScale(nextScale);
         }
-        setProductToCenter(productId);
-    }, [isDesktopViewport, onProductEditChange, scale]);
-
-    React.useLayoutEffect(() => {
-        if (!productToCenter) return;
-        const canvas = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas="true"]');
-        const layer = canvas?.querySelector<HTMLElement>('[data-canvas-zoom-layer]');
-        if (canvas && layer && editingProductRef.current === productToCenter) {
-            layer.style.transitionProperty = 'none';
-            centerCanvasProduct(canvas, productToCenter);
-            layer.style.removeProperty('transition-property');
-        }
-        setProductToCenter(null);
-    }, [productToCenter]);
+        updateCanvasFocus(nextScale, () => centerCanvasProduct(canvas, productId));
+    }, [isDesktopViewport, onProductEditChange, updateCanvasFocus]);
 
     const handleCanvasProductEditEnd = useCallback((nextObject?: HTMLElement | null) => {
         editingProductRef.current = null;
         onProductEditChange?.(null);
-        window.clearTimeout(productFocusTimer.current);
+        pendingCanvasFocus.current = null;
         if (borderFocusFrame.current !== undefined) window.cancelAnimationFrame(borderFocusFrame.current);
         const snapshot = productEditViewRef.current;
-        const canvas = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas="true"]');
-        if (!snapshot || !canvas) return;
         productEditViewRef.current = null;
-        setScale(snapshot.scale);
-        window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
-            if (editingProductRef.current) return;
-            canvas.scrollTo({ left: snapshot.scrollLeft, top: snapshot.scrollTop });
-        }));
-        if (nextObject) {
-            productFocusTimer.current = window.setTimeout(() => {
-                if (!nextObject.isConnected || editingProductRef.current) return;
-                const visible = getCanvasViewportBounds(canvas);
-                const rect = nextObject.getBoundingClientRect();
-                const outsideHorizontally = rect.left < visible.left || rect.right > visible.right;
-                const outsideVertically = rect.top < visible.top || rect.bottom > visible.bottom;
-                canvas.scrollBy({
-                    left: outsideHorizontally ? (rect.left + rect.right - visible.left - visible.right) / 2 : 0,
-                    top: outsideVertically ? (rect.top + rect.bottom - visible.top - visible.bottom) / 2 : 0,
-                });
-            }, 220);
-        }
-    }, [onProductEditChange]);
+        const canvas = canvasZoomRef.current;
+        if (!snapshot || !canvas) return;
+        updateCanvasFocus(snapshot.scale, () => {
+            const left = Math.max(0, Math.min(snapshot.scrollLeft, canvas.scrollWidth - canvas.clientWidth));
+            const top = Math.max(0, Math.min(snapshot.scrollTop, canvas.scrollHeight - canvas.clientHeight));
+            if (!nextObject?.isConnected) {
+                canvas.scrollTo({ left, top });
+                return;
+            }
+            const visible = getCanvasViewportBounds(canvas);
+            const rect = nextObject.getBoundingClientRect();
+            // Check the target at the restored scroll offsets before moving the canvas.
+            const dx = canvas.scrollLeft - left;
+            const dy = canvas.scrollTop - top;
+            const outsideHorizontally = rect.left + dx < visible.left || rect.right + dx > visible.right;
+            const outsideVertically = rect.top + dy < visible.top || rect.bottom + dy > visible.bottom;
+            canvas.scrollTo({
+                left: outsideHorizontally ? canvas.scrollLeft + (rect.left + rect.right - visible.left - visible.right) / 2 : left,
+                top: outsideVertically ? canvas.scrollTop + (rect.top + rect.bottom - visible.top - visible.bottom) / 2 : top,
+            });
+        });
+    }, [onProductEditChange, updateCanvasFocus]);
 
     useEffect(() => {
         const canvas = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas="true"]');
@@ -978,7 +999,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 if (left >= viewport.left + padding && right <= viewport.right - padding
                     && top >= viewport.top + padding && bottom <= viewport.top + visibleHeight - padding) return;
 
-                window.clearTimeout(productFocusTimer.current);
                 if (editingProductRef.current && !productEditViewRef.current) {
                     productEditViewRef.current = { scale, scrollLeft: canvas.scrollLeft, scrollTop: canvas.scrollTop };
                 }
@@ -1440,8 +1460,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         if (!file || pendingImagePreview.current) return;
         const previewUrl = URL.createObjectURL(file);
         pendingImagePreview.current = previewUrl;
-        setAddedImageFeedback({ phase: 'uploading', filename: file.name, previewUrl });
         const focus = getCanvasViewportFocus(containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas]'));
+        setAddedImageFeedback({ phase: 'loading', previewUrl, focus, aspect: 1 });
 
         try {
             const uploaded = await uploadFileAsset({
@@ -1453,7 +1473,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 metadata: { style_id: style.id }
             });
             if (pendingImagePreview.current !== previewUrl) return;
-            setAddedImageFeedback({ phase: 'preparing', filename: file.name, previewUrl });
             const newId = crypto.randomUUID();
             const size = await preloadImage(uploaded.url);
             if (pendingImagePreview.current !== previewUrl) return;
@@ -1491,9 +1510,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
     const selectedFreeText = selection.type === 'freeText' && selection.id ? products.find(p => p.id === selection.id) || null : null;
     const selectedAddedImage = selection.type === 'addedImage' && selection.id ? (style.addedImages || []).find(img => img.id === selection.id) || null : null;
-    const selectedAddedImageIds = selectedCanvasItems
-        .filter((item) => item.type === 'addedImage')
-        .map((item) => item.id);
     const getTargetAddedImageIds = () => {
         if (selection.type !== 'addedImage' || !selection.id) return [];
         return selectedAddedImageIds.includes(selection.id) && selectedAddedImageIds.length > 1
@@ -1539,7 +1555,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             name: 'Custom'
         }));
         setSelection({ type: null, id: null });
-        setSelectedCanvasItems([]);
+        setSelectedAddedImageIds([]);
     };
 
     const layerSelectedAddedImages = (direction: 'front' | 'back') => {
@@ -1818,29 +1834,16 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         <CustomMarkerLibraryProvider key={currentUserId} userId={currentUserId}>
         <MenuColorContext.Provider value={menuPalette}>
         <div className="flex flex-row-reverse h-full bg-slate-100 overflow-hidden relative">
-            {addedImageFeedback && (
+            {addedImageFeedback?.phase === 'error' && (
                 <div data-image-insertion-feedback
                     className="absolute left-1/2 top-[4.5rem] z-[90] flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-2xl border border-slate-200 bg-white p-2 pr-3 text-slate-800 shadow-lg">
-                    {addedImageFeedback.phase === 'error' ? (
-                        <>
-                            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-red-50 text-red-600"><AlertCircle size={19} /></span>
-                            <div role="alert" className="min-w-0">
-                                <p className="text-sm font-semibold">Não foi possível adicionar a imagem</p>
-                                <p className="truncate text-xs text-slate-500">{addedImageFeedback.filename}</p>
-                            </div>
-                            <button type="button" aria-label="Dispensar erro de imagem" onClick={() => setAddedImageFeedback(null)}
-                                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-500 hover:bg-slate-100"><X size={16} /></button>
-                        </>
-                    ) : (
-                        <>
-                            <img src={addedImageFeedback.previewUrl} alt="" className="h-10 w-10 shrink-0 rounded-xl bg-slate-100 object-cover" />
-                            <div role="status" className="min-w-0">
-                                <p className="text-sm font-semibold">{addedImageFeedback.phase === 'uploading' ? 'Enviando imagem…' : 'Preparando imagem no editor…'}</p>
-                                <p className="max-w-52 truncate text-xs text-slate-500">{addedImageFeedback.filename}</p>
-                            </div>
-                            <Loader2 aria-hidden="true" size={17} className="shrink-0 animate-spin text-indigo-600 motion-reduce:animate-none" />
-                        </>
-                    )}
+                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-red-50 text-red-600"><AlertCircle size={19} /></span>
+                    <div role="alert" className="min-w-0">
+                        <p className="text-sm font-semibold">Não foi possível adicionar a imagem</p>
+                        <p className="truncate text-xs text-slate-500">{addedImageFeedback.filename}</p>
+                    </div>
+                    <button type="button" aria-label="Dispensar erro de imagem" onClick={() => setAddedImageFeedback(null)}
+                        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-500 hover:bg-slate-100"><X size={16} /></button>
                 </div>
             )}
             <FontPropagationPrompt
@@ -2105,6 +2108,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                         >
                             <MenuPreview
                                 products={displayProducts}
+                                addedImagePreview={imagePreview}
                                 onPasteObjects={(nextProducts, nextStyle) => {
                                     if (setProductsAndStyle) setProductsAndStyle(nextProducts, nextStyle, 'Colar');
                                     else { setProducts?.(nextProducts); setStyle(nextStyle); }
@@ -2128,7 +2132,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                 externalAction={previewAction}
                                 selection={selection}
                                 onSelectionChange={setSelection}
-                                onSelectedItemsChange={setSelectedCanvasItems}
+                                onSelectedItemsChange={handleCanvasSelectedItems}
                                 undo={undo}
                                 redo={redo}
                                 canUndo={canUndo}

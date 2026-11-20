@@ -1,3 +1,4 @@
+import { hasMenuContentMutation } from './menuContentMutations';
 import { useLayoutEffect, type RefObject } from 'react';
 import type { MenuStyle } from '../../../domain/menu/model';
 import { measureRenderedText } from './textFit';
@@ -93,7 +94,7 @@ export function useResponsivePrices(rootRef: RefObject<HTMLElement | null>, styl
                 schedule();
             }
         });
-        const mutations = new MutationObserver(schedule);
+        const mutations = new MutationObserver(records => { if (hasMenuContentMutation(records)) schedule(); });
         mutations.observe(root, {
             subtree: true, childList: true, characterData: true,
             attributes: true, attributeFilter: ['data-word-fit-size'],

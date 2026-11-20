@@ -83,7 +83,8 @@ function DesignerPicker<T extends SelectOption>({ label, value, options, choose,
   const list = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const listId = useId();
-  const matches = options.filter(option => foldSearch(option.label).includes(foldSearch(query)));
+  const search = open ? foldSearch(query) : '';
+  const matches = search ? options.filter(option => foldSearch(option.label).includes(search)) : options;
   const close = () => { setOpen(false); setQuery(''); };
   useEffect(() => {
     if (!open) return;

@@ -87,7 +87,15 @@ for (const viewport of [{width:360,height:720},{width:430,height:932}]) {
       await dialog.getByRole('button',{name:'Ver todos'}).tap();
       await expect(dialog.getByRole('button', { name: 'Voltar à prévia' })).toBeVisible();
       await expect(dialog.locator('[data-template-option]')).toHaveCount(51);
-      await dialog.getByRole('textbox',{name:'Pesquisar modelos'}).fill('acai');
+      await dialog.getByRole('button', { name: 'Voltar à prévia' }).tap();
+      await expect(dialog.getByRole('img', { name: /Prévia de Swiss Grid/ })).toBeVisible();
+      await dialog.getByRole('button', { name: 'Ver todos' }).tap();
+      const search = dialog.getByRole('textbox', { name: 'Pesquisar modelos' });
+      await expect(search).toBeVisible();
+      await expect(search).not.toBeFocused();
+      await search.tap();
+      await expect(search).toBeFocused();
+      await search.fill('acai');
       await expect(dialog.locator('[data-template-option]')).toHaveCount(1);
       await dialog.locator('[data-template-option] > button').tap();
       await expect(dialog.getByRole('img', { name: /Prévia de Açaí Tropical/ })).toBeVisible();
@@ -243,21 +251,33 @@ test('adding an image shows a preview through upload and canvas preparation', as
   await expect(addButton).toBeVisible();
   const fileInput = addButton.locator('..').locator('input[type="file"]');
   await fileInput.setInputFiles({ name: 'foto.png', mimeType: 'image/png', buffer: image });
-  const feedback = page.locator('[data-image-insertion-feedback]');
-  await expect(feedback.getByRole('status')).toContainText('Enviando imagem');
-  await expect(feedback.getByRole('status')).toContainText('foto.png');
-  await expect(feedback.locator('img')).toHaveAttribute('src', /^blob:/);
+  const preview = page.locator('[data-menu-print-page] [data-added-image-preview]');
+  const spinner = preview.getByRole('status', { name: 'Carregando imagem' });
+  await expect(preview.locator('img')).toHaveAttribute('src', /^blob:/);
+  await expect(spinner).toBeVisible();
+  const previewBounds = (await preview.boundingBox())!;
+  const spinnerBounds = (await spinner.locator('span').boundingBox())!;
+  expect(spinnerBounds.x + spinnerBounds.width / 2).toBeCloseTo(previewBounds.x + previewBounds.width / 2);
+  expect(spinnerBounds.y + spinnerBounds.height / 2).toBeCloseTo(previewBounds.y + previewBounds.height / 2);
   await expect(page.getByRole('button', { name: 'Adicionando imagem…' })).toBeDisabled();
+  const downloaded = page.waitForRequest('**/tests/uploaded-image.png');
   finishUpload();
-  await expect(feedback.getByRole('status')).toContainText('Preparando imagem no editor');
+  await downloaded;
+  await expect(spinner).toBeVisible();
   await expect(page.getByAltText('Imagem adicionada')).toHaveCount(0);
   finishImage();
-  await expect(page.getByAltText('Imagem adicionada')).toBeVisible();
-  await expect(feedback).toHaveCount(0);
+  const added = page.getByAltText('Imagem adicionada');
+  await expect(added).toBeVisible();
+  await expect(preview).toHaveCount(0);
+  const addedBounds = (await added.boundingBox())!;
+  expect(addedBounds.x).toBeCloseTo(previewBounds.x);
+  expect(addedBounds.y).toBeCloseTo(previewBounds.y);
 
   rejectUpload = true;
   await fileInput.setInputFiles({ name: 'segunda.png', mimeType: 'image/png', buffer: image });
+  const feedback = page.locator('[data-image-insertion-feedback]');
   await expect(feedback.getByRole('alert')).toContainText('Não foi possível adicionar a imagem');
+  await expect(preview).toHaveCount(0);
   await expect(addButton).toBeEnabled();
   await feedback.getByRole('button', { name: 'Dispensar erro de imagem' }).click();
   await expect(feedback).toHaveCount(0);
@@ -492,6 +512,24 @@ test.describe('mobile product formatting', () => {
     await page.locator('[data-automenu-editor-canvas]').tap({ position: { x: 8, y: 32 } });
     await expect(name).toHaveAttribute('contenteditable', 'false');
     await expect.poll(async () => Math.abs((await canvas.boundingBox())!.width - initialWidth)).toBeLessThan(2);
+  });
+
+  test('switching from an edited product restores the zoom and keeps the tapped product selected', async ({ page }) => {
+    await page.goto(`${url}?photos=list`);
+    const canvas = page.locator('[data-automenu-editor-canvas]');
+    const paper = canvas.locator('[data-menu-print-page]').first();
+    const originalWidth = (await paper.boundingBox())!.width;
+    const first = page.locator('#product-container-1');
+    const next = page.locator('#product-container-2');
+    await first.getByRole('heading').tap();
+    await shortcutsFor(first).getByTitle('Editar produto').tap();
+    await expect(first.getByRole('heading')).toBeFocused();
+    await expect.poll(async () => (await paper.boundingBox())!.width).toBeGreaterThan(originalWidth + 100);
+    await next.getByRole('heading').tap();
+    await expect(first.getByRole('heading')).toHaveAttribute('contenteditable', 'false');
+    await expect(shortcutsFor(next).getByTitle('Editar produto')).toBeVisible();
+    await expect.poll(async () => (await paper.boundingBox())!.width).toBeCloseTo(originalWidth, 0);
+    await expect(next.getByRole('heading')).toBeInViewport();
   });
 
   test('expanding a border refocuses the canvas until product editing ends', async ({ page }) => {

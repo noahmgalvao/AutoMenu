@@ -4099,7 +4099,8 @@ export const useDraggableInteractions = (
 
             pendingDragRef.current = pending;
 
-            if (pointerType !== 'touch' && !canvasSelection) {
+            // Canvas clicks select on click and a drag selects on activation.
+            if (pointerType !== 'touch' && !canvas) {
                 handleSelection(sourceType, id);
             }
         },

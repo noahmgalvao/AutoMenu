@@ -1,3 +1,4 @@
+import { observeAnchorScroll } from '../canvas/canvasViewport';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Pipette, X } from 'lucide-react';
@@ -160,10 +161,10 @@ export function ColorPicker({ value = '#000000', onChange, label = 'Cor', classN
   useEffect(() => { if (!open) clearPreview(); }, [clearPreview, open]);
 
   useLayoutEffect(() => {
-    if (!open || sampling) return;
+    const button = trigger.current;
+    if (!open || sampling || !button) return;
     const place = () => {
-      const rect = trigger.current?.getBoundingClientRect();
-      if (!rect) return;
+      const rect = button.getBoundingClientRect();
       const height = panel.current?.offsetHeight || 340;
       setPosition({
         left: Math.max(8, Math.min(rect.right - 252, window.innerWidth - 260)),
@@ -172,10 +173,10 @@ export function ColorPicker({ value = '#000000', onChange, label = 'Cor', classN
     };
     place();
     window.addEventListener('resize', place);
-    window.addEventListener('scroll', place, true);
+    const stopObservingScroll = observeAnchorScroll(button, place);
     return () => {
       window.removeEventListener('resize', place);
-      window.removeEventListener('scroll', place, true);
+      stopObservingScroll();
     };
   }, [open, sampling]);
 

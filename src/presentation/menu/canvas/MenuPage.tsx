@@ -1,5 +1,6 @@
 import { getContentLayer, getImageLayer } from '../../../domain/menu/imageLayers';
 import { CanvasLayerImage } from './CanvasLayerImage';
+import { PhotoLoading } from './MenuPhoto';
 import type { SelectionItem } from '../interactions/types';
 import { getTemplateColors, getTemplateDesignAttributes } from './templateStyles';
 import '../designer/templateDesign.css';
@@ -107,7 +108,14 @@ const PositionedCategoryChunk: React.FC<
     );
 };
 
+export type AddedImagePreview = Pick<AddedImage, 'url' | 'x' | 'y' | 'width'> & {
+    pageIndex: number;
+    aspect: number;
+    onAspect: (aspect: number) => void;
+};
+
 interface MenuPageProps {
+    addedImagePreview?: AddedImagePreview;
     pageIndex: number;
     readOnly?: boolean;
     page: PageLayout;
@@ -133,6 +141,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
     onAddPage,
     onDeletePage,
     onSetPageNumbersVisible,
+    addedImagePreview,
 }) => {
     const isPageSelected = handlers.isSelected?.('page', String(pageIndex)) ?? handlers.selectedPageIndex === pageIndex;
     const pageAddControls = handlers.getPageAddControls?.(pageIndex) || { before: true, after: true };
@@ -508,10 +517,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 className={`shadow-2xl ${isImportedMenu ? '' : 'bg-white'} print:shadow-none print:mb-0 print:break-after-page group/page transition-shadow md:cursor-default ${isPageSelected ? 'ring-4 ring-blue-500' : ''}`}
                 onClick={readOnly ? undefined : (e) => {
                     e.stopPropagation();
-                    handlers.setSelectedPageIndex(pageIndex);
-                    handlers.setSelectedId(null);
                     handlers.handleSelection('page', pageIndex.toString(), { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey });
-                    handlers.setEditingId(null);
                 }}
                 onDoubleClick={readOnly ? undefined : (e) => handlers.handlePageDoubleClick(e, pageIndex)}
             >
@@ -534,6 +540,21 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                     <div data-column-resize-guide data-print-control="true"
                         className="pointer-events-none absolute inset-y-0 z-[90] w-0.5 border-l-2 border-dashed border-rose-500"
                         style={{ left: `${handlers.columnResizeGuide.x}px` }} />
+                )}
+                {addedImagePreview && !readOnly && (
+                    <div data-added-image-preview data-print-control="true"
+                        className="pointer-events-none absolute z-[70] bg-slate-100"
+                        style={{ left: addedImagePreview.x, top: addedImagePreview.y, width: addedImagePreview.width,
+                            height: addedImagePreview.width * addedImagePreview.aspect }}>
+                        <img src={addedImagePreview.url} alt="" draggable={false}
+                            className="absolute inset-0 size-full object-contain"
+                            onLoad={({ currentTarget: image }) => {
+                                if (image.naturalWidth && image.naturalHeight) {
+                                    addedImagePreview.onAspect(image.naturalHeight / image.naturalWidth);
+                                }
+                            }} />
+                        <PhotoLoading />
+                    </div>
                 )}
                 {visibleImages.map((img, imgIdx) => {
                     return (

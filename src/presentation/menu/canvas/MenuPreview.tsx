@@ -15,9 +15,9 @@ import { useMenuInteractions } from '../interactions/useMenuInteractions';
 import { useReplacePlaceholderOnInput } from '../interactions/useReplacePlaceholderOnInput';
 import { useResponsivePrices } from './useResponsivePrices';
 import { NUDGE_STEP, type DraftItem, type MoveDirection, type SelectionItem } from '../interactions/types';
-import { MenuPage } from './MenuPage';
+import { MenuPage, type AddedImagePreview } from './MenuPage';
 import { canMoveImageLayer, getContentLayer, getFreeTextLayer, getImageLayerIndexes, hasForegroundImage } from '../../../domain/menu/imageLayers';
-import { getCanvasViewportFocus } from './canvasViewport';
+import { getCanvasViewportFocus, observeAnchorScroll } from './canvasViewport';
 import { getSelectedLayerIds, setCanvasImageBackground } from '../../../domain/menu/canvasShapes';
 import { acceptsCanvasFormat, applyCanvasFormat, captureCanvasFormat, type CanvasFormat, type FormatObject } from './canvasFormatting';
 import { isHeadingTextHit } from './menuHeadingHit';
@@ -41,6 +41,7 @@ import { applyFontToMenuStyle } from '../../../domain/menu/fontPropagation';
 
 
 interface MenuPreviewProps {
+    addedImagePreview?: AddedImagePreview;
     products: Product[];
     style: MenuStyle;
     sortOption: SortOption;
@@ -318,11 +319,11 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         position();
         const observer = new ResizeObserver(position);
         observer.observe(anchor);
-        window.addEventListener('scroll', position, true);
+        const stopObservingScroll = observeAnchorScroll(anchor, position);
         window.addEventListener('resize', position);
         return () => {
             observer.disconnect();
-            window.removeEventListener('scroll', position, true);
+            stopObservingScroll();
             window.removeEventListener('resize', position);
         };
     }, [promptedImage, props.scale]);
@@ -548,7 +549,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         });
         return () => cancelAnimationFrame(frame);
     }, [handlers.startEditing, newTextToEdit, products]);
-    useEffect(() => {
+    React.useLayoutEffect(() => {
         if (readOnly) return;
         const editingProductId = handlers.editingId
             && products.some((product) => product.id === handlers.editingId && (!product.isFreeText || focusedNewText.current === product.id))
@@ -567,9 +568,13 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         }
     }, [getObjectElement, handlers.editingId, handlers.selectedId, handlers.selectedItems, products, props.onProductEditEnd, props.onProductEditStart, readOnly]);
 
-    useEffect(() => () => {
-        if (focusedProductRef.current) props.onProductEditEnd?.();
+    const productEditEndRef = useRef(props.onProductEditEnd);
+    React.useLayoutEffect(() => {
+        productEditEndRef.current = props.onProductEditEnd;
     }, [props.onProductEditEnd]);
+    useEffect(() => () => {
+        if (focusedProductRef.current) productEditEndRef.current?.();
+    }, []);
 
     useEffect(() => {
         if (readOnly) return;
@@ -2497,6 +2502,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     <MenuPage
                         key={i}
                         pageIndex={i}
+                        addedImagePreview={props.addedImagePreview?.pageIndex === i ? props.addedImagePreview : undefined}
                         page={pageContent}
                         style={canvasStyle}
                         handlers={handlers}

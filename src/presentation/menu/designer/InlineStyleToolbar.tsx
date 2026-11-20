@@ -7,7 +7,7 @@ import { FontSelect } from './SearchableSelects';
 import { ColorPicker } from './ColorPicker';
 import { FontSizeInput } from './FontSizeInput';
 import type { PriceAdjustmentMode } from '../../../domain/menu/pricePropagation';
-import { getCanvasViewportBounds } from '../canvas/canvasViewport';
+import { getCanvasViewportBounds, observeAnchorScroll } from '../canvas/canvasViewport';
 
 type InlineStyleToolbarProps = {
     targetElementId: string;
@@ -144,13 +144,13 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
         });
         if (groupSurface) borderObserver?.observe(groupSurface, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
         window.addEventListener('resize', updatePosition);
-        window.addEventListener('scroll', updatePosition, true);
+        const stopObservingScroll = observeAnchorScroll(target, updatePosition);
 
         return () => {
             resizeObserver.disconnect();
             borderObserver?.disconnect();
             window.removeEventListener('resize', updatePosition);
-            window.removeEventListener('scroll', updatePosition, true);
+            stopObservingScroll();
         };
     }, [borderOffset, compact, groupBorderOpen, hasDecoration, hasHeader, hasPriceAdjustment, hasTextControls, isSizeColorOnly, positionTargetElementId, targetElementId]);
 

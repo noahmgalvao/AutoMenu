@@ -1,3 +1,12 @@
+export function observeAnchorScroll(anchor: Element, update: () => void) {
+    const onScroll = (event: Event) => {
+        const target = event.target;
+        if (target === window || target === document || (target instanceof Element && target.contains(anchor))) update();
+    };
+    window.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    return () => window.removeEventListener('scroll', onScroll, true);
+}
+
 export function getCanvasViewportBounds(canvas: HTMLElement) {
     const canvasRect = canvas.getBoundingClientRect();
     const viewport = window.visualViewport;
@@ -52,8 +61,7 @@ export function getCanvasViewportFocus(canvas: HTMLElement | null | undefined) {
 }
 
 export function getCanvasProduct(canvas: HTMLElement, id: string) {
-    return Array.from(canvas.querySelectorAll<HTMLElement>('[data-drag-type="product"][data-drag-id]'))
-        .find(element => element.dataset.dragId === id);
+    return canvas.querySelector<HTMLElement>(`[data-drag-type="product"][data-drag-id="${CSS.escape(id)}"]`);
 }
 
 export function getCanvasProductBounds(product: HTMLElement) {

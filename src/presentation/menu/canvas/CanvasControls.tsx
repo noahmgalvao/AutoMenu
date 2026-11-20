@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom';
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import type { FlowDirection } from './flowControls';
-import { getCanvasViewportBounds } from './canvasViewport';
+import { getCanvasViewportBounds, observeAnchorScroll } from './canvasViewport';
 
 type ControlKind = 'quick' | 'add' | 'move' | 'resize';
 type Box = Record<'left' | 'right' | 'top' | 'bottom', number>;
@@ -31,6 +31,19 @@ function placeControls(
     page: HTMLElement, canvasElement: HTMLElement | null, zoomLayer: HTMLElement | null,
     obstacles: NodeListOf<HTMLElement> | undefined, controls: Set<Control>, expireHover: () => void,
 ) {
+    const hoverEnabled = matchMedia('(hover: hover) and (min-width: 768px)').matches;
+    const time = performance.now();
+    const active = [...controls].filter(control => {
+        const { node, anchor, hoverOnly } = control;
+        const hovered = hoverOnly && hoverEnabled && (anchor.matches(':hover') || node.matches(':hover') || node.contains(document.activeElement));
+        if (hovered) control.lastHovered = time;
+        const lingering = hoverOnly && hoverEnabled && !hovered && time - (control.lastHovered ?? -Infinity) < 180;
+        if (lingering) expireHover();
+        const show = !hoverOnly || hovered || lingering;
+        if (!show && node.style.visibility !== 'hidden') node.style.visibility = 'hidden';
+        return show;
+    }).sort((first, second) => Number(first.hoverOnly) - Number(second.hoverOnly) || priority[first.kind] - priority[second.kind]);
+    if (!active.length) return;
     const pageRect = page.getBoundingClientRect();
     const scale = pageRect.width / page.offsetWidth;
     if (!scale) return;
@@ -41,19 +54,6 @@ function placeControls(
         canvas.bottom = Math.min(canvas.bottom, canvasRect.top + canvasElement.clientTop + canvasElement.clientHeight - margin);
     }
     const pageBounds = insetBounds(pageRect);
-    const hoverEnabled = matchMedia('(hover: hover) and (min-width: 768px)').matches;
-    const time = performance.now();
-    const active = [...controls].filter(control => {
-        const { node, anchor, hoverOnly } = control;
-        const hovered = hoverOnly && hoverEnabled && (anchor.matches(':hover') || node.matches(':hover') || node.contains(document.activeElement));
-        if (hovered) control.lastHovered = time;
-        const lingering = hoverOnly && hoverEnabled && !hovered && time - (control.lastHovered ?? -Infinity) < 180;
-        if (lingering) expireHover();
-        const show = !hoverOnly || hovered || lingering;
-        node.style.visibility = show ? 'visible' : 'hidden';
-        return show;
-    }).sort((first, second) => Number(first.hoverOnly) - Number(second.hoverOnly) || priority[first.kind] - priority[second.kind]);
-    if (!active.length) return;
 
     const blockers: Box[] = [];
     obstacles?.forEach(element => {
@@ -72,6 +72,7 @@ function placeControls(
             node.style.visibility = 'hidden';
             continue;
         }
+        node.style.visibility = 'visible';
         node.style.maxWidth = `${Math.max(0, bounds.right - bounds.left)}px`;
         const width = node.offsetWidth;
         const height = node.offsetHeight;
@@ -247,7 +248,7 @@ function observeControls(frame: HTMLElement, page: HTMLElement) {
     frame.addEventListener('pointerout', update);
     frame.addEventListener('focusin', update);
     frame.addEventListener('focusout', update);
-    window.addEventListener('scroll', update, true);
+    const stopObservingScroll = observeAnchorScroll(page, update);
     window.addEventListener('resize', update);
     window.addEventListener('transitionend', update);
     viewport?.addEventListener('resize', update);
@@ -273,7 +274,7 @@ function observeControls(frame: HTMLElement, page: HTMLElement) {
                 frame.removeEventListener('pointerout', update);
                 frame.removeEventListener('focusin', update);
                 frame.removeEventListener('focusout', update);
-                window.removeEventListener('scroll', update, true);
+                stopObservingScroll();
                 window.removeEventListener('resize', update);
                 window.removeEventListener('transitionend', update);
                 viewport?.removeEventListener('resize', update);
