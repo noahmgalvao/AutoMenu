@@ -2,6 +2,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import type { MenuStyle } from '../../../domain/menu/model';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { Images, ImagePlus, Trash2 } from 'lucide-react';
+import { livePhotoScaleVariable } from './photoSizing';
 import { ProductImageToolbar } from './ProductImageToolbar';
 
 type Point = { x: number; y: number };
@@ -9,7 +10,7 @@ type Props = {
     id: string; anchorId: string; hasPhoto: boolean; active: boolean; scale: number;
     crop: Point; flips?: { horizontal?: boolean; vertical?: boolean };
     activate: () => void; choose: () => void; remove: () => void;
-    type: 'product' | 'category'; resizeCard?: boolean;
+    type: 'product' | 'category';
     updateStyle: Dispatch<SetStateAction<MenuStyle>>;
 };
 const corners = [
@@ -18,8 +19,6 @@ const corners = [
     ['bottom-0 left-0 -translate-x-1/2 translate-y-1/2 cursor-nesw-resize', -1, 1],
     ['bottom-0 right-0 translate-x-1/2 translate-y-1/2 cursor-nwse-resize', 1, 1],
 ] as const;
-export const LIVE_CARD_PHOTO_SCALE = '--automenu-live-card-photo-scale';
-
 const percent = (value: number) => Math.min(100, Math.max(0, value));
 
 export function PhotoEditControls(props: Props) {
@@ -34,11 +33,12 @@ export function PhotoEditControls(props: Props) {
     const previewRoot = useRef<HTMLElement | null>(null);
     const scaleField = type === 'category' ? 'categoryImageScale' : 'imageScale';
     const maxScale = type === 'category' ? 2 : 2.5;
-    const limitScale = (value: number) => Math.max(0.5, Math.min(maxScale, Math.round(value * 10) / 10));
+    const liveScale = livePhotoScaleVariable(type);
+    const limitScale = (value: number) => Math.max(0.5, Math.min(maxScale, value));
     const setScale = (value: number, increment = false) => {
         updateStyle(prev => {
             const previous = prev[scaleField] || 1;
-            const scale = limitScale(increment ? previous + value : value);
+            const scale = limitScale(increment ? Math.round((previous + value) * 1000) / 1000 : value);
             return previous === scale ? prev : { ...prev, [scaleField]: scale, name: 'Custom' };
         });
     };
@@ -47,20 +47,12 @@ export function PhotoEditControls(props: Props) {
         if (!surface) return;
         const scale = limitScale(value);
         draft.current = { scale };
-        if (props.resizeCard) {
-            previewRoot.current = surface.closest<HTMLElement>('[data-menu-preview-canvas]');
-            previewRoot.current?.style.setProperty(LIVE_CARD_PHOTO_SCALE, String(scale));
-        } else {
-            surface.style.scale = String(scale / props.scale);
-        }
+        previewRoot.current = surface.closest<HTMLElement>('[data-menu-preview-canvas], [data-product-designer-edit-form]') || surface;
+        previewRoot.current.style.setProperty(liveScale, String(scale));
     };
-    useLayoutEffect(() => {
-        const surface = frameRef.current?.parentElement;
-        return () => {
-            surface?.style.removeProperty('scale');
-            previewRoot.current?.style.removeProperty(LIVE_CARD_PHOTO_SCALE);
-        };
-    }, []);
+    useLayoutEffect(() => () => {
+        previewRoot.current?.style.removeProperty(liveScale);
+    }, [liveScale]);
     const setCrop = (crop: Point) => updateStyle(prev => {
         if (type === 'product') return { ...prev, name: 'Custom', productPhotoCrops: { ...prev.productPhotoCrops, [id]: crop } };
         const image = prev.categoryImages?.[id];
@@ -76,8 +68,7 @@ export function PhotoEditControls(props: Props) {
     });
     const finish = (commit: boolean) => {
         const surface = frameRef.current?.parentElement;
-        surface?.style.removeProperty('scale');
-        previewRoot.current?.style.removeProperty(LIVE_CARD_PHOTO_SCALE);
+        previewRoot.current?.style.removeProperty(liveScale);
         previewRoot.current = null;
         const next = draft.current;
         draft.current = null;
@@ -141,7 +132,7 @@ export function PhotoEditControls(props: Props) {
             setMoving(true);
             if (g.corner !== undefined) {
                 const [, sx, sy] = corners[g.corner];
-                const delta = Math.abs(dx) >= Math.abs(dy) ? sx * dx / g.width : sy * dy / g.height;
+                const delta = (sx * g.width * dx + sy * g.height * dy) / (g.width ** 2 + g.height ** 2 || 1);
                 previewScale(g.scale * (1 + delta));
             } else {
                 const crop = {
@@ -158,17 +149,23 @@ export function PhotoEditControls(props: Props) {
         onClickCapture={event => { if (suppressClick.current) { event.stopPropagation(); suppressClick.current = false; } }}
         onClick={event => { event.stopPropagation(); props.activate(); }}>
         <div aria-hidden={moving || undefined} className={`absolute inset-0 flex overflow-hidden rounded-[inherit] bg-blue-500/30 backdrop-saturate-125 ${moving ? 'pointer-events-none opacity-0' : ''}`}>
-            <button type="button" className="photo-overlay-action text-blue-900 hover:bg-blue-400/25"
-                aria-label={props.hasPhoto ? 'Substituir imagem' : 'Adicionar imagem'} title={props.hasPhoto ? 'Substituir imagem' : 'Adicionar imagem'}
-                onClick={event => { event.stopPropagation(); props.activate(); props.choose(); }}>
-                {props.hasPhoto ? <Images /> : <ImagePlus />}
-            </button>
-            {props.hasPhoto && <button type="button" aria-label="Remover imagem" title="Remover imagem"
-                className="photo-overlay-action border-l border-blue-100/60 text-red-700 hover:bg-red-400/20"
-                onClick={event => { event.stopPropagation(); props.activate(); props.remove(); }}><Trash2 /></button>}
+            <div className="photo-overlay-slot">
+                <button type="button" className="photo-overlay-action text-blue-900 hover:bg-blue-400/25"
+                    aria-label={props.hasPhoto ? 'Substituir imagem' : 'Adicionar imagem'} title={props.hasPhoto ? 'Substituir imagem' : 'Adicionar imagem'}
+                    onClick={event => { event.stopPropagation(); props.activate(); props.choose(); }}>
+                    {props.hasPhoto ? <Images /> : <ImagePlus />}
+                </button>
+            </div>
+            {props.hasPhoto && <div className="photo-overlay-slot border-l border-blue-100/60">
+                <button type="button" aria-label="Remover imagem" title="Remover imagem"
+                    className="photo-overlay-action text-red-700 hover:bg-red-400/20"
+                    onClick={event => { event.stopPropagation(); props.activate(); props.remove(); }}><Trash2 /></button>
+            </div>}
         </div>
         {props.hasPhoto && corners.map(([position], index) => <span key={index} data-photo-corner={index}
-            className={`absolute h-2 w-2 rounded-full border border-blue-600 bg-white ${position}`} />)}
+            className={`absolute grid size-6 touch-none place-items-center ${position}`}>
+            <span className="pointer-events-none size-3 rounded-full border border-blue-600 bg-white" />
+        </span>)}
         {props.active && props.hasPhoto && <ProductImageToolbar productId={props.id} anchorId={props.anchorId} flips={props.flips}
             scale={props.scale} maxScale={maxScale} onScale={delta => setScale(delta, true)} onFlip={flip} />}
     </div>;

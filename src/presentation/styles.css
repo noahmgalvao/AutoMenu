@@ -17,17 +17,27 @@ body {
 
 [data-automenu-editor-canvas] { overflow-anchor: none; }
 
-.photo-overlay-action {
+.photo-overlay-slot {
   display: grid;
   flex: 1 1 0;
   min-width: 0;
   place-items: center;
-  cursor: grab;
-  touch-action: none;
+  container-type: size;
 }
-.photo-overlay-action:active { cursor: grabbing; }
-.photo-overlay-action:focus-visible { outline: 2px solid currentColor; outline-offset: -3px; }
-.photo-overlay-action > svg { width: min(32px, 72%); height: min(32px, 80%); stroke-width: 1.8; filter: drop-shadow(0 1px 1px rgb(255 255 255 / .7)); }
+.photo-overlay-action {
+  display: grid;
+  width: min(25px, 80cqw, 85cqh);
+  aspect-ratio: 1;
+  place-items: center;
+  border-radius: .25rem;
+}
+.photo-overlay-action:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
+.photo-overlay-action > svg { width: 100%; height: 100%; stroke-width: 1.8; filter: drop-shadow(0 1px 1px rgb(255 255 255 / .7)); }
+
+[data-product-list-card]:not([data-card-color-custom]) {
+  background: transparent !important;
+  box-shadow: none;
+}
 
 .automenu-canvas-action {
   width: 28px;
@@ -191,6 +201,9 @@ body {
 
 [data-column-resize-handle="true"].automenu-limit-feedback {
   animation-name: column-resize-limit-shake;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  border-color: transparent !important;
 }
 
 .automenu-tip-font-highlight {
@@ -200,3 +213,21 @@ body {
   background-color: rgb(254 243 199 / 0.7) !important;
   box-shadow: 0 0 0 6px rgb(245 158 11 / 0.16) !important;
 }
+
+
+[data-no-browser-selection], [data-no-browser-selection] *, [data-settings-dialog] button {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+[data-no-browser-selection] :is(input, textarea, [contenteditable="true"]) {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+}
+
+
+[data-canvas-alignment] { position: absolute; inset: 0; z-index: 1000; pointer-events: none; }
+[data-canvas-guide] { position: absolute; border-color: #6366f1; border-style: dashed; }
+[data-canvas-guide="x"] { top: 0; bottom: 0; border-left-width: 1px; }
+[data-canvas-guide="y"] { left: 0; right: 0; border-top-width: 1px; }

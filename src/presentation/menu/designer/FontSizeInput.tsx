@@ -11,6 +11,7 @@ interface FontSizeInputProps {
     max?: number;
     min?: number;
     onEditEnd?: () => void;
+    commitOnBlur?: boolean;
 }
 
 const toInputValue = (value?: number): string => Number.isFinite(value) ? String(value) : '';
@@ -24,6 +25,7 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
     max,
     min = 1,
     onEditEnd,
+    commitOnBlur = false,
 }) => {
     const inputRef = useRef<HTMLInputElement>(null);
     const repeatTimer = useRef<number | undefined>(undefined);
@@ -120,6 +122,11 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
                 if (!draftValue) restoreCurrentValue();
             }}
             onKeyDown={(event) => {
+                if (commitOnBlur && event.key === 'Enter') {
+                    event.preventDefault();
+                    event.currentTarget.blur();
+                    return;
+                }
                 if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
                 event.preventDefault();
                 stepRef.current(event.key === 'ArrowUp' ? 1 : -1);
@@ -130,7 +137,7 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
             onChange={(event) => {
                 const nextValue = event.target.value;
                 setDraftValue(nextValue);
-                if (!nextValue.trim()) return;
+                if (commitOnBlur || !nextValue.trim()) return;
 
                 const parsedValue = Number(nextValue);
                 if (
@@ -146,7 +153,7 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
             onBlur={() => {
                 onEditEnd?.();
                 const parsedValue = Number(draftValue);
-                if (!draftValue.trim() || !Number.isFinite(parsedValue) || parsedValue < min) {
+                if (!draftValue.trim() || !Number.isFinite(parsedValue) || (!commitOnBlur && parsedValue < min)) {
                     restoreCurrentValue();
                     return;
                 }

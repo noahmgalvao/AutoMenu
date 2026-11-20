@@ -37,3 +37,15 @@ export const getImageLayerIndexes = (
 
     return nextLayers;
 };
+
+export function canMoveImageLayer(images: AddedImage[], ids: string[], direction: 'front' | 'back') {
+    const selected = new Set(ids);
+    return images.some(image => {
+        if (!selected.has(image.id) || image.repeatAsBackground) return false;
+        const z = image.zIndex ?? ADDED_IMAGE_DEFAULT_Z_INDEX;
+        if (direction === 'back') return z > ADDED_IMAGE_BACK_Z_INDEX;
+        return z <= ADDED_IMAGE_FRONT_BASE_Z_INDEX || images.some(other =>
+            !selected.has(other.id) && !other.repeatAsBackground && other.pageIndex === image.pageIndex
+            && (other.zIndex ?? ADDED_IMAGE_DEFAULT_Z_INDEX) >= z);
+    });
+}

@@ -1,9 +1,10 @@
+import { CanvasLayerImage } from './CanvasLayerImage';
 import type { SelectionItem } from '../interactions/types';
 import { getTemplateColors, getTemplateDesignAttributes } from './templateStyles';
 import '../designer/templateDesign.css';
 import React from 'react';
 import type { AddedImage, Product, MenuStyle } from '../../../domain/menu/model';
-import { BringToFront, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CopyCheck, MoreHorizontal, Plus, SendToBack, Edit3, Trash2 } from 'lucide-react';
+import { Crop, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CopyCheck, MoreHorizontal, Plus, Edit3, Trash2 } from 'lucide-react';
 import { Resizable } from 're-resizable';
 import { MenuItem } from './MenuItem';
 import { CanvasActionGroup, canvasActionButtonClass } from './CanvasControls';
@@ -11,13 +12,13 @@ import type { PageLayout, CategoryChunkLayout, PageItem } from '../../../domain/
 import { FREE_TEXT_PREFIX } from '../../../domain/menu/flow';
 import { selectionLayerClasses } from './selectionLayers';
 import { getDirectionLabel, type FlowDirection } from './flowControls';
-import { normalizeTextureUrl } from '../../../domain/menu/defaults';
+import { getMiniFoodTextureKind, normalizeTextureUrl } from '../../../domain/menu/defaults';
 import { InlineStyleToolbar } from '../designer/InlineStyleToolbar';
 import { resolveMenuMargins, resolveMinimumFontSize, roundFontSize } from '../../../domain/menu/styleRules';
 import { getColumnGridTemplate, getPageColumnWidths } from '../../../domain/menu/categoryColumns';
 import { ColumnResizeHandles } from './ColumnResizeHandles';
-import { isMiniFoodKind, MINI_FOODS } from '../../../domain/menu/miniFoods';
-import { canvasShapeUrl, applyCanvasShapeParameters, getSelectedLayerIds } from '../../../domain/menu/canvasShapes';
+import { isMiniFoodKind, MINI_FOODS, miniFoodTextureUrl } from '../../../domain/menu/miniFoods';
+import { canvasShapeUrl, applyCanvasShapeParameters, getSelectedLayerIds, getShapeTextStyle } from '../../../domain/menu/canvasShapes';
 import { ShapeTextEditor } from './ShapeTextEditor';
 import { ShapeSettings } from '../designer/ShapePicker';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
@@ -136,7 +137,10 @@ export const MenuPage: React.FC<MenuPageProps> = ({
     const pageAddControls = handlers.getPageAddControls?.(pageIndex) || { before: true, after: true };
     const pageBackground = (style.pageBackgrounds || [])
         .find((background) => background.pageIndex === pageIndex);
-    const backgroundTexture = normalizeTextureUrl(pageBackground?.url || style.backgroundImage);
+    const textureKind = !pageBackground?.url && style.miniFoodTextureColor ? getMiniFoodTextureKind(style.backgroundImage) : undefined;
+    const backgroundTexture = textureKind
+        ? miniFoodTextureUrl(textureKind, style.miniFoodTextureColor)
+        : normalizeTextureUrl(pageBackground?.url || style.backgroundImage);
     const isImportedMenu = style.appliedTemplateId ? style.templateBackgroundFit === 'fill' : style.sourceType === 'ai_import';
     const backgroundSource = backgroundTexture || (!isImportedMenu && !style.appliedTemplateId ? style.sourceImage : '');
     const decorativeBackground = {
@@ -164,6 +168,10 @@ export const MenuPage: React.FC<MenuPageProps> = ({
         handlers.liveCategoryColumnWidths,
     );
 
+    const [shapeTextEditingId, setShapeTextEditingId] = React.useState<string | null>(null);
+    React.useEffect(() => {
+        if (shapeTextEditingId && shapeTextEditingId !== handlers.editingId) setShapeTextEditingId(null);
+    }, [shapeTextEditingId, handlers.editingId]);
     const visibleImages = (style.addedImages || []).filter(image => image?.id && (image.repeatAsBackground || (image.pageIndex || 0) === pageIndex));
     const formattingShapeId = style.addedImages?.some(image => image.id === handlers.editingId && image.shape)
         ? handlers.editingId : null;
@@ -282,7 +290,8 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 data-drag-column-index={isDragTarget ? chunk.columnIndex : undefined}
                 data-drag-flow-index={isDragTarget ? flowIndex : undefined}
                 onDragOver={(e) => handlers.handleDragOverItem?.(e, chunk.category, 'category')}
-                className={`relative rounded-xl ${isCategoryDragged || Number.isFinite(desiredPageY) ? 'transition-none' : 'transition-all duration-200'} pointer-events-none ${isCategorySelected || isCategoryDragged ? `ring-2 ring-indigo-500 bg-indigo-50/10 ${selectionLayerClasses.outline}` : ''}`}
+                className={`relative rounded-xl ${!isFreeTextTarget && ((renderedStyle.fills?.categoryGroup && renderedStyle.fills.categoryGroup !== 'transparent')
+                    || renderedStyle.borders?.categoryGroup?.sides.length) ? 'p-1.5' : ''} ${isCategoryDragged || Number.isFinite(desiredPageY) ? 'transition-none' : 'transition-all duration-200'} pointer-events-none ${isCategorySelected || isCategoryDragged ? `ring-2 ring-indigo-500 bg-indigo-50/10 ${selectionLayerClasses.outline}` : ''}`}
             >
                 {!isFreeTextTarget && <BorderDecoration style={renderedStyle} scope="categoryGroup" />}
                 {isCategorySelected && isCategoryControlAnchor && !isCategoryDragged && !handlers.editingId && !handlers.multiSelectMode && (
@@ -445,6 +454,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 >
                     <div
                         ref={handlers.draftInputRef}
+                        data-placeholder-field="free-text"
                         contentEditable
                         suppressContentEditableWarning
                         onBlur={handlers.handleDraftCommit}
@@ -515,23 +525,10 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 )}
                 {needsOverlay && !style.appliedTemplateId && !isImportedMenu && <div className="absolute inset-0 bg-white/90 pointer-events-none z-0" />}
                 {handlers.columnResizeGuide?.pageIndex === pageIndex && (
-                    <div
-                        data-print-control="true"
-                        className="absolute inset-y-0 w-0.5 bg-rose-500 pointer-events-none z-[90] shadow-[0_0_0_1px_rgba(255,255,255,0.9),0_0_10px_rgba(244,63,94,0.9)]"
-                        style={{ left: `${handlers.columnResizeGuide.x}px` }}
-                    >
-                        <div className="absolute top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-rose-600 px-2 py-1 text-[10px] font-bold text-white shadow-lg">
-                            {handlers.columnResizeGuide.snappedToCenter ? 'Centro' : 'Largura da coluna'}
-                        </div>
-                    </div>
+                    <div data-column-resize-guide data-print-control="true"
+                        className="pointer-events-none absolute inset-y-0 z-[90] w-0.5 border-l-2 border-dashed border-rose-500"
+                        style={{ left: `${handlers.columnResizeGuide.x}px` }} />
                 )}
-
-                {(style.floatingText || []).filter((text) => text.pageIndex === pageIndex).map((text) => (
-                    <p key={text.id} data-border-text className="pointer-events-none absolute z-[11] whitespace-pre-wrap break-words"
-                        style={{ left: text.x, top: text.y, maxWidth: Math.max(1, pageDimensions.widthPx - text.x) }}>
-                        {text.text}
-                    </p>
-                ))}
                 {visibleImages.map((img, imgIdx) => {
                     return (
                         <div
@@ -555,12 +552,9 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                             onClick={(e) => handleImageClick(e, img.id)}
                             onContextMenu={(e) => handlers.openObjectMenu?.(e, { type: 'addedImage', id: img.id })}
                         >
-                            <img src={img.url} alt={img.shape ? isMiniFoodKind(img.shape.kind)
+                            <CanvasLayerImage image={img} alt={img.shape ? isMiniFoodKind(img.shape.kind)
                                 ? MINI_FOODS.find(food => food.kind === img.shape?.kind)?.name
-                                : img.shape.text || 'Forma adicionada' : 'Imagem adicionada'} className="w-full h-auto pointer-events-none select-none" draggable={false}
-                                style={img.flipHorizontal || img.flipVertical
-                                    ? { transform: `scale(${img.flipHorizontal ? -1 : 1}, ${img.flipVertical ? -1 : 1})` }
-                                    : undefined} />
+                                : img.shape.text || 'Forma adicionada' : 'Imagem adicionada'} />
                         </div>
                     );
                 })}
@@ -654,13 +648,14 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                             }}
                         >
                             <div className="relative w-full">
-                                <img src={img.url} alt="" aria-hidden="true" className="block h-auto w-full opacity-0 pointer-events-none select-none" draggable={false} />
+                                <CanvasLayerImage image={img} ghost />
                                 <div className={`pointer-events-none absolute inset-0 ring-2 ring-indigo-500 ${handlers.isReadyToEdit?.('addedImage', img.id)
                                     && formattingShapeId !== img.id ? 'bg-indigo-500/15' : ''}`} />
                                 {img.shape && !isMiniFoodKind(img.shape.kind) && formattingShapeId === img.id && activeImage?.id === img.id &&
                                     <ShapeTextEditor shape={img.shape} imageWidth={img.width}
                                         targetId={`added-image-${pageIndex}-${img.id}`}
-                                        onClose={() => handlers.setEditingId(null)}
+                                        onFocus={() => setShapeTextEditingId(img.id)}
+                                        onClose={() => setShapeTextEditingId(null)}
                                         onChange={text => {
                                             handlers.updateStyle?.((previous: MenuStyle) => ({ ...previous, name: 'Custom',
                                                 addedImages: previous.addedImages?.map(image => {
@@ -755,15 +750,18 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                             onPointerDown={(event) => event.stopPropagation()}
                             onClick={(event) => {
                                 event.stopPropagation();
-                                if (formattingShapeId === shapeEditor.id) handlers.setEditingId(null);
+                                if (shapeTextEditingId === shapeEditor.id) setShapeTextEditingId(null);
+                                else if (formattingShapeId === shapeEditor.id) handlers.setEditingId(null);
                                 else handlers.startImageEditing(shapeEditor.id);
                             }}
                             className={`${canvasActionButtonClass} ${formattingShapeId === shapeEditor.id ? 'before:!bg-indigo-50 !text-indigo-700' : ''}`}>
                             <Edit3 size={19} />
                         </button>
                     )}
-                    <button onClick={(e) => handlers.handleLayerImage(e, activeImage.id, 'back')} className={canvasActionButtonClass} title="Enviar para trás"><SendToBack size={19} /></button>
-                    <button onClick={(e) => handlers.handleLayerImage(e, activeImage.id, 'front')} className={canvasActionButtonClass} title="Trazer à frente"><BringToFront size={19} /></button>
+                    {!activeImage.shape && <button type="button" onClick={event => {
+                        event.stopPropagation();
+                        handlers.openImageCrop?.(activeImage.id);
+                    }} className={canvasActionButtonClass} title="Cortar"><Crop size={19} /></button>}
                     <button type="button" title="Seleção múltipla" aria-pressed={Boolean(handlers.multiSelectMode)}
                         onPointerDown={(event) => event.stopPropagation()}
                         onClick={(event) => {
@@ -781,6 +779,15 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         <Trash2 size={19} />
                     </button>
                     {activeImage.shape && formattingShapeId === activeImage.id && (
+                        shapeTextEditingId === activeImage.id && !isMiniFoodKind(activeImage.shape.kind) ?
+                        <InlineStyleToolbar targetElementId={`added-image-${pageIndex}-${activeImage.id}`} dismissOnClickInCanvas
+                            onDismiss={() => setShapeTextEditingId(null)}
+                            value={getShapeTextStyle(activeImage.shape)} minFontSize={1} maxFontSize={60}
+                            onChange={textStyle => handlers.updateStyle?.((previous: MenuStyle) => ({
+                                ...previous, name: 'Custom',
+                                addedImages: previous.addedImages?.map(image => image.id === activeImage.id
+                                    ? applyCanvasShapeParameters(image, { textStyle }) : image),
+                            }))} /> :
                         <InlineStyleToolbar compact dismissOnClickInCanvas targetElementId={`added-image-${pageIndex}-${activeImage.id}`}
                             onDismiss={() => handlers.setEditingId(null)}>
                             <div className="p-1.5">

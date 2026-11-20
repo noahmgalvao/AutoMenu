@@ -1,7 +1,8 @@
 import { useEffect, type RefObject } from 'react';
-import { isDefaultCategoryName, isDefaultProductDescription, isDefaultProductName } from '../../../domain/menu/pristineItems';
+import { isDefaultCategoryName, isDefaultFreeText, isDefaultProductDescription, isDefaultProductName } from '../../../domain/menu/pristineItems';
 
 const placeholderChecks = {
+    'free-text': isDefaultFreeText,
     'category-name': isDefaultCategoryName,
     'product-name': isDefaultProductName,
     'product-description': isDefaultProductDescription,

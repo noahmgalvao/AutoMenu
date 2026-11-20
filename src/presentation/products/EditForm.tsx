@@ -1,3 +1,4 @@
+import { photoDimensions } from '../menu/canvas/photoSizing';
 import { MenuPhoto, PhotoLoading } from '../menu/canvas/MenuPhoto';
 import { PhotoEditControls } from '../menu/canvas/PhotoEditControls';
 import { copiedProductFields, matchingCanvasCopy } from '../menu/canvas/canvasClipboard';
@@ -107,8 +108,8 @@ export const EditForm: React.FC<EditFormProps> = ({
       />
       {photoId && (isCategory ? style.showCategoryImages !== false : style.showImages) && (imageSource || photoActive || imageUploading) && (
           <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-2">
-            <div id={anchorId} data-product-image-surface={photoId} className="relative shrink-0 rounded-lg bg-slate-100" style={{ width: 48 * scale, height: 48 * scale }}>
-              {imageSource && <MenuPhoto showLoading={!imageUploading} src={imageSource} alt="" draggable={false} className="h-full w-full rounded-[inherit] object-cover"
+            <div id={anchorId} data-auto-photo-ratio data-product-image-surface={photoId} className="relative shrink-0 rounded-lg bg-slate-100" style={photoDimensions(type, scale, 72, '45%')}>
+              {imageSource && <MenuPhoto showLoading={!imageUploading} src={imageSource} alt="" draggable={false} className="absolute inset-0 h-full w-full rounded-[inherit] object-cover"
                 style={{ objectPosition: `${crop.x}% ${crop.y}%`, transform: `scale(${flips?.horizontal ? -1 : 1}, ${flips?.vertical ? -1 : 1})` }} />}
               <PhotoEditControls id={photoId} type={type} anchorId={anchorId} active={photoActive} activate={() => setPhotoActive(true)}
                 hasPhoto={Boolean(imageSource)} choose={() => onImageClick?.()} remove={() => onRemoveImage?.()}

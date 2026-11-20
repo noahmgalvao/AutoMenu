@@ -7,14 +7,23 @@ export function PhotoLoading({ blocking = false }: { blocking?: boolean }) {
     </span>;
 }
 
+function updateAspect(image: HTMLImageElement) {
+    const frame = image.closest<HTMLElement>('[data-auto-photo-ratio]');
+    if (image.complete && image.naturalWidth && image.naturalHeight) {
+        frame?.style.setProperty('--automenu-photo-aspect', String(image.naturalWidth / image.naturalHeight));
+    } else frame?.style.removeProperty('--automenu-photo-aspect');
+}
+
 export function MenuPhoto({ showLoading, src, ...props }: ImgHTMLAttributes<HTMLImageElement> & { showLoading: boolean }) {
     const image = useRef<HTMLImageElement>(null);
     const [finished, setFinished] = useState<string>();
     useLayoutEffect(() => {
+        if (image.current) updateAspect(image.current);
         if (image.current?.complete) setFinished(src);
     }, [src]);
     return <>
         <img {...props} ref={image} src={src} onLoad={event => {
+            updateAspect(event.currentTarget);
             setFinished(src);
             props.onLoad?.(event);
         }} onError={event => {

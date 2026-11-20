@@ -1,10 +1,12 @@
+import { CanvasImageCropDialog } from './CanvasImageCropDialog';
+import type { CanvasImageCrop } from '../../../domain/menu/model';
 import { categoryKey, categoryName } from '../../../domain/menu/categoryName';
 import { copiedProductFields, lastCanvasCopy, matchingCanvasCopy, pasteCanvasObjects, writeCanvasCopy, type CanvasClip, type CopiedObject, type PasteContent } from './canvasClipboard';
-import { LIVE_CARD_PHOTO_SCALE } from './PhotoEditControls';
+import { livePhotoScaleVariable } from './photoSizing';
 import React, { useMemo, useEffect, useRef, useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { CategoryPosition, ElementStyle, Product, MenuStyle, SortOption } from '../../../domain/menu/model';
-import { AlertTriangle, BringToFront, Copy, CopyCheck, CopyPlus, Edit3, EyeOff, FlipHorizontal2, FlipVertical2, Images, Layers, Paintbrush, Clipboard, Plus, Scissors, SendToBack, Trash2 } from 'lucide-react';
+import { Crop, AlertTriangle, BringToFront, Copy, CopyCheck, CopyPlus, Edit3, EyeOff, FlipHorizontal2, FlipVertical2, Images, Layers, Paintbrush, Clipboard, Plus, Scissors, SendToBack, Trash2 } from 'lucide-react';
 import { calculatePagination, finalizeMenuPages, getPaginationHeightKey, getSavedCategoryPlacements } from '../../../domain/menu/menuPagination';
 import { findSplitCategorySwap, type SplitCategorySwap } from '../../../domain/menu/splitCategorySwap';
 import { FREE_TEXT_PREFIX, SAFETY_BUFFER } from '../../../domain/menu/flow';
@@ -14,7 +16,7 @@ import { useReplacePlaceholderOnInput } from '../interactions/useReplacePlacehol
 import { useResponsivePrices } from './useResponsivePrices';
 import { NUDGE_STEP, type DraftItem, type MoveDirection, type SelectionItem } from '../interactions/types';
 import { MenuPage } from './MenuPage';
-import { getImageLayerIndexes } from '../../../domain/menu/imageLayers';
+import { canMoveImageLayer, getImageLayerIndexes } from '../../../domain/menu/imageLayers';
 import { getCanvasViewportFocus } from './canvasViewport';
 import { getSelectedLayerIds, setCanvasImageBackground } from '../../../domain/menu/canvasShapes';
 import { acceptsCanvasFormat, applyCanvasFormat, captureCanvasFormat, type CanvasFormat, type FormatObject } from './canvasFormatting';
@@ -209,6 +211,34 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     useReplacePlaceholderOnInput(previewRootRef);
     useResponsivePrices(previewRootRef, props.style);
     const [measuredHeights, setMeasuredHeights] = useState<ReadonlyMap<string, number>>(() => new Map());
+    const [imageCropId, setImageCropId] = useState<string | null>(null);
+    const openImageCrop = (id: string) => {
+        setObjectMenu(null);
+        setImageCropId(id);
+    };
+    (handlers as typeof handlers & { openImageCrop: (id: string) => void }).openImageCrop = openImageCrop;
+    const croppingImage = props.style.addedImages?.find(image => image.id === imageCropId && !image.shape);
+    const applyImageCrop = (crop: CanvasImageCrop) => {
+        if (!croppingImage) return;
+        const { id, url } = croppingImage;
+        props.onStyleUpdate?.(previous => ({
+            ...previous, name: 'Custom',
+            addedImages: previous.addedImages?.map(image => {
+                if (image.id !== id || image.url !== url || image.shape) return image;
+                const originalWidth = image.width / (image.crop?.width || 1);
+                const left = (crop.x - (image.crop?.x || 0)) * originalWidth;
+                const top = (crop.y - (image.crop?.y || 0)) * originalWidth / crop.aspect;
+                const { widthPx, heightPx } = resolveMenuPageDimensions(previous);
+                const width = Math.min(originalWidth * crop.width, widthPx, heightPx * crop.aspect * crop.width / crop.height);
+                const height = width * crop.height / (crop.aspect * crop.width);
+                return { ...image, crop, width,
+                    x: Math.max(0, Math.min(widthPx - width, image.x + (image.flipHorizontal ? image.width - width - left : left))),
+                    y: Math.max(0, Math.min(heightPx - height, image.y + (image.flipVertical ? image.width * (image.crop?.height || 1) / ((image.crop?.width || 1) * crop.aspect) - height - top : top))),
+                };
+            }),
+        }));
+        setImageCropId(null);
+    };
     const objectMenuRef = useRef<HTMLDivElement | null>(null);
     const lastPastePosition = useRef<CategoryPosition | null>(null);
     const lastCanvasPointRef = useRef<{ x: number; y: number } | null>(null);
@@ -657,7 +687,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         ));
         let frame = 0;
         const measure = () => {
-            if (root.style.getPropertyValue(LIVE_CARD_PHOTO_SCALE)) return;
+            if (root.style.getPropertyValue(livePhotoScaleVariable('product')) || root.style.getPropertyValue(livePhotoScaleVariable('category'))) return;
             const next = new Map<string, number>();
             if (header?.offsetWidth) next.set('main-header', parseFloat(getComputedStyle(header).height));
             for (const item of items) {
@@ -2313,6 +2343,11 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const hasPhoto = photoTarget?.type === 'category' ? style.categoryImages?.[photoTarget.id]?.url : products.find(p => p.id === photoTarget?.id)?.image;
     const contextFreeTextId = contextObjectItem?.type === 'freeText' ? contextObjectItem.id : null;
     const objectMenuItems = contextObjectItem ? getActiveObjectItems(contextObjectItem) : [];
+    const canLayerMenuItems = (direction: 'front' | 'back') => {
+        const ids = objectMenuItems.filter(item => item.type === 'addedImage').map(item => item.id);
+        return (objectMenuItems.some(item => item.type !== 'addedImage') && style.contentLayer !== direction)
+            || canMoveImageLayer(style.addedImages || [], ids, direction);
+    };
     const canHideFromObjectMenu = objectMenuItems.some((item) => {
         if (item.type === 'category') return !isPristineNewCategory(item.id, products);
         if (item.type === 'product') {
@@ -2465,6 +2500,8 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 document.body
             )}
 
+            {!readOnly && croppingImage && <CanvasImageCropDialog key={croppingImage.id} image={croppingImage}
+                onClose={() => setImageCropId(null)} onApply={applyImageCrop} />}
             {!readOnly && objectMenu && createPortal(
                 <div
                     ref={objectMenuRef}
@@ -2543,22 +2580,13 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     )}
                     {contextImage && (
                         <>
+                            {!contextImage.shape && <button type="button" onClick={() => openImageCrop(contextImage.id)}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"><Crop size={15} /> Cortar</button>}
                             <button type="button" aria-pressed={Boolean(contextImage.flipHorizontal)} onClick={() => flipImage(contextImage.id, 'flipHorizontal')}
                                 className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"><FlipHorizontal2 size={15} /> Inverter horizontalmente</button>
                             <button type="button" aria-pressed={Boolean(contextImage.flipVertical)} onClick={() => flipImage(contextImage.id, 'flipVertical')}
                                 className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"><FlipVertical2 size={15} /> Inverter verticalmente</button>
                         </>
-                    )}
-                    {contextObjectItem && (
-                        <button type="button" onClick={(event) => {
-                            if (contextImage) {
-                                handlers.handleRemoveImage(event, contextImage.id);
-                                setObjectMenu(null);
-                            } else runObjectAction('delete', contextObjectItem);
-                        }}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-red-600 hover:bg-red-50">
-                            <Trash2 size={15} /> {contextImage ? contextImage.shape ? 'Remover forma' : 'Remover imagem' : 'Remover'}
-                        </button>
                     )}
                     <button disabled={isBackgroundMenu} onClick={() => runObjectAction('copy', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Copy size={15} /> Copiar</button>
                     <button disabled={isBackgroundMenu} onClick={() => runObjectAction('copyFormat', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><Paintbrush size={15} /> Copiar formatação</button>
@@ -2581,8 +2609,19 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                         <button disabled={isBackgroundMenu} onClick={() => runObjectAction('hide', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><EyeOff size={15} /> Ocultar</button>
                     )}
                     <div className="my-1 h-px bg-slate-100" />
-                    <button disabled={isBackgroundMenu} onClick={() => runObjectAction('front', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><BringToFront size={15} /> Trazer para frente</button>
-                    <button disabled={isBackgroundMenu} onClick={() => runObjectAction('back', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><SendToBack size={15} /> Trazer para trás</button>
+                    <button disabled={!canLayerMenuItems('front')} onClick={() => runObjectAction('front', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><BringToFront size={15} /> Trazer para frente</button>
+                    <button disabled={!canLayerMenuItems('back')} onClick={() => runObjectAction('back', contextObjectItem)} className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><SendToBack size={15} /> Trazer para trás</button>
+                    {contextObjectItem && (
+                        <button type="button" onClick={(event) => {
+                            if (contextImage) {
+                                handlers.handleRemoveImage(event, contextImage.id);
+                                setObjectMenu(null);
+                            } else runObjectAction('delete', contextObjectItem);
+                        }}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-red-600 hover:bg-red-50">
+                            <Trash2 size={15} /> {contextImage ? contextImage.shape ? 'Remover forma' : 'Remover imagem' : 'Remover'}
+                        </button>
+                    )}
                     </>
                     )}
                 </div>,

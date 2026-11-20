@@ -1,5 +1,5 @@
 import { isMiniFoodKind, miniFoodArtwork, type MiniFoodKind } from './miniFoods';
-import type { AddedImage, CanvasShape, CanvasShapeKind } from './model';
+import type { AddedImage, CanvasShape, CanvasShapeKind, ElementStyle } from './model';
 
 type GeometricShape = Exclude<CanvasShapeKind, MiniFoodKind>;
 
@@ -32,6 +32,7 @@ export function getCanvasShapeDimensions(shape: CanvasShape) {
 }
 
 export function shapeTextColor(shape: CanvasShape) {
+  if (shape.textStyle?.color && /^#[0-9a-f]{6}$/i.test(shape.textStyle.color)) return shape.textStyle.color;
   if (shape.textColor && /^#[0-9a-f]{6}$/i.test(shape.textColor)) return shape.textColor;
   const channels = [1, 3, 5].map(index => parseInt(shape.fill.slice(index, index + 2), 16));
   return channels[0] * .299 + channels[1] * .587 + channels[2] * .114 > 154 ? '#172033' : '#ffffff';
@@ -43,7 +44,7 @@ export function getCanvasShapeTextLayout(shape: CanvasShape) {
   const height = compact ? 29 : 60;
   const centerY = shape.kind === 'triangle' ? 16 : 0;
   const paragraphs = (shape.text || '').replace(/\r/g, '').split('\n');
-  let size = Math.min(14, width / 2);
+  let size = Math.min(shape.textStyle?.fontSize || 14, width / 2);
   let lines: string[];
   do {
     const limit = Math.max(1, Math.floor(width / (size * .68)));
@@ -65,7 +66,7 @@ export function getCanvasShapeTextLayout(shape: CanvasShape) {
     size *= .9;
   } while (true);
   size = Math.min(size, height / (1.22 * lines.length));
-  return { width, centerY, size, lines, align: shape.textAlign || 'center' };
+  return { width, centerY, size, lines, align: shape.textStyle?.textAlign || shape.textAlign || 'center' };
 }
 
 // SVG text is part of the image, including in exported menus and pasted copies.
@@ -73,8 +74,11 @@ function shapeLabel(shape: CanvasShape) {
   if (!shape.text?.trim()) return '';
   const { width, centerY, size, lines, align } = getCanvasShapeTextLayout(shape);
   const x = align === 'left' ? -width / 2 : align === 'right' ? width / 2 : 0;
+  const font = (shape.textStyle?.fontFamily || 'Arial').replace(/[^\p{L}\d -]/gu, '');
+  const weight = shape.textStyle?.fontWeight === 'bold' || shape.textStyle?.fontWeight === '700' ? '700'
+    : shape.textStyle?.fontWeight === '400' ? '400' : '600';
   const escape = (line: string) => line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  return `<g transform="rotate(${shape.rotation})" fill="${shapeTextColor(shape)}" font-family="Arial,sans-serif" font-size="${size}" font-weight="600" text-anchor="${align === 'left' ? 'start' : align === 'right' ? 'end' : 'middle'}">${lines.map((line, index) =>
+  return `<g transform="rotate(${shape.rotation})" fill="${shapeTextColor(shape)}" font-family="${font},Arial,sans-serif" font-size="${size}" font-weight="${weight}" font-style="${shape.textStyle?.italic ? 'italic' : 'normal'}" text-decoration="${shape.textStyle?.underline ? 'underline' : 'none'}" text-anchor="${align === 'left' ? 'start' : align === 'right' ? 'end' : 'middle'}">${lines.map((line, index) =>
     `<text x="${x}" y="${centerY + (index - (lines.length - 1) / 2) * size * 1.22 + size * .34}">${escape(line)}</text>`).join('')}</g>`;
 }
 
@@ -100,13 +104,13 @@ export function canvasShapeUrl(shape: CanvasShape) {
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
-export type CanvasShapeParameters = Partial<Omit<CanvasShape, 'kind' | 'text'>>;
+export type CanvasShapeParameters = Partial<Omit<CanvasShape, 'kind' | 'text' | 'ratio'>>;
 
 export function getCanvasShapeParameters(shape: CanvasShape): CanvasShapeParameters {
-  const { fill, stroke, strokeWidth, ratio, rotation, corners, points, innerRadius } = shape;
-  if (isMiniFoodKind(shape.kind)) return { ratio, rotation };
+  const { fill, stroke, strokeWidth, rotation, corners, points, innerRadius } = shape;
+  if (isMiniFoodKind(shape.kind)) return { rotation };
   return {
-    stroke, strokeWidth, ratio, rotation, textColor: shape.textColor, textAlign: shape.textAlign,
+    stroke, strokeWidth, rotation, textColor: shape.textColor, textAlign: shape.textAlign, textStyle: shape.textStyle,
     ...(shape.kind !== 'line' && { fill }),
     ...(shape.kind === 'rectangle' && { corners }),
     ...((shape.kind === 'star' || shape.kind === 'polygon') && { points }),
@@ -120,7 +124,23 @@ export function applyCanvasShapeParameters(image: AddedImage, patch: CanvasShape
   const updates = Object.fromEntries(Object.entries(patch).filter(([key]) => key in applicable));
   if (Object.keys(updates).length === 0) return image;
   const shape = { ...image.shape, ...updates };
-  return { ...image, shape, url: canvasShapeUrl(shape) };
+  const url = canvasShapeUrl(shape);
+  if (shape.rotation === image.shape.rotation) return { ...image, shape, url };
+  const previous = getCanvasShapeDimensions(image.shape);
+  const next = getCanvasShapeDimensions(shape);
+  const scale = image.width / previous.width;
+  const width = next.width * scale;
+  return { ...image, shape, url, width,
+    x: image.x + (image.width - width) / 2,
+    y: image.y + (previous.height - next.height) * scale / 2,
+  };
+}
+
+export function getShapeTextStyle(shape: CanvasShape): ElementStyle {
+  return {
+    fontFamily: 'Arial', fontSize: 14, fontWeight: '600', textAlign: shape.textAlign || 'center',
+    ...shape.textStyle, color: shapeTextColor(shape),
+  };
 }
 
 export function setCanvasImageBackground(image: AddedImage, enabled: boolean, pageIndex = image.pageIndex): AddedImage {

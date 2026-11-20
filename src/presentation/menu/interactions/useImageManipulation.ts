@@ -1,9 +1,10 @@
+import { clearCanvasAlignment } from './canvasAlignment';
 import React, { useState } from 'react';
 import { getImageLayerIndexes } from '../../../domain/menu/imageLayers';
 import { getSelectedLayerIds } from '../../../domain/menu/canvasShapes';
 import { InteractionProps, SelectionItem, TOUCH_LONG_PRESS_MS } from './types';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
-import { captureImageDrag, getRenderedImageDragPages, IMAGE_DRAG_THRESHOLD_PX, moveDraggedLayers } from './imageDragMotion';
+import { alignLayerMove, captureImageDrag, getRenderedImageDragPages, IMAGE_DRAG_THRESHOLD_PX, moveDraggedLayers } from './imageDragMotion';
 
 type ImageResizeDirection = 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight';
 type ImageResizeSnapshot = {
@@ -110,15 +111,17 @@ export const useImageManipulation = (
 
             if (onStyleUpdate) {
                 const pages = getRenderedImageDragPages();
+                const point = alignLayerMove({ drag, point: { x: moveX, y: moveY } }, pages, new Set([imgId]));
                 onStyleUpdate(previous => ({
                     ...previous,
-                    ...moveDraggedLayers(previous, [{ drag, point: { x: moveX, y: moveY } }], pages),
+                    ...moveDraggedLayers(previous, [{ drag, point }], pages),
                     name: 'Custom',
                 }));
             }
         };
 
         const cleanupDrag = () => {
+            clearCanvasAlignment();
             window.clearTimeout(longPress);
             try {
                 if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);

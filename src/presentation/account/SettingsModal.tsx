@@ -1,3 +1,4 @@
+import { FontSizeInput } from '../menu/designer/FontSizeInput';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { KeyRound, Loader2, RotateCcw, ShieldCheck, UserRound, X } from 'lucide-react';
 import {
@@ -55,7 +56,6 @@ const RuleGroup = <T extends object>({
   values,
   min = 0,
   max,
-  step,
   normalizeValue,
   onChange,
   headerContent,
@@ -65,7 +65,6 @@ const RuleGroup = <T extends object>({
   values: T;
   min?: number;
   max: number;
-  step?: number;
   normalizeValue?: (value: number) => number;
   onChange: (key: keyof T & string, value: number) => void;
   headerContent?: React.ReactNode;
@@ -77,21 +76,9 @@ const RuleGroup = <T extends object>({
       {rows.map(([key, label]) => (
         <label key={key} className="flex items-center justify-between gap-3 text-sm text-slate-600">
           <span>{label}</span>
-          <input
-            type="number"
-            min={min}
-            max={max}
-            step={step}
-            value={Number(values[key])}
-            onChange={(event) => {
-              const parsed = Number(event.target.value);
-              if (Number.isFinite(parsed)) {
-                const clamped = Math.min(max, Math.max(min, parsed));
-                onChange(key, normalizeValue ? normalizeValue(clamped) : clamped);
-              }
-            }}
-            className="h-9 w-20 rounded-lg border border-slate-200 bg-white px-2 text-right text-sm font-semibold text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-          />
+          <FontSizeInput label={label} min={min} max={max} value={Number(values[key])} commitOnBlur
+            onChange={value => onChange(key, normalizeValue ? normalizeValue(value) : value)}
+            className="!h-9 !w-20 bg-white text-right !text-sm font-semibold text-slate-700" />
         </label>
       ))}
     </div>
@@ -326,10 +313,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4" onPointerDown={closeAndSave}>
-      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:flex-row" onPointerDown={(event) => event.stopPropagation()}>
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4" onClick={closeAndSave}>
+      <div role="dialog" aria-label="Configurações" data-settings-dialog
+        className="flex max-h-[90dvh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        onClick={event => event.stopPropagation()}
+        onContextMenu={event => { if ((event.target as Element).closest('button')) event.preventDefault(); }}>
+        <header className="flex shrink-0 items-center justify-between border-b border-slate-200 px-4 py-2 sm:px-6">
+          <h2 className="text-lg font-bold text-slate-900">Configurações</h2>
+          <button type="button" onClick={closeAndSave} aria-label="Fechar configurações"
+            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"><X size={20} /></button>
+        </header>
+        <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
         <aside className="w-full shrink-0 border-b border-slate-200 bg-slate-50 p-3 sm:w-44 sm:border-b-0 sm:border-r">
-          <div className="mb-3 px-2 text-sm font-bold text-slate-900">Configurações</div>
           <button type="button" onClick={() => setSection('account')} className={`mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${section === 'account' ? 'bg-indigo-100 font-semibold text-indigo-700' : 'text-slate-600 hover:bg-white'}`}>
             <UserRound size={16} /> Minha Conta
           </button>
@@ -338,12 +333,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </aside>
 
-        <form onSubmit={(event) => event.preventDefault()} className="min-w-0 flex-1 overflow-y-auto p-6">
-          <div className="mb-6 flex items-center justify-between">
-            <h2 className="text-xl font-bold text-slate-900">{section === 'account' ? 'Minha Conta' : 'Regras Gerais'}</h2>
-            <button type="button" onClick={closeAndSave} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={20} /></button>
-          </div>
-
+        <form onSubmit={event => event.preventDefault()} className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain p-4 sm:p-6">
           {section === 'account' ? (
             <div className="space-y-5">
               <label className="block space-y-1.5 text-sm font-medium text-slate-700">
@@ -399,21 +389,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 values={fontSizeLimits}
                 min={minimumFontSize}
                 max={300}
-                step={1}
                 normalizeValue={roundFontSize}
                 headerContent={(
                   <label className="mb-3 flex items-center justify-between gap-3 border-b border-slate-200 pb-3 text-sm font-semibold text-slate-700">
                     <span>Mínimo geral</span>
-                    <input
-                      type="number"
-                      min={DEFAULT_MINIMUM_FONT_SIZE}
-                      max={300}
-                      step={1}
-                      value={minimumFontSize}
-                      onChange={(event) => {
-                        const parsed = Number(event.target.value);
-                        if (!Number.isFinite(parsed)) return;
-                        const value = roundFontSize(Math.min(300, Math.max(DEFAULT_MINIMUM_FONT_SIZE, parsed)));
+                    <FontSizeInput label="Mínimo geral" min={DEFAULT_MINIMUM_FONT_SIZE} max={300} value={minimumFontSize} commitOnBlur
+                      className="!h-9 !w-20 bg-white text-right !text-sm font-semibold text-slate-700"
+                      onChange={value => {
                         setMinimumFontSize(value);
                         setFontSizeLimits((previous) => ({
                           menuTitle: Math.max(value, previous.menuTitle),
@@ -424,9 +406,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           productDescription: Math.max(value, previous.productDescription),
                           freeText: Math.max(value, previous.freeText),
                         }));
-                      }}
-                      className="h-9 w-20 rounded-lg border border-slate-200 bg-white px-2 text-right text-sm font-semibold text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-                    />
+                      }} />
                   </label>
                 )}
                 onChange={(key, value) => setFontSizeLimits((previous) => ({
@@ -492,11 +472,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {message && <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div>}
           {error && <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
-          <div className="mt-6 flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
-            {saving && <span className="flex items-center gap-2 text-xs font-medium text-slate-500"><Loader2 size={14} className="animate-spin" /> Salvando</span>}
-            <button type="button" onClick={closeAndSave} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Fechar</button>
-          </div>
         </form>
+        </div>
+        <footer className="flex shrink-0 items-center justify-end gap-3 border-t border-slate-200 px-4 py-2 sm:px-6">
+          {saving && <span className="flex items-center gap-2 text-xs font-medium text-slate-500"><Loader2 size={14} className="animate-spin" /> Salvando</span>}
+          <button type="button" onClick={closeAndSave} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Fechar</button>
+        </footer>
       </div>
     </div>
   );

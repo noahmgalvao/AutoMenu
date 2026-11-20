@@ -1,7 +1,6 @@
 import { miniFoodIconUrl } from '../../../domain/menu/miniFoods';
-import React, { useEffect, useRef, useState } from 'react';
-import Select, { components } from 'react-select';
-import type { SingleValue, StylesConfig } from 'react-select';
+import React, { useEffect, useId, useRef, useState } from 'react';
+import { ChevronDown, Search } from 'lucide-react';
 import {
   FONTS,
   getMiniFoodTextureKind,
@@ -12,28 +11,6 @@ import {
 
 type SelectOption = { value: string; label: string };
 type TextureOption = SelectOption & { url: string };
-
-const selectStyles: StylesConfig<any, false> = {
-  control: (base, state) => ({
-    ...base,
-    minHeight: 36,
-    borderColor: state.isFocused ? '#6366f1' : '#e2e8f0',
-    boxShadow: state.isFocused ? '0 0 0 2px rgba(99, 102, 241, 0.12)' : 'none',
-    fontSize: 12,
-  }),
-  menu: (base) => ({ ...base, zIndex: 80, fontSize: 12 }),
-  menuList: (base) => ({
-    ...base,
-    WebkitOverflowScrolling: 'touch',
-    touchAction: 'pan-y',
-    overscrollBehavior: 'contain',
-  }),
-  option: (base, state) => ({
-    ...base,
-    backgroundColor: state.isSelected ? '#eef2ff' : state.isFocused ? '#f8fafc' : '#fff',
-    color: state.isSelected ? '#4338ca' : '#334155',
-  }),
-};
 
 const chunk = <T,>(items: T[], size: number) => {
   const chunks: T[][] = [];
@@ -87,6 +64,74 @@ const getTexturePreviewStyle = (url: string): React.CSSProperties => {
   };
 };
 
+const foldSearch = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('pt-BR').trim();
+
+function DesignerPicker<T extends SelectOption>({ label, value, options, choose, render, searchLabel, empty, gap }: {
+  label: string;
+  value: T;
+  options: T[];
+  choose: (option: T) => void;
+  render: (option: T) => React.ReactNode;
+  searchLabel?: string;
+  empty?: string;
+  gap?: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const root = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const listId = useId();
+  const matches = options.filter(option => foldSearch(option.label).includes(foldSearch(query)));
+  const close = () => { setOpen(false); setQuery(''); };
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) close(); };
+    document.addEventListener('pointerdown', outside, true);
+    return () => document.removeEventListener('pointerdown', outside, true);
+  }, [open]);
+  useEffect(() => { if (list.current) list.current.scrollTop = 0; }, [query]);
+
+  return <div ref={root} className="relative min-w-0" onKeyDown={event => {
+    if (event.key === 'Escape' && open) {
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+      trigger.current?.focus({ preventScroll: true });
+    }
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!open) { setOpen(true); return; }
+    const items = Array.from(list.current?.querySelectorAll<HTMLElement>('[role="option"]') || []);
+    const index = items.indexOf(document.activeElement as HTMLElement);
+    const next = index < 0 ? (event.key === 'ArrowDown' ? 0 : items.length - 1)
+      : Math.max(0, Math.min(items.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)));
+    items[next]?.focus();
+  }}>
+    <button ref={trigger} type="button" role="combobox" aria-label={label} aria-expanded={open} aria-controls={listId}
+      className="flex min-h-9 w-full min-w-0 items-center justify-between gap-1 rounded border border-slate-200 bg-white px-2 text-left text-xs text-slate-700 outline-indigo-500"
+      onClick={() => open ? close() : setOpen(true)}>
+      <span className="block min-w-0 flex-1 truncate">{render(value)}</span>
+      <ChevronDown aria-hidden="true" size={14} className="shrink-0" />
+    </button>
+    {open && <div className="absolute z-[80] w-full min-w-32 rounded-lg border border-slate-200 bg-white text-xs shadow-lg"
+      style={{ marginTop: gap ?? 4 }}>
+      {searchLabel && <label className="flex items-center gap-1.5 border-b border-slate-100 px-2 text-slate-500">
+        <Search size={13} aria-hidden="true" />
+        <input className="h-8 min-w-0 flex-1 bg-transparent text-slate-800 outline-none" type="text"
+          aria-label={searchLabel} placeholder={searchLabel} value={query} onChange={event => setQuery(event.target.value)} />
+      </label>}
+      <div ref={list} id={listId} role="listbox" aria-label={label} className="max-h-44 touch-pan-y overflow-y-auto p-1">
+        {matches.map(option => <button key={option.value} type="button" role="option" aria-selected={option.value === value.value}
+          className="block w-full truncate rounded px-2 py-2 text-left text-slate-700 hover:bg-slate-50 focus:bg-slate-100 aria-selected:bg-indigo-50 aria-selected:text-indigo-700"
+          onClick={() => { choose(option); close(); trigger.current?.focus({ preventScroll: true }); }}>{render(option)}</button>)}
+        {!matches.length && <div role="status" className="p-2 text-slate-500">{empty}</div>}
+      </div>
+    </div>}
+  </div>;
+}
+
 export const FontSelect: React.FC<{
   value?: string;
   onChange: (font: string) => void;
@@ -95,167 +140,39 @@ export const FontSelect: React.FC<{
   menuGap?: number;
 }> = ({ value, onChange, fallbackFontFamily, placeholder = 'Buscar fonte...', menuGap }) => {
   useFontLibrary();
-  const [isTouchInput, setIsTouchInput] = useState(false);
-  const [menuIsOpen, setMenuIsOpen] = useState(false);
-  const selectRef = useRef<any>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const keepMenuOpenRef = useRef(false);
-  const keyboardDismissedForGestureRef = useRef(false);
-  const lastTouchToggleRef = useRef(0);
   const resolvedValue = value || fallbackFontFamily || FONTS[0];
-
-  const dismissKeyboard = () => {
-    const activeElement = document.activeElement;
-    if (activeElement instanceof HTMLElement) activeElement.blur();
-  };
-
-  useEffect(() => {
-    const query = window.matchMedia('(hover: none), (pointer: coarse)');
-    const sync = () => setIsTouchInput(query.matches);
-    sync();
-    query.addEventListener('change', sync);
-    return () => query.removeEventListener('change', sync);
-  }, []);
-
-  useEffect(() => {
-    if (!menuIsOpen) return;
-    const closeOutside = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setMenuIsOpen(false);
-    };
-    document.addEventListener('pointerdown', closeOutside, true);
-    return () => document.removeEventListener('pointerdown', closeOutside, true);
-  }, [menuIsOpen]);
-
-  const toggleFromIndicator = (event: React.SyntheticEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    lastTouchToggleRef.current = Date.now();
-    dismissKeyboard();
-    setMenuIsOpen((current) => !current);
-  };
-
-  const DropdownIndicator = (indicatorProps: any) => {
-    if (!isTouchInput) return <components.DropdownIndicator {...indicatorProps} />;
-    const innerProps = indicatorProps.innerProps || {};
-    return (
-      <components.DropdownIndicator
-        {...indicatorProps}
-        innerProps={{
-          ...innerProps,
-          onPointerDown: (event: React.PointerEvent) => toggleFromIndicator(event),
-          onMouseDown: (event: React.MouseEvent) => {
-            if (Date.now() - lastTouchToggleRef.current < 500) {
-              event.preventDefault();
-              event.stopPropagation();
-              return;
-            }
-            toggleFromIndicator(event);
-          },
-        }}
-      />
-    );
-  };
-
-  const MenuList = (menuProps: any) => {
-    const hideKeyboard = (event: React.TouchEvent<HTMLDivElement>) => {
-      if (keyboardDismissedForGestureRef.current) return;
-      keyboardDismissedForGestureRef.current = true;
-      keepMenuOpenRef.current = true;
-      const list = event.currentTarget.querySelector<HTMLElement>('[role="listbox"]');
-      const scrollTop = list?.scrollTop || 0;
-      selectRef.current?.blur?.();
-      window.requestAnimationFrame(() => {
-        if (list) list.scrollTop = scrollTop;
-        keepMenuOpenRef.current = false;
-      });
-    };
-    return (
-      <div
-        className="touch-pan-y"
-        onTouchStartCapture={() => { keyboardDismissedForGestureRef.current = false; }}
-        onTouchMoveCapture={hideKeyboard}
-      >
-        <components.MenuList {...menuProps} />
-      </div>
-    );
-  };
-
-  return (
-    <div ref={rootRef} className="automenu-font-select">
-    <Select
-      ref={selectRef}
-      value={fontOptions.find((option) => option.value === resolvedValue) || { value: resolvedValue, label: resolvedValue }}
-      onChange={(option: SingleValue<SelectOption>) => onChange(option?.value || '')}
-      options={fontOptions}
-      placeholder={placeholder}
-      styles={menuGap === undefined ? selectStyles : {
-        ...selectStyles,
-        menu: (base, state) => ({ ...selectStyles.menu?.(base, state), marginTop: menuGap }),
-      }}
-      captureMenuScroll={false}
-      menuShouldScrollIntoView={false}
-      isSearchable
-      menuIsOpen={menuIsOpen}
-      onMenuOpen={() => setMenuIsOpen(true)}
-      onMenuClose={() => { if (!keepMenuOpenRef.current) setMenuIsOpen(false); }}
-      components={{ DropdownIndicator, MenuList }}
-      noOptionsMessage={() => 'Nenhuma fonte encontrada'}
-      formatOptionLabel={(option) => (
-        <span style={{ fontFamily: option.value }}>{option.label}</span>
-      )}
-    />
-    </div>
-  );
+  return <div className="automenu-font-select min-w-0">
+    <DesignerPicker label="Fonte" searchLabel={placeholder} gap={menuGap}
+      value={fontOptions.find(option => option.value === resolvedValue) || { value: resolvedValue, label: resolvedValue }}
+      options={fontOptions} choose={option => onChange(option.value)} empty="Nenhuma fonte encontrada"
+      render={option => <span style={{ fontFamily: option.value }}>{option.label}</span>} />
+  </div>;
 };
 
-export const TextureSelect: React.FC<{
-  value?: string;
-  onChange: (url: string) => void;
-}> = ({ value, onChange }) => {
+export function TextureSelect({ value, onChange }: { value?: string; onChange: (url: string) => void }) {
   const normalizedValue = normalizeTextureUrl(value);
   const selectedOption = getMiniFoodTextureKind(normalizedValue)
-    ? textureOptions.find((option) => getMiniFoodTextureKind(option.value))
-    : textureOptions.find((option) => option.value === normalizedValue);
+    ? textureOptions.find(option => getMiniFoodTextureKind(option.value))
+    : textureOptions.find(option => option.value === normalizedValue);
 
-  return (
-    <Select
-      value={selectedOption || textureOptions[0]}
-      onChange={(option: SingleValue<TextureOption>) => onChange(option?.value || '')}
-      options={textureOptions}
-      aria-label="Textura de fundo"
-      placeholder="Buscar textura..."
-      styles={selectStyles}
-      isSearchable
-      noOptionsMessage={() => 'Nenhuma textura encontrada'}
-      formatOptionLabel={(option) => (
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="h-5 w-7 shrink-0 rounded border border-slate-200" style={getTexturePreviewStyle(option.url)} />
-          <span className="truncate">{option.label}</span>
-        </div>
-      )}
-    />
-  );
-};
-
-export const MiniFoodTextureSelect: React.FC<{
-  value?: string;
-  onChange: (url: string) => void;
-}> = ({ value, onChange }) => (
-  <Select
-    value={miniFoodTextureOptions.find((option) => getMiniFoodTextureKind(option.value) === getMiniFoodTextureKind(value)) || miniFoodTextureOptions[0]}
-    onChange={(option: SingleValue<TextureOption>) => onChange(option?.value || MINI_FOOD_BACKGROUNDS[0].url)}
-    options={miniFoodTextureOptions}
-    aria-label="Mini comida"
-    placeholder="Escolher mini comida..."
-    styles={selectStyles}
-    isSearchable
-    noOptionsMessage={() => 'Nenhuma mini comida encontrada'}
-    formatOptionLabel={(option) => {
-      const kind = getMiniFoodTextureKind(option.url);
-      return <div className="flex min-w-0 items-center gap-2">
-        {kind && <img src={miniFoodIconUrl(kind)} alt="" className="h-6 w-6 shrink-0" />}
+  return <DesignerPicker label="Textura de fundo" value={selectedOption || textureOptions[0]}
+    options={textureOptions} choose={option => onChange(option.url)} render={option => (
+      <span className="flex min-w-0 items-center gap-2">
+        <span className="h-5 w-7 shrink-0 rounded border border-slate-200" style={getTexturePreviewStyle(option.url)} />
         <span className="truncate">{option.label}</span>
-      </div>;
-    }}
-  />
-);
+      </span>
+    )} />;
+}
+
+export function MiniFoodTextureSelect({ value, onChange }: { value?: string; onChange: (url: string) => void }) {
+  const selected = miniFoodTextureOptions.find(option => getMiniFoodTextureKind(option.value) === getMiniFoodTextureKind(value));
+  return <DesignerPicker label="Mini comida" searchLabel="Buscar mini comida" value={selected || miniFoodTextureOptions[0]}
+    options={miniFoodTextureOptions} choose={option => onChange(option.url)} empty="Nenhuma mini comida encontrada"
+    render={option => {
+      const kind = getMiniFoodTextureKind(option.url);
+      return <span className="flex min-w-0 items-center gap-2">
+        {kind && <img src={miniFoodIconUrl(kind)} alt="" className="h-5 w-5 shrink-0" draggable={false} />}
+        <span className="truncate">{option.label}</span>
+      </span>;
+    }} />;
+}

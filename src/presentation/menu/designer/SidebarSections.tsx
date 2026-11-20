@@ -1,3 +1,5 @@
+import { canMoveImageLayer } from '../../../domain/menu/imageLayers';
+import { MINI_FOOD_INK } from '../../../domain/menu/miniFoods';
 import { HoldStepButton } from '../../common/HoldStepButton';
 import { ColorPicker } from './ColorPicker';
 import { DecorationControls } from './Decorations';
@@ -182,14 +184,16 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                 </div>
                 <div className="grid grid-cols-2 gap-2 mt-2">
                     <button
+                        disabled={!canMoveImageLayer(style.addedImages || [], [...layerIds], 'back')}
                         onClick={() => layerSelectedAddedImages('back')}
-                        className="py-2 text-xs bg-white text-slate-600 border border-slate-200 rounded hover:bg-slate-50 flex items-center justify-center gap-1"
+                        className="py-2 text-xs bg-white text-slate-600 border border-slate-200 rounded hover:bg-slate-50 flex items-center justify-center gap-1 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                         <SendToBack size={14} /> Enviar para trás
                     </button>
                     <button
+                        disabled={!canMoveImageLayer(style.addedImages || [], [...layerIds], 'front')}
                         onClick={() => layerSelectedAddedImages('front')}
-                        className="py-2 text-xs bg-white text-slate-600 border border-slate-200 rounded hover:bg-slate-50 flex items-center justify-center gap-1"
+                        className="py-2 text-xs bg-white text-slate-600 border border-slate-200 rounded hover:bg-slate-50 flex items-center justify-center gap-1 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                         <BringToFront size={14} /> Trazer à frente
                     </button>
@@ -466,7 +470,7 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle })
   const updateImageScale = (field: 'imageScale' | 'categoryImageScale', delta: number) => {
     setStyle((previous) => ({
       ...previous,
-      [field]: Math.max(0.5, Math.min(2, (previous[field] || 1) + delta)),
+      [field]: Math.max(0.5, Math.min(field === 'categoryImageScale' ? 2 : 2.5, Math.round(((previous[field] || 1) + delta) * 1000) / 1000)),
       name: 'Custom',
     }));
   };
@@ -579,9 +583,9 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle })
             <div className="flex items-center justify-between gap-2">
               <span className="text-[10px] font-medium uppercase text-slate-400">Tamanho</span>
               <div className="flex items-center gap-2">
-                <button type="button" onClick={() => updateImageScale(control.scaleField, -0.1)} className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white hover:bg-slate-100" aria-label={`Diminuir imagens de ${control.label.toLowerCase()}`}><Minus size={14} /></button>
+                <HoldStepButton onStep={() => updateImageScale(control.scaleField, -0.1)} disabled={control.scale <= 0.5} className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white hover:bg-slate-100" label={`Diminuir imagens de ${control.label.toLowerCase()}`}><Minus size={14} /></HoldStepButton>
                 <span className="w-10 text-center font-mono text-xs text-slate-600">{Math.round(control.scale * 100)}%</span>
-                <button type="button" onClick={() => updateImageScale(control.scaleField, 0.1)} className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white hover:bg-slate-100" aria-label={`Aumentar imagens de ${control.label.toLowerCase()}`}><Plus size={14} /></button>
+                <HoldStepButton onStep={() => updateImageScale(control.scaleField, 0.1)} disabled={control.scale >= (control.scaleField === 'categoryImageScale' ? 2 : 2.5)} className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white hover:bg-slate-100" label={`Aumentar imagens de ${control.label.toLowerCase()}`}><Plus size={14} /></HoldStepButton>
               </div>
             </div>
           </div>
@@ -868,7 +872,11 @@ export const StyleSection: React.FC<StyleSectionProps> = ({ style, setStyle }) =
         {isMiniFoodSelected && (
             <div className="space-y-1 pt-1">
                 <label className="text-[10px] uppercase font-bold text-slate-400">Mini comida</label>
-                <MiniFoodTextureSelect value={style.backgroundImage} onChange={(url) => setStyle(prev => ({ ...prev, backgroundImage: url, name: 'Custom' }))} />
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+                    <MiniFoodTextureSelect value={style.backgroundImage} onChange={url => setStyle(prev => ({ ...prev, backgroundImage: url, name: 'Custom' }))} />
+                    <ColorPicker value={style.miniFoodTextureColor || MINI_FOOD_INK} label="Cor da textura de mini comidas"
+                        onChange={color => setStyle(prev => ({ ...prev, miniFoodTextureColor: color, name: 'Custom' }))} />
+                </div>
             </div>
         )}
     </div>

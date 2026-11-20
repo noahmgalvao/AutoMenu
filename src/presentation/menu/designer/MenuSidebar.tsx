@@ -1,3 +1,4 @@
+import { preventBrowserContextMenu } from '../../common/noBrowserSelection';
 import type { CanvasShape } from '../../../domain/menu/model';
 import { TemplatePicker } from './TemplatePicker';
 import React from 'react';
@@ -79,7 +80,7 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
     const minimumFontSize = resolveMinimumFontSize(style);
 
     return (
-        <div 
+        <div data-no-browser-selection onContextMenu={preventBrowserContextMenu}
             className={`
                 flex flex-col bg-white overflow-hidden
                 /* Mobile: Bottom Sheet */
@@ -113,7 +114,7 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
           </div>
         </div>
 
-        <div className="overflow-y-auto overflow-x-hidden p-4 space-y-6 custom-scrollbar flex-grow pb-24 md:pb-10 min-w-0">
+        <div data-designer-scroll-container className="overflow-y-auto overflow-x-hidden overscroll-y-contain p-4 space-y-6 custom-scrollbar flex-grow pb-24 md:pb-10 min-w-0">
           
           <ElementsSection 
             selection={selection}

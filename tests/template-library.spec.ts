@@ -379,16 +379,16 @@ test('a mixed selection formats, resizes, layers and duplicates its shapes and i
   await page.mouse.move(box.x + box.width + 24, box.y + box.height + 24, { steps: 5 });
   const width = (id: string) => layer(id).evaluate(node => parseFloat((node as HTMLElement).style.width));
   for (const id of layers) await expect.poll(() => width(id)).toBeGreaterThan(100);
-  const resized = await width('shape-left');
+  const resized = await Promise.all(layers.map(width));
   await page.mouse.up();
-  for (const id of layers) await expect.poll(() => width(id)).toBe(resized);
+  for (const [index, id] of layers.entries()) await expect.poll(() => width(id)).toBe(resized[index]);
 
   await menuAction('Inverter horizontalmente');
   await menuAction('Inverter verticalmente');
   for (const id of layers) await expect(layer(id).locator('img')).toHaveCSS('transform', 'matrix(-1, 0, 0, -1, 0, 0)');
-  await controls.getByTitle('Trazer à frente').click();
+  await menuAction('Trazer para frente');
   for (const id of layers) await expect.poll(() => layer(id).evaluate(node => Number(getComputedStyle(node).zIndex))).toBeGreaterThan(40);
-  await controls.getByTitle('Enviar para trás').click();
+  await menuAction('Trazer para trás');
   for (const id of layers) await expect(layer(id)).toHaveCSS('z-index', '1');
 
   await menuAction('Definir como plano de fundo');
@@ -482,7 +482,7 @@ test.describe('mobile product formatting', () => {
     const name = product.getByRole('heading', { name: 'Burrata da casa' });
     await expect(name).toHaveAttribute('contenteditable', 'true');
     await expect.poll(async () => (await canvas.boundingBox())!.width).toBeGreaterThan(initialWidth + 100);
-    await toolbar.locator('.automenu-font-select [class$="-indicatorContainer"]').tap();
+    await toolbar.getByRole('combobox', { name: 'Fonte' }).tap();
     await expect(toolbar.getByRole('listbox')).toBeVisible();
     await toolbar.getByRole('button', { name: 'Negrito' }).tap();
     await expect(toolbar.getByRole('listbox')).toHaveCount(0);

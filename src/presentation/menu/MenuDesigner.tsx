@@ -1477,6 +1477,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             const rendered = document.getElementById(`added-image-${image.pageIndex || 0}-${image.id}`)?.querySelector('img');
             const dimensions = image.shape ? getCanvasShapeDimensions(image.shape) : undefined;
             const ratio = dimensions ? dimensions.height / dimensions.width
+                : image.crop ? image.crop.height / (image.crop.width * image.crop.aspect)
                 : rendered?.naturalWidth ? rendered.naturalHeight / rendered.naturalWidth : 1;
             const max = Math.max(50, Math.min(widthPx - image.x, (heightPx - image.y) / ratio));
             if (image.width < max) widths.set(image.id, Math.min(max, image.width + delta));

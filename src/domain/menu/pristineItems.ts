@@ -7,6 +7,7 @@ const normalize = (value?: string | null) => (value || '')
   .trim()
   .toLowerCase();
 
+export const isDefaultFreeText = (text?: string) => normalize(text) === 'novo texto';
 export const isDefaultProductName = (name?: string) => ['new item', 'novo item'].includes(normalize(name));
 export const isDefaultProductDescription = (description?: string) => ['description', 'descricao'].includes(normalize(description));
 export const isDefaultCategoryName = (name: string) => /^(new category|nova categoria)(?:\s+\d+)?$/i.test(name.trim());

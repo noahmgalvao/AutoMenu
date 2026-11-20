@@ -426,7 +426,7 @@ test('quick controls touch, grid insertion stays lateral and resizing starts at 
   await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
   await page.mouse.down();
   await page.mouse.move(grip.x + grip.width / 2 + 24, grip.y + grip.height / 2, { steps: 8 });
-  const guide = page.getByText(/^(Centro|Largura da coluna)$/).locator('..');
+  const guide = page.locator('[data-column-resize-guide]');
   await expect(guide).toBeVisible();
   await expect.poll(() => guide.evaluate(line => {
     const [first, second] = [...line.closest('[data-menu-print-page]')!.querySelectorAll('[data-drag-column-container="category"]')];
@@ -556,12 +556,12 @@ for (const { width, height, touch, buttonSize } of [
 test.describe('shape toolbar on a narrow touchscreen', () => {
   test.use({ viewport: { width: 280, height: 720 }, hasTouch: true, isMobile: true });
 
-  test('wraps buttons without shrinking or clipping their touch targets', async ({ page }) => {
+  test('keeps the remaining buttons reachable without shrinking their touch targets', async ({ page }) => {
     await page.goto('/tests/fixtures/template-editor.html');
     await page.getByRole('button', { name: 'Adicionar forma' }).tap();
     await page.getByRole('button', { name: 'Inserir forma' }).tap();
     const buttons = page.locator('[data-object-page-index] > button');
-    await expect(buttons).toHaveCount(6);
+    await expect(buttons).toHaveCount(4);
     const buttonLayout = () => buttons.evaluateAll(elements => {
       const rects = elements.map(element => element.getBoundingClientRect());
       return {
@@ -572,7 +572,7 @@ test.describe('shape toolbar on a narrow touchscreen', () => {
     });
     await expect.poll(buttonLayout).toEqual({ rows: 1, reachable: true });
     await page.setViewportSize({ width: 210, height: 720 });
-    await expect.poll(buttonLayout).toEqual({ rows: 2, reachable: true });
+    await expect.poll(buttonLayout).toEqual({ rows: 1, reachable: true });
     await page.setViewportSize({ width: 430, height: 720 });
     await expect.poll(buttonLayout).toEqual({ rows: 1, reachable: true });
     await page.getByTitle('Remover forma', { exact: true }).tap();

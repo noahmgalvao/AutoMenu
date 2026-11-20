@@ -46,6 +46,7 @@ test('shape text survives a change of geometry and keeps existing settings', asy
   await expect(textField).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   await expect(textField).toHaveCSS('color', 'rgba(0, 0, 0, 0)');
   expect(decodeURIComponent((await shape.locator('img').getAttribute('src'))!)).toContain('Oferta');
+  await textField.press('Escape');
   const toolbar = page.locator('[data-inline-format-toolbar]');
   await toolbar.getByRole('button', { name: 'Alterar forma' }).click();
   await page.locator('[data-change-shape-picker]').getByRole('button', { name: 'Elipse' }).click();

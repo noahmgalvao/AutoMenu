@@ -239,6 +239,11 @@ export function DecorationControls({ style, setStyle, scope: baseScope, id, show
     ? 'categoryGroup'
     : selectedTarget?.scope ?? baseScope;
   const border = getBorderConfiguration(style, scope, id);
+  const fill = getSurfaceFill(style, scope, id);
+  const defaultHasFill = scope === 'product' ? style.layoutMode !== 'list'
+    : scope === 'category' ? ['filled', 'pill', 'ribbon'].includes(style.design?.category || '')
+    : scope === 'header' ? ['banner', 'hero'].includes(style.design?.header || '')
+    : scope === 'price' ? ['badge', 'pill'].includes(style.design?.price || '') : false;
   const surfaceId = selectedTarget?.elementId || targetElementId || (id
     ? baseScope === 'category' ? `category-header-${id}` : `product-container-${id}`
     : undefined);
@@ -348,7 +353,11 @@ export function DecorationControls({ style, setStyle, scope: baseScope, id, show
         <ColorPicker value={border.color} onChange={color => change({ color })} label="Cor da borda" />
       </div>
       <div className="flex items-center justify-between gap-2 text-xs font-medium text-slate-600">Cor de preenchimento
-        <ColorPicker label="Cor de preenchimento" value={getSurfaceFill(style, scope, id) || (scope === 'product' ? style.cardBackgroundColor : undefined) || '#ffffff'}
+        <ColorPicker label="Cor de preenchimento" value={(fill !== 'transparent' && fill) || (scope === 'product' && style.cardBackgroundColor !== 'transparent' ? style.cardBackgroundColor : undefined) || '#ffffff'}
+          noFill={{ active: fill === 'transparent' || (!fill && !defaultHasFill),
+            onSelect: () => {
+              if (fill !== 'transparent' && (fill || defaultHasFill)) setStyle(previous => withSurfaceFill(previous, scope, id, 'transparent'));
+            } }}
           preview={scope === 'product' && style.layoutMode !== 'list' ? 'cards' : undefined}
           onChange={color => setStyle(previous => withSurfaceFill(previous, scope, id, color))} />
       </div>

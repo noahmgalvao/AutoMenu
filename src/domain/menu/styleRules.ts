@@ -90,7 +90,7 @@ export const clampFontSize = (
 
 
 export const usesProductCards = (style: MenuStyle) =>
-  style.layoutMode === 'cards' || (style.design ? style.design.card !== 'flat' : style.layoutMode === 'grid');
+  style.layoutMode === 'cards' || style.layoutMode === 'grid';
 
 export function resolveProductImageFrame(style: MenuStyle, inRow = style.layoutMode !== 'list' || style.columnCount > 1) {
   return style.productImageFrame ?? (inRow && usesProductCards(style) ? 'fill' : 'template');

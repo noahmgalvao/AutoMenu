@@ -1,3 +1,4 @@
+import { isDefaultFreeText } from '../../../domain/menu/pristineItems';
 import { categoryKey } from '../../../domain/menu/categoryName';
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { flushSync } from 'react-dom';
@@ -550,6 +551,7 @@ export const useSelectionState = (
         el.focus({ preventScroll: true });
         const range = document.createRange();
         range.selectNodeContents(el);
+        if (type === 'freeText' && isDefaultFreeText(product?.name)) range.collapse(false);
         const selection = window.getSelection();
         selection?.removeAllRanges();
         selection?.addRange(range);

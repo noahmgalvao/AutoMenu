@@ -208,7 +208,7 @@ function Discover({ current, products, sortOption, splitCategoryAcrossPages, app
   };
 
   return createPortal(
-    <dialog ref={dialog} tabIndex={-1} aria-labelledby={titleId} className="template-discover" style={{ '--discover-accent': focused?.primaryColor } as React.CSSProperties}
+    <dialog ref={dialog} data-no-browser-selection tabIndex={-1} aria-labelledby={titleId} className="template-discover" style={{ '--discover-accent': focused?.primaryColor } as React.CSSProperties}
       onCancel={(event) => { event.preventDefault(); onClose(); }}
       onPointerDownCapture={(event) => {
         if (event.pointerType !== 'touch' || !event.isPrimary) return;
@@ -355,7 +355,6 @@ export function TemplatePicker(props: Props) {
   const [discover, setDiscover] = useState(false);
   const [tab, setTab] = useState<TemplateTab>('all');
   const [query, setQuery] = useState('');
-  const [search, setSearch] = useState('');
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useId();
@@ -364,13 +363,7 @@ export function TemplatePicker(props: Props) {
   const selectedTemplate = templates.find(template => template.id === currentId);
 
   useEffect(() => {
-    const timer = setTimeout(() => setSearch(query), 110);
-    return () => clearTimeout(timer);
-  }, [query]);
-
-  useEffect(() => {
     if (!pickerOpen) return;
-    root.current?.querySelector('input')?.focus();
     const closeOutside = (event: PointerEvent) => {
       if (!root.current?.contains(event.target as Node)) setPickerOpen(false);
     };
@@ -384,7 +377,7 @@ export function TemplatePicker(props: Props) {
     requestAnimationFrame(() => trigger.current?.focus({ preventScroll: true }));
   }, [panel]);
 
-  const results = useMemo(() => filterTemplates(templates, tab, search, favorites.ids), [templates, tab, search, favorites.ids]);
+  const results = useMemo(() => filterTemplates(templates, tab, query, favorites.ids), [templates, tab, query, favorites.ids]);
 
   return <div ref={root} className="space-y-2" onKeyDown={(event) => {
     if (!pickerOpen) return;
@@ -418,7 +411,7 @@ export function TemplatePicker(props: Props) {
     </button>
     {pickerOpen && <div id={panel} className="space-y-2 rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
       <Filters {...{ query, setQuery, tab, setTab }} />
-      <div className="max-h-64 space-y-1 overflow-auto overscroll-contain">
+      <div className="max-h-64 space-y-1 overflow-auto overscroll-y-auto">
         {results.map((template) => <TemplateOption key={template.id} template={template} active={currentId === template.id}
           favorites={favorites} choose={() => { applyTemplate(template); setPickerOpen(false); trigger.current?.focus(); }} />)}
         {results.length === 0 && <p className="p-3 text-sm text-slate-600">Nenhum modelo encontrado.</p>}

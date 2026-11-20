@@ -77,6 +77,8 @@ export function miniFoodIconUrl(kind: MiniFoodKind) {
   return svgUrl(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${ink}>${drawing(kind)}</svg>`);
 }
 
-export function miniFoodTextureUrl(kind: MiniFoodKind) {
-  return svgUrl(`<svg xmlns="http://www.w3.org/2000/svg" width="794" height="1123" viewBox="0 0 794 1123"><defs><pattern id="tile" width="118" height="118" patternUnits="userSpaceOnUse"><g ${ink}><g transform="translate(16 18) rotate(-9 12 12) scale(1.18)" opacity=".16">${drawing(kind)}</g><g transform="translate(76 68) rotate(12 12 12) scale(.92)" opacity=".12">${drawing(kind)}</g></g></pattern></defs><rect width="794" height="1123" fill="url(#tile)"/></svg>`);
+export function miniFoodTextureUrl(kind: MiniFoodKind, color = MINI_FOOD_INK) {
+  const stroke = /^#[0-9a-f]{6}$/i.test(color) ? color : MINI_FOOD_INK;
+  const textureInk = ink.replace(MINI_FOOD_INK, stroke);
+  return svgUrl(`<svg xmlns="http://www.w3.org/2000/svg" width="794" height="1123" viewBox="0 0 794 1123"><defs><pattern id="tile" width="118" height="118" patternUnits="userSpaceOnUse"><g ${textureInk}><g transform="translate(16 18) rotate(-9 12 12) scale(1.18)" opacity=".16">${drawing(kind)}</g><g transform="translate(76 68) rotate(12 12 12) scale(.92)" opacity=".12">${drawing(kind)}</g></g></pattern></defs><rect width="794" height="1123" fill="url(#tile)"/></svg>`);
 }

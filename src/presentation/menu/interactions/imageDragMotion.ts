@@ -1,3 +1,4 @@
+import { alignCanvasBox, clearCanvasAlignment, showCanvasAlignment } from './canvasAlignment';
 import type { MenuStyle } from '../../../domain/menu/model';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 
@@ -22,12 +23,27 @@ export function captureImageDrag(id: string, pageIndex: number, rect: DOMRect, s
         offsetX: (start.x - rect.left) / scale,
         offsetY: (start.y - rect.top) / scale,
         height: Math.max(1, rect.height / scale),
+        width: Math.max(1, rect.width / scale),
     };
 }
 
 export type ImageDragMotion = ReturnType<typeof captureImageDrag> & { backgroundText?: boolean };
 export type LayerDragMove = { drag: ImageDragMotion; point: Point };
 export type CanvasLayerPositions = Pick<MenuStyle, 'addedImages' | 'blankPages' | 'freeTextBackgrounds'>;
+
+export function alignLayerMove(move: LayerDragMove, pages: ReturnType<typeof getRenderedImageDragPages>, excluded: ReadonlySet<string>) {
+    const { point, drag } = move;
+    const page = pages.find(({ rect }) => point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom);
+    if (!page) { clearCanvasAlignment(); return point; }
+    const { rect } = page;
+    const width = drag.width * drag.scale;
+    const height = drag.height * drag.scale;
+    const left = Math.max(rect.left, Math.min(rect.right - width, point.x - drag.offsetX * drag.scale));
+    const top = Math.max(rect.top, Math.min(rect.bottom - height, point.y - drag.offsetY * drag.scale));
+    const aligned = alignCanvasBox(page.element, { left, top, width, height }, excluded);
+    showCanvasAlignment(page.element, aligned.guides);
+    return { x: point.x + aligned.left - left, y: point.y + aligned.top - top };
+}
 
 export function moveDraggedLayers(
     style: MenuStyle,

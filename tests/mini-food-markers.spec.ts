@@ -49,6 +49,7 @@ test('a mini food hides the shape text and a geometric shape restores it', async
   await page.locator('[data-object-page-index="0"]').getByTitle('Editar forma').click();
   const field = page.getByRole('textbox', { name: 'Texto da forma' });
   await field.fill('Prato da casa');
+  await field.press('Escape');
   const settings = page.locator('[data-inline-format-toolbar]');
   await expect(settings.getByRole('button', { name: 'Cor de preenchimento' })).toHaveCount(0);
   await settings.getByRole('button', { name: 'Contorno', exact: true }).click();

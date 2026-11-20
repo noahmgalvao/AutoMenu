@@ -1,3 +1,4 @@
+import { HoldStepButton } from '../../common/HoldStepButton';
 
 import React from 'react';
 import { Monitor, ZoomIn, ZoomOut } from 'lucide-react';
@@ -20,8 +21,10 @@ export const ZoomControls: React.FC<ZoomControlsProps> = ({ scale, updateZoom, s
         
         {/* Zoom Buttons */}
         <div data-canvas-control-obstacle className="absolute top-20 right-4 z-10 hidden gap-2 md:flex">
-            <button aria-label="Diminuir zoom" onClick={() => updateZoom(-0.1)} className="p-2 bg-white rounded-full shadow-lg hover:bg-slate-50 text-slate-700"> <ZoomOut size={16} /> </button>
-            <button aria-label="Aumentar zoom" onClick={() => updateZoom(0.1)} className="p-2 bg-white rounded-full shadow-lg hover:bg-slate-50 text-slate-700"> <ZoomIn size={16} /> </button>
+            <HoldStepButton label="Diminuir zoom" onStep={() => updateZoom(-0.1)} disabled={scale <= 0.3}
+                className="p-2 bg-white rounded-full shadow-lg hover:bg-slate-50 text-slate-700"><ZoomOut size={16} /></HoldStepButton>
+            <HoldStepButton label="Aumentar zoom" onStep={() => updateZoom(0.1)} disabled={scale >= 2.5}
+                className="p-2 bg-white rounded-full shadow-lg hover:bg-slate-50 text-slate-700"><ZoomIn size={16} /></HoldStepButton>
         </div>
         </>
     );

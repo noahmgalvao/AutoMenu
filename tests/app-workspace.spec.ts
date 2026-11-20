@@ -153,3 +153,29 @@ test('menu selection deletes only the checked menus in a single request and move
   await expect(activeMenuName).toHaveText('Cardápio 1');
   expect(deletionBatches[1]).toEqual(['30000000-0000-4000-8000-000000000005']);
 });
+
+test('settings keeps its close buttons visible and numeric typing commits at the bounds', async ({ page }) => {
+  await openWorkspace(page);
+  await page.getByRole('button', { name: 'Meu perfil' }).click();
+  await page.getByRole('button', { name: 'Configurações', exact: true }).click();
+  const settings = page.getByRole('dialog', { name: 'Configurações' });
+  await settings.getByRole('button', { name: 'Regras Gerais', exact: true }).click();
+  const minimum = settings.getByRole('spinbutton', { name: 'Mínimo geral', exact: true });
+  await minimum.fill('1');
+  await expect(minimum).toHaveValue('1');
+  await minimum.fill('23');
+  await minimum.press('Enter');
+  await expect(minimum).toHaveValue('23');
+  const plus = settings.getByRole('button', { name: 'Aumentar Mínimo geral' });
+  await plus.hover();
+  await page.mouse.down();
+  await expect.poll(async () => Number(await minimum.inputValue())).toBeGreaterThan(24);
+  await page.mouse.up();
+  await settings.getByRole('button', { name: 'Redefinir regras ao padrão' }).scrollIntoViewIfNeeded();
+  const top = settings.getByRole('button', { name: 'Fechar configurações' });
+  const footer = settings.getByRole('button', { name: 'Fechar', exact: true });
+  await expect(top).toBeInViewport();
+  await expect(footer).toBeInViewport();
+  await footer.click();
+  await expect(settings).toHaveCount(0);
+});

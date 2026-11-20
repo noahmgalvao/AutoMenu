@@ -3,7 +3,7 @@ import type { Product, MenuStyle } from './model';
 import { resolveMenuMargins, resolveMinimumFontSize, resolveMenuContentSpacing, clampFontSize, resolveProductImageFrame } from './styleRules';
 import { resolveMenuPageDimensions } from './pageSetup';
 import { normalizeColumnWidths } from './categoryColumns';
-import { templateHeaderExtra, templateProductImageHeight, templateCategoryExtra } from '../templates/templateDesign';
+import { templateHeaderExtra, templateCategoryExtra } from '../templates/templateDesign';
 import { FREE_TEXT_PREFIX, CATEGORY_CHUNK_GAP_PX } from './flow';
 import { formatMenuPrice } from './price';
 
@@ -122,15 +122,16 @@ const getProductGridGap = (style: MenuStyle) => {
     return PRODUCT_GRID_GAP_PX;
 };
 
-export const getProductCardImageHeight = (style: MenuStyle, imgScale = style.imageScale || 1) => {
+export const getProductCardImageLimit = (style: MenuStyle) => {
     const productColumnCount = style.columnCount || 1;
     const categoryColumnCount = style.categoryColumnCount || 1;
-    if (categoryColumnCount >= 3) return 56 * imgScale;
-    if (categoryColumnCount === 2) return 72 * imgScale;
-    if (productColumnCount >= 3) return 90 * imgScale;
-    if (productColumnCount === 2) return 120 * imgScale;
-    return PRODUCT_CARD_IMAGE_HEIGHT_PX * imgScale;
+    if (categoryColumnCount > 1 || productColumnCount >= 3) return 96;
+    if (productColumnCount === 2) return 120;
+    return PRODUCT_CARD_IMAGE_HEIGHT_PX;
 };
+
+export const getProductListImageLimit = (categoryColumnCount: number) => categoryColumnCount === 2 ? 88 : 112;
+export const CATEGORY_IMAGE_LIMIT = 64;
 
 export const getPaginationBottomInset = (style: MenuStyle) => {
     const margin = resolveMenuMargins(style).bottom;
@@ -219,10 +220,8 @@ export const calculateItemHeight = (
         const usableColWidth = Math.max(40, (containerWidth - (productGridGap * (columnCount - 1))) / columnCount);
         if (style.showImages && product.image) {
             const frame = resolveProductImageFrame(style, true);
-            const height = templateProductImageHeight(style, getProductCardImageHeight(style));
-            if (frame === 'fill') contentHeight += height;
-            else if (frame === 'template') contentHeight += style.design?.image === 'background' ? 36 : height;
-            else contentHeight += 8 + (frame === 'circle' ? Math.min(usableColWidth - 16, height) : height);
+            const height = Math.min(usableColWidth, getProductCardImageLimit(style) * imgScale);
+            contentHeight += frame === 'template' && style.design?.image === 'background' ? 36 * imgScale : height;
         }
         const cardHorizontalPadding = categoryColumnCount > 1 || columnCount > 2 ? 12 : columnCount > 1 ? 16 : 32;
         const textContentWidth = Math.max(32, usableColWidth - cardHorizontalPadding);
@@ -244,7 +243,7 @@ export const calculateItemHeight = (
     } else {
         const hasImage = Boolean(style.showImages && product.image);
         const imgHeight = hasImage
-            ? (categoryColumnCount >= 3 ? 96 * imgScale : categoryColumnCount === 2 ? 64 * imgScale : 96 * imgScale)
+            ? Math.min(getProductListImageLimit(categoryColumnCount) * imgScale, containerWidth * (categoryColumnCount >= 3 ? 1 : .42))
             : 0;
         const compactLayout = categoryColumnCount > 1;
         const innerWidth = Math.max(80, containerWidth);
@@ -372,7 +371,9 @@ const createPageItemHeightCalculator = (
             const dividerReserve = categoryStyle.textAlign === 'center' ? 64 : 32;
             const categoryImage = style.showCategoryImages !== false ? style.categoryImages?.[item.data] : undefined;
             const categoryImageScale = style.categoryImageScale || 1;
-            const imageReserve = categoryImage?.url ? ((categoryImage.width || 36) * categoryImageScale) + 8 : 0;
+            const aspect = Math.min(3, Math.max(.375, (categoryImage?.width || 1) / (categoryImage?.height || 1)));
+            const imageWidth = categoryImage?.url ? Math.min(categoryColumnWidth * .35, CATEGORY_IMAGE_LIMIT * categoryImageScale * Math.min(aspect, 1)) : 0;
+            const imageReserve = imageWidth ? imageWidth + 8 : 0;
             const letterSpacing = categoryStyle.letterSpacing || 0;
             const categoryCharWidth = (categoryFontSize * 0.6) + letterSpacing;
             const lines = getSafeLineCount(
@@ -380,7 +381,7 @@ const createPageItemHeightCalculator = (
                 Math.max(24, categoryColumnWidth - editButtonReserve - dividerReserve - imageReserve),
                 categoryCharWidth
             );
-            const imageHeight = categoryImage?.url ? (categoryImage.height || 36) * categoryImageScale : 0;
+            const imageHeight = imageWidth / aspect;
             return Math.max(categoryFontSize * 1.25 * lines, imageHeight, 28) + spacing.categoryToProduct + 8 + templateCategoryExtra(style);
         }
         if (item.type === 'product-item') return calculateItemHeight(item.data, style, false, 1, categoryColumnWidth, categoryColumnCount);

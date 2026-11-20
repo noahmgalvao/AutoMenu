@@ -111,7 +111,16 @@ export interface AddedImage {
   flipHorizontal?: boolean;
   flipVertical?: boolean;
   shape?: CanvasShape;
+  crop?: CanvasImageCrop;
   boundingBox?: BoundingBox;
+}
+
+export interface CanvasImageCrop {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  aspect: number;
 }
 
 export type CanvasShapeKind = MiniFoodKind | 'rectangle' | 'ellipse' | 'triangle' | 'diamond' | 'polygon' | 'star' | 'arrow' | 'line';
@@ -120,6 +129,7 @@ export interface CanvasShape {
   kind: CanvasShapeKind;
   text?: string;
   textColor?: string;
+  textStyle?: ElementStyle;
   textAlign?: 'left' | 'center' | 'right';
   fill: string;
   stroke: string;
@@ -199,6 +209,7 @@ export interface MenuStyle {
   backgroundColor: string;
   textColor: string;
   backgroundImage?: string;
+  miniFoodTextureColor?: string;
   backgroundAssetId?: string | null;
   pageBackgrounds?: PageBackground[];
   sourceImage?: string;

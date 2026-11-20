@@ -1,3 +1,4 @@
+import { preventBrowserContextMenu } from '../common/noBrowserSelection';
 import React from 'react';
 import type { Product, MenuStyle, SortOption } from '../../domain/menu/model';
 import { ShoppingCart, FileText, Maximize2, Minimize2, X } from 'lucide-react';
@@ -195,7 +196,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
 
     return (
         <>
-            <div
+            <div data-no-browser-selection onContextMenu={preventBrowserContextMenu}
                 className={`
                 flex flex-col bg-slate-50 overflow-hidden
                 /* Mobile: Bottom Sheet */
@@ -236,7 +237,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
 
                 {/* List - Content Scrolls Here */}
                 <div
-                    className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-4 space-y-4 pb-20 min-w-0"
+                    className="flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain custom-scrollbar p-4 space-y-4 pb-20 min-w-0"
                     data-product-designer-scroll-container="true"
                     onScroll={() => { if (menuOpenId) setMenuOpenId(null); }}
                     onClickCapture={(event) => {

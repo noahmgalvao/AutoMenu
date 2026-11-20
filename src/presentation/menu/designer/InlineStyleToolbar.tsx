@@ -1,3 +1,4 @@
+import { HoldStepButton } from '../../common/HoldStepButton';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlignCenter, AlignLeft, AlignRight, Bold, ChevronDown, Italic, Minus, Plus, Underline } from 'lucide-react';
@@ -241,15 +242,11 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                 <div className="mt-2 border-t border-slate-100 pt-2">
                     <div className="mb-1.5 text-[10px] font-semibold text-slate-600">{priceFormatHeader || 'Alterar valor'}</div>
                     <div className="grid grid-cols-[2rem_minmax(0,1fr)_4.5rem_2rem] items-center gap-1">
-                        <button
-                            type="button"
-                            disabled={!canAdjustPrice}
-                            onClick={() => onAdjustPrice(-1, parsedPriceAdjustment, priceAdjustmentMode)}
-                            className="flex h-8 items-center justify-center rounded-lg border border-slate-200 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
-                            title="Diminuir preço"
-                        >
+                        <HoldStepButton label="Diminuir preço" disabled={!canAdjustPrice}
+                            onStep={() => onAdjustPrice(-1, parsedPriceAdjustment, priceAdjustmentMode)}
+                            className="flex h-8 items-center justify-center rounded-lg border border-slate-200 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed">
                             <Minus size={15} />
-                        </button>
+                        </HoldStepButton>
                         <input
                             type="number"
                             min="0"
@@ -272,15 +269,11 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                             </select>
                             <ChevronDown size={11} className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400" />
                         </label>
-                        <button
-                            type="button"
-                            disabled={!canAdjustPrice}
-                            onClick={() => onAdjustPrice(1, parsedPriceAdjustment, priceAdjustmentMode)}
-                            className="flex h-8 items-center justify-center rounded-lg border border-slate-200 text-emerald-600 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
-                            title="Aumentar preço"
-                        >
+                        <HoldStepButton label="Aumentar preço" disabled={!canAdjustPrice}
+                            onStep={() => onAdjustPrice(1, parsedPriceAdjustment, priceAdjustmentMode)}
+                            className="flex h-8 items-center justify-center rounded-lg border border-slate-200 text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed">
                             <Plus size={15} />
-                        </button>
+                        </HoldStepButton>
                     </div>
                 </div>
             )}

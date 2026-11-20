@@ -1,9 +1,10 @@
+import { alignCanvasBox, clearCanvasAlignment, showCanvasAlignment } from './canvasAlignment';
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { flushSync } from 'react-dom';
 import type { CategoryPosition, Product } from '../../../domain/menu/model';
 import { InteractionProps, SelectionItem, TOUCH_LONG_PRESS_MS } from './types';
 import { isDraggableSelectionItem, keepSelectedOrder, moveSelectedProducts, preventCanvasDragClick } from './canvasSelectionDrag';
-import { captureImageDrag, getRenderedImageDragPages, IMAGE_DRAG_THRESHOLD_PX, moveDraggedLayers, type CanvasLayerPositions, type ImageDragMotion, type LayerDragMove } from './imageDragMotion';
+import { alignLayerMove, captureImageDrag, getRenderedImageDragPages, IMAGE_DRAG_THRESHOLD_PX, moveDraggedLayers, type CanvasLayerPositions, type ImageDragMotion, type LayerDragMove } from './imageDragMotion';
 import { CATEGORY_CHUNK_GAP_PX, FREE_TEXT_PREFIX, STANDARD_GAP } from '../../../domain/menu/flow';
 import { getPaginationBottomInset, type CategoryPlacementAssignment } from '../../../domain/menu/menuPagination';
 import {
@@ -814,6 +815,7 @@ export const useDraggableInteractions = (
         removeGlobalListenersRef.current();
         removeNativeTouchBlocker();
         clearInvalidDragTargets();
+        clearCanvasAlignment();
         restoreScrollableAncestors();
         restoreBodyDragStyles();
         resetDragState();
@@ -2994,6 +2996,7 @@ export const useDraggableInteractions = (
                 const draggedProduct = getLatestProductById(currentDragItem.id);
 
                 if (draggedProduct?.isFreeText) {
+                    if (!selectionDragRef.current) clearCanvasAlignment();
                     const currentCategory = freeTextActiveCategoryRef.current[currentDragItem.id] || draggedProduct.category || `${FREE_TEXT_PREFIX}${currentDragItem.id}`;
                     const activeProduct = { ...draggedProduct, category: currentCategory };
                     const currentElement =
@@ -3358,7 +3361,7 @@ export const useDraggableInteractions = (
                     const scale = pageRect && pageRect.height > 0 ? pageRect.height / Math.max(1, pageElement?.offsetHeight || 1) : 1;
                     const safeTop = pageRect?.top ?? refreshedRect?.top ?? pointer.y;
                     const safeBottom = pageRect?.bottom ?? Number.POSITIVE_INFINITY;
-                    const desiredLeft = pageRect && refreshedRect
+                    let desiredLeft = pageRect && refreshedRect
                         ? Math.max(pageRect.left, Math.min(pointer.x - pointerOffsetX, pageRect.right - refreshedRect.width))
                         : pointer.x;
                     const rawDesiredTop = refreshedRect
@@ -3374,10 +3377,14 @@ export const useDraggableInteractions = (
                                 : Math.max(rawDesiredTop, freeTextSwapTarget.contactTop)
                         )
                         : rawDesiredTop;
+                    const alignment = !selectionDragRef.current && pageElement && refreshedRect && dragSourceContextRef.current !== 'product-designer'
+                        ? alignCanvasBox(pageElement, { left: desiredLeft, top: edgeLimitedDesiredTop, width: refreshedRect.width, height: refreshedRect.height },
+                            new Set([currentDragItem.id]), activeLane ? ['x', 'y'] : ['y']) : null;
+                    if (alignment) desiredLeft = alignment.left;
                     const safeClientTop = refreshedRect && pageElement
                         ? getCollisionSafeFreeTextTop({
                             root: pageElement,
-                            desiredTop: edgeLimitedDesiredTop,
+                            desiredTop: alignment?.top ?? edgeLimitedDesiredTop,
                             height: refreshedRect.height,
                             pointerY: pointer.y,
                             excludeProductId: currentDragItem.id,
@@ -3398,6 +3405,9 @@ export const useDraggableInteractions = (
                                 : Math.max(resolvedDesiredTop, freeTextSwapTarget.contactTop)
                         )
                         : resolvedDesiredTop;
+                    if (alignment && pageElement && safeClientTop !== null) {
+                        showCanvasAlignment(pageElement, alignment.guides.filter(guide => guide.axis === 'x' || Math.abs(desiredTop - alignment.top) < 1));
+                    }
                     if (activeLane && pageRect && refreshedRect) {
                         if (safeClientTop === null) return;
                         const nextPosition: CategoryPosition = {
@@ -3555,6 +3565,14 @@ export const useDraggableInteractions = (
         if (!stepX && !stepY) return;
         selection.pointer = pointer;
         const delta = { x: pointer.x - selection.start.x, y: pointer.y - selection.start.y };
+        const reference = selection.members.find(member => member.layer);
+        const pages = reference ? getRenderedImageDragPages() : [];
+        if (reference?.layer) {
+            const point = { x: reference.start.x + delta.x, y: reference.start.y + delta.y };
+            const aligned = alignLayerMove({ drag: reference.layer, point }, pages, new Set(selection.members.map(member => member.item.id)));
+            delta.x += aligned.x - point.x;
+            delta.y += aligned.y - point.y;
+        }
         const moves: LayerDragMove[] = [];
         // Move the objects furthest along the gesture first so followers can occupy the slots they free.
         const ordered = [...selection.members].sort((a, b) =>
@@ -3577,7 +3595,6 @@ export const useDraggableInteractions = (
             draggedItemRef.current = primary.item;
         }
         if (moves.length) {
-            const pages = getRenderedImageDragPages();
             selection.layers = moveDraggedLayers({ ...style, ...selection.layers }, moves, pages);
             setLiveCanvasLayers(selection.layers);
         }

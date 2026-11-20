@@ -70,6 +70,7 @@ export function applyTemplateToCurrentStyle(current: MenuStyle, template: MenuSt
     backgroundColor: visual.backgroundColor,
     textColor: visual.textColor,
     backgroundImage: visual.backgroundImage,
+    miniFoodTextureColor: visual.miniFoodTextureColor,
     backgroundAssetId: visual.backgroundAssetId,
     templateBackgroundFit: visual.sourceType === 'ai_import' ? 'fill' : 'cover',
     layoutMode: visual.layoutMode,

@@ -61,7 +61,7 @@ export function getMenuPalette(style: MenuStyle, freeTextColors: (string | undef
     ...Object.values(style.freeTextBorders || {}).map(border => border.sides.length ? border.color : undefined),
     ...Object.values(style.fills || {}), ...Object.values(style.freeTextFills || {}),
     ...freeTextColors,
-  ].filter((color): color is string => Boolean(color));
+  ].filter((color): color is string => Boolean(color) && color !== 'transparent');
   return { shapes, fallback };
 }
 
@@ -99,10 +99,11 @@ interface Props {
   onChange: (color: string) => void;
   label?: string;
   className?: string;
+  noFill?: { active: boolean; onSelect: () => void };
   preview?: 'background' | 'cards' | 'primary' | 'text';
 }
 
-export function ColorPicker({ value = '#000000', onChange, label = 'Cor', className = '', preview }: Props) {
+export function ColorPicker({ value = '#000000', onChange, label = 'Cor', className = '', preview, noFill }: Props) {
   const colors = React.useContext(MenuColorContext);
   const [open, setOpen] = useState(false);
   const [sampling, setSampling] = useState(false);
@@ -261,7 +262,7 @@ export function ColorPicker({ value = '#000000', onChange, label = 'Cor', classN
   const swatches = (items: string[], label: string, active = false) => items.length > 0 && (
     <div role="group" aria-label={label} className={`grid grid-cols-8 gap-1 ${active ? 'rounded-lg bg-indigo-50 p-1 ring-1 ring-indigo-200' : ''}`}>
       {items.map(color => <button key={color} type="button" title={color} aria-label={color}
-        aria-pressed={draft === color}
+        aria-pressed={!noFill?.active && draft === color}
         onClick={() => commit(color)} style={{ background: color }}
         className="aspect-square rounded-md border border-black/15 hover:ring-2 hover:ring-indigo-400" />)}
     </div>
@@ -272,7 +273,7 @@ export function ColorPicker({ value = '#000000', onChange, label = 'Cor', classN
   return <>
     <button ref={trigger} type="button" title={label} aria-label={label} aria-expanded={open} aria-controls={pickerId}
       data-drag-ignore="true" className={`h-8 w-8 shrink-0 rounded-md border border-black/15 ${className}`}
-      style={{ background: open ? draft : value }}
+      style={{ background: noFill?.active ? 'linear-gradient(135deg, white 47%, #e11d48 48% 52%, white 53%)' : open ? draft : value }}
       onClick={() => {
         if (open) clearPreview();
         else {
@@ -285,9 +286,10 @@ export function ColorPicker({ value = '#000000', onChange, label = 'Cor', classN
         setOpen(!open);
       }} />
     {open && createPortal(
-      <div ref={panel} id={pickerId} role="dialog" aria-label={label} data-drag-ignore="true" data-editor-popover="true"
+      <div ref={panel} id={pickerId} role="dialog" aria-label={label} data-no-browser-selection data-drag-ignore="true" data-editor-popover="true"
         className="fixed z-[11000] max-h-[calc(100dvh-16px)] w-[252px] space-y-2 overflow-y-auto rounded-xl border border-slate-200 bg-white p-3 text-xs shadow-xl"
         style={sampling ? { left: 8, top: 8 } : position}
+        onContextMenu={event => { if (!(event.target as Element).closest('input')) event.preventDefault(); }}
         onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}>
         <div className="flex items-center justify-between gap-2 font-semibold text-slate-700">
           {sampling ? 'Toque em um ponto da página' : label}
@@ -298,6 +300,12 @@ export function ColorPicker({ value = '#000000', onChange, label = 'Cor', classN
           }}><X size={16} /></button>
         </div>
         {!sampling && <>
+          {noFill && <button type="button" role="checkbox" aria-checked={noFill.active}
+            className="flex w-full items-center gap-2 rounded-md border border-slate-200 px-2 py-1.5 text-left font-medium text-slate-700 hover:bg-slate-50"
+            onClick={() => { clearPreview(); noFill.onSelect(); }}>
+            <span aria-hidden="true" className="grid size-4 place-items-center rounded border border-slate-300 text-indigo-700">{noFill.active ? '✓' : ''}</span>
+            Sem preenchimento
+          </button>}
           <HexColorPicker color={draft} onChange={updateDraft} onChangeEnd={commit} style={{ width: '100%', height: 146 }} />
           <div className="flex items-center gap-1">
             <select value={mode} onChange={event => setMode(event.target.value as typeof mode)} aria-label="Formato da cor" className="h-8 rounded-md border border-slate-200">

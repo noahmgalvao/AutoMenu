@@ -9,17 +9,17 @@ import { InlineStyleToolbar } from '../designer/InlineStyleToolbar';
 import { DecorationControls, getBorderOverride, BorderDecoration, MenuMarkerGlyph, getMarker } from '../designer/Decorations';
 import type { PriceAdjustmentMode } from '../../../domain/menu/pricePropagation';
 import { MenuPhoto, PhotoLoading } from './MenuPhoto';
-import { PhotoEditControls, LIVE_CARD_PHOTO_SCALE } from './PhotoEditControls';
+import { livePhotoScaleVariable, photoDimensions } from './photoSizing';
+import { PhotoEditControls } from './PhotoEditControls';
 import { getProductCardRadius, getProductPhotoFrameRadius, getProductCardCornerRadii } from './templateStyles';
 import { AutoFitText } from './AutoFitText';
 import { CanvasTextDivider } from './CanvasTextDivider';
 import { isHeadingTextHit } from './menuHeadingHit';
-import { getPaginationItemKey, getProductCardImageHeight } from '../../../domain/menu/menuPagination';
+import { getPaginationItemKey, getProductCardImageLimit, getProductListImageLimit, CATEGORY_IMAGE_LIMIT } from '../../../domain/menu/menuPagination';
 import { ProductControls, FreeTextResizeHandles, getFreeTextMaximumWidth, getFreeTextContentWidth } from './ProductCanvasControls';
 import { FREE_TEXT_PREFIX } from '../../../domain/menu/flow';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 import { ColumnResizeHandles } from './ColumnResizeHandles';
-import { templateProductImageHeight } from '../../../domain/templates/templateDesign';
 import { formatMenuPriceValue, getMenuPriceSymbol } from '../../../domain/menu/price';
 import { PriceFormatSettings } from '../designer/PriceFormatSettings';
 
@@ -37,15 +37,7 @@ interface MenuItemProps {
 
 const editableTextClassName = 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto';
 
-const clearDefaultTextOnFocus = (element: HTMLElement, defaultTexts: string[]) => {
-    window.setTimeout(() => {
-        if (document.activeElement !== element) return;
-        const text = element.innerText.trim();
-        if (defaultTexts.includes(text)) {
-            element.innerText = '';
-        }
-    }, 0);
-};
+
 
 const focusCanvasFieldAtClick = (event: React.MouseEvent<HTMLElement>) => {
     const field = event.currentTarget;
@@ -88,10 +80,17 @@ export const MenuItem: React.FC<MenuItemProps> = ({
     backgroundText,
 }) => {
     const formattingTarget = handlers.formattingTarget;
+    const formattingClick = (event: React.MouseEvent<HTMLElement>, type: 'product' | 'category', id: string) => {
+        if (!event.currentTarget.isContentEditable) return;
+        const elementId = event.currentTarget.id;
+        handleEditableFieldClick(event);
+        if (!formattingTarget) handlers.setEditingField?.(type, id, type === 'category' ? 'category' : 'name', elementId);
+    };
     const fontSizeLimits = resolveFontSizeLimits(style);
     const minimumFontSize = resolveMinimumFontSize(style);
     const allowSameWordBreak = style.allowSameWordBreak === true;
     const contentSpacing = resolveMenuContentSpacing(style);
+    const hasProductFill = Boolean(getSurfaceFill(style, 'product') && getSurfaceFill(style, 'product') !== 'transparent');
     const replacePriceOnNextInputRef = React.useRef<Set<string>>(new Set());
     const [imageMenuProductId, setImageMenuProductId] = React.useState<string | null>(null);
     React.useEffect(() => {
@@ -290,7 +289,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             >{formatMenuPriceValue(product.price, style)}</span>
         </div>;
     };
-    const photoControls = (type: 'category' | 'product', id: string, hasPhoto: boolean, crop: { x: number; y: number }, flips?: { horizontal?: boolean; vertical?: boolean }, resizeCard = false) => (
+    const photoControls = (type: 'category' | 'product', id: string, hasPhoto: boolean, crop: { x: number; y: number }, flips?: { horizontal?: boolean; vertical?: boolean }) => (
         <PhotoEditControls id={id} anchorId={`${type}-image-${id}`} hasPhoto={hasPhoto} active={imageMenuProductId === id && !formattingTarget}
             scale={(type === 'category' ? style.categoryImageScale : style.imageScale) || 1} crop={crop} flips={flips}
             activate={() => {
@@ -299,20 +298,19 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 setImageMenuProductId(id);
             }}
             choose={() => handlers.choosePhoto(type, id)} remove={() => handlers.removePhoto(type, id)}
-            type={type} resizeCard={resizeCard} updateStyle={handlers.updateStyle} />
+            type={type} updateStyle={handlers.updateStyle} />
     );
-    const renderProductPhoto = (product: Product, height: number, width: string, inRow = false, cardBaseHeight?: number) => {
+    const renderProductPhoto = (product: Product, limit: number, maxWidth: string, inRow = false) => {
         const isEditable = !handlers.readOnly && handlers.isReadyToEdit?.('product', product.id);
         const loading = handlers.photoIsLoading?.('product', product.id);
         if (!style.showImages || (!product.image && !loading && !(isEditable && imageMenuProductId === product.id))) return null;
         const crop = style.productPhotoCrops?.[product.id] || { x: product.imageAlignment === 'left' ? 0 : product.imageAlignment === 'right' ? 100 : 50, y: 50 };
         const frame = resolveProductImageFrame(style, inRow);
         const hasFrame = frame !== 'template';
-        const resizeCard = cardBaseHeight !== undefined && frame === 'fill';
         const shaped = hasFrame && frame !== 'fill';
         const background = inRow && style.design?.image === 'background' && !hasFrame;
         const imageRadius = style.borders?.productImage?.radius;
-        const topRadius = Math.max(imageRadius ?? 0, style.borders?.product?.radius ?? getProductCardRadius(style));
+        const topRadius = Math.min(12, style.borders?.product?.radius ?? getProductCardRadius(style));
         const photoRadius = !shaped && inRow
             ? background
                 ? 'inherit'
@@ -320,7 +318,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             : getProductPhotoFrameRadius(frame, imageRadius);
         const flips = style.productImageFlips?.[product.id];
         return (
-            <div
+            <div data-auto-photo-ratio
                 id={handlers.readOnly ? undefined : `product-image-${product.id}`}
                 data-template-image
                 data-menu-border-surface="productImage"
@@ -329,12 +327,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 data-product-photo-frame={hasFrame ? frame : undefined}
                 className={`relative shrink-0 bg-slate-100 select-none ${isEditable ? 'cursor-pointer ring-2 ring-inset ring-indigo-400' : ''}`}
                 style={{
-                    width: inRow && shaped ? 'calc(100% - 16px)' : width,
-                    height: resizeCard ? `calc(${cardBaseHeight}px * var(${LIVE_CARD_PHOTO_SCALE}, ${style.imageScale || 1}))`
-                        : frame === 'circle' ? 'auto' : height,
-                    aspectRatio: frame === 'circle' ? '1' : undefined,
-                    maxWidth: shaped ? (frame === 'circle' ? height : height * 1.75) : '100%',
-                    margin: inRow && shaped ? '8px auto 0' : undefined,
+                    ...photoDimensions('product', style.imageScale || 1, limit, maxWidth, frame),
+                    margin: inRow && !background ? '0 auto' : undefined,
                     background: getSurfaceFill(style, 'productImage'), borderRadius: photoRadius,
                 }}
                 title={isEditable ? 'Opções da imagem' : undefined}
@@ -353,7 +347,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 </span>
                 <BorderDecoration style={style} scope="productImage" />
                 {loading && <PhotoLoading />}
-                {isEditable && photoControls('product', product.id, Boolean(product.image), crop, flips, resizeCard)}
+                {isEditable && photoControls('product', product.id, Boolean(product.image), crop, flips)}
             </div>
         );
     };
@@ -514,15 +508,15 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             >
                 {renderFormattingToolbar('category', item.data, catStyle)}
             {!handlers.readOnly && <ProductControls type="category" catName={item.data} canMoveUp={false} canMoveDown={false} canMoveLeft={false} canMoveRight={false} handlers={handlers} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showSelectionOutline={false} showAddControls={false} showGridMoveControls={false}/>}
-                <div data-template-category data-menu-border-surface="category" data-custom-border={getBorderOverride(style, 'category')} style={{ background: getSurfaceFill(style, 'category'), borderRadius: style.borders?.category?.radius }} className={`relative flex w-full max-w-full min-w-0 items-center gap-1 ${compactControls ? 'px-1' : 'px-2'} ${categoryAlign === 'center' ? 'justify-center' : categoryAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
+                <div data-template-category data-menu-border-surface="category" data-custom-border={getBorderOverride(style, 'category')} style={{ background: getSurfaceFill(style, 'category'), borderRadius: style.borders?.category?.radius }} className={`relative flex w-full max-w-full min-w-0 items-center gap-1 ${getSurfaceFill(style, 'category') || getBorderOverride(style, 'category') ? 'py-1' : ''} ${compactControls ? 'px-1' : 'px-2'} ${categoryAlign === 'center' ? 'justify-center' : categoryAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
                     <BorderDecoration style={style} scope="category" />
                     <MenuMarkerGlyph marker={getMarker(style, 'category')} fontSize={clampFontSize(style, 'category', catStyle.fontSize, 24)}
                         index={handlers.sortedCategories.filter((id: string) => !id.startsWith(FREE_TEXT_PREFIX)).indexOf(item.data)} color="var(--template-accent)" />
                     {(categoryAlign === 'center' || categoryAlign === 'right') && renderCategoryDivider('before')}
                     {style.showCategoryImages !== false && (categoryImage?.url || handlers.photoIsLoading?.('category', item.data) || (isEditable && imageMenuProductId === item.data)) && (
                         <div id={handlers.readOnly ? undefined : `category-image-${item.data}`} data-product-image-surface={item.data}
-                            className="relative mr-2 shrink-0" style={{ width: (categoryImage?.width || 36) * categoryImageScale,
-                                height: (categoryImage?.height || 36) * categoryImageScale, maxWidth: '35%' }}>
+                            data-auto-photo-ratio className="relative mr-2 shrink-0"
+                            style={photoDimensions('category', categoryImageScale, CATEGORY_IMAGE_LIMIT, '35%', undefined, (categoryImage?.width || 1) / (categoryImage?.height || 1))}>
                             {categoryImage?.url && <MenuPhoto showLoading={!handlers.readOnly && !handlers.photoIsLoading?.('category', item.data)} src={categoryImage.url} alt="" draggable={false} className="h-full w-full object-cover"
                                 style={{ objectPosition: `${categoryImage.crop?.x ?? 50}% ${categoryImage.crop?.y ?? 50}%`,
                                     transform: `scale(${categoryImage.horizontal ? -1 : 1}, ${categoryImage.vertical ? -1 : 1})` }} />}
@@ -553,7 +547,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             textTransform: catStyle.textTransform,
                             letterSpacing: catStyle.letterSpacing ? `${catStyle.letterSpacing}px` : undefined
                         }}
-                        contentEditable={Boolean(isEditable)} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'category', item.data)} onKeyDown={handlers.handleKeyDown} onFocus={() => handlers.setEditingField?.('category', item.data, 'category', elementId)} onMouseDown={(e) => { if (!isEditable) e.preventDefault(); }} onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }} onClick={handleEditableFieldClick}
+                        contentEditable={Boolean(isEditable)} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'category', item.data)} onKeyDown={handlers.handleKeyDown} onFocus={() => handlers.setEditingField?.('category', item.data, 'category', elementId)} onMouseDown={(e) => { if (!isEditable) e.preventDefault(); }} onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }} onClick={event => formattingClick(event, 'category', item.data)}
                     />
                     {(categoryAlign === 'left' || categoryAlign === 'center') && renderCategoryDivider('after')}
                 </div>
@@ -583,12 +577,11 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const isNameCentered = nameStyle.textAlign === 'center';
         const isNameRight = nameStyle.textAlign === 'right';
         
-        const imgScale = style.imageScale || 1;
         const categoryColumnCount = style.categoryColumnCount || 1;
         const productColumnCount = style.columnCount || 1;
         const compactControls = categoryColumnCount > 1;
         const stackImage = categoryColumnCount >= 3 && style.showImages && Boolean(product.image);
-        const imageSizePx = (categoryColumnCount >= 3 ? 96 : categoryColumnCount === 2 ? 64 : 96) * imgScale;
+        const imageSizePx = getProductListImageLimit(categoryColumnCount);
         const rawCustomMarginTop = Number(product.customMarginTop);
         const isFreeTextGhost = product.isFreeText && item.category?.startsWith(FREE_TEXT_PREFIX);
         const pageHeight = resolveMenuPageDimensions(style).heightPx;
@@ -604,6 +597,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     data-drag-type={backgroundText && handlers.readOnly ? undefined : 'product'}
                     data-drag-id={backgroundText && (handlers.readOnly || !primary) ? undefined : product.id}
                     data-template-product={product.isFreeText ? undefined : true}
+                    data-canvas-free-text-id={product.isFreeText ? product.id : undefined}
                     data-menu-border-surface={product.isFreeText ? 'freeText' : 'product'} data-custom-border={getBorderOverride(style, product.isFreeText ? 'freeText' : 'product', product.id)}
                     data-pagination-item={getPaginationItemKey(item)}
                     data-drag-group={item.category}
@@ -627,8 +621,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             : product.isFreeText
                                 ? undefined
                                 : contentSpacing.betweenProducts,
-                        paddingTop: inGroup && !isSelected && !product.isFreeText ? 0 : undefined,
-                        paddingBottom: inGroup && !isSelected && !product.isFreeText ? 0 : undefined,
+                        paddingTop: inGroup && !isSelected && !product.isFreeText && !hasProductFill && !getBorderOverride(style, 'product') ? 0 : undefined,
+                        paddingBottom: inGroup && !isSelected && !product.isFreeText && !hasProductFill && !getBorderOverride(style, 'product') ? 0 : undefined,
                     }}
                 >
                 <BorderDecoration style={style} scope={product.isFreeText ? 'freeText' : 'product'} id={product.id} />
@@ -663,7 +657,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             fitScope="freeText"
                             disableAutoFit
                             containerSelector={`#product-container-${product.id}`}
-                            id={handlers.readOnly || !primary ? undefined : `product-name-${product.id}`} data-product-edit-id={product.id} className={`whitespace-pre-wrap break-words [overflow-wrap:anywhere] outline-none rounded ${isEditable ? editableTextClassName : ''}`}
+                            id={handlers.readOnly || !primary ? undefined : `product-name-${product.id}`} data-product-edit-id={product.id} data-placeholder-field="free-text" className={`whitespace-pre-wrap break-words [overflow-wrap:anywhere] outline-none rounded ${isEditable ? editableTextClassName : ''}`}
                             style={{ 
                                 color: nameStyle.color || style.textColor,
                                 fontFamily: nameStyle.fontFamily,
@@ -690,12 +684,12 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 const nextWidth = getFreeTextContentWidth(e.currentTarget, maximumWidth);
                                 container.style.width = `${nextWidth}px`;
                                 container.dataset.pendingFreeTextWidth = String(nextWidth);
-                            }} onFocus={(e) => { handlers.setEditingField?.('freeText', product.id, 'freeText', `product-name-${product.id}`); clearDefaultTextOnFocus(e.currentTarget, ['Novo texto']); }} onMouseDown={(e) => { if (!isEditable) e.preventDefault(); }} onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }} onClick={handleEditableFieldClick}
+                            }} onFocus={() => handlers.setEditingField?.('freeText', product.id, 'freeText', `product-name-${product.id}`)} onMouseDown={(e) => { if (!isEditable) e.preventDefault(); }} onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }} onClick={handleEditableFieldClick}
                             />
                     </div>
                 ) : (
                 <div className={`flex items-start justify-between ${stackImage ? 'flex-col gap-2' : compactControls ? 'gap-2' : 'gap-4'}`}>
-                    {renderProductPhoto(product, templateProductImageHeight(style, imageSizePx), stackImage ? '100%' : `${imageSizePx}px`)}
+                    {renderProductPhoto(product, imageSizePx, stackImage ? '100%' : '42%')}
                     <div className={`flex-grow min-w-0 ${stackImage ? 'w-full' : ''} ${isNameCentered ? 'text-center' : isNameRight ? 'text-right' : 'text-left'}`}>
                          <div
                             data-product-text-row="true"
@@ -733,7 +727,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                         textTransform: nameStyle.textTransform,
                                         letterSpacing: nameStyle.letterSpacing ? `${nameStyle.letterSpacing}px` : undefined
                                     }}
-                                    contentEditable={Boolean(isEditable)} tabIndex={isEditable ? 0 : undefined} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'name')} onKeyDown={handlers.handleKeyDown} onFocus={() => handlers.setEditingField?.('product', product.id, 'name', `product-name-${product.id}`)} onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }} onClick={handleEditableFieldClick}
+                                    contentEditable={Boolean(isEditable)} tabIndex={isEditable ? 0 : undefined} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'name')} onKeyDown={handlers.handleKeyDown} onFocus={() => handlers.setEditingField?.('product', product.id, 'name', `product-name-${product.id}`)} onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }} onClick={event => formattingClick(event, 'product', product.id)}
                                 />
                             </div>
                             {showProductDivider && (
@@ -796,8 +790,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const cardRadius = getProductCardCornerRadii(style, style.borders?.product?.radius ?? getProductCardRadius(style));
         const cardBackgroundColor = style.cardBackgroundColor || '#ffffff';
         const compactControls = categoryColumnCount > 1 || productColumnCount > 1;
-        const cardImageHeight = templateProductImageHeight(style, getProductCardImageHeight(style));
-        const cardBaseHeight = isCardLayout ? templateProductImageHeight(style, getProductCardImageHeight(style, 1), false) : undefined;
+        const cardImageHeight = getProductCardImageLimit(style);
         const productGridGap = categoryColumnCount > 1
             ? (productColumnCount > 2 ? 4 : 8)
             : productColumnCount > 2
@@ -875,14 +868,16 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 <div
                                     data-template-card
                                     data-card-layout={isCardLayout || undefined}
+                                    data-product-list-card={!isCardLayout || undefined}
                                     data-product-image-editing={isEditable || undefined}
                                     data-card-color-custom={style.cardBackgroundColorOverride || undefined}
                                     data-custom-border={getBorderOverride(style, 'product')}
                                     className={`h-full min-w-0 transition-shadow duration-150 ${isCardLayout ? 'border border-slate-200 shadow-sm group-hover:shadow-md' : 'bg-transparent'}`}
                                     style={{ '--menu-card-fill': getSurfaceFill(style, 'product'), backgroundColor: isCardLayout ? `var(--automenu-preview-cards, ${cardBackgroundColor})` : getSurfaceFill(style, 'product'), borderRadius: cardRadius } as React.CSSProperties}
                                 >
-                                    <div data-product-card-content className="h-full flex flex-col" style={{ borderRadius: 'inherit' }}>
-                                        {renderProductPhoto(product, cardImageHeight, '100%', true, cardBaseHeight)}
+                                    <div data-product-card-content className={`h-full min-w-0 flex flex-col ${isCardLayout || hasProductFill || getBorderOverride(style, 'product') ? 'p-1.5' : ''}`}
+                                        style={{ borderRadius: 'inherit', '--automenu-background-photo-space': `calc(36px * var(${livePhotoScaleVariable('product')}, ${style.imageScale || 1}))` } as React.CSSProperties}>
+                                        {renderProductPhoto(product, cardImageHeight, '100%', true)}
                                         <div data-template-content className={`${isCardLayout ? (categoryColumnCount > 1 || productColumnCount > 2 ? 'p-1.5' : productColumnCount > 1 ? 'p-2' : 'p-4') : 'py-2'} flex min-w-0 flex-col flex-grow ${textAlignClass}`}>
                                             <div
                                                 data-product-text-row="true"
@@ -920,7 +915,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         onFocus={() => handlers.setEditingField?.('product', product.id, 'name', `product-name-${product.id}`)}
                                                         tabIndex={isEditable ? 0 : undefined}
                                                         onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }}
-                                                        onClick={handleEditableFieldClick}
+                                                        onClick={event => formattingClick(event, 'product', product.id)}
                                                     />
                                                 </div>
                                                 {showProductDivider && (

@@ -29,7 +29,7 @@
 [data-design-image="background"] [data-template-card] [data-template-image]:not([data-product-photo-frame]) { position: absolute; inset: 0; height: 100% !important; z-index: -1; }
 [data-design-image="background"] [data-template-card] [data-template-image]:not([data-product-photo-frame]) img { opacity: .22; }
 [data-design-image="background"] [data-template-card]:has([data-template-image]:not([data-product-photo-frame])) [data-template-content] {
-  padding-top: 36px;
+  padding-top: var(--automenu-background-photo-space, 36px);
   border-radius: inherit;
   background: linear-gradient(transparent, var(--menu-card-fill, var(--template-paper)));
 }
