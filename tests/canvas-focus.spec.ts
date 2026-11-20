@@ -67,7 +67,7 @@ for (const id of ['shape-left', 'batch-photo']) {
     const controls = page.locator('[data-object-page-index]');
     await original.locator(image).click();
     await controls.getByTitle('Mais opções').click();
-    await page.locator('[data-canvas-object-menu]').getByRole('button', { name: 'Definir como plano de fundo', exact: true }).click();
+    await page.locator('[data-canvas-object-menu]').getByRole('button', { name: 'Integrar ao plano de fundo', exact: true }).click();
     await controls.getByTitle('Seleção múltipla').click();
     await repeated.locator(image).click();
     await expect(original.locator(outline)).toHaveCount(1);

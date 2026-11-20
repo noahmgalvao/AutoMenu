@@ -21,3 +21,14 @@ export const getImageLayerIndexes = (images: AddedImage[], ids: string[], direct
 export function canMoveImageLayer(images: AddedImage[], ids: string[], direction: 'front' | 'back') {
     return getImageLayerIndexes(images, ids, direction).size > 0;
 }
+
+export function moveImageToMenuBackground(style: MenuStyle, id: string): MenuStyle {
+    const image = style.addedImages?.find(candidate => candidate.id === id && !candidate.shape);
+    if (!image) return style;
+    return {
+        ...style,
+        menuBackgroundPhoto: { url: image.url, assetId: image.assetId },
+        addedImages: style.addedImages?.filter(candidate => candidate.id !== id),
+        name: 'Custom',
+    };
+}

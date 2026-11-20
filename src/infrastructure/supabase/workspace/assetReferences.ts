@@ -19,6 +19,7 @@ export const collectStyleAssetIds = (style?: Partial<MenuStyle> | null) => {
   if (!isRecord(style)) return assetIds;
 
   addAssetId(assetIds, style.backgroundAssetId);
+  if (isRecord(style.menuBackgroundPhoto)) addAssetId(assetIds, style.menuBackgroundPhoto.assetId);
   addAssetId(assetIds, style.sourceAssetId);
   (Array.isArray(style.pageBackgrounds) ? style.pageBackgrounds : []).forEach((background) => {
     if (isRecord(background)) addAssetId(assetIds, background.assetId);
@@ -162,6 +163,17 @@ export const normalizeStyleAssets = async (workspaceId: string, userId: string, 
     metadata: { style_id: style.id },
   });
 
+  const photo = style.menuBackgroundPhoto;
+  const menuBackgroundPhoto = photo && await ensureAssetReference({
+    url: photo.url,
+    existingAssetId: photo.assetId,
+    workspaceId,
+    userId,
+    assetType: 'menu_background',
+    bucket: 'menu-assets',
+    metadata: { style_id: style.id },
+  });
+
   const pageBackgrounds = await Promise.all(
     (style.pageBackgrounds || []).map(async (background) => {
       const assetRef = await ensureAssetReference({
@@ -228,6 +240,7 @@ export const normalizeStyleAssets = async (workspaceId: string, userId: string, 
     backgroundImage: backgroundRef.url || style.backgroundImage,
     sourceAssetId: sourceRef.assetId,
     sourceImage: sourceRef.url || style.sourceImage,
+    menuBackgroundPhoto: photo && { url: menuBackgroundPhoto?.url || photo.url, assetId: menuBackgroundPhoto?.assetId },
     pageBackgrounds,
     addedImages,
     categoryImages,
@@ -241,6 +254,10 @@ export const hydrateStyleAssets = (style: MenuStyle, assetUrlMap: Map<string, st
     ...nextStyle,
     backgroundImage: nextStyle.backgroundAssetId ? assetUrlMap.get(nextStyle.backgroundAssetId) || nextStyle.backgroundImage || '' : nextStyle.backgroundImage || '',
     sourceImage: nextStyle.sourceAssetId ? assetUrlMap.get(nextStyle.sourceAssetId) || nextStyle.sourceImage || '' : nextStyle.sourceImage || '',
+    menuBackgroundPhoto: nextStyle.menuBackgroundPhoto && {
+      ...nextStyle.menuBackgroundPhoto,
+      url: assetUrlMap.get(nextStyle.menuBackgroundPhoto.assetId || '') || nextStyle.menuBackgroundPhoto.url,
+    },
     pageBackgrounds: (nextStyle.pageBackgrounds || []).map((background) => ({
       ...background,
       url: background.assetId ? assetUrlMap.get(background.assetId) || background.url : background.url,

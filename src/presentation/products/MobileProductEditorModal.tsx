@@ -1,3 +1,5 @@
+import { getConfiguredCanvasFonts } from '../../domain/menu/fontPropagation';
+import { TextOutlinePicker } from '../menu/designer/TextOutlinePicker';
 import { ColorPicker } from '../menu/designer/ColorPicker';
 import React from 'react';
 import { createPortal } from 'react-dom';
@@ -26,7 +28,7 @@ import {
   type PriceAdjustmentOperation,
   type PricePropagationRequest,
 } from '../../domain/menu/pricePropagation';
-import { FontSelect } from '../menu/designer/SearchableSelects';
+import { FontSelect, MenuFontContext } from '../menu/designer/SearchableSelects';
 import { FontSizeInput } from '../menu/designer/FontSizeInput';
 
 type TextFormattingField = 'name' | 'description' | 'price';
@@ -61,6 +63,7 @@ export const MobileProductEditorModal: React.FC<MobileProductEditorModalProps> =
   onStyleChange,
   onUploadImage,
 }) => {
+  const usedFonts = React.useMemo(() => getConfiguredCanvasFonts(style, products), [style, products]);
   const selectedProducts = React.useMemo(() => productIds
     .map((id) => products.find((product) => product.id === id && !product.isFreeText))
     .filter(Boolean) as Product[], [productIds, products]);
@@ -226,6 +229,7 @@ export const MobileProductEditorModal: React.FC<MobileProductEditorModalProps> =
   const canAdjustPrice = Number.isFinite(Number(priceAdjustment)) && Number(priceAdjustment) > 0;
 
   return createPortal(
+    <MenuFontContext.Provider value={usedFonts}>
     <div data-no-browser-selection className="fixed inset-0 z-[2147483500] flex flex-col bg-slate-100 md:hidden" onPointerDown={(event) => event.stopPropagation()}>
       <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div>
@@ -250,10 +254,12 @@ export const MobileProductEditorModal: React.FC<MobileProductEditorModalProps> =
           </div>
         ) : (
           <>
-        <div className="grid grid-cols-[minmax(0,1fr)_4rem_2.25rem] gap-1.5">
+        <div className="grid grid-cols-[minmax(0,1fr)_4rem_2.25rem_2.25rem] gap-1.5">
           <FontSelect value={currentStyle.fontFamily || style.fontFamily} fallbackFontFamily={style.fontFamily} placeholder="Fonte..." onChange={(font) => onStyleChange(formattingField, { ...currentStyle, fontFamily: font }, referenceProductId || productIds[0])} />
           <FontSizeInput value={currentStyle.fontSize} onChange={(fontSize) => onStyleChange(formattingField, { ...currentStyle, fontSize }, referenceProductId || productIds[0])} className="!w-16" />
           <ColorPicker value={currentStyle.color} onChange={color => onStyleChange(formattingField, { ...currentStyle, color }, referenceProductId || productIds[0])} />
+          <TextOutlinePicker value={currentStyle.textOutline}
+            onChange={textOutline => onStyleChange(formattingField, { ...currentStyle, textOutline }, referenceProductId || productIds[0])} />
         </div>
         <div className="mt-2 flex items-center justify-center gap-1">
           {(['left', 'center', 'right'] as const).map((align) => <button key={align} type="button" onClick={() => onStyleChange(formattingField, { ...currentStyle, textAlign: align }, referenceProductId || productIds[0])} className={`rounded-lg border p-1.5 ${currentStyle.textAlign === align ? 'border-indigo-300 bg-indigo-50 text-indigo-600' : 'border-slate-200 text-slate-500'}`}>{align === 'left' ? <AlignLeft size={15} /> : align === 'center' ? <AlignCenter size={15} /> : <AlignRight size={15} />}</button>)}
@@ -303,7 +309,8 @@ export const MobileProductEditorModal: React.FC<MobileProductEditorModalProps> =
         <button type="button" onClick={onClose} className="h-11 flex-1 rounded-xl border border-slate-200 font-semibold text-slate-700">Cancelar</button>
         <button type="button" onClick={save} disabled={Boolean(uploadingId)} className="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 font-bold text-white disabled:opacity-50"><Check size={17} /> Salvar</button>
       </footer>
-    </div>,
+    </div>
+    </MenuFontContext.Provider>,
     document.body,
   );
 };

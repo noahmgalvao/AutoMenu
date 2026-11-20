@@ -1,31 +1,10 @@
+import { isCanvasObjectOrControlTarget } from '../canvas/canvasHitTargets';
 import React, { useRef, useMemo } from 'react';
 import type { Product } from '../../../domain/menu/model';
 import type { InteractionProps, DraftItem, SelectionItem, SelectionType, MoveDirection } from './types';
 import { FREE_TEXT_PREFIX } from '../../../domain/menu/flow';
 import { getCollisionSafeFreeTextTop, moveFreeTextOneStep } from './freeTextMovement';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
-
-const isCanvasObjectOrControlTarget = (target: EventTarget | null, pageEl: HTMLElement) => {
-    if (!(target instanceof Element) || !pageEl.contains(target)) return true;
-    if (target === pageEl) return false;
-
-    return Boolean(target.closest([
-        'button',
-        'input',
-        'textarea',
-        'select',
-        'option',
-        'label',
-        'a',
-        '[contenteditable="true"]',
-        '[data-drag-ignore="true"]',
-        '[data-print-control="true"]',
-        '[data-added-image-drag="true"]',
-        '[data-drag-type]',
-        '.automenu-drag-item',
-        '.automenu-image-resize-handle',
-    ].join(',')));
-};
 
 export const useKeyboardMovement = (
     props: InteractionProps,

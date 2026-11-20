@@ -1,3 +1,4 @@
+import { chooseDesignerOption } from './fixtures/designer-picker';
 import { expect, test } from '@playwright/test';
 
 const fixture = '/tests/fixtures/template-editor.html';
@@ -183,5 +184,14 @@ test('shape rotation keeps its size and the text field opens the formatting tool
   await expect(toolbar.getByRole('button', { name: 'Negrito' })).toBeVisible();
   await field.fill('Especial');
   await toolbar.getByRole('button', { name: 'Negrito' }).click();
-  await expect.poll(async () => decodeURIComponent((await shape.locator('img').getAttribute('src'))!)).toContain('font-weight="700"');
+  const text = shape.locator('[data-shape-text]');
+  await expect(text).toHaveText('Especial');
+  await expect(text).toHaveCSS('font-weight', '700');
+  await chooseDesignerOption(toolbar.getByRole('combobox', { name: 'Fonte' }), 'Montserrat');
+  await expect(text).toHaveCSS('font-family', /Montserrat/);
+  await toolbar.getByRole('button', { name: 'Contorno do texto' }).click();
+  const outline = page.getByRole('dialog', { name: 'Contorno do texto' });
+  await outline.getByRole('button', { name: '#ef4444', exact: true }).first().click();
+  await expect(text).toHaveCSS('-webkit-text-stroke-color', 'rgb(239, 68, 68)');
+  await expect(text).not.toHaveCSS('-webkit-text-stroke-width', '0px');
 });

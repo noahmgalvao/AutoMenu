@@ -1,9 +1,7 @@
 import { getContentLayer } from '../../../domain/menu/imageLayers';
 import React from 'react';
 import { List, Minus, Square } from 'lucide-react';
-import { canvasShapeUrl } from '../../../domain/menu/canvasShapes';
-import { isMiniFoodKind, miniFoodIconUrl } from '../../../domain/menu/miniFoods';
-import { MarkerControls, standardMarkers } from './MarkerControls';
+import { MarkerControls } from './MarkerControls';
 import type { MenuBorder, MenuBorderScope, MenuBorderSide, MenuMarker, MenuStyle } from '../../../domain/menu/model';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 import { resolveMenuMargins } from '../../../domain/menu/styleRules';
@@ -173,29 +171,6 @@ function BorderShape({ border, outsets, cornerRadii, zIndex }: { border: MenuBor
 
 export function getMarker(style: MenuStyle, scope: 'category' | 'product'): MenuMarker {
   return style.markers?.[scope] || (scope === 'category' && style.design?.category === 'numbered' ? 'number-padded' : 'none');
-}
-
-export function MenuMarkerGlyph({ marker, index, color, fontSize }: { marker: MenuMarker; index: number; color: string; fontSize: number }) {
-  if (marker === 'none') return null;
-  if (typeof marker === 'object' || isMiniFoodKind(marker)) {
-    const url = typeof marker === 'object' ? canvasShapeUrl(marker.shape) : miniFoodIconUrl(marker);
-    return <img data-menu-marker aria-hidden="true" alt="" src={url} className="shrink-0 object-contain"
-      style={{ width: fontSize, height: fontSize }} />;
-  }
-  const number = Math.max(1, index + 1);
-  const framed = marker === 'number-circle' || marker === 'number-square' || marker === 'number-padded';
-  const content = marker === 'number' ? `${number}.` : marker === 'number-padded' ? String(number).padStart(2, '0')
-    : framed ? number : standardMarkers.find(([id]) => marker === id)?.[2];
-  return <span data-menu-marker aria-hidden="true" className="inline-flex shrink-0 items-center justify-center font-semibold tabular-nums" style={{
-    color,
-    border: framed ? '1px solid currentColor' : undefined,
-    borderRadius: marker === 'number-circle' ? 999 : marker === 'number-square' ? 2 : undefined,
-    minWidth: framed ? '1.55em' : undefined,
-    paddingInline: framed ? '0.24em' : undefined,
-    fontSize: framed ? fontSize * 0.85 : fontSize,
-    fontFamily: marker === 'number-padded' ? 'monospace' : undefined,
-    lineHeight: framed ? 1.45 : 1,
-  }}>{content}</span>;
 }
 
 interface DecorationProps {

@@ -3,7 +3,13 @@ import type { TemplateDesign, TemplateCatalogMetadata, TemplateScope, TemplateSo
 import type { MiniFoodKind } from './miniFoods';
 import type { MenuPageSetup } from './pageModel';
 
+export interface TextOutline {
+  color: string;
+  width: number;
+}
+
 export interface ElementStyle {
+  textOutline?: TextOutline;
   fontFamily?: string;
   fontSize?: number;
   color?: string;
@@ -213,6 +219,7 @@ export interface MenuStyle {
   miniFoodTextureColor?: string;
   backgroundAssetId?: string | null;
   pageBackgrounds?: PageBackground[];
+  menuBackgroundPhoto?: Pick<AddedImage, 'url' | 'assetId'>;
   sourceImage?: string;
   sourceAssetId?: string | null;
   layoutMode: 'list' | 'grid' | 'cards';

@@ -1,5 +1,5 @@
 import { hasMenuContentMutation } from './menuContentMutations';
-import { useLayoutEffect, type RefObject } from 'react';
+import { useLayoutEffect, useRef, type RefObject } from 'react';
 import type { MenuStyle } from '../../../domain/menu/model';
 import { measureRenderedText } from './textFit';
 
@@ -48,6 +48,14 @@ function measurePriceRow(row: HTMLElement) {
 }
 
 export function useResponsivePrices(rootRef: RefObject<HTMLElement | null>, style: MenuStyle) {
+    const refresh = useRef<() => void>(undefined);
+    const [name, price] = [style.elementStyles.productName, style.elementStyles.productPrice];
+    const textMetrics = JSON.stringify([
+        style.fontFamily, style.minimumFontSize, style.fontSizeLimits,
+        style.design?.price,
+        name?.fontFamily, name?.fontWeight, name?.italic, name?.fontSize, name?.textTransform, name?.letterSpacing,
+        price?.fontFamily, price?.fontWeight, price?.italic, price?.fontSize,
+    ]);
     useLayoutEffect(() => {
         const root = rootRef.current;
         if (!root) return;
@@ -100,12 +108,15 @@ export function useResponsivePrices(rootRef: RefObject<HTMLElement | null>, styl
             attributes: true, attributeFilter: ['data-word-fit-size'],
         });
         document.fonts?.addEventListener('loadingdone', schedule);
-        measure();
+        refresh.current = schedule;
+        schedule();
         return () => {
+            refresh.current = undefined;
             resize.disconnect();
             mutations.disconnect();
             document.fonts?.removeEventListener('loadingdone', schedule);
             cancelAnimationFrame(frame);
         };
-    }, [rootRef, style]);
+    }, [rootRef]);
+    useLayoutEffect(() => refresh.current?.(), [textMetrics]);
 }

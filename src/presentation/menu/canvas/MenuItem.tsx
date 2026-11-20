@@ -1,3 +1,5 @@
+import { getTextOutlineStyle } from './textOutlineStyle';
+import { MenuMarkerGlyph } from './MenuMarkerGlyph';
 import { getContentLayer, getFreeTextLayer } from '../../../domain/menu/imageLayers';
 import { getSurfaceFill } from '../designer/Decorations';
 import { categoryName } from '../../../domain/menu/categoryName';
@@ -7,7 +9,7 @@ import { resolveFontSizeLimits, resolveMinimumFontSize, resolveMenuContentSpacin
 import { CategoryDividerPicker } from '../designer/CategoryDividerPicker';
 import { resolveCategoryDivider, resolveProductDivider } from './categoryDividers';
 import { InlineStyleToolbar } from '../designer/InlineStyleToolbar';
-import { DecorationControls, getBorderOverride, BorderDecoration, MenuMarkerGlyph, getMarker } from '../designer/Decorations';
+import { DecorationControls, getBorderOverride, BorderDecoration, getMarker } from '../designer/Decorations';
 import type { PriceAdjustmentMode } from '../../../domain/menu/pricePropagation';
 import { MenuPhoto, PhotoLoading } from './MenuPhoto';
 import { livePhotoScaleVariable, photoDimensions } from './photoSizing';
@@ -261,12 +263,13 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const baseSize = clampFontSize(style, 'productPrice', priceStyle.fontSize, 18);
         const currency = getMenuPriceSymbol(style);
         return <div data-template-price data-price-base-size={baseSize} data-price-minimum-size={minimumFontSize}
-            data-menu-border-surface="price" data-custom-border={getBorderOverride(style, 'price')}
+            data-menu-border-surface="price" data-price-alignment={priceStyle.textAlign} data-custom-border={getBorderOverride(style, 'price')}
             className={`relative ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap ${badgeClass}`}
             style={{
                 background: getSurfaceFill(style, 'price'), borderRadius: style.borders?.price?.radius,
                 ...textContrastFill('productPrice'),
                 color: `var(--automenu-preview-text, ${priceStyle.color || style.textColor})`,
+                ...getTextOutlineStyle(priceStyle.textOutline),
                 fontFamily: priceStyle.fontFamily,
                 fontSize: `var(--automenu-fitted-price-size, ${baseSize}px)`,
                 fontWeight: priceStyle.fontWeight,
@@ -401,6 +404,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 style={{ 
                     color: `var(--automenu-preview-primary, ${titleStyle.color || style.primaryColor})`,
                     ...textContrastFill('menuTitle'),
+                    ...getTextOutlineStyle(titleStyle.textOutline),
                     fontFamily: titleStyle.fontFamily || style.fontFamily,
                     fontSize: `${clampFontSize(style, 'menuTitle', titleStyle.fontSize, 48)}px`,
                     fontWeight: titleStyle.fontWeight || '700',
@@ -450,12 +454,13 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 style={{
                     color: `var(--automenu-preview-primary, ${subStyle.color || style.textColor})`,
                     ...textContrastFill('menuSubtitle'),
+                    ...getTextOutlineStyle(subStyle.textOutline),
                     fontFamily: subStyle.fontFamily || style.fontFamily,
                     fontSize: `${clampFontSize(style, 'menuSubtitle', subStyle.fontSize, 18)}px`,
                     fontWeight: subStyle.fontWeight,
                     fontStyle: subStyle.italic ? 'italic' : 'normal',
                     textDecoration: subStyle.underline ? 'underline' : 'none',
-                    textAlign: subStyle.textAlign as any || 'center',
+                    textAlign: subStyle.textAlign || (style.design?.header === 'split' ? 'right' : 'center'),
                     textTransform: subStyle.textTransform,
                     letterSpacing: subStyle.letterSpacing ? `${subStyle.letterSpacing}px` : undefined,
                     marginBottom: `${contentSpacing.headerToContent}px`
@@ -551,6 +556,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                         style={{ 
                             color: `var(--automenu-preview-primary, ${catStyle.color || style.primaryColor})`,
                             ...textContrastFill('category'),
+                            ...getTextOutlineStyle(catStyle.textOutline),
                             fontFamily: catStyle.fontFamily,
                             fontSize: `${clampFontSize(style, 'category', catStyle.fontSize, 24)}px`,
                             fontWeight: catStyle.fontWeight,
@@ -676,6 +682,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             style={{ 
                                 color: nameStyle.color || style.textColor,
                                 ...textContrastFill(`freeText:${product.id}`),
+                                ...getTextOutlineStyle(nameStyle.textOutline),
                                 fontFamily: nameStyle.fontFamily,
                                 fontSize: `${clampFontSize(style, 'freeText', nameStyle.fontSize, 18)}px`,
                                 fontWeight: nameStyle.fontWeight,
@@ -735,6 +742,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                     style={{ 
                                         color: nameStyle.color || style.textColor,
                                         ...textContrastFill('productName'),
+                                        ...getTextOutlineStyle(nameStyle.textOutline),
                                         fontFamily: nameStyle.fontFamily,
                                         fontSize: `${clampFontSize(style, 'productName', nameStyle.fontSize, 18)}px`,
                                         fontWeight: nameStyle.fontWeight,
@@ -764,6 +772,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             style={{ 
                                 color: `var(--automenu-preview-text, ${descStyle.color || style.textColor})`,
                                 ...textContrastFill('productDescription'),
+                                ...getTextOutlineStyle(descStyle.textOutline),
                                 fontFamily: descStyle.fontFamily,
                                 fontSize: `${clampFontSize(style, 'productDescription', descStyle.fontSize, 14)}px`,
                                 fontWeight: descStyle.fontWeight,
@@ -926,7 +935,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         data-placeholder-field="product-name"
                                                         data-product-edit-id={product.id}
                                                         className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditable ? editableTextClassName : ''}`}
-                                                        style={{ ...textContrastFill('productName'), color: `var(--automenu-preview-text, ${nameStyle.color || style.textColor})`, fontFamily: nameStyle.fontFamily, fontSize: clampFontSize(style, 'productName', nameStyle.fontSize, 18), fontWeight: nameStyle.fontWeight, fontStyle: nameStyle.italic ? 'italic' : 'normal', textDecoration: nameStyle.underline ? 'underline' : 'none', textAlign: nameStyle.textAlign, textTransform: nameStyle.textTransform }}
+                                                        style={{ ...textContrastFill('productName'), color: `var(--automenu-preview-text, ${nameStyle.color || style.textColor})`, ...getTextOutlineStyle(nameStyle.textOutline), fontFamily: nameStyle.fontFamily, fontSize: clampFontSize(style, 'productName', nameStyle.fontSize, 18), fontWeight: nameStyle.fontWeight, fontStyle: nameStyle.italic ? 'italic' : 'normal', textDecoration: nameStyle.underline ? 'underline' : 'none', textAlign: nameStyle.textAlign, textTransform: nameStyle.textTransform }}
                                                         contentEditable={Boolean(isEditable)}
                                                         suppressContentEditableWarning
                                                         onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'name')}
@@ -956,7 +965,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                 data-placeholder-field="product-description"
                                                 data-product-edit-id={product.id}
                                                 className={`max-w-full opacity-75 break-words [overflow-wrap:anywhere] [word-break:normal] flex-grow outline-none rounded ${isEditable ? `min-h-[1.5em] ${editableTextClassName}` : 'line-clamp-4'}`}
-                                                style={{ ...textContrastFill('productDescription'), color: `var(--automenu-preview-text, ${descStyle.color || style.textColor})`, fontFamily: descStyle.fontFamily, fontSize: clampFontSize(style, 'productDescription', descStyle.fontSize, 14), fontWeight: descStyle.fontWeight, fontStyle: descStyle.italic ? 'italic' : 'normal', textDecoration: descStyle.underline ? 'underline' : 'none', textAlign: descStyle.textAlign }}
+                                                style={{ ...textContrastFill('productDescription'), color: `var(--automenu-preview-text, ${descStyle.color || style.textColor})`, ...getTextOutlineStyle(descStyle.textOutline), fontFamily: descStyle.fontFamily, fontSize: clampFontSize(style, 'productDescription', descStyle.fontSize, 14), fontWeight: descStyle.fontWeight, fontStyle: descStyle.italic ? 'italic' : 'normal', textDecoration: descStyle.underline ? 'underline' : 'none', textAlign: descStyle.textAlign }}
                                                 contentEditable={Boolean(isEditable)}
                                                 tabIndex={isEditable ? 0 : undefined}
                                                 suppressContentEditableWarning

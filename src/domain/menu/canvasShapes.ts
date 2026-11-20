@@ -1,3 +1,4 @@
+import { resolveTextOutline } from './textOutline';
 import { isMiniFoodKind, miniFoodArtwork, type MiniFoodKind } from './miniFoods';
 import type { AddedImage, CanvasShape, CanvasShapeKind, ElementStyle } from './model';
 
@@ -95,14 +96,16 @@ function shapeLabel(shape: CanvasShape) {
   const font = (shape.textStyle?.fontFamily || 'Arial').replace(/[^\p{L}\d -]/gu, '');
   const weight = shape.textStyle?.fontWeight === 'bold' || shape.textStyle?.fontWeight === '700' ? '700'
     : shape.textStyle?.fontWeight === '400' ? '400' : '600';
+  const outline = resolveTextOutline(shape.textStyle?.textOutline);
+  const stroke = outline ? ` stroke="${outline.color}" stroke-width="${Math.min(outline.width, size * 0.2)}" stroke-linejoin="round" paint-order="stroke fill"` : '';
   const escape = (line: string) => line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const background = shape.textBackground && /^#[0-9a-f]{6}$/i.test(shape.textBackground)
     ? `<rect x="${-width / 2 - 2}" y="${centerY - lines.length * size * .61 - 2}" width="${width + 4}" height="${lines.length * size * 1.22 + 4}" rx="2" fill="${shape.textBackground}"/>` : '';
   return `<g transform="rotate(${shape.rotation})" fill="${shapeTextColor(shape)}" font-family="${font},Arial,sans-serif" font-size="${size}" font-weight="${weight}" font-style="${shape.textStyle?.italic ? 'italic' : 'normal'}" text-decoration="${shape.textStyle?.underline ? 'underline' : 'none'}" text-anchor="${align === 'left' ? 'start' : align === 'right' ? 'end' : 'middle'}">${background}${lines.map((line, index) =>
-    `<text x="${x}" y="${centerY + (index - (lines.length - 1) / 2) * size * 1.22 + size * .34}">${escape(line)}</text>`).join('')}</g>`;
+    `<text x="${x}" y="${centerY + (index - (lines.length - 1) / 2) * size * 1.22 + size * .34}"${stroke}>${escape(line)}</text>`).join('')}</g>`;
 }
 
-export function canvasShapeUrl(shape: CanvasShape) {
+export function canvasShapeUrl(shape: CanvasShape, includeText = true) {
   const hex = (color: string) => /^#[0-9a-f]{6}$/i.test(color) ? color : '#4f46e5';
   const { width, height } = getCanvasShapeDimensions(shape);
   const geometry: Record<GeometricShape, () => string> = {
@@ -120,7 +123,7 @@ export function canvasShapeUrl(shape: CanvasShape) {
   const content = miniFood
     ? `<g transform="scale(4.1666667)">${miniFoodArtwork(kind, hex(shape.fill))}</g>`
     : geometry[kind]?.() || '';
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${-width / 2} ${-height / 2} ${width} ${height}"><g transform="rotate(${shape.rotation}) scale(${shape.ratio} 1) translate(-50 -50)" fill="${hex(shape.fill)}" stroke="${hex(shape.stroke)}" stroke-width="${shape.kind === 'line' ? Math.max(1, shape.strokeWidth) : shape.strokeWidth}" stroke-linecap="round" stroke-linejoin="round">${content}</g>${miniFood ? '' : shapeLabel(shape)}</svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${-width / 2} ${-height / 2} ${width} ${height}"><g transform="rotate(${shape.rotation}) scale(${shape.ratio} 1) translate(-50 -50)" fill="${hex(shape.fill)}" stroke="${hex(shape.stroke)}" stroke-width="${shape.kind === 'line' ? Math.max(1, shape.strokeWidth) : shape.strokeWidth}" stroke-linecap="round" stroke-linejoin="round">${content}</g>${miniFood || !includeText ? '' : shapeLabel(shape)}</svg>`;
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 

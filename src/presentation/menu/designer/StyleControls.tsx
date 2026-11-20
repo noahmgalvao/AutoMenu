@@ -1,3 +1,4 @@
+import { TextOutlinePicker } from './TextOutlinePicker';
 
 import { ColorPicker } from './ColorPicker';
 import React from 'react';
@@ -50,14 +51,17 @@ export const StyleControls: React.FC<StyleControlsProps> = ({
             </div>
 
             {/* Cor e alinhamento */}
-            <div className="flex gap-2 items-center">
+            <div className="flex flex-wrap items-center gap-1.5">
                 <ColorPicker value={value.color} onChange={color => onChange({ ...value, color })} />
+                <TextOutlinePicker value={value.textOutline} onChange={textOutline => onChange({ ...value, textOutline })} />
 
                 <div className="flex bg-white rounded border border-slate-200">
-                    {['left', 'center', 'right'].map((align) => (
-                        <button
+                    {(['left', 'center', 'right'] as const).map((align) => (
+                        <button type="button"
                             key={align}
-                            onClick={() => onChange({...value, textAlign: align as any})}
+                            aria-label={align === 'left' ? 'Alinhar à esquerda' : align === 'center' ? 'Centralizar texto' : 'Alinhar à direita'}
+                            aria-pressed={value.textAlign === align}
+                            onClick={() => onChange({...value, textAlign: align})}
                             className={`p-1.5 hover:bg-slate-100 ${value.textAlign === align ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500'}`}
                         >
                             {align === 'left' && <AlignLeft size={14} />}
@@ -67,24 +71,24 @@ export const StyleControls: React.FC<StyleControlsProps> = ({
                     ))}
                 </div>
 
-                <button 
-                    onClick={() => onChange({...value, fontWeight: value.fontWeight === '700' ? '400' : '700'})}
-                    className={`p-1.5 rounded border border-slate-200 ${value.fontWeight === '700' ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : 'bg-white text-slate-500'}`}
-                    title="Negrito"
+                <button type="button"
+                    onClick={() => onChange({...value, fontWeight: (value.fontWeight === '700' || value.fontWeight === 'bold') ? '400' : '700'})}
+                    className={`p-1.5 rounded border border-slate-200 ${(value.fontWeight === '700' || value.fontWeight === 'bold') ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : 'bg-white text-slate-500'}`}
+                    title="Negrito" aria-label="Negrito" aria-pressed={value.fontWeight === '700' || value.fontWeight === 'bold'}
                 >
                     <Bold size={14} />
                 </button>
-                <button
+                <button type="button"
                     onClick={() => onChange({...value, italic: !value.italic})}
                     className={`p-1.5 rounded border border-slate-200 ${value.italic ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : 'bg-white text-slate-500'}`}
-                    title="Itálico"
+                    title="Itálico" aria-label="Itálico" aria-pressed={Boolean(value.italic)}
                 >
                     <Italic size={14} />
                 </button>
-                <button
+                <button type="button"
                     onClick={() => onChange({...value, underline: !value.underline})}
                     className={`p-1.5 rounded border border-slate-200 ${value.underline ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : 'bg-white text-slate-500'}`}
-                    title="Sublinhado"
+                    title="Sublinhado" aria-label="Sublinhado" aria-pressed={Boolean(value.underline)}
                 >
                     <Underline size={14} />
                 </button>

@@ -1,26 +1,14 @@
+import { MenuMarkerGlyph, standardMarkers } from '../canvas/MenuMarkerGlyph';
 import { useContext, useState } from 'react';
 import { Trash2 } from 'lucide-react';
-import { canvasShapeKinds, canvasShapeUrl } from '../../../domain/menu/canvasShapes';
-import { isMiniFoodKind, miniFoodIconUrl, MINI_FOODS, type MiniFoodKind } from '../../../domain/menu/miniFoods';
-import type { CustomMenuMarker, MenuMarker } from '../../../domain/menu/model';
+import { canvasShapeKinds, createCanvasShape } from '../../../domain/menu/canvasShapes';
+import { isMiniFoodKind, miniFoodIconUrl, MINI_FOODS, MINI_FOOD_INK } from '../../../domain/menu/miniFoods';
+import { contrastRatio } from '../../../domain/menu/textContrast';
+import type { MenuMarker } from '../../../domain/menu/model';
 import { CustomMarkerLibrary, useLoadCustomMarkerLibrary } from './CustomMarkerLibrary';
 import { MiniFoodChoices } from './MiniFoodChoices';
-import { DesignerOptionSelect } from './SearchableSelects';
+import { DesignerPicker } from './SearchableSelects';
 import { ShapeEditor } from './ShapePicker';
-
-export const standardMarkers: [Exclude<MenuMarker, CustomMenuMarker | MiniFoodKind>, string, string][] = [
-  ['none', 'Sem marcador', '—'],
-  ['dot', 'Ponto', '•'],
-  ['circle', 'Círculo', '○'],
-  ['diamond', 'Losango', '◆'],
-  ['arrow', 'Seta', '→'],
-  ['check', 'Visto', '✓'],
-  ['dash', 'Traço', '–'],
-  ['number', 'Número com ponto', '1.'],
-  ['number-circle', 'Número em círculo', '①'],
-  ['number-square', 'Número em quadrado', '1'],
-  ['number-padded', 'Número com zero', '01'],
-];
 
 export function MarkerControls({ label, color, marker, onChange, onRemove }: {
   label: string;
@@ -37,7 +25,7 @@ export function MarkerControls({ label, color, marker, onChange, onRemove }: {
   const saved = library?.markers.find(item => item.id === selectedCustom?.id);
   const value = submenu || (selectedFood ? 'mini-food' : selectedCustom ? selectedCustom.id : String(marker));
   const options = [
-    ...standardMarkers.map(([value, name, glyph]) => ({ value, label: `${glyph} ${name}` })),
+    ...standardMarkers.map(([value, label]) => ({ value, label })),
     { value: 'mini-food', label: selectedFood ? `Mini comidas · ${MINI_FOODS.find(food => food.kind === selectedFood)?.name}` : 'Mini comidas' },
     ...(selectedCustom && !saved ? [{ value: selectedCustom.id, label: 'Marcador deste cardápio', disabled: true }] : []),
     ...(library?.markers.map(({ id, shape }, index) => ({ value: id, label: `Marcador ${index + 1} · ${canvasShapeKinds.find(([kind]) => kind === shape.kind)?.[1]
@@ -45,9 +33,34 @@ export function MarkerControls({ label, color, marker, onChange, onRemove }: {
     ...(library ? [{ value: 'create', label: 'Personalizado', disabled: !library.ready }] : []),
   ];
 
+  const savedById = new Map(library?.markers.map(item => [item.id, item]));
   return <div className="space-y-2">
-    <DesignerOptionSelect label={label} value={value} options={options}
-      onChange={key => {
+    <DesignerPicker compact label={label} value={options.find(option => option.value === value) || options[0]} options={options}
+      render={option => {
+        const preview = option.value === 'mini-food' ? selectedFood || MINI_FOODS[0].kind
+          : option.value === 'create' ? { id: 'create', shape: createCanvasShape('rectangle', color) }
+            : savedById.get(option.value) || (option.value === selectedCustom?.id ? selectedCustom : undefined)
+              || standardMarkers.find(([key]) => key === option.value)?.[0] || 'none';
+        const ink = typeof preview === 'object' ? (preview.shape.kind === 'line' ? preview.shape.stroke : preview.shape.fill)
+          : isMiniFoodKind(preview) ? MINI_FOOD_INK : color;
+        const darkBacking = preview !== 'none' && /^#[a-f\d]{6}$/i.test(ink)
+          && contrastRatio([1, 3, 5].map(index => parseInt(ink.slice(index, index + 2), 16)) as [number, number, number], [255, 255, 255]) < 2.5;
+        return <span className="flex min-w-0 items-center gap-2">
+          <span className="grid h-6 w-10 shrink-0 place-items-center border-r border-slate-300 pr-2">
+            <span data-marker-preview className={`grid h-6 w-7 place-items-center rounded ${darkBacking ? 'bg-slate-800' : ''}`}>
+              <MenuMarkerGlyph marker={preview} index={0} color={color} fontSize={18} preview />
+            </span>
+          </span>
+          <span className="truncate">{option.label}</span>
+        </span>;
+      }}
+      renderAction={option => savedById.has(option.value) && <button type="button"
+        title="Remover marcador da lista" aria-label={`Remover da lista: ${option.label}`}
+        className="grid size-8 shrink-0 place-items-center rounded text-red-600 hover:bg-red-50 active:bg-red-100"
+        onClick={() => library?.remove(option.value, () => onRemove(option.value))}>
+        <Trash2 size={16} aria-hidden="true" />
+      </button>}
+      choose={({ value: key }) => {
         if (key === 'mini-food' || key === 'create') {
           setSubmenu(key);
           return;
@@ -73,12 +86,5 @@ export function MarkerControls({ label, color, marker, onChange, onRemove }: {
       onChange(next);
       setSubmenu(null);
     }} />}
-    {saved && !submenu && <div className="flex items-center justify-between gap-2 rounded-md bg-slate-50 px-2 py-1">
-      <img src={canvasShapeUrl(saved.shape)} alt="Prévia do marcador" width={22} height={22} className="h-[22px] w-[22px] object-contain" />
-      <button type="button" onClick={() => library?.remove(saved.id, () => onRemove(saved.id))}
-        className="flex min-h-8 items-center gap-1 text-xs font-semibold text-red-700 disabled:opacity-50">
-        <Trash2 size={14} aria-hidden="true" /> Remover marcador da lista
-      </button>
-    </div>}
   </div>;
 }

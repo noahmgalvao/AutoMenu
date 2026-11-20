@@ -45,13 +45,15 @@ test('shape text survives a change of geometry and keeps existing settings', asy
   await textField.fill('Oferta & café\nHoje');
   await expect(textField).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   await expect(textField).toHaveCSS('color', 'rgba(0, 0, 0, 0)');
-  expect(decodeURIComponent((await shape.locator('img').getAttribute('src'))!)).toContain('Oferta');
+  const text = shape.locator('[data-shape-text]');
+  await expect(text).toContainText('Oferta');
   await textField.press('Escape');
   const toolbar = page.locator('[data-inline-format-toolbar]');
   await toolbar.getByRole('button', { name: 'Alterar forma' }).click();
   await page.locator('[data-change-shape-picker]').getByRole('button', { name: 'Elipse' }).click();
   const svg = decodeURIComponent((await shape.locator('img').getAttribute('src'))!);
-  for (const part of ['<ellipse', 'rotate(25)', 'Oferta', '&amp;', 'Hoje']) expect(svg).toContain(part);
+  for (const part of ['<ellipse', 'rotate(25)']) expect(svg).toContain(part);
+  for (const part of ['Oferta', '&', 'café', 'Hoje']) await expect(text).toContainText(part);
 });
 
 test('card photo resize previews the gesture before committing one layout change', async ({ page }) => {

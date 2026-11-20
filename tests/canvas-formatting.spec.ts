@@ -6,6 +6,52 @@ test.beforeEach(async ({ page }) => {
   await page.route('https://fonts.googleapis.com/**', (route) => route.fulfill({ body: '', contentType: 'text/css' }));
 });
 
+test('product name outlines update across products and stay independent from price and description', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=list&price-flow');
+  const product = page.locator('#product-container-1');
+  const name = product.getByRole('heading');
+  await name.click();
+  const sidebar = page.locator('[data-designer-scroll-container]');
+  const nameControls = sidebar.getByText('Nomes dos produtos', { exact: true }).locator('..');
+  await nameControls.getByRole('combobox', { name: 'Fonte' }).click();
+  const fonts = nameControls.getByRole('listbox', { name: 'Fonte' });
+  const used = fonts.getByRole('group', { name: 'Fontes usadas neste cardápio' });
+  await expect(used.getByRole('option', { name: 'Arial', exact: true })).toBeVisible();
+  await expect(fonts.getByRole('option', { name: 'Arial', exact: true })).toHaveCount(1);
+  await fonts.press('Escape');
+
+  const underline = nameControls.getByRole('button', { name: 'Sublinhado' });
+  await underline.scrollIntoViewIfNeeded();
+  await underline.hover();
+  await page.mouse.down();
+  await expect(underline).toHaveCSS('box-shadow', /inset/);
+  await page.mouse.up();
+  await expect(underline).toHaveAttribute('aria-pressed', 'true');
+  await expect(name).toHaveCSS('text-decoration-line', 'underline');
+
+  await nameControls.getByRole('button', { name: 'Contorno do texto' }).click();
+  const outline = page.getByRole('dialog', { name: 'Contorno do texto' });
+  const none = outline.getByRole('checkbox', { name: 'Sem contorno' });
+  await expect(none).toHaveAttribute('aria-checked', 'true');
+  await none.click();
+  await outline.getByRole('slider', { name: 'Espessura do contorno' }).press('ArrowRight');
+  await outline.getByRole('button', { name: '#ef4444', exact: true }).first().click();
+  for (const title of [name, page.locator('#product-container-2').getByRole('heading')]) {
+    await expect(title).toHaveCSS('-webkit-text-stroke-width', '1.25px');
+    await expect(title).toHaveCSS('-webkit-text-stroke-color', 'rgb(239, 68, 68)');
+  }
+  await expect(product.locator('[data-price-value]')).toHaveCSS('-webkit-text-stroke-width', '0px');
+  await expect(product.locator('#product-description-1')).toHaveCSS('-webkit-text-stroke-width', '0px');
+
+  await outline.getByRole('button', { name: 'Fechar seletor de cor' }).click();
+  await shortcutsFor(product).getByTitle('Editar produto').click();
+  const inline = page.locator('[data-inline-format-toolbar]');
+  await inline.getByRole('button', { name: 'Contorno do texto' }).click();
+  await expect(none).toHaveAttribute('aria-checked', 'false');
+  await none.click();
+  await expect(name).toHaveCSS('-webkit-text-stroke-width', '0px');
+});
+
 test('a cleared subtitle can be restored from the title editor', async ({ page }) => {
   await page.goto('/tests/fixtures/template-editor.html');
   const title = page.locator('#menu-title-text');
@@ -186,7 +232,7 @@ test('free text becomes an editable background and repeats on a new page', async
   const source = page.locator('#product-container-text-a');
   await source.click();
   await shortcutsFor(source).getByRole('button', { name: 'Mais opções' }).click();
-  await page.getByRole('button', { name: 'Definir como plano de fundo', exact: true }).click();
+  await page.getByRole('button', { name: 'Integrar ao plano de fundo', exact: true }).click();
   await expect(page.locator('[data-background-prompt]')).toHaveCount(0);
   const layers = page.locator('[data-canvas-background-layer]');
   await expect(layers.first().locator('#product-container-text-a')).toBeVisible();

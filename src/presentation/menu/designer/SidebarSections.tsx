@@ -1,4 +1,4 @@
-import { canMoveImageLayer } from '../../../domain/menu/imageLayers';
+import { canMoveImageLayer, moveImageToMenuBackground } from '../../../domain/menu/imageLayers';
 import { MINI_FOOD_INK } from '../../../domain/menu/miniFoods';
 import { HoldStepButton } from '../../common/HoldStepButton';
 import { ColorPicker } from './ColorPicker';
@@ -22,7 +22,7 @@ import { getProductCardRadius, PRODUCT_CARD_SHAPES, PRODUCT_IMAGE_FRAMES } from 
 import { 
   Type, ImagePlus, Loader2, Minus, Plus,
   Layout, List, Maximize, Palette, ArrowUpAZ, SortAsc, SortDesc, BringToFront, SendToBack, SlidersHorizontal,
-  ImageIcon, Eye, EyeOff, FileCog, RectangleHorizontal, RectangleVertical
+  Wallpaper, ImageIcon, Eye, EyeOff, FileCog, RectangleHorizontal, RectangleVertical
 } from 'lucide-react';
 
 // --- ELEMENTS SECTION ---
@@ -148,8 +148,13 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                         addedImages: previous.addedImages?.map(image => layerIds.has(image.id)
                             ? setCanvasImageBackground(image, !selectedAddedImage.repeatAsBackground) : image),
                     }))}>
-                    {selectedAddedImage.repeatAsBackground ? 'Usar só nesta página' : 'Definir como plano de fundo'}
+                    {selectedAddedImage.repeatAsBackground ? 'Usar só nesta página' : 'Integrar ao plano de fundo'}
                 </button>
+                {!selectedAddedImage.shape && <button type="button"
+                    onClick={() => setStyle(previous => moveImageToMenuBackground(previous, selectedAddedImage.id))}
+                    className="mb-2 flex w-full items-center justify-center gap-2 rounded-md border border-slate-200 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 active:bg-indigo-50">
+                    <Wallpaper size={15} /> Definir imagem de fundo
+                </button>}
                 {shapeEditor?.shape && shapePickerRequest?.id === shapeEditor.id && <div data-change-shape-picker className="mb-2">
                     <ShapeChoices selected={shapeEditor.shape.kind} choose={kind => setStyle(previous => ({
                         ...previous, name: 'Custom', addedImages: previous.addedImages?.map(image => {
@@ -851,7 +856,7 @@ export const StyleSection: React.FC<StyleSectionProps> = ({ style, setStyle }) =
         </div>
         <div className="space-y-1 flex-1">
             <label className="text-[10px] uppercase font-bold text-slate-400">Fundo</label>
-            <ColorPicker value={style.backgroundColor} onChange={(color) => setStyle(prev => ({ ...prev, backgroundColor: color, name: 'Custom' }))} label="Cor de fundo" className="w-full" preview="background" />
+            <ColorPicker value={style.backgroundColor} onChange={(color) => setStyle(prev => ({ ...prev, backgroundColor: color, name: 'Custom' }))} label="Cor de fundo" className="w-full" preview="background" disabled={Boolean(style.menuBackgroundPhoto)} />
         </div>
         <div className="space-y-1 flex-1">
             <label className="text-[10px] uppercase font-bold text-slate-400">Texto</label>

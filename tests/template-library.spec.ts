@@ -283,12 +283,60 @@ test('adding an image shows a preview through upload and canvas preparation', as
   await expect(feedback).toHaveCount(0);
 });
 
+test('using a free image as the full background locks the paper color until removal', async ({ page }) => {
+  await page.goto(`${url}?batch-layers`);
+  const sheet = page.locator('[data-menu-print-page]').first();
+  const photos = page.locator('[data-menu-background-image]');
+  const image = page.locator('[data-added-image-id="batch-photo"]');
+  const source = await image.locator('img').getAttribute('src');
+  await image.click({ button: 'right' });
+  const menu = page.locator('[data-canvas-object-menu]');
+  await menu.getByRole('button', { name: 'Definir imagem de fundo', exact: true }).click();
+  await expect(image).toHaveCount(0);
+  await expect(photos).toHaveCount(2);
+  await expect(photos.first()).toHaveAttribute('src', source!);
+  await expect(photos.first()).toHaveCSS('object-fit', 'cover');
+  const paperColor = page.getByRole('button', { name: 'Cor de fundo', exact: true });
+  await expect(paperColor).toBeDisabled();
+  await sheet.click({ button: 'right', position: { x: 8, y: 350 } });
+  const remove = menu.getByRole('button', { name: 'Remover imagem de fundo', exact: true });
+  await expect(menu.getByRole('button').last()).toHaveText('Remover imagem de fundo');
+  await remove.click();
+  await expect(photos).toHaveCount(0);
+  await expect(paperColor).toBeEnabled();
+  await sheet.click({ button: 'right', position: { x: 8, y: 350 } });
+  await expect(menu.getByRole('button', { name: 'Definir imagem de fundo', exact: true })).toBeEnabled();
+});
+
+test.describe('background image upload from touch canvas', () => {
+  test.use({ viewport: { width: 430, height: 932 }, hasTouch: true, isMobile: true });
+  test('holding on empty paper opens the background file picker', async ({ page, context }) => {
+    const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jBXsAAAAASUVORK5CYII=', 'base64');
+    await page.route('**/tests/asset-upload', route => route.fulfill({
+      json: { asset: { id: 'uploaded-background' }, url: '/tests/uploaded-background.png' },
+    }));
+    await page.route('**/tests/uploaded-background.png', route => route.fulfill({ contentType: 'image/png', body: image }));
+    await page.goto(`${url}?image-upload`);
+    const paper = (await page.locator('[data-menu-print-page]').first().boundingBox())!;
+    const touch = await context.newCDPSession(page);
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: paper.x + 4, y: paper.y + 110 }] });
+    const action = page.locator('[data-canvas-object-menu]').getByRole('button', { name: 'Definir imagem de fundo', exact: true });
+    await expect(action).toBeVisible();
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    const browse = page.waitForEvent('filechooser');
+    await action.tap();
+    await (await browse).setFiles({ name: 'fundo.png', mimeType: 'image/png', buffer: image });
+    await expect(page.locator('[data-menu-background-image]')).toHaveAttribute('src', '/tests/uploaded-background.png');
+    await expect(page.getByRole('button', { name: 'Cor de fundo', exact: true })).toBeDisabled();
+  });
+});
+
 test('a shape becomes the same editable background on newly added pages', async ({ page }) => {
   await page.getByRole('button', { name: 'Adicionar forma' }).click();
   await page.locator('[data-object-page-index]').getByTitle('Editar forma').click();
   await expect(page.getByAltText('Forma adicionada')).toHaveCount(1);
   await page.locator('[data-inline-format-toolbar]').getByRole('slider', { name: 'Rotação' }).press('ArrowRight');
-  const prompt = page.getByRole('group', { name: 'Definir como plano de fundo?' });
+  const prompt = page.getByRole('group', { name: 'Integrar ao plano de fundo?' });
   await prompt.getByRole('button', { name: 'Sim', exact: true }).click();
   const pages = page.locator('[data-menu-print-page]');
   await pages.first().dispatchEvent('click');
@@ -307,7 +355,7 @@ test('the shape prompt remembers an outside dismissal and leaves background and 
   await page.getByRole('button', { name: 'Adicionar forma' }).click();
   const shape = page.getByAltText('Forma adicionada');
   const controls = page.locator('[data-object-page-index]');
-  const prompt = page.getByRole('group', { name: 'Definir como plano de fundo?' });
+  const prompt = page.getByRole('group', { name: 'Integrar ao plano de fundo?' });
   const { x, y, width, height } = (await shape.boundingBox())!;
   const releaseShape = () => page.mouse.click(x + width / 2, y + height / 2);
   await releaseShape();
@@ -328,14 +376,14 @@ test('the shape prompt remembers an outside dismissal and leaves background and 
   await expect(rotation).toHaveValue('1');
   await controls.getByTitle('Mais opções').click();
   const menu = page.locator('[data-canvas-object-menu]');
-  await expect(menu.getByRole('button', { name: 'Definir como plano de fundo' })).toBeVisible();
+  await expect(menu.getByRole('button', { name: 'Integrar ao plano de fundo' })).toBeVisible();
   await menu.getByRole('button', { name: 'Inverter horizontalmente' }).click();
   await expect(shape).toHaveCSS('transform', 'matrix(-1, 0, 0, 1, 0, 0)');
   await controls.getByTitle('Mais opções').click();
   await menu.getByRole('button', { name: 'Inverter verticalmente' }).click();
   await expect(shape).toHaveCSS('transform', 'matrix(-1, 0, 0, -1, 0, 0)');
   await controls.getByTitle('Mais opções').click();
-  await menu.getByRole('button', { name: 'Definir como plano de fundo' }).click();
+  await menu.getByRole('button', { name: 'Integrar ao plano de fundo' }).click();
   await controls.getByTitle('Mais opções').click();
   await expect(menu.getByRole('button', { name: 'Usar só nesta página' })).toBeVisible();
   await menu.getByRole('button', { name: 'Remover forma' }).click();
@@ -347,7 +395,7 @@ test('an added image can use the background prompt and keeps its More options ac
   const image = page.getByAltText('Imagem adicionada');
   const { x, y, width, height } = (await image.boundingBox())!;
   await page.mouse.click(x + width / 2, y + height / 2);
-  const prompt = page.getByRole('group', { name: 'Definir como plano de fundo?' });
+  const prompt = page.getByRole('group', { name: 'Integrar ao plano de fundo?' });
   await prompt.getByRole('button', { name: 'Sim', exact: true }).click();
   await expect(image.locator('..')).toHaveAttribute('data-canvas-background-layer', 'true');
   const controls = page.locator('[data-object-page-index]');
@@ -411,7 +459,7 @@ test('a mixed selection formats, resizes, layers and duplicates its shapes and i
   await menuAction('Enviar para trás');
   for (const id of layers) await expect(layer(id)).toHaveAttribute('data-canvas-layer', '1');
 
-  await menuAction('Definir como plano de fundo');
+  await menuAction('Integrar ao plano de fundo');
   await expect(secondPage.locator('[data-added-image-id]')).toHaveCount(3);
   await menuAction('Usar só nesta página');
   await expect(secondPage.locator('[data-added-image-id]')).toHaveCount(0);

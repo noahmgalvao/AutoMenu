@@ -66,12 +66,14 @@ const getTexturePreviewStyle = (url: string): React.CSSProperties => {
 
 const foldSearch = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('pt-BR').trim();
 
-function DesignerPicker<T extends SelectOption>({ label, value, options, choose, render, searchLabel, empty, gap, compact = false }: {
+export function DesignerPicker<T extends SelectOption>({ label, value, options, preferred, choose, render, renderAction, searchLabel, empty, gap, compact = false }: {
   label: string;
   value: T;
   options: readonly T[];
+  preferred?: { label: string; options: readonly T[] };
   choose: (option: T) => void;
   render: (option: T) => React.ReactNode;
+  renderAction?: (option: T) => React.ReactNode;
   searchLabel?: string;
   empty?: string;
   gap?: number;
@@ -84,7 +86,16 @@ function DesignerPicker<T extends SelectOption>({ label, value, options, choose,
   const trigger = useRef<HTMLButtonElement>(null);
   const listId = useId();
   const search = open ? foldSearch(query) : '';
-  const matches = search ? options.filter(option => foldSearch(option.label).includes(search)) : options;
+  const filter = (items: readonly T[]) => search ? items.filter(option => foldSearch(option.label).includes(search)) : items;
+  const matches = open ? filter(options) : [];
+  const preferredMatches = open && preferred ? filter(preferred.options) : [];
+  const renderOption = (option: T) => <div key={option.value} role="presentation" className="flex items-center gap-1">
+    <button type="button" role="option" aria-selected={option.value === value.value}
+      data-option-value={option.value} disabled={option.disabled}
+      className="block min-w-0 flex-1 truncate rounded px-2 py-2 text-left text-slate-700 hover:bg-slate-50 active:bg-indigo-100 focus:bg-slate-100 disabled:opacity-50 aria-selected:bg-indigo-50 aria-selected:text-indigo-700"
+      onClick={() => { choose(option); close(); trigger.current?.focus({ preventScroll: true }); }}>{render(option)}</button>
+    {renderAction?.(option)}
+  </div>;
   const close = () => { setOpen(false); setQuery(''); };
   useEffect(() => {
     if (!open) return;
@@ -125,11 +136,12 @@ function DesignerPicker<T extends SelectOption>({ label, value, options, choose,
           aria-label={searchLabel} placeholder={searchLabel} value={query} onChange={event => setQuery(event.target.value)} />
       </label>}
       <div ref={list} id={listId} role="listbox" aria-label={label} className="max-h-44 touch-pan-y overflow-y-auto p-1">
-        {matches.map(option => <button key={option.value} type="button" role="option" aria-selected={option.value === value.value}
-          data-option-value={option.value} disabled={option.disabled}
-          className="block w-full truncate rounded px-2 py-2 text-left text-slate-700 hover:bg-slate-50 focus:bg-slate-100 disabled:opacity-50 aria-selected:bg-indigo-50 aria-selected:text-indigo-700"
-          onClick={() => { choose(option); close(); trigger.current?.focus({ preventScroll: true }); }}>{render(option)}</button>)}
-        {!matches.length && <div role="status" className="p-2 text-slate-500">{empty}</div>}
+        {preferredMatches.length > 0 && <div role="group" aria-label={preferred?.label} className="mb-1 border-b border-slate-200 pb-1">
+          <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">{preferred?.label}</div>
+          {preferredMatches.map(renderOption)}
+        </div>}
+        {matches.map(renderOption)}
+        {!matches.length && !preferredMatches.length && <div role="status" className="p-2 text-slate-500">{empty}</div>}
       </div>
     </div>}
   </div>;
@@ -145,6 +157,8 @@ export function DesignerOptionSelect<Value extends string>({ label, value, optio
     options={options} choose={option => onChange(option.value)} render={option => option.label} />;
 }
 
+export const MenuFontContext = React.createContext<readonly string[]>([]);
+
 export const FontSelect: React.FC<{
   value?: string;
   onChange: (font: string) => void;
@@ -152,12 +166,18 @@ export const FontSelect: React.FC<{
   placeholder?: string;
   menuGap?: number;
 }> = ({ value, onChange, fallbackFontFamily, placeholder = 'Buscar fonte...', menuGap }) => {
+  const used = React.useContext(MenuFontContext);
+  const groups = React.useMemo(() => ({
+    used: used.map(font => ({ value: font, label: font })),
+    catalog: fontOptions.filter(option => !used.includes(option.value)),
+  }), [used]);
   useFontLibrary();
   const resolvedValue = value || fallbackFontFamily || FONTS[0];
   return <div className="automenu-font-select min-w-0">
     <DesignerPicker label="Fonte" searchLabel={placeholder} gap={menuGap}
       value={fontOptions.find(option => option.value === resolvedValue) || { value: resolvedValue, label: resolvedValue }}
-      options={fontOptions} choose={option => onChange(option.value)} empty="Nenhuma fonte encontrada"
+      preferred={{ label: 'Fontes usadas neste cardápio', options: groups.used }}
+      options={groups.catalog} choose={option => onChange(option.value)} empty="Nenhuma fonte encontrada"
       render={option => <span style={{ fontFamily: option.value }}>{option.label}</span>} />
   </div>;
 };

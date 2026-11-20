@@ -25,5 +25,8 @@ export const getConfiguredCanvasFonts = (style: MenuStyle, products: Product[]) 
   products.forEach((product) => {
     if (product.isFreeText && product.styles?.fontFamily) fonts.add(product.styles.fontFamily);
   });
+  style.addedImages?.forEach(({ shape }) => {
+    if (shape?.text && shape.textStyle?.fontFamily) fonts.add(shape.textStyle.fontFamily);
+  });
   return Array.from(fonts).filter(Boolean);
 };

@@ -57,7 +57,7 @@ export function getMenuPalette(style: MenuStyle, freeTextColors: (string | undef
   });
   const fallback = [
     style.backgroundColor, style.primaryColor, style.textColor, style.cardBackgroundColor,
-    ...Object.values(style.elementStyles).map(element => element?.color),
+    ...Object.values(style.elementStyles).flatMap(element => [element?.color, element?.textOutline?.color]),
     ...Object.values(style.borders || {}).map(border => border?.sides.length ? border.color : undefined),
     ...Object.values(style.freeTextBorders || {}).map(border => border.sides.length ? border.color : undefined),
     ...Object.values(style.fills || {}), ...Object.values(style.freeTextFills || {}),
@@ -81,7 +81,10 @@ function getRenderedColors(trigger: HTMLElement | null, colors: React.ContextTyp
     ).forEach(element => {
       const css = getComputedStyle(element);
       if (css.display === 'none' || css.visibility === 'hidden' || css.opacity === '0') return;
-      if (element.matches('[data-word-fit], [data-border-text], [data-menu-marker], [data-page-number]') && element.textContent?.trim()) add(css.color);
+      if (element.matches('[data-word-fit], [data-border-text], [data-menu-marker], [data-page-number]') && element.textContent?.trim()) {
+        add(css.color);
+        if (parseFloat(css.webkitTextStrokeWidth)) add(css.webkitTextStrokeColor);
+      }
       if (element.dataset.menuDividerColor && element.offsetWidth > 0) add(element.dataset.menuDividerColor);
       add(css.backgroundColor);
       if (element.matches('[data-menu-border], [data-template-card], [data-template-category], [data-template-price]')) {
@@ -100,11 +103,13 @@ interface Props {
   onChange: (color: string) => void;
   label?: string;
   className?: string;
-  noFill?: { active: boolean; onSelect: () => void };
+  noFill?: { active: boolean; onSelect: () => void; label?: string };
+  children?: React.ReactNode;
+  disabled?: boolean;
   preview?: 'background' | 'cards' | 'primary' | 'text';
 }
 
-export function ColorPicker({ value = '#000000', onChange, label = 'Cor', className = '', preview, noFill }: Props) {
+export function ColorPicker({ value = '#000000', onChange, label = 'Cor', className = '', preview, noFill, children, disabled = false }: Props) {
   const colors = React.useContext(MenuColorContext);
   const [open, setOpen] = useState(false);
   const [sampling, setSampling] = useState(false);
@@ -158,7 +163,10 @@ export function ColorPicker({ value = '#000000', onChange, label = 'Cor', classN
   }, [colors, open, sampling]);
 
   useEffect(() => clearPreview, [clearPreview]);
-  useEffect(() => { if (!open) clearPreview(); }, [clearPreview, open]);
+  useEffect(() => { if (!open || disabled) clearPreview(); }, [clearPreview, disabled, open]);
+  useEffect(() => {
+    if (disabled) { setOpen(false); setSampling(false); }
+  }, [disabled]);
 
   useLayoutEffect(() => {
     const button = trigger.current;
@@ -272,8 +280,8 @@ export function ColorPicker({ value = '#000000', onChange, label = 'Cor', classN
   const channels = mode === 'HEX' ? [] : getChannels(draft, mode);
   const recentPalette = recent.filter(color => !activePalette.includes(color));
   return <>
-    <button ref={trigger} type="button" title={label} aria-label={label} aria-expanded={open} aria-controls={pickerId}
-      data-drag-ignore="true" className={`h-8 w-8 shrink-0 rounded-md border border-black/15 ${className}`}
+    <button ref={trigger} type="button" title={label} aria-label={label} aria-expanded={open && !disabled} aria-controls={pickerId} disabled={disabled}
+      data-drag-ignore="true" className={`h-8 w-8 shrink-0 rounded-md border border-black/15 disabled:opacity-50 ${className}`}
       style={{ background: noFill?.active ? 'linear-gradient(135deg, white 47%, #e11d48 48% 52%, white 53%)' : open ? draft : value }}
       onClick={() => {
         if (open) clearPreview();
@@ -286,7 +294,7 @@ export function ColorPicker({ value = '#000000', onChange, label = 'Cor', classN
         }
         setOpen(!open);
       }} />
-    {open && createPortal(
+    {open && !disabled && createPortal(
       <div ref={panel} id={pickerId} role="dialog" aria-label={label} data-no-browser-selection data-drag-ignore="true" data-editor-popover="true"
         className="fixed z-[11000] max-h-[calc(100dvh-16px)] w-[252px] space-y-2 overflow-y-auto rounded-xl border border-slate-200 bg-white p-3 text-xs shadow-xl"
         style={sampling ? { left: 8, top: 8 } : position}
@@ -305,8 +313,9 @@ export function ColorPicker({ value = '#000000', onChange, label = 'Cor', classN
             className="flex w-full items-center gap-2 rounded-md border border-slate-200 px-2 py-1.5 text-left font-medium text-slate-700 hover:bg-slate-50"
             onClick={() => { clearPreview(); noFill.onSelect(); }}>
             <span aria-hidden="true" className="grid size-4 place-items-center rounded border border-slate-300 text-indigo-700">{noFill.active ? '✓' : ''}</span>
-            Sem preenchimento
+            {noFill.label || 'Sem preenchimento'}
           </button>}
+          {children}
           <HexColorPicker color={draft} onChange={updateDraft} onChangeEnd={commit} style={{ width: '100%', height: 146 }} />
           <div className="flex items-center gap-1">
             <select value={mode} onChange={event => setMode(event.target.value as typeof mode)} aria-label="Formato da cor" className="h-8 rounded-md border border-slate-200">

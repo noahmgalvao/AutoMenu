@@ -1,3 +1,4 @@
+import { isCanvasObjectOrControlTarget } from './canvasHitTargets';
 import { CanvasImageCropDialog } from './CanvasImageCropDialog';
 import type { CanvasImageCrop } from '../../../domain/menu/model';
 import { categoryKey, categoryName } from '../../../domain/menu/categoryName';
@@ -6,7 +7,7 @@ import { hasPhotosForType, livePhotoScaleVariable, type PhotoType } from './phot
 import React, { useMemo, useEffect, useRef, useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { CategoryPosition, ElementStyle, Product, MenuStyle, SortOption } from '../../../domain/menu/model';
-import { Crop, AlertTriangle, BringToFront, Copy, CopyCheck, CopyPlus, Edit3, EyeOff, FlipHorizontal2, FlipVertical2, Images, Layers, Paintbrush, Clipboard, Plus, Scissors, SendToBack, Trash2 } from 'lucide-react';
+import { Crop, AlertTriangle, BringToFront, Copy, CopyCheck, CopyPlus, Edit3, EyeOff, Wallpaper, FlipHorizontal2, FlipVertical2, Images, Layers, Paintbrush, Clipboard, Plus, Scissors, SendToBack, Trash2 } from 'lucide-react';
 import { calculatePagination, finalizeMenuPages, getPaginationHeightKey, getSavedCategoryPlacements } from '../../../domain/menu/menuPagination';
 import { findSplitCategorySwap, type SplitCategorySwap } from '../../../domain/menu/splitCategorySwap';
 import { FREE_TEXT_PREFIX, SAFETY_BUFFER } from '../../../domain/menu/flow';
@@ -16,7 +17,7 @@ import { useReplacePlaceholderOnInput } from '../interactions/useReplacePlacehol
 import { useResponsivePrices } from './useResponsivePrices';
 import { NUDGE_STEP, type DraftItem, type MoveDirection, type SelectionItem } from '../interactions/types';
 import { MenuPage, type AddedImagePreview } from './MenuPage';
-import { canMoveImageLayer, getContentLayer, getFreeTextLayer, getImageLayerIndexes, hasForegroundImage } from '../../../domain/menu/imageLayers';
+import { canMoveImageLayer, getContentLayer, getFreeTextLayer, getImageLayerIndexes, hasForegroundImage, moveImageToMenuBackground } from '../../../domain/menu/imageLayers';
 import { getCanvasViewportFocus, observeAnchorScroll } from './canvasViewport';
 import { getSelectedLayerIds, setCanvasImageBackground } from '../../../domain/menu/canvasShapes';
 import { acceptsCanvasFormat, applyCanvasFormat, captureCanvasFormat, type CanvasFormat, type FormatObject } from './canvasFormatting';
@@ -37,11 +38,13 @@ import {
     type PricePropagationRequest,
 } from '../../../domain/menu/pricePropagation';
 import { FontPropagationPrompt, type FontPropagationRequest } from '../FontPropagationPrompt';
-import { applyFontToMenuStyle } from '../../../domain/menu/fontPropagation';
+import { applyFontToMenuStyle, getConfiguredCanvasFonts } from '../../../domain/menu/fontPropagation';
 
 
 interface MenuPreviewProps {
     addedImagePreview?: AddedImagePreview;
+    onChooseBackgroundImage?: () => void;
+    isAddingImage?: boolean;
     products: Product[];
     style: MenuStyle;
     sortOption: SortOption;
@@ -209,6 +212,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     }, [props.readOnly, props.style.addedImages]);
     const handlers = useMenuInteractions({ ...props, onUpdateProduct: handleProductUpdateWithPricePrompt, onImageEditEnd: finishImageEdit });
     const previewRootRef = useRef<HTMLDivElement | null>(null);
+    const blankPageClicks = useRef({ page: null as HTMLElement | null, consecutive: 0 });
     useReplacePlaceholderOnInput(previewRootRef);
     useResponsivePrices(previewRootRef, props.style);
     const [measuredHeights, setMeasuredHeights] = useState<ReadonlyMap<string, number>>(() => new Map());
@@ -672,14 +676,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     };
 
     // 3. Font Loading
-    const usedFonts = useMemo(() => {
-        const fonts = new Set<string>();
-        if (style.fontFamily) fonts.add(style.fontFamily);
-        Object.values(style.elementStyles || {}).forEach((es: any) => {
-            if (es && es.fontFamily) fonts.add(es.fontFamily);
-        });
-        return Array.from(fonts);
-    }, [style]);
+    const usedFonts = useMemo(() => getConfiguredCanvasFonts(style, products), [style, products]);
 
     // 4. Pagination
     const paginationOptions = useMemo(() => ({
@@ -2440,7 +2437,21 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     event.stopPropagation();
                     return;
                 }
+                const paper = target?.closest<HTMLElement>('[data-menu-print-page]') || null;
+                const blank = paper && !isCanvasObjectOrControlTarget(target, paper);
+                const previous = blankPageClicks.current;
+                blankPageClicks.current = blank
+                    ? { page: paper, consecutive: previous.page === paper && event.detail > 1 ? previous.consecutive + 1 : 1 }
+                    : { page: null, consecutive: 0 };
                 pasteFormattingOnClick(event);
+            }}
+            onDoubleClickCapture={readOnly ? undefined : event => {
+                const target = event.target;
+                const paper = target instanceof Element && target.closest<HTMLElement>('[data-menu-print-page]');
+                if (!paper || isCanvasObjectOrControlTarget(target, paper)) return;
+                const pair = blankPageClicks.current;
+                blankPageClicks.current = { page: null, consecutive: 0 };
+                if (pair.page !== paper || pair.consecutive < 2) event.stopPropagation();
             }}
         >
             <DynamicFontLoader fonts={usedFonts} />
@@ -2527,13 +2538,13 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     data-background-prompt="true"
                     data-no-browser-selection
                     role="group"
-                    aria-label="Definir como plano de fundo?"
+                    aria-label="Integrar ao plano de fundo?"
                     className="fixed z-[10021] w-max max-w-[calc(100vw-16px)] rounded-lg border border-slate-200 bg-white p-2 text-xs text-slate-700 shadow-lg"
                     style={backgroundPromptPosition ?? { visibility: 'hidden' }}
                     onClick={(event) => event.stopPropagation()}
                     onPointerDown={(event) => event.stopPropagation()}
                 >
-                    <p className="px-1 font-medium">Definir como plano de fundo?</p>
+                    <p className="px-1 font-medium">Integrar ao plano de fundo?</p>
                     <div className="mt-1 flex justify-end gap-1">
                         <button type="button" className="rounded px-2 py-1 hover:bg-slate-100" onClick={dismissBackgroundPrompt}>Não</button>
                         <button type="button" className="rounded bg-indigo-600 px-2 py-1 font-semibold text-white hover:bg-indigo-700"
@@ -2618,11 +2629,18 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                         }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
                             <Layers size={15} /> {contextImage?.repeatAsBackground ? 'Usar só nesta página'
                                 : contextFreeTextId && style.freeTextBackgrounds?.[contextFreeTextId] ? 'Remover do plano de fundo'
-                                    : 'Definir como plano de fundo'}
+                                    : 'Integrar ao plano de fundo'}
                         </button>
                     )}
                     {contextImage && (
                         <>
+                            {!contextImage.shape && <button type="button" onClick={() => {
+                                onStyleUpdate?.(previous => moveImageToMenuBackground(previous, contextImage.id));
+                                handlers.handleSelection(null, null);
+                                setObjectMenu(null);
+                            }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 active:bg-indigo-50">
+                                <Wallpaper size={15} /> Definir imagem de fundo
+                            </button>}
                             {!contextImage.shape && <button type="button" onClick={() => openImageCrop(contextImage.id)}
                                 className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"><Crop size={15} /> Cortar</button>}
                             <button type="button" aria-pressed={Boolean(contextImage.flipHorizontal)} onClick={() => flipImage(contextImage.id, 'flipHorizontal')}
@@ -2665,6 +2683,21 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                             <Trash2 size={15} /> {contextImage ? contextImage.shape ? 'Remover forma' : 'Remover imagem' : 'Remover'}
                         </button>
                     )}
+                    {isBackgroundMenu && (style.menuBackgroundPhoto ? (
+                        <button type="button" onClick={() => {
+                            onStyleUpdate?.(previous => ({ ...previous, menuBackgroundPhoto: undefined, name: 'Custom' }));
+                            setObjectMenu(null);
+                        }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-red-600 hover:bg-red-50 active:bg-red-100">
+                            <Trash2 size={15} /> Remover imagem de fundo
+                        </button>
+                    ) : props.onChooseBackgroundImage && (
+                        <button type="button" disabled={props.isAddingImage} onClick={() => {
+                            props.onChooseBackgroundImage?.();
+                            setObjectMenu(null);
+                        }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 active:bg-indigo-50 disabled:opacity-40">
+                            <Wallpaper size={15} /> Definir imagem de fundo
+                        </button>
+                    ))}
                     </>
                     )}
                 </div>,

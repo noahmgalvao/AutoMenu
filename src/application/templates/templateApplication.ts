@@ -67,7 +67,7 @@ export function applyTemplateToCurrentStyle(current: MenuStyle, template: MenuSt
     name: template.name,
     fontFamily: visual.fontFamily,
     primaryColor: visual.primaryColor,
-    backgroundColor: visual.backgroundColor,
+    backgroundColor: current.menuBackgroundPhoto ? current.backgroundColor : visual.backgroundColor,
     textColor: visual.textColor,
     backgroundImage: visual.backgroundImage,
     miniFoodTextureColor: visual.miniFoodTextureColor,

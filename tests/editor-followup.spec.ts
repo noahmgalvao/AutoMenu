@@ -106,8 +106,8 @@ test('contrast tips fix a shared text color or fill across all matching texts', 
     await expect(name).toHaveCSS('background-color', 'rgb(0, 0, 0)');
   }
   await rows.filter({ hasText: 'Rótulo claro' }).getByRole('button', { name: 'Adicionar preenchimento' }).click();
-  const shape = page.locator('[data-added-image-id="shape-contrast"] img');
-  await expect.poll(async () => decodeURIComponent((await shape.getAttribute('src'))!)).toContain('rx="2" fill="#000000"');
+  const shapeText = page.locator('[data-added-image-id="shape-contrast"] [data-shape-text]');
+  await expect(shapeText).toHaveCSS('background-color', 'rgb(0, 0, 0)');
 });
 
 test('background text moves in all copies and its overlap tip clears the collision', async ({ page }) => {

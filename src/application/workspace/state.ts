@@ -104,6 +104,8 @@ export const withStyleDefaults = (style: MenuStyle | null | undefined): MenuStyl
       ? Object.fromEntries(Object.entries(source.categoryImages).filter(([, image]) => isRecord(image))) as MenuStyle['categoryImages']
       : {},
     pageBackgrounds: Array.isArray(source.pageBackgrounds) ? source.pageBackgrounds.filter(isRecord) as any : [],
+    menuBackgroundPhoto: isRecord(source.menuBackgroundPhoto) && typeof source.menuBackgroundPhoto.url === 'string'
+      && source.menuBackgroundPhoto.url ? source.menuBackgroundPhoto : undefined,
     pageBreaks: stringArray(source.pageBreaks),
     pageSetup: normalizeMenuPageSetup(source.pageSetup),
     fontSizeLimits: resolveFontSizeLimits({ ...base, ...source } as MenuStyle),

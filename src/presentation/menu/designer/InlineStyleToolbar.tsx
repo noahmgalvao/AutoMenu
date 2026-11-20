@@ -1,3 +1,4 @@
+import { TextOutlinePicker } from './TextOutlinePicker';
 import { HoldStepButton } from '../../common/HoldStepButton';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -85,7 +86,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
 
         const updatePosition = () => {
             const toolbarHeight = (contentRef.current?.offsetHeight || 76) + (compact ? 10 : 14);
-            const preferredWidth = !hasTextControls ? 200 : hasHeader ? (compact ? 148 : 210) : isSizeColorOnly ? 120 : hasPriceAdjustment ? 300 : 270;
+            const preferredWidth = !hasTextControls ? 200 : hasHeader ? (compact ? 180 : 242) : isSizeColorOnly ? 155 : hasPriceAdjustment ? 334 : 304;
             const width = Math.min(preferredWidth, window.innerWidth - 16);
             const borderSurface = groupSurface || (hasDecoration
                 ? document.getElementById(targetElementId)?.closest('[data-menu-border-surface]')
@@ -196,6 +197,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                     onChange={(fontSize) => onChange({ ...value, fontSize })}
                 />
                 <ColorPicker value={value.color} onChange={color => onChange({ ...value, color })} />
+                <TextOutlinePicker value={value.textOutline} onChange={textOutline => onChange({ ...value, textOutline })} />
             </div>}
             {value && onChange && !isSizeColorOnly && (() => {
                 const formatButtons = <>
@@ -203,6 +205,8 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                         <button
                             type="button"
                             key={align}
+                            aria-label={align === 'left' ? 'Alinhar à esquerda' : align === 'center' ? 'Centralizar texto' : 'Alinhar à direita'}
+                            aria-pressed={value.textAlign === align}
                             onClick={() => onChange({ ...value, textAlign: align })}
                             className={`rounded border p-1 ${value.textAlign === align ? 'border-indigo-200 bg-indigo-50 text-indigo-600' : 'border-slate-200 text-slate-500'}`}
                         >
@@ -213,7 +217,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                         type="button"
                         onClick={() => onChange({ ...value, fontWeight: value.fontWeight === '700' || value.fontWeight === 'bold' ? '400' : '700' })}
                         className={`rounded border p-1 ${value.fontWeight === '700' || value.fontWeight === 'bold' ? 'border-indigo-200 bg-indigo-50 text-indigo-600' : 'border-slate-200 text-slate-500'}`}
-                        title="Negrito"
+                        title="Negrito" aria-label="Negrito" aria-pressed={value.fontWeight === '700' || value.fontWeight === 'bold'}
                     >
                         <Bold size={14} />
                     </button>
@@ -221,7 +225,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                         type="button"
                         onClick={() => onChange({ ...value, italic: !value.italic })}
                         className={`rounded border p-1 ${value.italic ? 'border-indigo-200 bg-indigo-50 text-indigo-600' : 'border-slate-200 text-slate-500'}`}
-                        title="Itálico"
+                        title="Itálico" aria-label="Itálico" aria-pressed={Boolean(value.italic)}
                     >
                         <Italic size={14} />
                     </button>
@@ -229,7 +233,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                         type="button"
                         onClick={() => onChange({ ...value, underline: !value.underline })}
                         className={`rounded border p-1 ${value.underline ? 'border-indigo-200 bg-indigo-50 text-indigo-600' : 'border-slate-200 text-slate-500'}`}
-                        title="Sublinhado"
+                        title="Sublinhado" aria-label="Sublinhado" aria-pressed={Boolean(value.underline)}
                     >
                         <Underline size={14} />
                     </button>

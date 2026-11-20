@@ -112,7 +112,8 @@ function collectPageText(page: HTMLElement, style: MenuStyle): TextEntry[] {
     for (const element of page.querySelectorAll<HTMLElement>('[data-added-image-id]')) {
         const image = images.get(element.dataset.addedImageId || '');
         if (!image?.shape?.text?.trim() || isMiniFoodKind(image.shape.kind)) continue;
-        const boxes = shapeBoxes(image, element);
+        const liveText = element.querySelector<HTMLElement>('[data-shape-text]');
+        const boxes = liveText ? domTextBoxes(liveText) : shapeBoxes(image, element);
         if (!boxes.length) continue;
         const [color] = parseColor(shapeTextColor(image.shape));
         const fontSize = getCanvasShapeTextLayout(image.shape).size * image.width / getCanvasShapeDimensions(image.shape).width;
@@ -242,9 +243,13 @@ async function canvasBackground(page: HTMLElement, entries: TextEntry[]) {
                     element.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
                     element.style.setProperty('color', 'transparent', 'important');
                     element.style.textShadow = 'none';
+                    element.style.webkitTextStrokeWidth = '0';
                 });
                 clone.querySelectorAll<HTMLElement>('[class*="bg-indigo-"]').forEach(element => {
                     element.classList.remove('bg-indigo-50/30', 'bg-indigo-50/20', 'bg-indigo-50/10', 'bg-indigo-500/15');
+                });
+                clone.querySelectorAll<HTMLElement>('[data-shape-text]').forEach(element => {
+                    element.style.visibility = 'hidden';
                 });
                 clone.querySelectorAll<HTMLImageElement>('[data-added-image-id] img').forEach(element => {
                     const shape = shapes.get(element.closest<HTMLElement>('[data-added-image-id]')?.dataset.addedImageId || '');

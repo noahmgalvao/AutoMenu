@@ -1,6 +1,6 @@
 import { chooseDesignerOption } from './fixtures/designer-picker';
 import { expect, test } from '@playwright/test';
-import { MINI_FOODS } from '../src/domain/menu/miniFoods';
+import { MINI_FOODS, miniFoodIconUrl } from '../src/domain/menu/miniFoods';
 
 const fixture = '/tests/fixtures/template-editor.html';
 const foodNames = MINI_FOODS.map(food => food.name);
@@ -37,11 +37,20 @@ test('the editor offers the same 50 mini foods as textures, shapes and markers',
   await page.route('**/rest/v1/custom_menu_markers*', route => route.fulfill({ json: [] }));
   const categories = page.locator('[data-sidebar-decorations="category"]');
   await categories.getByRole('button', { name: 'Marcadores das categorias' }).click();
-  await chooseDesignerOption(categories.getByRole('combobox'), 'mini-food');
+  const markers = categories.getByRole('combobox');
+  await markers.click();
+  const markerList = categories.getByRole('listbox');
+  const markerOptions = markerList.getByRole('option');
+  await expect(markerList.locator('[data-marker-preview]')).toHaveCount(await markerOptions.count());
+  await expect(markerList.getByRole('option', { name: 'Mini comidas', exact: true }).locator('img'))
+    .toHaveAttribute('src', miniFoodIconUrl(MINI_FOODS[0].kind));
+  await markerList.getByRole('option', { name: 'Mini comidas', exact: true }).click();
   await expect(choices).toHaveText(foodNames);
   await page.getByRole('group', { name: 'Mini comidas' }).getByRole('button', { name: 'Sushi', exact: true }).click();
   await expect(categories.getByRole('combobox')).toHaveText('Mini comidas · Sushi');
-  await expect(page.locator('#category-header-Entradas img[data-menu-marker]')).toHaveAttribute('src', /^data:image\/svg/);
+  const applied = page.locator('#category-header-Entradas img[data-menu-marker]');
+  await expect(applied).toHaveAttribute('src', /^data:image\/svg/);
+  await expect(markers.locator('img')).toHaveAttribute('src', (await applied.getAttribute('src'))!);
   await expect(choices).toHaveCount(0);
 });
 
@@ -73,9 +82,7 @@ test('a mini food hides the shape text and a geometric shape restores it', async
   await expect.poll(async () => decodeURIComponent((await shape.locator('img').getAttribute('src'))!)).toContain('stroke="#22c55e"');
   await picker.getByRole('button', { name: 'Losango', exact: true }).click();
   await expect(shape.locator('img')).toHaveAttribute('alt', 'Prato da casa');
-  const svg = decodeURIComponent((await shape.locator('img').getAttribute('src'))!);
-  expect(svg).toContain('>Prato</text>');
-  expect(svg).toContain('>da casa</text>');
+  await expect(shape.locator('[data-shape-text] > span')).toHaveText(['Prato', 'da casa']);
 });
 
 test('a custom marker applies immediately, survives reload and can be removed', async ({ page }) => {
@@ -121,10 +128,10 @@ test('a custom marker applies immediately, survives reload and can be removed', 
   await showMarkers();
   await chooseDesignerOption(select, id);
   await expect(applied).toBeVisible();
-  await controls.getByRole('button', { name: 'Remover marcador da lista' }).click();
-  await expect(applied).toHaveCount(0);
-  await expect(select).toHaveText('— Sem marcador');
   await select.click();
+  await controls.getByRole('button', { name: 'Remover da lista: Marcador 1 · Estrela' }).click();
+  await expect(applied).toHaveCount(0);
+  await expect(select).toHaveText('Sem marcador');
   await expect(options.filter({ hasText: 'Marcador 1 · Estrela' })).toHaveCount(0);
   await expect.poll(() => stored.size).toBe(0);
 });

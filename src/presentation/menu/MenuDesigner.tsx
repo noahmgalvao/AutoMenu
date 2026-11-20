@@ -1,3 +1,4 @@
+import { MenuFontContext } from './designer/SearchableSelects';
 import { hasMenuContentMutation } from './canvas/menuContentMutations';
 import { applyContrastTip, scanBackgroundTextOverlap, scanTextContrast, type ContrastTip, type OverlapTip } from './canvas/canvasTextTips';
 import { categoryName } from '../../domain/menu/categoryName';
@@ -1454,7 +1455,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         setSelection({ type: 'addedImage', id });
     };
 
-    const handleAddedImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const backgroundPhotoInput = useRef<HTMLInputElement>(null);
+    const handleAddedImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, asBackground = false) => {
         const file = e.target.files?.[0];
         e.target.value = '';
         if (!file || pendingImagePreview.current) return;
@@ -1468,7 +1470,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 workspaceId,
                 userId: currentUserId,
                 bucket: 'menu-assets',
-                assetType: 'added_image',
+                assetType: asBackground ? 'menu_background' : 'added_image',
                 file,
                 metadata: { style_id: style.id }
             });
@@ -1478,6 +1480,11 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             if (pendingImagePreview.current !== previewUrl) return;
 
             setStyle(prev => {
+                if (asBackground) return {
+                    ...prev,
+                    menuBackgroundPhoto: { url: uploaded.url, assetId: uploaded.asset.id },
+                    name: 'Custom',
+                };
                 const currentImages = prev.addedImages || [];
                 const newImage: AddedImage = {
                     id: newId,
@@ -1494,7 +1501,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 };
             });
 
-            setSelection({ type: 'addedImage', id: newId });
+            if (!asBackground) setSelection({ type: 'addedImage', id: newId });
             setAddedImageFeedback(null);
         } catch {
             if (pendingImagePreview.current === previewUrl) {
@@ -1832,6 +1839,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const menuPalette = React.useMemo(() => getMenuPalette(style, products.map(product => product.styles?.color)), [style, products]);
     return (
         <CustomMarkerLibraryProvider key={currentUserId} userId={currentUserId}>
+        <MenuFontContext.Provider value={configuredCanvasFonts}>
         <MenuColorContext.Provider value={menuPalette}>
         <div className="flex flex-row-reverse h-full bg-slate-100 overflow-hidden relative">
             {addedImageFeedback?.phase === 'error' && (
@@ -1846,6 +1854,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                         className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-500 hover:bg-slate-100"><X size={16} /></button>
                 </div>
             )}
+            <input ref={backgroundPhotoInput} type="file" accept="image/*" hidden aria-label="Selecionar imagem de fundo"
+                onChange={event => void handleAddedImageUpload(event, true)} />
             <FontPropagationPrompt
                 request={pendingFontPropagation}
                 onApply={applyPendingFontPropagation}
@@ -2109,6 +2119,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                             <MenuPreview
                                 products={displayProducts}
                                 addedImagePreview={imagePreview}
+                                onChooseBackgroundImage={() => backgroundPhotoInput.current?.click()}
+                                isAddingImage={isAddingImage}
                                 onPasteObjects={(nextProducts, nextStyle) => {
                                     if (setProductsAndStyle) setProductsAndStyle(nextProducts, nextStyle, 'Colar');
                                     else { setProducts?.(nextProducts); setStyle(nextStyle); }
@@ -2191,6 +2203,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             )}
         </div>
         </MenuColorContext.Provider>
+        </MenuFontContext.Provider>
         </CustomMarkerLibraryProvider>
     );
 };

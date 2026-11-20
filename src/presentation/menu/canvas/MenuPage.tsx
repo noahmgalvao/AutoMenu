@@ -1,3 +1,4 @@
+import { getTextOutlineStyle } from './textOutlineStyle';
 import { getContentLayer, getImageLayer } from '../../../domain/menu/imageLayers';
 import { CanvasLayerImage } from './CanvasLayerImage';
 import { PhotoLoading } from './MenuPhoto';
@@ -145,6 +146,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
 }) => {
     const isPageSelected = handlers.isSelected?.('page', String(pageIndex)) ?? handlers.selectedPageIndex === pageIndex;
     const pageAddControls = handlers.getPageAddControls?.(pageIndex) || { before: true, after: true };
+    const backgroundPhoto = style.menuBackgroundPhoto?.url;
     const pageBackground = (style.pageBackgrounds || [])
         .find((background) => background.pageIndex === pageIndex);
     const textureKind = !pageBackground?.url && style.miniFoodTextureColor ? getMiniFoodTextureKind(style.backgroundImage) : undefined;
@@ -202,9 +204,9 @@ export const MenuPage: React.FC<MenuPageProps> = ({
     const pageStyle: React.CSSProperties = {
         fontFamily: style.fontFamily + (style.design ? ', Georgia, serif' : ''),
         ...getTemplateColors(style),
-        backgroundColor: isImportedMenu ? 'transparent' : 'var(--template-paper)',
+        backgroundColor: isImportedMenu && !backgroundPhoto ? 'transparent' : 'var(--template-paper)',
         color: 'var(--template-ink)',
-        backgroundImage: !isImportedMenu && backgroundSource ? `url(${backgroundSource})` : style.design ? decorativeBackground[style.design.background] : 'none',
+        backgroundImage: backgroundPhoto ? 'none' : !isImportedMenu && backgroundSource ? `url(${backgroundSource})` : style.design ? decorativeBackground[style.design.background] : 'none',
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         backgroundBlendMode: 'normal',
@@ -521,10 +523,10 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 }}
                 onDoubleClick={readOnly ? undefined : (e) => handlers.handlePageDoubleClick(e, pageIndex)}
             >
-                {isImportedMenu && backgroundSource && (
+                {(backgroundPhoto || (isImportedMenu && backgroundSource)) && (
                     <img
                         data-menu-background-image="true"
-                        src={backgroundSource}
+                        src={backgroundPhoto || backgroundSource}
                         alt=""
                         aria-hidden="true"
                         draggable={false}
@@ -532,10 +534,10 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         decoding="sync"
                         crossOrigin="anonymous"
                         className="absolute inset-0 h-full w-full pointer-events-none select-none"
-                        style={{ objectFit: 'fill', zIndex: 0 }}
+                        style={{ objectFit: backgroundPhoto ? 'cover' : 'fill', zIndex: 0 }}
                     />
                 )}
-                {needsOverlay && !style.appliedTemplateId && !isImportedMenu && <div className="absolute inset-0 bg-white/90 pointer-events-none z-0" />}
+                {needsOverlay && !backgroundPhoto && !style.appliedTemplateId && !isImportedMenu && <div className="absolute inset-0 bg-white/90 pointer-events-none z-0" />}
                 {handlers.columnResizeGuide?.pageIndex === pageIndex && (
                     <div data-column-resize-guide data-print-control="true"
                         className="pointer-events-none absolute inset-y-0 z-[90] w-0.5 border-l-2 border-dashed border-rose-500"
@@ -739,6 +741,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         data-print-control="true"
                         className={`inline-flex min-w-8 h-8 px-2 items-center justify-center pointer-events-auto cursor-pointer select-none touch-none ${showPageNumbers ? 'opacity-40' : 'opacity-0'}`}
                         style={{
+                            ...getTextOutlineStyle(pageNumberStyle.textOutline),
                             color: pageNumberStyle.color || style.textColor,
                             fontSize: `${pageNumberFontSize}px`,
                             userSelect: 'none',

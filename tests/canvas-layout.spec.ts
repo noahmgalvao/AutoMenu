@@ -307,6 +307,22 @@ test.describe('quick touch group drag from canvas layers', () => {
   }
 });
 
+test('a click on an image followed by a click on paper cannot create free text', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?added-image&editable');
+  const sheet = page.locator('[data-menu-print-page]').first();
+  const image = page.locator('[data-added-image-id="sample-image"]');
+  const paper = (await sheet.boundingBox())!;
+  const point = { clientX: paper.x + 20, clientY: paper.y + paper.height * 0.75 };
+
+  await image.dispatchEvent('click', { detail: 1 });
+  await sheet.dispatchEvent('click', { detail: 2, ...point });
+  await sheet.dispatchEvent('dblclick', { detail: 2, ...point });
+  await expect(sheet.getByText('Novo texto', { exact: true })).toHaveCount(0);
+
+  await sheet.dblclick({ position: { x: 20, y: paper.height * 0.75 } });
+  await expect(sheet.getByText('Novo texto', { exact: true })).toBeVisible();
+});
+
 test('double click places free text at the page coordinate without column handles', async ({ page }) => {
   const canvasPage = page.locator('[data-menu-print-page]').first();
   const bounds = (await canvasPage.boundingBox())!;
