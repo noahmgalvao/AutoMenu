@@ -33,18 +33,23 @@ export const isPristineNewCategory = (categoryName: string, products: Product[])
   return categoryProducts.length > 0 && categoryProducts.every(isPristineNewProduct);
 };
 
+const legacyPlaceholderPrices = [12.99, 6.5, 10, 8.99, 14.5];
+
 export const isUnmodifiedInitialProduct = (product?: Product | null) => {
   if (!product || product.isFreeText) return false;
 
-  const initialProduct = INITIAL_PRODUCTS.find((candidate) => candidate.id === product.id);
+  const index = INITIAL_PRODUCTS.findIndex((candidate) => candidate.id === product.id);
+  const initialProduct = INITIAL_PRODUCTS[index];
   if (!initialProduct) return false;
 
+  const matchesCurrent = Number(product.price) === initialProduct.price && !product.image;
+  const matchesLegacy = Number(product.price) === legacyPlaceholderPrices[index]
+    && product.image === `https://picsum.photos/200/200?random=${product.id}`;
   return (
     product.name === initialProduct.name
     && product.description === initialProduct.description
-    && Number(product.price) === Number(initialProduct.price)
     && product.category === initialProduct.category
-    && (product.image || '') === (initialProduct.image || '')
+    && (matchesCurrent || matchesLegacy)
     && !product.customMarginTop
     && !product.styles
     && !product.boundingBox

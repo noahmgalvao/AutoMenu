@@ -8,6 +8,7 @@ import type { SelectionItem } from '../interactions/types';
 import { getTemplateColors, getTemplateDesignAttributes, templateFontStack } from './templateStyles';
 import '../designer/templateDesign.css';
 import React from 'react';
+import { resolveMenuPriceDecimalPlaces } from '../../../domain/menu/price';
 import type { AddedImage, Product, MenuStyle } from '../../../domain/menu/model';
 import { Crop, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CopyCheck, MoreHorizontal, Plus, Edit3, Trash2 } from 'lucide-react';
 import { Resizable } from 're-resizable';
@@ -168,6 +169,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
         ? style
         : { ...style, categoryColumnCount: renderedColumnCount as 1 | 2 | 3 };
     const pageNumberStyle = style.elementStyles?.pageNumber || {};
+    const priceDecimalPlaces = React.useMemo(() => resolveMenuPriceDecimalPlaces(style, products), [style.priceDecimalPlaces, products]);
     const minimumFontSize = resolveMinimumFontSize(style);
     const pageNumberFontSize = roundFontSize(Math.max(minimumFontSize, Math.min(50, Number(pageNumberStyle.fontSize) || 14)), 14);
     const pageNumberElementId = `page-number-${pageIndex}`;
@@ -368,6 +370,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                             item={item}
                             idx={idx}
                             style={renderedStyle}
+                            priceDecimalPlaces={priceDecimalPlaces}
                             handlers={handlers}
                             products={products}
                             inGroup={true}
@@ -391,6 +394,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                     idx={0}
                     pageIndex={pageIndex}
                     style={renderedStyle}
+                    priceDecimalPlaces={priceDecimalPlaces}
                     handlers={handlers}
                     products={products}
                     inGroup={false}
@@ -617,6 +621,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                                 item={{ type: 'product-item', data: { ...product, customMarginTop: 0, freeTextWidth: product.freeTextWidth || layer.width }, category: product.category }}
                                 idx={0}
                                 style={renderedStyle}
+                                priceDecimalPlaces={priceDecimalPlaces}
                                 handlers={readOnly ? { readOnly: true, groupedProducts: {} } : handlers}
                                 products={products}
                                 inGroup

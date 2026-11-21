@@ -7,7 +7,6 @@ import type { LoadedWorkspaceData, MenuPublication } from '../../domain/workspac
 import type { PdfExportResult } from '../../infrastructure/browser/pdfExport';
 import { copyText, createQrCodeBlob, downloadBlob } from '../../infrastructure/browser/shareFiles';
 import { useAppServices } from '../app/AppServicesProvider';
-import type { PrintCanvasOptions } from '../menu/designer/PrintCanvasModal';
 import { getExpectedPublicationUrl, getPublicationUrl } from './publicationUrl';
 
 type PrintRequestMode = 'download' | 'download-direct' | 'share-direct' | 'publish' | 'publish-silent';
@@ -301,14 +300,15 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
     }
   };
 
-  const handlePrintComplete = async (result: PdfExportResult, options: PrintCanvasOptions) => {
+  const handlePrintComplete = async (result: PdfExportResult) => {
     const generatedForSignature = pendingPrintContentSignatureRef.current;
     pendingPrintContentSignatureRef.current = null;
     const generatedPdfIsCurrent = Boolean(
       generatedForSignature
       && generatedForSignature === currentContentSignatureRef.current
     );
-    if (generatedPdfIsCurrent && generatedForSignature) {
+    const isPublication = printRequestMode === 'publish' || printRequestMode === 'publish-silent';
+    if (!isPublication && generatedPdfIsCurrent && generatedForSignature) {
       cachedPdfExportRef.current = { contentSignature: generatedForSignature, result };
     }
 
@@ -335,7 +335,7 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
       return;
     }
 
-    if (printRequestMode !== 'publish' && printRequestMode !== 'publish-silent') return;
+    if (!isPublication) return;
     if (!workspaceData || !session) {
       pendingPublishActionRef.current = null;
       setPublishAction(null);
@@ -353,7 +353,7 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
         sortOption,
         pdfBlob: result.blob,
         pdfFilename: result.filename,
-        pdfOptions: options,
+        pdfOptions: {},
       });
       setPublication(published);
     } catch (error) {

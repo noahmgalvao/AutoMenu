@@ -299,6 +299,7 @@ const ImportedItemsEditor: React.FC<{
     >
       {categories.length > 0 ? (
         <ProductList
+          products={products}
           categories={categories}
           grouped={grouped}
           style={style}

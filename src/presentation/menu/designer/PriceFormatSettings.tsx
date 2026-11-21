@@ -43,6 +43,7 @@ export function PriceFormatSettings({ style, setStyle, children, compact = false
           Casas decimais
           <select value={resolvePriceDecimalPlaces(style.priceDecimalPlaces)}
             onChange={event => update({ priceDecimalPlaces: resolvePriceDecimalPlaces(Number(event.target.value)) })} className={fieldClass}>
+            <option value="auto">Automático</option>
             {[0, 1, 2].map(value => <option key={value} value={value}>{value}</option>)}
           </select>
         </label>

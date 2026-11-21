@@ -7,7 +7,7 @@ import { MenuMarkerGlyph } from './MenuMarkerGlyph';
 import { getContentLayer, getFreeTextLayer } from '../../../domain/menu/imageLayers';
 import { getSurfaceFill } from '../designer/Decorations';
 import { categoryName } from '../../../domain/menu/categoryName';
-import type { MenuStyle, Product, ElementStyle, FontSizeLimitKey, MenuBorderScope } from '../../../domain/menu/model';
+import type { MenuStyle, Product, ElementStyle, FontSizeLimitKey, MenuBorderScope, PriceDecimalPlaces } from '../../../domain/menu/model';
 import React from 'react';
 import { resolveFontSizeLimits, resolveMinimumFontSize, resolveMenuContentSpacing, clampFontSize, resolveProductImageFrame, usesProductCards } from '../../../domain/menu/styleRules';
 import { CategoryDividerPicker } from '../designer/CategoryDividerPicker';
@@ -28,7 +28,7 @@ import { ProductControls, FreeTextResizeHandles, getFreeTextMaximumWidth, getFre
 import { FREE_TEXT_PREFIX } from '../../../domain/menu/flow';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 import { ColumnResizeHandles } from './ColumnResizeHandles';
-import { formatMenuPriceValue, getMenuPriceSymbol } from '../../../domain/menu/price';
+import { formatMenuPriceValue, getMenuPriceSymbol, normalizePriceInput } from '../../../domain/menu/price';
 import { PriceFormatSettings } from '../designer/PriceFormatSettings';
 
 interface MenuItemProps {
@@ -36,6 +36,7 @@ interface MenuItemProps {
     idx: number;
     pageIndex?: number;
     style: MenuStyle;
+    priceDecimalPlaces: PriceDecimalPlaces;
     handlers: any; // Return type of useMenuInteractions
     products: Product[];
     inGroup: boolean;
@@ -82,6 +83,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
     idx,
     pageIndex = 0,
     style,
+    priceDecimalPlaces,
     handlers,
     products,
     inGroup,
@@ -143,7 +145,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         };
     }, [handlers.setEditingId, handlers.setFormattingTarget, imageMenuProductId]);
     const replacePriceText = (element: HTMLElement, productId: string, text: string) => {
-        const nextText = text.replace(/[^0-9.,]/g, '');
+        const nextText = normalizePriceInput(text);
         if (!nextText) return;
         element.innerText = nextText;
         replacePriceOnNextInputRef.current.delete(productId);
@@ -187,14 +189,14 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         if (!replacePriceOnNextInputRef.current.has(productId)) return;
         const inputEvent = event.nativeEvent as InputEvent;
         if (!inputEvent.inputType?.startsWith('insert') || !inputEvent.data) return;
-        const nextText = inputEvent.data.replace(/[^0-9.,]/g, '');
+        const nextText = normalizePriceInput(inputEvent.data);
         if (!nextText) return;
         event.preventDefault();
         replacePriceText(event.currentTarget, productId, nextText);
     };
     const handlePricePaste = (event: React.ClipboardEvent<HTMLElement>, productId: string) => {
         event.preventDefault();
-        const text = event.clipboardData.getData('text/plain').replace(/[^0-9.,]/g, '');
+        const text = normalizePriceInput(event.clipboardData.getData('text/plain'));
         if (!text) return;
         const selection = window.getSelection();
         if (!selection?.rangeCount || !event.currentTarget.contains(selection.anchorNode)) return;
@@ -204,6 +206,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         range.insertNode(inserted);
         selection.collapse(inserted, text.length);
         replacePriceOnNextInputRef.current.delete(productId);
+        const value = event.currentTarget.innerText;
+        const normalized = normalizePriceInput(value);
+        if (normalized !== value) replacePriceText(event.currentTarget, productId, normalized);
     };
     const handleItemClick = (event: React.MouseEvent, type: 'product' | 'category' | 'freeText', id: string) => {
         event.stopPropagation();
@@ -310,10 +315,15 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 onKeyDown={event => handlePriceKeyDown(event, product.id)}
                 onBeforeInput={event => handlePriceBeforeInput(event, product.id)}
                 onPaste={event => handlePricePaste(event, product.id)}
+                onInput={event => {
+                    const input = event.currentTarget;
+                    const normalized = normalizePriceInput(input.innerText);
+                    if (normalized !== input.innerText) replacePriceText(input, product.id, normalized);
+                }}
                 onFocus={event => handlePriceFocus(event, product.id)}
                 onPointerDown={event => { if (isEditable) event.stopPropagation(); }}
                 onClick={event => formattingClick(event, 'product', product.id, 'price')}
-            >{formatMenuPriceValue(product.price, style)}</span>
+            >{formatMenuPriceValue(product.price, { priceDecimalPlaces, priceDecimalSeparator: style.priceDecimalSeparator })}</span>
         </div></div>;
     };
     const activatePhoto = (type: 'product' | 'category', id: string) => {
@@ -857,6 +867,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                         item={{ type: 'product-item', data: product, category: item.category }}
                         idx={idx}
                         style={style}
+                        priceDecimalPlaces={priceDecimalPlaces}
                         handlers={handlers}
                         products={products}
                         inGroup={true}

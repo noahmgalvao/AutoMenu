@@ -144,6 +144,7 @@ test('favorites survive a reload during a service failure and save when it recov
 test('canvas colors come first and recently picked colors are ordered without duplicates', async ({ page }) => {
   await page.getByRole('button', { name: 'Cor de fundo', exact: true }).click();
   const picker = page.getByRole('dialog', { name: 'Cor de fundo' });
+  await expect(picker.getByRole('heading', { name: 'Neste cardápio', exact: true })).toBeVisible();
   const hex = picker.getByRole('textbox', { name: 'Valor HEX' });
   const setColor = async (color: string) => {
     await hex.fill(color);

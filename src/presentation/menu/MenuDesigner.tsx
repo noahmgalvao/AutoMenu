@@ -57,7 +57,7 @@ interface MenuDesignerProps {
     isProductDesignerOpen?: boolean;
     printRequestId?: number;
     printRequestMode?: 'download' | 'download-direct' | 'share-direct' | 'publish' | 'publish-silent';
-    onPrintComplete?: (result: PdfExportResult, options: PrintCanvasOptions) => void;
+    onPrintComplete?: (result: PdfExportResult) => void;
     onPrintError?: (error: Error) => void;
     onPrintCancel?: () => void;
     silentPrintOptions?: Partial<PrintCanvasOptions>;
@@ -240,6 +240,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
     const canvasZoomRef = useRef<HTMLDivElement>(null);
     const zoomLayerRef = useRef<HTMLDivElement>(null);
+    const zoomFrameRef = useRef<HTMLDivElement>(null);
     const scaleRef = useRef(scale);
     scaleRef.current = scale;
 
@@ -613,6 +614,20 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         };
     }, [renderScale]);
 
+    React.useLayoutEffect(() => {
+        const layer = zoomLayerRef.current;
+        const frame = zoomFrameRef.current;
+        if (!layer || !frame) return;
+        const measure = () => {
+            frame.style.setProperty('--canvas-layout-width', `${layer.offsetWidth}px`);
+            frame.style.setProperty('--canvas-layout-height', `${layer.offsetHeight}px`);
+        };
+        measure();
+        const observer = new ResizeObserver(measure);
+        observer.observe(layer);
+        return () => observer.disconnect();
+    }, []);
+
     const zoomAt = useCallback((value: number, point: CanvasPoint, anchor: CanvasPoint) => {
         const canvas = canvasZoomRef.current;
         const layer = zoomLayerRef.current;
@@ -956,6 +971,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         const snapshot = productEditViewRef.current;
         productEditViewRef.current = null;
         const canvas = canvasZoomRef.current;
+        const surface = canvas?.firstElementChild as HTMLElement | null;
+        surface?.style.removeProperty('padding-right');
         if (!snapshot || !canvas) return;
         updateCanvasFocus(snapshot.scale, () => {
             const left = Math.max(0, Math.min(snapshot.scrollLeft, canvas.scrollWidth - canvas.clientWidth));
@@ -2114,7 +2131,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 <div
                     ref={canvasZoomRef}
                     data-automenu-editor-canvas="true"
-                    className="flex-1 overflow-auto custom-scrollbar px-4 pt-20 pb-20 md:px-8 md:pt-24 md:pb-8 flex items-start justify-start touch-pan-x touch-pan-y md:cursor-grab"
+                    className="flex-1 overflow-auto custom-scrollbar px-4 pt-20 pb-[max(5rem,calc(var(--automenu-bottom-sheet-height,0vh)+1rem))] md:px-8 md:pt-24 md:pb-8 flex items-start justify-start touch-pan-x touch-pan-y md:cursor-grab"
                     onScroll={handleScroll}
                     onPointerDown={handleCanvasPointerDown}
                     onPointerMove={handleCanvasPointerMove}
@@ -2140,60 +2157,67 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                         e.stopPropagation();
                     }}
                 >
-                    <div className="w-max flex-none">
-                        <div ref={zoomLayerRef}
-                            data-canvas-zoom-layer
-                            style={{ transform: `scale(${renderScale})`, transformOrigin: 'top left', width: 'fit-content', minWidth: `${resolveMenuPageDimensions(style).widthPx}px`, }}
-                            className="origin-top-left"
-                            onClick={(e) => e.stopPropagation()}
+                    <div data-canvas-zoom-surface className="w-max flex-none">
+                        <div ref={zoomFrameRef} className="relative [overflow:clip] [overflow-clip-margin:32px]"
+                            style={{
+                                '--canvas-render-scale': renderScale,
+                                width: 'calc(var(--canvas-layout-width, 0px) * var(--canvas-render-scale))',
+                                height: 'calc(var(--canvas-layout-height, 0px) * var(--canvas-render-scale))',
+                            } as React.CSSProperties}
                         >
-                            <MenuPreview
-                                products={displayProducts}
-                                addedImagePreview={imagePreview}
-                                onMovePhotoToBackground={movePhotoToBackground}
-                                onRemoveBackgroundPhoto={removeBackgroundPhoto}
-                                onChooseBackgroundImage={() => backgroundPhotoInput.current?.click()}
-                                isAddingImage={isAddingImage}
-                                onPasteObjects={(nextProducts, nextStyle, actionLabel = 'Colar') => {
-                                    if (setProductsAndStyle) setProductsAndStyle(nextProducts, nextStyle, actionLabel);
-                                    else { setProducts?.(nextProducts); setStyle(nextStyle); }
-                                }}
-                                style={style}
-                                sortOption={sortOption}
-                                productsCanChangeCategory={productsCanChangeCategory}
-                                onMoveCategory={handleMoveCategory}
-                                onMoveProduct={handleMoveProduct}
-                                onUpdateProduct={handleProductUpdate}
-                                onUpdateProducts={handleBatchProductUpdate}
-                                onUpdateCategoryName={handleCategoryRename}
-                                onUpdateMenuText={handleMenuTextUpdate}
-                                onCommitCategoryOrder={handleCommitCategoryOrder}
-                                onCommitProductOrder={handleCommitProductOrder}
-                                onToggleProductVisibility={handleToggleProductVisibility}
-                                onAddProduct={handleAddProduct}
-                                onAddCategory={handleAddCategory}
-                                onDeleteProduct={handleDeleteProduct}
-                                onStyleUpdate={setStyle}
-                                externalAction={previewAction}
-                                selection={selection}
-                                onSelectionChange={setSelection}
-                                onSelectedItemsChange={handleCanvasSelectedItems}
-                                undo={undo}
-                                redo={redo}
-                                canUndo={canUndo}
-                                canRedo={canRedo}
-                                scale={renderScale}
-                                splitCategoryAcrossPages={splitCategoryAcrossPages}
-                                onChangeShape={openShapePicker}
-                                onUploadProductImage={handleProductImageUpload}
-                                onProductEditStart={handleCanvasProductEditStart}
-                                onProductEditEnd={handleCanvasProductEditEnd}
-                                onPageCountChange={onPageCountChange}
-                                onSplitCategorySwap={setSplitCategorySwap}
-                            />
+                            <div ref={zoomLayerRef}
+                                data-canvas-zoom-layer
+                                style={{ transform: `scale(${renderScale})`, minWidth: `${resolveMenuPageDimensions(style).widthPx}px` }}
+                                className="absolute left-0 top-0 w-max origin-top-left"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <MenuPreview
+                                    products={displayProducts}
+                                    addedImagePreview={imagePreview}
+                                    onMovePhotoToBackground={movePhotoToBackground}
+                                    onRemoveBackgroundPhoto={removeBackgroundPhoto}
+                                    onChooseBackgroundImage={() => backgroundPhotoInput.current?.click()}
+                                    isAddingImage={isAddingImage}
+                                    onPasteObjects={(nextProducts, nextStyle, actionLabel = 'Colar') => {
+                                        if (setProductsAndStyle) setProductsAndStyle(nextProducts, nextStyle, actionLabel);
+                                        else { setProducts?.(nextProducts); setStyle(nextStyle); }
+                                    }}
+                                    style={style}
+                                    sortOption={sortOption}
+                                    productsCanChangeCategory={productsCanChangeCategory}
+                                    onMoveCategory={handleMoveCategory}
+                                    onMoveProduct={handleMoveProduct}
+                                    onUpdateProduct={handleProductUpdate}
+                                    onUpdateProducts={handleBatchProductUpdate}
+                                    onUpdateCategoryName={handleCategoryRename}
+                                    onUpdateMenuText={handleMenuTextUpdate}
+                                    onCommitCategoryOrder={handleCommitCategoryOrder}
+                                    onCommitProductOrder={handleCommitProductOrder}
+                                    onToggleProductVisibility={handleToggleProductVisibility}
+                                    onAddProduct={handleAddProduct}
+                                    onAddCategory={handleAddCategory}
+                                    onDeleteProduct={handleDeleteProduct}
+                                    onStyleUpdate={setStyle}
+                                    externalAction={previewAction}
+                                    selection={selection}
+                                    onSelectionChange={setSelection}
+                                    onSelectedItemsChange={handleCanvasSelectedItems}
+                                    undo={undo}
+                                    redo={redo}
+                                    canUndo={canUndo}
+                                    canRedo={canRedo}
+                                    scale={renderScale}
+                                    splitCategoryAcrossPages={splitCategoryAcrossPages}
+                                    onChangeShape={openShapePicker}
+                                    onUploadProductImage={handleProductImageUpload}
+                                    onProductEditStart={handleCanvasProductEditStart}
+                                    onProductEditEnd={handleCanvasProductEditEnd}
+                                    onPageCountChange={onPageCountChange}
+                                    onSplitCategorySwap={setSplitCategorySwap}
+                                />
+                            </div>
                         </div>
                     </div>
-                    <div style={{ height: '100px', width: '1px' }} />
                 </div>
             </div>
 

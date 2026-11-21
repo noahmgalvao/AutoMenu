@@ -138,8 +138,35 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                 }
             }
 
-            const above = availableAbove >= toolbarHeight;
-            const toolbarTop = above ? top - toolbarHeight - 8 : Math.min(window.innerHeight - toolbarHeight - 8, bottom + 8);
+            const categoryNameSelector = '[data-placeholder-field="category-name"]';
+            const editedCategory = target.closest('[data-category-chunk]')
+                ?.querySelector(`${categoryNameSelector}[contenteditable="true"]`);
+            const nextCategory = target.matches('[data-menu-heading]')
+                ? target.closest('[data-menu-print-page]')?.querySelector(categoryNameSelector) : null;
+            const shapeId = target.getAttribute('data-added-image-id');
+            const shapeActions = shapeId ? target.closest('[data-menu-preview-canvas]')
+                ?.querySelector(`[data-open-object-menu][data-object-menu-id="${CSS.escape(shapeId)}"]`)
+                ?.closest('[data-canvas-action-group]') : null;
+            const obstacles = [editedCategory, nextCategory, shapeActions]
+                .flatMap(element => element && element !== target ? [element.getBoundingClientRect()] : []);
+            const coversObstacle = (x: number, y: number) => obstacles.some(rect =>
+                x < rect.right && x + width > rect.left && y < rect.bottom && y + toolbarHeight > rect.top);
+            const aboveTop = top - toolbarHeight - 8;
+            const belowTop = Math.min(window.innerHeight - toolbarHeight - 8, bottom + 8);
+            const above = availableAbove >= toolbarHeight && !coversObstacle(centeredLeft, aboveTop);
+            if (!above && (availableBelow < toolbarHeight || coversObstacle(centeredLeft, belowTop)) && obstacles.length > 0) {
+                const sideLeft = window.innerWidth - right - 16 >= width ? right + 8 : left - width - 8;
+                const sideTop = Math.max(8, Math.min(top, window.innerHeight - toolbarHeight - 8));
+                if (sideLeft >= 8 && sideLeft + width <= window.innerWidth - 8 && !coversObstacle(sideLeft, sideTop)) {
+                    setPosition({ left: sideLeft, top: sideTop, width, maxHeight: window.innerHeight - 16 });
+                    return;
+                }
+                if (availableAbove >= 48 && !coversObstacle(centeredLeft, aboveTop)) {
+                    setPosition({ left: centeredLeft, top: 8, width, maxHeight: availableAbove, overflowY: 'auto' });
+                    return;
+                }
+            }
+            const toolbarTop = above ? aboveTop : belowTop;
             setPosition({ left: centeredLeft, top: Math.max(8, toolbarTop), width, maxHeight: window.innerHeight - 16,
                 overflowY: toolbarHeight > window.innerHeight - 16 ? 'auto' : undefined });
         };

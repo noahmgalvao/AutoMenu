@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import { inflateSync } from 'node:zlib';
 import { shortcutsFor } from './fixtures/canvas-shortcuts';
 import { expect, test, type Page } from '@playwright/test';
 import { PRESET_TEMPLATES } from '../src/domain/templates/templateCatalog';
@@ -98,6 +100,83 @@ test('the app signs in, keeps the product editor through history, and stores an 
     const draft = JSON.parse(localStorage.getItem(key) ?? 'null');
     return draft?.products.find((entry: { id: string }) => entry.id === 'suco')?.name;
   }, `automenu_pending_workspace_${workspaceId}_${menuId}`)).toBe('Suco de laranja');
+});
+
+test('the virtual link uploads a separate PDF when printing and publishing together', async ({ page }) => {
+  test.setTimeout(30000);
+  await openWorkspace(page);
+  await page.route('**/rest/v1/menu_publications?*', route => route.request().method() === 'POST'
+    ? route.fulfill({ json: route.request().postDataJSON() })
+    : route.fulfill({ body: 'null', contentType: 'application/json' }));
+  await page.route('**/storage/v1/object/sign/menu-assets/**', route =>
+    route.fulfill({ json: { signedURL: '/object/sign/menu-assets/cardapio.pdf?token=test' } }));
+  await page.route('**/storage/v1/object/menu-assets/**', route => route.fulfill({ json: { Key: 'cardapio.pdf' } }));
+  await page.evaluate(() => { window.open = () => null; });
+
+  await page.getByRole('button', { name: 'Publicar', exact: true }).click();
+  await page.getByRole('button', { name: 'Publicar', exact: true }).last().click();
+  await page.getByRole('combobox', { name: 'Margens', exact: true }).selectOption('10');
+  await page.getByRole('spinbutton', { name: 'Sangria mm' }).fill('2');
+  await page.getByRole('button', { name: 'Marcas de corte' }).click();
+  await page.getByRole('button', { name: 'Cinza', exact: true }).click();
+
+  const upload = page.waitForRequest(request => request.method() === 'POST'
+    && request.url().includes('/storage/v1/object/menu-assets/') && request.url().endsWith('.pdf'));
+  const publicRecord = page.waitForRequest(request => request.method() === 'POST'
+    && request.url().includes('/rest/v1/menu_publications'));
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Baixar PDF', exact: true }).click();
+  const printPdf = await readFile((await (await download).path())!);
+  const uploadBody = (await upload).postDataBuffer()!;
+  const publicPdf = uploadBody.subarray(uploadBody.indexOf('%PDF-'));
+  expect((await publicRecord).postDataJSON().pdf_options).toEqual({});
+  await expect(page.getByText('Link publicado', { exact: true })).toBeVisible();
+
+  const getPageDrawing = (pdf: Buffer) => {
+    const firstStream = pdf.indexOf('stream\n') + 'stream\n'.length;
+    const streamEnd = pdf.indexOf('\nendstream', firstStream);
+    return inflateSync(pdf.subarray(firstStream, streamEnd)).toString();
+  };
+  const printDrawing = getPageDrawing(printPdf);
+  const publicDrawing = getPageDrawing(publicPdf);
+  expect(printDrawing).toMatch(/\s[lm]\n/);
+  expect(publicDrawing).not.toMatch(/\s[lm]\n/);
+  const placement = publicDrawing.split('\n').find(line => line.endsWith(' cm'))!.split(' ').map(Number);
+  expect(placement[0]).toBeCloseTo(595.28, 2);
+  expect(placement[3]).toBeCloseTo(841.89, 2);
+  expect(placement[4]).toBeCloseTo(0);
+  expect(placement[5]).toBeCloseTo(0);
+  const imageColorRange = (pdf: Buffer) => {
+    const imageStart = pdf.indexOf(Buffer.from([0xff, 0xd8]));
+    const imageEnd = pdf.indexOf(Buffer.from([0xff, 0xd9]), imageStart) + 2;
+    expect(imageStart).toBeGreaterThan(0);
+    return page.evaluate(async (dataUrl) => {
+      const image = new Image();
+      image.src = dataUrl;
+      await image.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 64;
+      const context = canvas.getContext('2d')!;
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      let maxChannelDifference = 0;
+      for (let index = 0; index < pixels.length; index += 4) {
+        const rgb = [pixels[index], pixels[index + 1], pixels[index + 2]];
+        maxChannelDifference = Math.max(maxChannelDifference, Math.max(...rgb) - Math.min(...rgb));
+      }
+      return maxChannelDifference;
+    }, `data:image/jpeg;base64,${pdf.subarray(imageStart, imageEnd).toString('base64')}`);
+  };
+  expect(await imageColorRange(printPdf)).toBeLessThan(3);
+  expect(await imageColorRange(publicPdf)).toBeGreaterThan(8);
+});
+
+test('product analytics labels the category bar count in Portuguese', async ({ page }) => {
+  await openWorkspace(page);
+  await page.getByTitle('Designer de produtos').click();
+  await page.getByTitle('Análises', { exact: true }).click();
+  await page.locator('.recharts-bar-rectangle path').first().click();
+  await expect(page.getByText('Contagem', { exact: true })).toBeVisible();
 });
 
 test('an existing session shows loading until the workspace has loaded', async ({ page }) => {
@@ -207,6 +286,15 @@ test('menu rules commit numeric values and are separate from account settings', 
   await expect(gear).toBeFocused();
   await gear.click();
   await expect(split).toBeChecked();
+  await expect(minimum).toHaveValue('23');
+  await minimum.fill('8');
+  await minimum.press('Enter');
+  await rules.getByRole('button', { name: 'Aplicar', exact: true }).click();
+  await gear.click();
+  await expect(minimum).toHaveValue('8');
+  await rules.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  await page.getByTitle('Desfazer', { exact: true }).click();
+  await gear.click();
   await expect(minimum).toHaveValue('23');
   await rules.getByRole('button', { name: 'Cancelar', exact: true }).click();
   await page.getByTitle('Desfazer', { exact: true }).click();

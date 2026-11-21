@@ -303,7 +303,7 @@ export interface MenuStyle {
   allowSameWordBreak?: boolean;
   splitCategoryAcrossPages?: boolean;
   productsCanChangeCategory?: boolean;
-  priceDecimalPlaces?: PriceDecimalPlaces;
+  priceDecimalPlaces?: PriceDecimalPlaces | 'auto';
   priceDecimalSeparator?: PriceDecimalSeparator;
   priceCurrencySymbol?: string;
   showPrices?: boolean;

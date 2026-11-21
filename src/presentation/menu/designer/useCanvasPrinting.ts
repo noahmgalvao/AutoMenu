@@ -62,7 +62,7 @@ interface CanvasPrintingOptions {
     currentPrintPageIndex: number | null;
     printRequestMode: 'download' | 'download-direct' | 'share-direct' | 'publish' | 'publish-silent';
     printRequestId: number;
-    onPrintComplete?: (result: PdfExportResult, options: PrintCanvasOptions) => void;
+    onPrintComplete?: (result: PdfExportResult) => void;
     onPrintError?: (error: Error) => void;
     onPrintCancel?: () => void;
     silentPrintOptions?: Partial<PrintCanvasOptions>;
@@ -282,37 +282,31 @@ export function useCanvasPrinting({
         });
     };
 
-    useEffect(() => {
-        if (printRequestId <= 0 || printRequestMode !== 'publish-silent') return;
-        clearCanvasSelection();
-        document.dispatchEvent(new Event('automenu:close-inline-formatting'));
-        void (async () => {
-            const requestedOptions: PrintCanvasOptions = {
-                ...getDefaultPrintOptions(style),
-                ...(silentPrintOptions && Object.keys(silentPrintOptions).length > 0 ? silentPrintOptions : {}),
-                ...(lastCompletedPrintOptions || {}),
-                ...canvasPrintPaperDefaults,
-            };
-            const options: PrintCanvasOptions = requestedOptions.pageMode === 'current'
-                || (requestedOptions.pageMode === 'range' && !requestedOptions.pageRange.trim())
-                ? { ...requestedOptions, pageMode: 'all' }
-                : requestedOptions;
+    const publishCanvasPdf = async () => {
+        try {
             const pageElements = Array.from(
                 containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]') || []
             );
             const { exportMenuPagesToPdf } = await import('../../../infrastructure/browser/pdfExport');
             const result = await exportMenuPagesToPdf({
                 pageElements,
-                options,
+                options: { ...getDefaultPrintOptions(style), scaleMode: 'actual' },
                 currentPageIndex: null,
                 title: style.menuTitle || 'Cardápio',
                 download: false,
             });
-            onPrintComplete?.(result, options);
-        })().catch((error) => {
-            console.error('[Publicação] Falha ao gerar PDF padrão', error);
+            onPrintComplete?.(result);
+        } catch (error) {
+            console.error('[Publicação] Falha ao gerar PDF para o link virtual', error);
             onPrintError?.(error instanceof Error ? error : new Error(String(error)));
-        });
+        }
+    };
+
+    useEffect(() => {
+        if (printRequestId <= 0 || printRequestMode !== 'publish-silent') return;
+        clearCanvasSelection();
+        document.dispatchEvent(new Event('automenu:close-inline-formatting'));
+        void publishCanvasPdf();
     }, [printRequestId]);
 
     useEffect(() => {
@@ -342,7 +336,7 @@ export function useCanvasPrinting({
                 download: printRequestMode === 'download-direct',
             });
             setLastCompletedPrintOptions(options);
-            onPrintComplete?.(result, options);
+            onPrintComplete?.(result);
         })().catch((error) => {
             console.error('[PDF] Falha ao concluir ação direta', error);
             onPrintError?.(error instanceof Error ? error : new Error(String(error)));
@@ -364,11 +358,11 @@ export function useCanvasPrinting({
             if (activePrintMode === 'publish') onPrintCancel?.();
         },
         onPrint: executeCanvasPrint,
-        onComplete(result) {
+        onComplete() {
             setLastCompletedPrintOptions(printOptions);
             if (activePrintMode === 'publish') {
                 setShowPrintModal(false);
-                onPrintComplete?.(result, printOptions);
+                void publishCanvasPdf();
             }
         },
         onError: activePrintMode === 'publish' ? onPrintError : undefined,

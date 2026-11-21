@@ -339,7 +339,12 @@ export function ColorPicker({ value = '#000000', onChange, label = 'Cor', classN
               })}
             <button type="button" title="Conta-gotas" aria-label="Conta-gotas" className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-slate-200 text-indigo-700" onClick={() => void pickFromCanvas()}><Pipette size={16} /></button>
           </div>
-          {swatches(activePalette, 'Neste cardápio', true)}
+          {activePalette.length > 0 && (
+            <section className="space-y-1">
+              <h3 className="font-semibold text-slate-700">Neste cardápio</h3>
+              {swatches(activePalette, 'Neste cardápio', true)}
+            </section>
+          )}
           {swatches(recentPalette, 'Cores recentes')}
           {swatches(palette.filter(color => !activePalette.includes(color) && !recentPalette.includes(color)), 'Cores básicas')}
           {message && <p role="status" className="text-rose-700">{message}</p>}

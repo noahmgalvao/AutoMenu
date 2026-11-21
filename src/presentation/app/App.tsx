@@ -360,7 +360,7 @@ const App: React.FC = () => {
             onOpenVisual={() => setActivePanel('style')}
             printRequestId={printRequestId}
             printRequestMode={printRequestMode}
-            onPrintComplete={(result, options) => void handlePrintComplete(result, options)}
+            onPrintComplete={(result) => void handlePrintComplete(result)}
             onPrintError={handlePrintError}
             onPrintCancel={handlePrintCancel}
             silentPrintOptions={(publication?.pdfOptions || {}) as Partial<PrintCanvasOptions>}

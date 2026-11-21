@@ -80,10 +80,15 @@ export function centerCanvasProduct(canvas: HTMLElement, id: string) {
     if (!product) return;
     const bounds = getCanvasProductBounds(product);
     const visible = getCanvasViewportBounds(canvas);
-    canvas.scrollTo({
-        left: canvas.scrollLeft + (bounds.left + bounds.right - visible.left - visible.right) / 2,
-        top: canvas.scrollTop + (bounds.top + bounds.bottom - visible.top - visible.bottom) / 2,
-    });
+    const left = canvas.scrollLeft + (bounds.left + bounds.right - visible.left - visible.right) / 2;
+    const top = canvas.scrollTop + (bounds.top + bounds.bottom - visible.top - visible.bottom) / 2;
+    const surface = canvas.firstElementChild as HTMLElement | null;
+    if (surface) {
+        surface.style.removeProperty('padding-right');
+        const extra = left - (canvas.scrollWidth - canvas.clientWidth);
+        if (extra > 0) surface.style.paddingRight = `${Math.ceil(Math.min(extra, canvas.clientWidth / 2))}px`;
+    }
+    canvas.scrollTo({ left, top });
 }
 
 export function positionCanvasImage(
@@ -106,22 +111,18 @@ export function getZoomAnchor(layer: HTMLElement, point: CanvasPoint): CanvasPoi
     return { x: (point.x - rect.left) / scale, y: (point.y - rect.top) / scale };
 }
 
-// Scroll to keep the same document point under the gesture. At the scroll limits
-// the workspace can grow a gutter so zooming out still keeps the point in place.
+// Keep the document point under the gesture within the canvas scroll limits.
 export function restoreZoomAnchor(canvas: HTMLElement, layer: HTMLElement, anchor: CanvasPoint, point: CanvasPoint) {
-    const surface = layer.parentElement!;
+    const surface = layer.closest<HTMLElement>('[data-canvas-zoom-surface]');
+    if (!surface) return;
     surface.style.marginInline = '0';
     surface.style.padding = '';
-    surface.style.minWidth = '';
-    surface.style.minHeight = '';
     const rect = layer.getBoundingClientRect();
     const scale = rect.width / layer.offsetWidth;
     const left = canvas.scrollLeft + rect.left + anchor.x * scale - point.x;
     const top = canvas.scrollTop + rect.top + anchor.y * scale - point.y;
     surface.style.paddingLeft = `${Math.max(0, -left)}px`;
     surface.style.paddingTop = `${Math.max(0, -top)}px`;
-    if (left > canvas.scrollWidth - canvas.clientWidth) surface.style.minWidth = `${Math.ceil(left + canvas.clientWidth)}px`;
-    if (top > canvas.scrollHeight - canvas.clientHeight) surface.style.minHeight = `${Math.ceil(top + canvas.clientHeight)}px`;
     canvas.scrollTo({ left, top, behavior: 'instant' });
 }
 

@@ -6,7 +6,7 @@ import { flushSync } from 'react-dom';
 import type { Product } from '../../../domain/menu/model';
 import type { FormattingField, FormattingTarget, InteractionProps, SelectableType, SelectionItem, SelectionType } from './types';
 import { FREE_TEXT_PREFIX } from '../../../domain/menu/flow';
-import { formatMenuPriceValue, parseAndRoundPrice } from '../../../domain/menu/price';
+import { formatMenuPriceValue, parseAndRoundPrice, resolveMenuPriceDecimalPlaces } from '../../../domain/menu/price';
 
 
 const getSelectionKey = (type: SelectionType, id: string | null) => `${type || 'none'}:${id || ''}`;
@@ -468,15 +468,21 @@ export const useSelectionState = (
             }
 
             if (field === 'price') {
-                const num = parseAndRoundPrice(newVal);
-                if (num !== null) {
-                    const formattedPrice = formatMenuPriceValue(num, style);
-                    e.currentTarget.innerText = formattedPrice;
-                    if (formattedPrice !== formatMenuPriceValue(product?.price ?? 0, style)) {
-                        onUpdateProduct(id, 'price', num);
-                    }
-                }
-                else e.currentTarget.innerText = formatMenuPriceValue(product?.price ?? 0, style);
+                const previousPrice = product?.price ?? 0;
+                const separator = style.priceDecimalSeparator;
+                const previousFormat = {
+                    priceDecimalSeparator: separator,
+                    priceDecimalPlaces: resolveMenuPriceDecimalPlaces(style, products),
+                };
+                const previousValue = formatMenuPriceValue(previousPrice, previousFormat);
+                const nextPrice = newVal === previousValue ? previousPrice : parseAndRoundPrice(newVal) ?? previousPrice;
+                const nextFormat = {
+                    priceDecimalSeparator: separator,
+                    priceDecimalPlaces: resolveMenuPriceDecimalPlaces(style, products.map(item =>
+                        item.id === id ? { ...item, price: nextPrice } : item)),
+                };
+                e.currentTarget.innerText = formatMenuPriceValue(nextPrice, nextFormat);
+                if (nextPrice !== previousPrice) onUpdateProduct(id, 'price', nextPrice);
             } else if (newVal !== product?.[field as keyof Product]) {
                 onUpdateProduct(id, field as keyof Product, newVal);
             }

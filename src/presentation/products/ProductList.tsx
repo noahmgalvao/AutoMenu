@@ -10,7 +10,7 @@ import {
 import { EditForm } from './EditForm';
 import { resolveProductDivider } from '../menu/canvas/categoryDividers';
 import { isPristineNewCategory, isPristineNewProduct } from '../../domain/menu/pristineItems';
-import { formatMenuPrice } from '../../domain/menu/price';
+import { formatMenuPrice, resolveMenuPriceDecimalPlaces } from '../../domain/menu/price';
 
 interface PendingImageUpload {
   id: string;
@@ -65,6 +65,7 @@ const ImageThumbnail: React.FC<{
 interface ProductListProps {
   categories: string[];
   grouped: Record<string, Product[]>;
+  products: Product[];
   style: MenuStyle;
   setStyle: React.Dispatch<React.SetStateAction<MenuStyle>>;
   handlers: any; // Return type from useMenuInteractions
@@ -100,6 +101,7 @@ interface ProductListProps {
 export const ProductList: React.FC<ProductListProps> = ({
   categories,
   grouped,
+  products,
   style,
   setStyle,
   handlers,
@@ -132,6 +134,15 @@ export const ProductList: React.FC<ProductListProps> = ({
   const [shakingCategory, setShakingCategory] = React.useState<string | null>(null);
   const categoryOptionsPointerDownRef = React.useRef<{ category: string; startedAt: number } | null>(null);
   const editAllItems = editTogether && Boolean(editModeId && !newItemDraft);
+  const priceDecimalPlaces = React.useMemo(() => {
+    const effectivePrices = products.map(product => ({
+      price: existingEdits[product.id]?.price ?? product.price,
+      isFreeText: product.isFreeText,
+    }));
+    if (newItemDraft?.type === 'product') effectivePrices.push({ price: formData.price ?? 0, isFreeText: false });
+    return resolveMenuPriceDecimalPlaces(style, effectivePrices);
+  }, [style.priceDecimalPlaces, products, existingEdits, newItemDraft, formData.price]);
+  const priceFormat = { ...style, priceDecimalPlaces };
 
   React.useEffect(() => {
     const handleLimitReached = (e: Event) => {
@@ -210,6 +221,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                   <EditForm 
                     type="category" 
                     style={style}
+                    priceFormat={priceFormat}
                     setStyle={setStyle}
                     photoId={cat}
                     imageSource={categoryImageUpload?.id === cat ? categoryImageUpload.previewUrl : style.categoryImages?.[cat]?.url}
@@ -353,6 +365,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                       <EditForm 
                         type="product" 
                         style={style}
+                        priceFormat={priceFormat}
                         setStyle={setStyle}
                         autoFocus={editModeId === product.id}
                         formData={{ ...product, ...existingEdits[product.id] }}
@@ -414,7 +427,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                             <h4 className="text-sm font-medium text-slate-800 truncate">{product.name}</h4>
                             {style.showPrices !== false && (
                               <span className="text-xs font-mono font-bold text-slate-600">
-                                {formatMenuPrice(product.price, style)}
+                                {formatMenuPrice(product.price, priceFormat)}
                               </span>
                             )}
                           </div>
@@ -469,6 +482,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                 <EditForm 
                   type="product" 
                   style={style}
+                  priceFormat={priceFormat}
                   setStyle={setStyle}
                   formData={formData} 
                   setFormData={setFormData} 
@@ -493,6 +507,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                 <EditForm 
                   type="category" 
                   style={style}
+                  priceFormat={priceFormat}
                   setStyle={setStyle}
                   formData={formData} 
                   setFormData={setFormData} 

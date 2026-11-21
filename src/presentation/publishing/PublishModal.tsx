@@ -87,7 +87,7 @@ export const PublishModal: React.FC<PublishModalProps> = ({
           )}
 
           <div className="space-y-2">
-            <Choice checked={pdf} onChange={(checked) => updatePreferences({ pdf: checked, virtualLink })} icon={<FileText size={20} />} title="Gerar PDF" description="Use o mesmo arquivo do visualizador e da publicação." />
+            <Choice checked={pdf} onChange={(checked) => updatePreferences({ pdf: checked, virtualLink })} icon={<FileText size={20} />} title="Gerar PDF" description="Baixe ou compartilhe o PDF com suas opções de impressão." />
             {pdf && (
               <div className="grid grid-cols-3 gap-2 pl-1">
                 <ActionButton icon={<Settings2 size={15} />} label="Opções" loading={activeAction === 'pdf-options'} disabled={loading || actionBusy} onClick={() => onPdfAction('options')} />

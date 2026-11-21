@@ -261,6 +261,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
 
                     {/* NATIVE DRAG AND DROP LIST */}
                     <ProductList
+                        products={products}
                         categories={categories}
                         grouped={grouped}
                         style={style}

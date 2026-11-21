@@ -32,6 +32,24 @@ test('wheel and zoom buttons preserve their canvas focus', async ({ page }) => {
   }
 });
 
+test('the scroll ends near the zoomed menu pages', async ({ page }) => {
+  await page.setViewportSize({ width: 960, height: 600 });
+  await page.goto(fixture);
+  const canvas = page.locator('[data-automenu-editor-canvas]');
+  await expect(canvas.locator('[data-menu-print-page]').last()).toBeVisible();
+  const gaps = await canvas.evaluate(element => {
+    element.scrollTo(element.scrollWidth, element.scrollHeight);
+    const viewport = element.getBoundingClientRect();
+    const pages = element.querySelectorAll('[data-menu-print-page]');
+    const lastPage = pages[pages.length - 1].getBoundingClientRect();
+    return { right: viewport.right - lastPage.right, bottom: viewport.bottom - lastPage.bottom };
+  });
+  expect(gaps.right).toBeGreaterThanOrEqual(0);
+  expect(gaps.right).toBeLessThan(100);
+  expect(gaps.bottom).toBeGreaterThanOrEqual(0);
+  expect(gaps.bottom).toBeLessThan(135);
+});
+
 test.describe('touch zoom', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   test('a moving pinch keeps the same page point between the fingers', async ({ page }) => {

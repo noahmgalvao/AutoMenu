@@ -11,8 +11,8 @@ import type { CanvasShape } from '../../../domain/menu/model';
 
 import React, { useRef } from 'react';
 import type { MenuStyle, Product, ElementStyle, SortOption, AddedImage, FontSizeLimitKey } from '../../../domain/menu/model';
-import { DEFAULT_MINIMUM_FONT_SIZE, isMiniFoodTexture, normalizeTextureUrl } from '../../../domain/menu/defaults';
-import { resolveFontSizeLimits, resolveMenuContentSpacing, resolveMenuMargins, resolveMinimumFontSize, roundFontSize, resolveProductImageFrame, clampPhotoScale, MIN_PHOTO_SCALE, MAX_PHOTO_SCALE } from '../../../domain/menu/styleRules';
+import { isMiniFoodTexture, normalizeTextureUrl } from '../../../domain/menu/defaults';
+import { resolveFontSizeLimits, resolveMenuContentSpacing, resolveMenuMargins, resolveMinimumFontSize, MIN_CONFIGURABLE_FONT_SIZE, roundFontSize, resolveProductImageFrame, clampPhotoScale, MIN_PHOTO_SCALE, MAX_PHOTO_SCALE } from '../../../domain/menu/styleRules';
 import { normalizeMenuPageSetup, resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 import { StyleControls } from './StyleControls';
 import { PriceFormatSettings } from './PriceFormatSettings';
@@ -694,7 +694,7 @@ export const GeneralRulesSection: React.FC<GeneralRulesSectionProps> = ({ style,
           <RuleNumberInput
             label="Mínimo geral"
             value={minimumFontSize}
-            min={DEFAULT_MINIMUM_FONT_SIZE}
+            min={MIN_CONFIGURABLE_FONT_SIZE}
             max={300}
             normalizeValue={roundFontSize}
             onChange={(value) => setStyle((previous) => ({

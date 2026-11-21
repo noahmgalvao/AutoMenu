@@ -393,7 +393,7 @@ test('the price prompt shows only the amount in the selected adjustment mode', a
   const adjustmentType = toolbar.getByRole('combobox', { name: 'Tipo do reajuste' });
   await adjustmentType.selectOption('integer');
   await toolbar.getByRole('button', { name: 'Aumentar preço' }).click();
-  await expect(prompt).toContainText('+10% e +R$ 10,00');
+  await expect(prompt).toContainText('+10% e +R$ 10');
   await expect(prompt).not.toContainText('→');
   await page.getByRole('button', { name: 'Só neste produto' }).click();
   await shortcutsFor(product).getByRole('button', { name: 'Mais opções' }).click();
@@ -401,7 +401,7 @@ test('the price prompt shows only the amount in the selected adjustment mode', a
   await product.locator('#product-price-1').focus();
   await adjustmentType.selectOption('integer');
   await toolbar.getByRole('button', { name: 'Aumentar preço' }).click();
-  await expect(prompt).toContainText('+R$ 10,00');
+  await expect(prompt).toContainText('+R$ 10');
   await expect(prompt).not.toContainText('%');
 });
 
@@ -866,6 +866,37 @@ test('prices stay inside narrow cards with three product and three category colu
   const currency = (await price.locator('[data-price-symbol]').boundingBox())!;
   const amount = (await price.locator('[data-price-value]').boundingBox())!;
   expect(amount.y).toBeGreaterThan(currency.y);
+});
+
+test('automatic prices share decimals only while any product has cents', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=list&zero-price');
+  const first = page.locator('#product-price-1');
+  const second = page.locator('#product-price-2');
+  const third = page.locator('#product-price-3');
+  await expect(first).toHaveText('0');
+  await expect(second).toHaveText('59');
+
+  const edit = async (id: string, value: string) => {
+    const product = page.locator(`#product-container-${id}`);
+    await product.getByRole('heading').click();
+    await shortcutsFor(product).getByTitle('Editar produto').click();
+    const price = product.locator('[data-price-value]');
+    await price.fill(value);
+    await price.press('Enter');
+    const prompt = page.getByRole('button', { name: 'Só neste produto' });
+    if (await prompt.isVisible()) await prompt.click();
+  };
+  await edit('1', '12,5.99');
+  await expect(first).toHaveText('12,50');
+  await expect(second).toHaveText('59,00');
+  await edit('2', '58.25');
+  await expect(second).toHaveText('58,25');
+  await edit('1', '12');
+  await expect(first).toHaveText('12,00');
+  await edit('2', '58');
+  await expect(first).toHaveText('12');
+  await expect(second).toHaveText('58');
+  await expect(third).toHaveText('24');
 });
 
 test('price format settings apply currency and decimals to every product from the canvas toolbar', async ({ page }) => {

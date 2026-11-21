@@ -6,7 +6,7 @@ import { copiedProductFields, matchingCanvasCopy } from '../menu/canvas/canvasCl
 import React from 'react';
 import type { MenuStyle, Product, CategoryDividerStyle } from '../../domain/menu/model';
 import { AlignCenter, AlignLeft, AlignRight, Check, X } from 'lucide-react';
-import { formatMenuPriceValue, getMenuPriceSymbol, parseAndRoundPrice } from '../../domain/menu/price';
+import { formatMenuPriceValue, getMenuPriceSymbol, normalizePriceInput, parseAndRoundPrice, type MenuPriceFormat } from '../../domain/menu/price';
 import { PriceFormatSettings } from '../menu/designer/PriceFormatSettings';
 import { CategoryDividerPicker } from '../menu/designer/CategoryDividerPicker';
 import { useReplacePlaceholderOnInput } from '../menu/interactions/useReplacePlaceholderOnInput';
@@ -14,6 +14,7 @@ import { useReplacePlaceholderOnInput } from '../menu/interactions/useReplacePla
 interface EditFormProps {
   type: 'product' | 'category';
   style: MenuStyle;
+  priceFormat: MenuPriceFormat;
   setStyle: React.Dispatch<React.SetStateAction<MenuStyle>>;
   formData: Partial<Product>;
   setFormData: React.Dispatch<React.SetStateAction<Partial<Product>>>;
@@ -32,6 +33,7 @@ interface EditFormProps {
 export const EditForm: React.FC<EditFormProps> = ({
   type,
   style,
+  priceFormat,
   setStyle,
   formData,
   setFormData,
@@ -60,11 +62,12 @@ export const EditForm: React.FC<EditFormProps> = ({
   const currencySymbol = getMenuPriceSymbol(style);
   const priceInputFocusedRef = React.useRef(false);
   const priceAtFocusRef = React.useRef<number | undefined>(undefined);
+  const priceTextAtFocusRef = React.useRef<string | undefined>(undefined);
   const replacePriceOnNextInputRef = React.useRef(false);
-  const [priceInput, setPriceInput] = React.useState(() => formatMenuPriceValue(formData.price ?? 0, style));
+  const [priceInput, setPriceInput] = React.useState(() => formatMenuPriceValue(formData.price ?? 0, priceFormat));
 
   const replacePriceInput = (nextValue: string) => {
-    const sanitized = nextValue.replace(/[^0-9.,]/g, '');
+    const sanitized = normalizePriceInput(nextValue);
     if (!sanitized) return;
     replacePriceOnNextInputRef.current = false;
     setPriceInput(sanitized);
@@ -74,9 +77,9 @@ export const EditForm: React.FC<EditFormProps> = ({
 
   React.useEffect(() => {
     if (!priceInputFocusedRef.current) {
-      setPriceInput(formatMenuPriceValue(formData.price ?? 0, style));
+      setPriceInput(formatMenuPriceValue(formData.price ?? 0, priceFormat));
     }
-  }, [formData.price, style.priceDecimalPlaces, style.priceDecimalSeparator]);
+  }, [formData.price, priceFormat.priceDecimalPlaces, priceFormat.priceDecimalSeparator]);
 
   return (
     <div ref={formRef} data-product-designer-edit-form
@@ -89,8 +92,9 @@ export const EditForm: React.FC<EditFormProps> = ({
         event.preventDefault();
         event.stopPropagation();
         setFormData(prev => ({ ...prev, ...copiedProductFields(copied.product) }));
-        setPriceInput(formatMenuPriceValue(copied.product.price, style));
+        setPriceInput(formatMenuPriceValue(copied.product.price, priceFormat));
         priceAtFocusRef.current = copied.product.price;
+        priceTextAtFocusRef.current = formatMenuPriceValue(copied.product.price, priceFormat);
       }}
       className="flex flex-col gap-2 p-3 bg-white border-2 border-indigo-500 rounded-lg shadow-lg animate-in fade-in zoom-in-95" 
       onKeyDown={event => {
@@ -149,11 +153,12 @@ export const EditForm: React.FC<EditFormProps> = ({
               type="text"
               inputMode="decimal"
               className="w-20 bg-white text-slate-900 [color-scheme:light] text-xs font-mono border-b border-slate-200 focus:border-indigo-500 outline-none pb-1"
-              placeholder={formatMenuPriceValue(0, style)}
+              placeholder={formatMenuPriceValue(0, priceFormat)}
               value={priceInput}
               onFocus={(event) => {
                 priceInputFocusedRef.current = true;
                 priceAtFocusRef.current = formData.price;
+                priceTextAtFocusRef.current = event.currentTarget.value;
                 replacePriceOnNextInputRef.current = true;
                 event.currentTarget.select();
               }}
@@ -164,7 +169,7 @@ export const EditForm: React.FC<EditFormProps> = ({
                   return;
                 }
                 replacePriceOnNextInputRef.current = false;
-                const nextValue = event.currentTarget.value.replace(/[^0-9.,]/g, '');
+                const nextValue = normalizePriceInput(event.currentTarget.value);
                 setPriceInput(nextValue);
                 const normalized = parseAndRoundPrice(nextValue);
                 if (normalized !== null) setFormData((previous) => ({ ...previous, price: normalized }));
@@ -197,10 +202,11 @@ export const EditForm: React.FC<EditFormProps> = ({
                 const normalized = parseAndRoundPrice(event.target.value);
                 const originalPrice = priceAtFocusRef.current;
                 const unchangedVisibleValue = originalPrice !== undefined
-                  && event.target.value.trim() === formatMenuPriceValue(originalPrice, style);
+                  && event.target.value.trim() === priceTextAtFocusRef.current;
                 const nextPrice = unchangedVisibleValue ? originalPrice : normalized ?? formData.price ?? 0;
                 priceAtFocusRef.current = undefined;
-                setPriceInput(formatMenuPriceValue(nextPrice, style));
+                priceTextAtFocusRef.current = undefined;
+                setPriceInput(formatMenuPriceValue(nextPrice, priceFormat));
                 setFormData((previous) => ({ ...previous, price: nextPrice }));
               }}
             />

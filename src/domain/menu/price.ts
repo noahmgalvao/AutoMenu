@@ -1,6 +1,6 @@
-import type { MenuStyle, PriceDecimalPlaces, PriceDecimalSeparator } from './model';
+import type { MenuStyle, PriceDecimalPlaces, PriceDecimalSeparator, Product } from './model';
 
-export const DEFAULT_PRICE_DECIMAL_PLACES: PriceDecimalPlaces = 2;
+export const DEFAULT_PRICE_DECIMAL_PLACES = 'auto';
 export const DEFAULT_PRICE_DECIMAL_SEPARATOR: PriceDecimalSeparator = ',';
 export const PRICE_CURRENCIES = [
   ['R$', 'Real brasileiro'],
@@ -35,20 +35,35 @@ export const roundPrice = (value: unknown): number => {
   return Math.max(0, Math.round((numeric + Number.EPSILON) * 100) / 100);
 };
 
+export const normalizePriceInput = (value: string): string => {
+  const digitsAndSeparators = value.replace(/[^0-9.,]/g, '');
+  return digitsAndSeparators.match(/^\d*(?:[.,]\d*)?/)?.[0] || '';
+};
+
 export const parseAndRoundPrice = (value: string): number | null => {
-  const sanitized = String(value || '').trim().replace(/[^0-9,.-]/g, '');
-  if (!sanitized) return null;
-  const separatorIndex = Math.max(sanitized.lastIndexOf(','), sanitized.lastIndexOf('.'));
-  const negative = sanitized.startsWith('-');
-  const integerDigits = (separatorIndex >= 0 ? sanitized.slice(0, separatorIndex) : sanitized).replace(/\D/g, '') || '0';
-  const decimalDigits = separatorIndex >= 0 ? sanitized.slice(separatorIndex + 1).replace(/\D/g, '') : '';
-  const numeric = Number(`${negative ? '-' : ''}${integerDigits}${decimalDigits ? `.${decimalDigits}` : ''}`);
+  const normalized = normalizePriceInput(value);
+  if (!/\d/.test(normalized)) return null;
+  const numeric = Number(normalized.replace(',', '.'));
   return Number.isFinite(numeric) ? roundPrice(numeric) : null;
 };
 
-export const resolvePriceDecimalPlaces = (value: unknown): PriceDecimalPlaces => (
+export const resolvePriceDecimalPlaces = (value: unknown): PriceDecimalPlaces | 'auto' => (
   value === 0 || value === 1 || value === 2 ? value : DEFAULT_PRICE_DECIMAL_PLACES
 );
+
+const hasFractionalPrice = (value: unknown) => !Number.isInteger(roundPrice(value));
+
+export const resolveMenuPriceDecimalPlaces = (
+  style: MenuPriceFormat,
+  products: Iterable<Pick<Product, 'price' | 'isFreeText'>>,
+): PriceDecimalPlaces => {
+  const configured = resolvePriceDecimalPlaces(style.priceDecimalPlaces);
+  if (configured !== 'auto') return configured;
+  for (const product of products) {
+    if (!product.isFreeText && hasFractionalPrice(product.price)) return 2;
+  }
+  return 0;
+};
 
 export const resolvePriceDecimalSeparator = (value: unknown): PriceDecimalSeparator => (
   value === '.' ? '.' : DEFAULT_PRICE_DECIMAL_SEPARATOR
@@ -58,7 +73,8 @@ export const formatMenuPriceValue = (
   value: unknown,
   style?: Pick<MenuStyle, 'priceDecimalPlaces' | 'priceDecimalSeparator'>,
 ): string => {
-  const decimalPlaces = resolvePriceDecimalPlaces(style?.priceDecimalPlaces);
+  const configured = resolvePriceDecimalPlaces(style?.priceDecimalPlaces);
+  const decimalPlaces = configured === 'auto' ? (hasFractionalPrice(value) ? 2 : 0) : configured;
   const decimalSeparator = resolvePriceDecimalSeparator(style?.priceDecimalSeparator);
   const formatted = roundPrice(value).toFixed(decimalPlaces);
   return decimalSeparator === ',' ? formatted.replace('.', ',') : formatted;

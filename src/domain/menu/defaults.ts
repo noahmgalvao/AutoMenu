@@ -35,41 +35,41 @@ export const INITIAL_PRODUCTS: Product[] = [
     id: '1',
     name: 'Hamburguer Classico',
     description: 'Carne angus, cheddar, alface, tomate e molho da casa.',
-    price: 12.99,
+    price: 13,
     category: 'Hamburgueres',
-    image: 'https://picsum.photos/200/200?random=1'
+    image: ''
   },
   {
     id: '2',
     name: 'Batata Trufada',
     description: 'Batatas crocantes com azeite trufado e parmesao.',
-    price: 6.50,
+    price: 7,
     category: 'Acompanhamentos',
-    image: 'https://picsum.photos/200/200?random=2'
+    image: ''
   },
   {
     id: '3',
     name: 'Salada Caesar',
     description: 'Alface romana, croutons, parmesao e molho caesar.',
-    price: 10.00,
+    price: 10,
     category: 'Saladas',
-    image: 'https://picsum.photos/200/200?random=3'
+    image: ''
   },
   {
     id: '4',
     name: 'Bolo Vulcao de Chocolate',
     description: 'Bolo quente de chocolate com recheio cremoso e sorvete.',
-    price: 8.99,
+    price: 9,
     category: 'Sobremesas',
-    image: 'https://picsum.photos/200/200?random=4'
+    image: ''
   },
   {
     id: '5',
     name: 'Pizza Margherita',
     description: 'Molho de tomate, mozzarella fresca e manjericao.',
-    price: 14.50,
+    price: 15,
     category: 'Pizzas',
-    image: 'https://picsum.photos/200/200?random=5'
+    image: ''
   }
 ];
 
@@ -84,7 +84,7 @@ export const INITIAL_STYLE: MenuStyle = {
   cardBackgroundColor: '#f8fafc', backgroundImage: '', layoutMode: 'list',
   columnCount: 1, categoryColumnCount: 1, hiddenProductIds: [],
   showImages: true, showCategoryImages: true, imageScale: 1, categoryImageScale: 1,
-  showPrices: true, showCurrencySymbol: true, showPageNumbers: true, priceDecimalPlaces: 2, priceDecimalSeparator: ',',
+  showPrices: true, showCurrencySymbol: true, showPageNumbers: true, priceDecimalPlaces: 'auto', priceDecimalSeparator: ',',
   pageSetup: { preset: 'A4', orientation: 'portrait', widthMm: 210, heightMm: 297 },
   pagePadding: 56, itemGap: 18, globalRadius: 16,
   margins: { top: 56, right: 56, bottom: 56, left: 56, columnGap: DEFAULT_MENU_MARGINS.columnGap },

@@ -6,7 +6,7 @@ import { resolveMenuPageDimensions } from './pageSetup';
 import { normalizeColumnWidths } from './categoryColumns';
 import { templateHeaderExtra, templateCategoryExtra } from '../templates/templateDesign';
 import { FREE_TEXT_PREFIX, CATEGORY_CHUNK_GAP_PX } from './flow';
-import { formatMenuPrice } from './price';
+import { formatMenuPrice, resolveMenuPriceDecimalPlaces } from './price';
 
 const PRODUCT_GRID_GAP_PX = 24;
 
@@ -873,6 +873,9 @@ export const calculatePagination = (
     categoryPlacementAssignments?: Record<string, CategoryPlacementAssignment> | null,
     options: PaginationOptions = {}
 ): PageLayout[] => {
+    const priceDecimalPlaces = resolveMenuPriceDecimalPlaces(style, products);
+    if (style.priceDecimalPlaces !== priceDecimalPlaces) style = { ...style, priceDecimalPlaces };
+
     const categoryColumnCount = style.categoryColumnCount || 1;
     const baseColumnHeight = getPaginationContentHeight(style);
     const headerHeight = (page: PageLayout) => getMainHeaderHeight(style, page.mainHeader, options.measuredHeights);

@@ -53,7 +53,7 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({ products, categori
                 <XAxis dataKey="name" fontSize={10} tickLine={false} axisLine={false} />
                 <YAxis fontSize={10} tickLine={false} axisLine={false} allowDecimals={false}/>
                 <Tooltip cursor={{fill: '#f1f5f9'}} contentStyle={{borderRadius: 8, border:'none', boxShadow:'0 4px 12px rgba(0,0,0,0.1)'}} />
-                <Bar dataKey="count" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="count" name="Contagem" fill="#6366f1" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>

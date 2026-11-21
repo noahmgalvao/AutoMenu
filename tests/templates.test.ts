@@ -219,6 +219,10 @@ test('normal creation and the workspace recovery payload both start from the cla
   const { createInitialMenuVersionPayload } = await import('../src/infrastructure/supabase/workspace/menus');
   const first = createInitialMenuVersionPayload();
   const blank = createInitialMenuVersionPayload('Meu novo cardápio');
+  for (const creation of [first, blank]) {
+    assert.equal(creation.renderSnapshot.style.priceDecimalPlaces, 'auto');
+    assert.ok(creation.renderSnapshot.products.every(product => !product.image && Number.isInteger(product.price)));
+  }
   assert.equal(first.editorState.style.appliedTemplateId, null);
   assert.equal(blank.editorState.style.menuTitle, 'Meu novo cardápio');
   assert.equal(blank.editorState.style.menuSubtitle, '');
