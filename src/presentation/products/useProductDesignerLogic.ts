@@ -341,6 +341,7 @@ export const useProductDesignerLogic = ({
                 id: crypto.randomUUID(),
                 name: formData.name || 'Novo item',
                 price: roundPrice(formData.price),
+                priceEnteredWithDecimals: formData.priceEnteredWithDecimals,
                 description: formData.description || '',
                 category: newItemDraft.categoryId,
                 categoryId: resolveCategoryId(newItemDraft.categoryId),

@@ -48,7 +48,7 @@ export interface InteractionProps {
     // Callbacks
     onMoveCategory?: (category: string, direction: MoveDirection) => void;
     onMoveProduct?: (productId: string, category: string, direction: MoveDirection) => void;
-    onUpdateProduct?: (id: string, field: keyof Product, value: any) => void;
+    onUpdateProduct?: (id: string, field: keyof Product, value: any, priceEnteredWithDecimals?: boolean) => void;
     onUpdateProducts?: (updates: { id: string, field: keyof Product, value: any }[]) => void;
     onUpdateCategoryName?: (oldName: string, newName: string) => void;
     onUpdateMenuText?: (field: 'menuTitle' | 'menuSubtitle', value: string) => void;

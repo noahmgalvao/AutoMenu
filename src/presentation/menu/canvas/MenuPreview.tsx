@@ -59,7 +59,7 @@ interface MenuPreviewProps {
     onPasteObjects?: (products: Product[], style: MenuStyle, actionLabel?: string) => void;
     onMoveCategory?: (category: string, direction: MoveDirection) => void;
     onMoveProduct?: (productId: string, category: string, direction: MoveDirection) => void;
-    onUpdateProduct?: (id: string, field: keyof Product, value: any) => void;
+    onUpdateProduct?: (id: string, field: keyof Product, value: any, priceEnteredWithDecimals?: boolean) => void;
     onUpdateProducts?: (updates: { id: string, field: keyof Product, value: any }[]) => void;
     onUpdateCategoryName?: (oldName: string, newName: string) => void;
     onUpdateMenuText?: (field: 'menuTitle' | 'menuSubtitle', value: string) => void;
@@ -196,7 +196,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const [loadingPhotos, setLoadingPhotos] = useState<ReadonlySet<string>>(() => new Set());
     const refreshLoadingPhotos = () => setLoadingPhotos(new Set(photoUploads.current.keys()));
     const pendingPhoto = useRef<{ type: PhotoType; id: string } | null>(null);
-    const handleProductUpdateWithPricePrompt = useCallback((id: string, field: keyof Product, value: any) => {
+    const handleProductUpdateWithPricePrompt = useCallback((id: string, field: keyof Product, value: any, priceEnteredWithDecimals?: boolean) => {
         if (field !== 'price') {
             props.onUpdateProduct?.(id, field, value);
             return;
@@ -204,7 +204,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
         const product = props.products.find((candidate) => candidate.id === id);
         const nextPrice = roundPrice(value);
-        props.onUpdateProduct?.(id, field, nextPrice);
+        props.onUpdateProduct?.(id, field, nextPrice, priceEnteredWithDecimals);
         if (!product || product.isFreeText || roundPrice(product.price) === 0 || product.price === nextPrice) return;
 
         const request = createPricePropagationRequest({

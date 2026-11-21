@@ -107,24 +107,94 @@ test('photos and shapes rotate around their centers with the lower handle', asyn
     }
 });
 
-test('free text retains its width when scaled and rotates with the lower handle', async ({ page }) => {
+test('shape rotation snaps to all four right angles, with a guide that releases outside the snap', async ({ page }) => {
+    await page.goto(fixture + '?batch-layers');
+    const shape = page.locator('[data-added-image-id="shape-right"]');
+    await shape.click();
+    const overlay = page.locator('[data-image-selection-overlay="shape-right"]');
+    const handle = overlay.getByRole('button', { name: 'Rotacionar objeto' });
+    const guide = overlay.locator('[data-canvas-rotation-guide]');
+    await handle.scrollIntoViewIfNeeded();
+    const shapeBox = (await overlay.boundingBox())!;
+    const grip = (await handle.boundingBox())!;
+    const cx = shapeBox.x + shapeBox.width / 2;
+    const cy = shapeBox.y + shapeBox.height / 2;
+    const x = grip.x + grip.width / 2;
+    const y = grip.y + grip.height / 2;
+    const origin = Math.atan2(y - cy, x - cx);
+    const move = async (degrees: number) => {
+        const radians = origin + degrees * Math.PI / 180;
+        await page.mouse.move(cx + 90 * Math.cos(radians), cy + 90 * Math.sin(radians));
+    };
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    for (const degrees of [0, 90, 180, 270]) {
+        await move(degrees + 4);
+        await expect(guide).toHaveAttribute('data-canvas-rotation-guide', String(degrees));
+        await expect(guide).toHaveText(`${degrees}°`);
+        await move(degrees + 8);
+        await expect(guide).toHaveAttribute('data-canvas-rotation-guide', String(degrees));
+        await move(degrees + 16);
+        await expect(guide).toHaveCount(0);
+    }
+    await move(274);
+    await expect(guide).toHaveText('270°');
+    const snappedSource = await shape.locator('img').getAttribute('src');
+    await page.mouse.up();
+    await expect(guide).toHaveCount(0);
+    await expect(shape.locator('img')).toHaveAttribute('src', snappedSource!);
+});
+
+test.describe('shape rotation with touch', () => {
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+    test('a finger can snap the shape and releasing clears the guide', async ({ page }) => {
+        await page.goto(fixture + '?batch-layers');
+        const shape = page.locator('[data-added-image-id="shape-left"]');
+        await shape.tap();
+        const overlay = page.locator('[data-image-selection-overlay="shape-left"]');
+        const handle = overlay.getByRole('button', { name: 'Rotacionar objeto' });
+        const guide = overlay.locator('[data-canvas-rotation-guide]');
+        await handle.scrollIntoViewIfNeeded();
+        const frame = (await overlay.boundingBox())!;
+        const grip = (await handle.boundingBox())!;
+        const cx = frame.x + frame.width / 2;
+        const cy = frame.y + frame.height / 2;
+        const x = grip.x + grip.width / 2;
+        const y = grip.y + grip.height / 2;
+        const angle = Math.atan2(y - cy, x - cx) + (90 - 25 + 4) * Math.PI / 180;
+        const client = await page.context().newCDPSession(page);
+        await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+        await client.send('Input.dispatchTouchEvent', {
+            type: 'touchMove', touchPoints: [{ x: cx + 55 * Math.cos(angle), y: cy + 55 * Math.sin(angle) }],
+        });
+        await expect(guide).toHaveText('90°');
+        await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        await expect(guide).toHaveCount(0);
+    });
+});
+
+test('free text resizes from its four corners and rotates with the lower handle', async ({ page }) => {
     await page.goto(fixture + '?layout');
     const text = page.locator('#product-container-text-a');
     await text.click();
-    const group = text.locator('[data-canvas-transform-handle="scale"]');
-    await expect(group).toHaveCount(2);
-    const top = group.first().locator('span');
-    await top.scrollIntoViewIfNeeded();
+    await expect(text.locator('[data-canvas-transform-handle="scale"]')).toHaveCount(0);
+    const corners = text.getByRole('button', { name: 'Redimensionar texto' });
+    await expect(corners).toHaveCount(4);
+    const corner = corners.last();
+    await corner.scrollIntoViewIfNeeded();
     const box = (await text.boundingBox())!;
-    const handle = (await top.boundingBox())!;
+    const handle = (await corner.boundingBox())!;
     const size = () => text.locator('[data-word-fit]').evaluate(field => Number(field.dataset.wordFitBaseSize));
     const originalFont = await size();
-    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    const x = handle.x + handle.width / 2;
+    const y = handle.y + handle.height / 2;
+    await page.mouse.move(x, y);
     await page.mouse.down();
-    await page.mouse.move(handle.x + handle.width / 2, handle.y - 16, { steps: 5 });
-    await expect.poll(size).toBeGreaterThan(originalFont);
+    await page.mouse.move(x + 22, y + 12, { steps: 5 });
+    await expect.poll(() => text.evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThan(box.width);
     await page.mouse.up();
-    expect((await text.boundingBox())!.width).toBeCloseTo(box.width, 0);
+    await expect.poll(size).toBeGreaterThan(originalFont);
 
     const rotation = text.getByRole('button', { name: 'Rotacionar objeto' });
     const before = (await text.boundingBox())!;
@@ -159,7 +229,7 @@ test('resizing detached text keeps unrelated measured categories on their pages'
 
     const text = firstPage.locator('#product-container-text-a');
     await text.click();
-    const handle = text.getByRole('button', { name: 'Redimensionar pela base' }).locator('span');
+    const handle = text.getByRole('button', { name: 'Redimensionar texto' }).last();
     const box = (await handle.boundingBox())!;
     const x = box.x + box.width / 2;
     const y = box.y + box.height / 2;
@@ -167,8 +237,7 @@ test('resizing detached text keeps unrelated measured categories on their pages'
     const start = await fontSize();
     await page.mouse.move(x, y);
     await page.mouse.down();
-    await page.mouse.move(x, y + 14, { steps: 4 });
-    await expect.poll(fontSize).toBeGreaterThan(start);
+    await page.mouse.move(x + 14, y + 10, { steps: 4 });
     await expect(category).toHaveCount(1);
     await page.mouse.up();
     await expect(category).toHaveCount(1);

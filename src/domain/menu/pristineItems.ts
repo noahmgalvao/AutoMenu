@@ -20,6 +20,7 @@ export const isPristineNewProduct = (product?: Product | null) => {
   return (
     isDefaultProductName(product.name) &&
     Number(product.price) === 0 &&
+    !product.priceEnteredWithDecimals &&
     hasDefaultDescription &&
     !product.image &&
     !product.imageAssetId
@@ -50,6 +51,7 @@ export const isUnmodifiedInitialProduct = (product?: Product | null) => {
     && product.description === initialProduct.description
     && product.category === initialProduct.category
     && (matchesCurrent || matchesLegacy)
+    && !product.priceEnteredWithDecimals
     && !product.customMarginTop
     && !product.styles
     && !product.boundingBox

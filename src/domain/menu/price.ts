@@ -40,12 +40,16 @@ export const normalizePriceInput = (value: string): string => {
   return digitsAndSeparators.match(/^\d*(?:[.,]\d*)?/)?.[0] || '';
 };
 
-export const parseAndRoundPrice = (value: string): number | null => {
+export const parsePriceInput = (value: string): { price: number; priceEnteredWithDecimals: boolean } | null => {
   const normalized = normalizePriceInput(value);
   if (!/\d/.test(normalized)) return null;
   const numeric = Number(normalized.replace(',', '.'));
-  return Number.isFinite(numeric) ? roundPrice(numeric) : null;
+  return Number.isFinite(numeric)
+    ? { price: roundPrice(numeric), priceEnteredWithDecimals: /[.,]\d/.test(normalized) }
+    : null;
 };
+
+export const parseAndRoundPrice = (value: string): number | null => parsePriceInput(value)?.price ?? null;
 
 export const resolvePriceDecimalPlaces = (value: unknown): PriceDecimalPlaces | 'auto' => (
   value === 0 || value === 1 || value === 2 ? value : DEFAULT_PRICE_DECIMAL_PLACES
@@ -55,12 +59,12 @@ const hasFractionalPrice = (value: unknown) => !Number.isInteger(roundPrice(valu
 
 export const resolveMenuPriceDecimalPlaces = (
   style: MenuPriceFormat,
-  products: Iterable<Pick<Product, 'price' | 'isFreeText'>>,
+  products: Iterable<Pick<Product, 'price' | 'priceEnteredWithDecimals' | 'isFreeText'>>,
 ): PriceDecimalPlaces => {
   const configured = resolvePriceDecimalPlaces(style.priceDecimalPlaces);
   if (configured !== 'auto') return configured;
   for (const product of products) {
-    if (!product.isFreeText && hasFractionalPrice(product.price)) return 2;
+    if (!product.isFreeText && (product.priceEnteredWithDecimals || hasFractionalPrice(product.price))) return 2;
   }
   return 0;
 };

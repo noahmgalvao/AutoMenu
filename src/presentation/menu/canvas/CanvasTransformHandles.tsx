@@ -117,34 +117,67 @@ export function CanvasScaleHandles({ target, start }: {
 
 export const normalizeCanvasRotation = (degrees: number) => ((Math.round(degrees) % 360) + 360) % 360;
 
-export function CanvasRotationHandle({ rotation, onRotate, belowScaleHandle = false }: {
+const SNAP_ENTER_DEGREES = 6;
+const SNAP_EXIT_DEGREES = 10;
+
+function snapToRightAngle(degrees: number, previous?: number) {
+    const nearest = Math.round(degrees / 90) * 90;
+    if (previous !== undefined) {
+        const distance = Math.abs(degrees - previous) % 360;
+        if (Math.min(distance, 360 - distance) <= SNAP_EXIT_DEGREES) return nearest;
+    }
+    return Math.abs(degrees - nearest) <= SNAP_ENTER_DEGREES ? nearest : undefined;
+}
+
+export function CanvasRotationHandle({ rotation, onRotate, snapRightAngles = false }: {
     rotation: number;
-    belowScaleHandle?: boolean;
+    snapRightAngles?: boolean;
     onRotate: (rotation: number, committed: boolean) => void;
 }) {
-    return <TransformHandle kind="rotation" label="Rotacionar objeto" className={`top-full cursor-grab active:cursor-grabbing ${belowScaleHandle
-        ? 'mt-[calc(18px*var(--canvas-handle-inverse,1))]' : 'mt-[calc(2px*var(--canvas-handle-inverse,1))]'}`}
-        start={event => {
-            const frame = event.currentTarget.parentElement;
-            if (!frame) return;
-            const rect = frame.getBoundingClientRect();
-            const centerX = rect.left + rect.width / 2;
-            const centerY = rect.top + rect.height / 2;
-            const angle = (point: { clientX: number; clientY: number }) =>
-                Math.atan2(point.clientY - centerY, point.clientX - centerX) * 180 / Math.PI;
-            const startAngle = angle(event);
-            let next = rotation;
-            return {
-                preview: point => {
-                    next = normalizeCanvasRotation(rotation + angle(point) - startAngle);
-                    onRotate(next, false);
-                },
-                finish: commit => onRotate(commit ? next : rotation, true),
-            };
-        }}>
-        <span className="grid place-items-center rounded-full border border-indigo-500 bg-white text-indigo-700 shadow-sm"
-            style={{ width: 'calc(25px * var(--canvas-handle-inverse, 1))', height: 'calc(25px * var(--canvas-handle-inverse, 1))' }}>
-            <RotateCw style={{ width: '60%', height: '60%' }} />
-        </span>
-    </TransformHandle>;
+    const [guideAngle, setGuideAngle] = React.useState<number>();
+    const vertical = guideAngle === 90 || guideAngle === 270;
+    return <>
+        {guideAngle !== undefined && (
+            <div data-canvas-rotation-guide={guideAngle} data-print-control="true" aria-hidden="true"
+                className="pointer-events-none absolute inset-0 z-[74]">
+                <span className={`absolute border-dashed border-indigo-600 drop-shadow-[0_1px_1px_white] ${vertical
+                    ? 'inset-y-[-12%] left-1/2' : 'inset-x-[-12%] top-1/2'}`}
+                    style={{ [vertical ? 'borderLeftWidth' : 'borderTopWidth']: 'calc(2px * var(--canvas-handle-inverse, 1))' }} />
+                <span className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-full rounded bg-indigo-700 px-1.5 py-0.5 font-semibold tabular-nums text-white"
+                    style={{ fontSize: 'calc(12px * var(--canvas-handle-inverse, 1))' }}>{guideAngle}°</span>
+            </div>
+        )}
+        <TransformHandle kind="rotation" label="Rotacionar objeto"
+            className="top-full mt-[calc(2px*var(--canvas-handle-inverse,1))] cursor-grab active:cursor-grabbing"
+            start={event => {
+                const frame = event.currentTarget.parentElement;
+                if (!frame) return;
+                const rect = frame.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top + rect.height / 2;
+                const angle = (point: { clientX: number; clientY: number }) =>
+                    Math.atan2(point.clientY - centerY, point.clientX - centerX) * 180 / Math.PI;
+                const startAngle = angle(event);
+                let next = rotation;
+                let snapped: number | undefined;
+                return {
+                    preview: point => {
+                        const degrees = rotation + angle(point) - startAngle;
+                        snapped = snapRightAngles ? snapToRightAngle(degrees, snapped) : undefined;
+                        next = normalizeCanvasRotation(snapped ?? degrees);
+                        if (snapRightAngles) setGuideAngle(snapped === undefined ? undefined : next);
+                        onRotate(next, false);
+                    },
+                    finish: commit => {
+                        if (snapRightAngles) setGuideAngle(undefined);
+                        onRotate(commit ? next : rotation, true);
+                    },
+                };
+            }}>
+            <span className="grid place-items-center rounded-full border border-indigo-500 bg-white text-indigo-700 shadow-sm"
+                style={{ width: 'calc(25px * var(--canvas-handle-inverse, 1))', height: 'calc(25px * var(--canvas-handle-inverse, 1))' }}>
+                <RotateCw style={{ width: '60%', height: '60%' }} />
+            </span>
+        </TransformHandle>
+    </>;
 }

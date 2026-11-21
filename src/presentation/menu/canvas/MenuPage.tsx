@@ -703,7 +703,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                                     && formattingShapeId !== img.id ? 'bg-indigo-500/15' : ''}`} />
                                 {activeImage?.id === img.id && !handlers.multiSelectMode && !handlers.draggedImageId
                                     && formattingShapeId !== img.id && handlers.rotateCanvasImage && (
-                                    <CanvasRotationHandle rotation={img.shape?.rotation ?? img.rotation ?? 0}
+                                    <CanvasRotationHandle rotation={img.shape?.rotation ?? img.rotation ?? 0} snapRightAngles={Boolean(img.shape)}
                                         onRotate={(rotation, commit) => handlers.rotateCanvasImage(img.id, rotation, commit)} />
                                 )}
                                 {img.shape && !isMiniFoodKind(img.shape.kind) && formattingShapeId === img.id && activeImage?.id === img.id &&

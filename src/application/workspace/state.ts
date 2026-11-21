@@ -39,6 +39,7 @@ export const normalizePersistedProducts = (value: unknown): Product[] => {
         name: typeof product.name === 'string' ? product.name : '',
         description: typeof product.description === 'string' ? product.description : '',
         price: Number.isFinite(numericPrice) ? roundPrice(numericPrice) : 0,
+        priceEnteredWithDecimals: !isFreeText && product.priceEnteredWithDecimals === true ? true : undefined,
         category,
         categoryId: isFreeText ? null : product.categoryId,
         image: typeof product.image === 'string' ? product.image : '',

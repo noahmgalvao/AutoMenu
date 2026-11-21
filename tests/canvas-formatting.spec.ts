@@ -868,7 +868,7 @@ test('prices stay inside narrow cards with three product and three category colu
   expect(amount.y).toBeGreaterThan(currency.y);
 });
 
-test('automatic prices share decimals only while any product has cents', async ({ page }) => {
+test('automatic prices share decimals when a product has cents or was entered with decimals', async ({ page }) => {
   await page.goto('/tests/fixtures/template-editor.html?photos=list&zero-price');
   const first = page.locator('#product-price-1');
   const second = page.locator('#product-price-2');
@@ -878,6 +878,7 @@ test('automatic prices share decimals only while any product has cents', async (
 
   const edit = async (id: string, value: string) => {
     const product = page.locator(`#product-container-${id}`);
+    await page.locator('[data-automenu-editor-canvas]').click({ position: { x: 8, y: 32 } });
     await product.getByRole('heading').click();
     await shortcutsFor(product).getByTitle('Editar produto').click();
     const price = product.locator('[data-price-value]');
@@ -886,6 +887,18 @@ test('automatic prices share decimals only while any product has cents', async (
     const prompt = page.getByRole('button', { name: 'Só neste produto' });
     if (await prompt.isVisible()) await prompt.click();
   };
+  await edit('1', '9,00');
+  await expect(first).toHaveText('9,00');
+  await expect(second).toHaveText('59,00');
+  await edit('1', '9');
+  await expect(second).toHaveText('59');
+  await edit('1', '9.00');
+  await expect(second).toHaveText('59,00');
+  await edit('2', '59,00');
+  await edit('1', '9');
+  await expect(first).toHaveText('9,00');
+  await edit('2', '59');
+  await expect(first).toHaveText('9');
   await edit('1', '12,5.99');
   await expect(first).toHaveText('12,50');
   await expect(second).toHaveText('59,00');
@@ -918,6 +931,23 @@ test('price format settings apply currency and decimals to every product from th
   await expect(product.locator('[data-price-symbol]')).toHaveText('€');
   await chooseDesignerOption(format.getByLabel('Símbolo da moeda'), '');
   await expect(page.locator('[data-price-symbol]')).toHaveCount(0);
+});
+
+test('the product designer saves explicitly entered zero cents and clears them for integer entry', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=list&product-designer');
+  const product = page.locator('#product-container-1');
+  const other = page.locator('#product-container-2');
+  const edit = async (value: string) => {
+    await product.hover();
+    await product.getByRole('button').last().click();
+    await product.getByRole('button', { name: 'Editar' }).click();
+    await product.locator('input[inputmode="decimal"]').fill(value);
+    await product.getByRole('button', { name: 'Salvar', exact: true }).click();
+  };
+  await edit('34,00');
+  await expect(other.getByText('R$ 59,00', { exact: true })).toBeVisible();
+  await edit('34');
+  await expect(other.getByText('R$ 59', { exact: true })).toBeVisible();
 });
 
 test('the product designer edits the shared price format alongside the price', async ({ page }) => {

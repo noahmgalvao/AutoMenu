@@ -74,6 +74,7 @@ export interface Product {
   name: string;
   description: string;
   price: number;
+  priceEnteredWithDecimals?: boolean;
   category: string;
   categoryId?: string | null;
   image?: string;

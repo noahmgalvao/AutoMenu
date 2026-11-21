@@ -735,10 +735,13 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             ? current : applyTemplateToCurrentStyle(current, historical || currentTemplate || INITIAL_STYLE));
     };
 
-    const handleProductUpdate = (id: string, field: keyof Product, value: any) => {
+    const handleProductUpdate = (id: string, field: keyof Product, value: any, priceEnteredWithDecimals?: boolean) => {
         if (!setProducts) return;
-        const normalizedValue = field === 'price' ? roundPrice(value) : value;
-        setProducts(prev => prev.map(p => p.id === id ? { ...p, [field]: normalizedValue } : p));
+        const patch: Partial<Product> = field === 'price'
+            ? { price: roundPrice(value), ...(priceEnteredWithDecimals !== undefined
+                ? { priceEnteredWithDecimals: priceEnteredWithDecimals || undefined } : {}) }
+            : { [field]: value };
+        setProducts(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p));
     };
 
     const handleBatchProductUpdate = (updates: { id: string, field: keyof Product, value: any }[]) => {

@@ -135,13 +135,11 @@ export const ProductList: React.FC<ProductListProps> = ({
   const categoryOptionsPointerDownRef = React.useRef<{ category: string; startedAt: number } | null>(null);
   const editAllItems = editTogether && Boolean(editModeId && !newItemDraft);
   const priceDecimalPlaces = React.useMemo(() => {
-    const effectivePrices = products.map(product => ({
-      price: existingEdits[product.id]?.price ?? product.price,
-      isFreeText: product.isFreeText,
-    }));
-    if (newItemDraft?.type === 'product') effectivePrices.push({ price: formData.price ?? 0, isFreeText: false });
-    return resolveMenuPriceDecimalPlaces(style, effectivePrices);
-  }, [style.priceDecimalPlaces, products, existingEdits, newItemDraft, formData.price]);
+    const effectivePrices = products.map(product => ({ ...product, ...existingEdits[product.id] }));
+    return resolveMenuPriceDecimalPlaces(style, newItemDraft?.type === 'product'
+      ? [...effectivePrices, { price: formData.price ?? 0, priceEnteredWithDecimals: formData.priceEnteredWithDecimals }]
+      : effectivePrices);
+  }, [style.priceDecimalPlaces, products, existingEdits, newItemDraft, formData.price, formData.priceEnteredWithDecimals]);
   const priceFormat = { ...style, priceDecimalPlaces };
 
   React.useEffect(() => {

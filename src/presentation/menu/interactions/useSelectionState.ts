@@ -6,7 +6,7 @@ import { flushSync } from 'react-dom';
 import type { Product } from '../../../domain/menu/model';
 import type { FormattingField, FormattingTarget, InteractionProps, SelectableType, SelectionItem, SelectionType } from './types';
 import { FREE_TEXT_PREFIX } from '../../../domain/menu/flow';
-import { formatMenuPriceValue, parseAndRoundPrice, resolveMenuPriceDecimalPlaces } from '../../../domain/menu/price';
+import { formatMenuPriceValue, parsePriceInput, resolveMenuPriceDecimalPlaces } from '../../../domain/menu/price';
 
 
 const getSelectionKey = (type: SelectionType, id: string | null) => `${type || 'none'}:${id || ''}`;
@@ -416,7 +416,7 @@ export const useSelectionState = (
         return selectedId === id;
     }, [selectedId, selectedItems]);
 
-    const handleBlur = useCallback((e: React.FocusEvent<HTMLElement>, type: string, id: string, field?: string) => {
+    const handleBlur = useCallback((e: React.FocusEvent<HTMLElement>, type: string, id: string, field?: string, priceWasEdited = false) => {
         const text = e.currentTarget.innerText;
         const newVal = type === 'category' ? categoryKey(text, products.map(p => p.category), id) : text;
         if (type === 'product' && field && onUpdateProduct) {
@@ -475,14 +475,19 @@ export const useSelectionState = (
                     priceDecimalPlaces: resolveMenuPriceDecimalPlaces(style, products),
                 };
                 const previousValue = formatMenuPriceValue(previousPrice, previousFormat);
-                const nextPrice = newVal === previousValue ? previousPrice : parseAndRoundPrice(newVal) ?? previousPrice;
+                const parsed = priceWasEdited || newVal !== previousValue ? parsePriceInput(newVal) : null;
+                const nextPrice = newVal === previousValue ? previousPrice : parsed?.price ?? previousPrice;
+                const hadExplicitDecimals = product?.priceEnteredWithDecimals === true;
+                const priceEnteredWithDecimals = parsed?.priceEnteredWithDecimals ?? hadExplicitDecimals;
                 const nextFormat = {
                     priceDecimalSeparator: separator,
                     priceDecimalPlaces: resolveMenuPriceDecimalPlaces(style, products.map(item =>
-                        item.id === id ? { ...item, price: nextPrice } : item)),
+                        item.id === id ? { ...item, price: nextPrice, priceEnteredWithDecimals } : item)),
                 };
                 e.currentTarget.innerText = formatMenuPriceValue(nextPrice, nextFormat);
-                if (nextPrice !== previousPrice) onUpdateProduct(id, 'price', nextPrice);
+                if (nextPrice !== previousPrice || priceEnteredWithDecimals !== hadExplicitDecimals) {
+                    onUpdateProduct(id, 'price', nextPrice, priceEnteredWithDecimals);
+                }
             } else if (newVal !== product?.[field as keyof Product]) {
                 onUpdateProduct(id, field as keyof Product, newVal);
             }

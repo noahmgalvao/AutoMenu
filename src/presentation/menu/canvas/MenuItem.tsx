@@ -111,7 +111,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
     const allowSameWordBreak = style.allowSameWordBreak === true;
     const contentSpacing = resolveMenuContentSpacing(style);
     const hasProductFill = Boolean(getSurfaceFill(style, 'product') && getSurfaceFill(style, 'product') !== 'transparent');
-    const replacePriceOnNextInputRef = React.useRef<Set<string>>(new Set());
+    const replacePriceOnNextInputRef = React.useRef(new Set<string>());
+    const editedPricesRef = React.useRef(new Set<string>());
     const [imageMenuProductId, setImageMenuProductId] = React.useState<string | null>(null);
     React.useEffect(() => {
         if (imageMenuProductId && handlers.editingId !== imageMenuProductId) {
@@ -148,6 +149,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const nextText = normalizePriceInput(text);
         if (!nextText) return;
         element.innerText = nextText;
+        editedPricesRef.current.add(productId);
         replacePriceOnNextInputRef.current.delete(productId);
         const range = document.createRange();
         range.selectNodeContents(element);
@@ -205,6 +207,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const inserted = document.createTextNode(text);
         range.insertNode(inserted);
         selection.collapse(inserted, text.length);
+        editedPricesRef.current.add(productId);
         replacePriceOnNextInputRef.current.delete(productId);
         const value = event.currentTarget.innerText;
         const normalized = normalizePriceInput(value);
@@ -310,12 +313,13 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 enterKeyHint="done" suppressContentEditableWarning
                 onBlur={event => {
                     replacePriceOnNextInputRef.current.delete(product.id);
-                    handlers.handleBlur(event, 'product', product.id, 'price');
+                    handlers.handleBlur(event, 'product', product.id, 'price', editedPricesRef.current.delete(product.id));
                 }}
                 onKeyDown={event => handlePriceKeyDown(event, product.id)}
                 onBeforeInput={event => handlePriceBeforeInput(event, product.id)}
                 onPaste={event => handlePricePaste(event, product.id)}
                 onInput={event => {
+                    editedPricesRef.current.add(product.id);
                     const input = event.currentTarget;
                     const normalized = normalizePriceInput(input.innerText);
                     if (normalized !== input.innerText) replacePriceText(input, product.id, normalized);
@@ -706,20 +710,20 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     }}
                 >
                 <BorderDecoration style={style} scope={product.isFreeText ? 'freeText' : 'product'} id={product.id} />
-                {isSelected && handlers.selectedId === product.id && !isFreeTextGhost && !backgroundText && !handlers.editingId && !handlers.multiSelectMode && (
+                {isSelected && !product.isFreeText && handlers.selectedId === product.id && !handlers.editingId && !handlers.multiSelectMode && (
                     <ColumnResizeHandles
                         columnIndex={columnIndex}
                         columnCount={renderedCategoryColumnCount || categoryColumnCount}
                         onResizeStart={handlers.startCategoryColumnResize}
                     />
                 )}
-                {!handlers.readOnly && primary && isSelected && !isBeingDragged && !handlers.editingId
+                {!handlers.readOnly && primary && !product.isFreeText && isSelected && !isBeingDragged && !handlers.editingId
                     && !handlers.multiSelectMode && handlers.startCanvasScale && (
                     <CanvasScaleHandles target={{ type: productSelectionType, id: product.id }} start={handlers.startCanvasScale} />
                 )}
                 {!handlers.readOnly && primary && product.isFreeText && isSelected && !isBeingDragged && !handlers.editingId
                     && !handlers.multiSelectMode && handlers.rotateCanvasText && (
-                    <CanvasRotationHandle rotation={product.rotation ?? 0} belowScaleHandle
+                    <CanvasRotationHandle rotation={product.rotation ?? 0}
                         onRotate={(rotation, commit) => handlers.rotateCanvasText(product.id, rotation, commit)} />
                 )}
                 {product.isFreeText && isSelected && !handlers.isResizingCategoryColumns && (

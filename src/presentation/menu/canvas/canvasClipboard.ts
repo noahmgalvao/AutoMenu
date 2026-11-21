@@ -46,7 +46,7 @@ export function writeCanvasCopy(clip: CanvasClip) {
 }
 
 export function copiedProductFields(product: Product) {
-    return { name: product.name, price: product.price, description: product.description,
+    return { name: product.name, price: product.price, priceEnteredWithDecimals: product.priceEnteredWithDecimals, description: product.description,
         image: product.image || '', imageAssetId: product.imageAssetId ?? null, imageAlignment: product.imageAlignment,
         styles: product.styles, rotation: product.rotation, boundingBox: product.boundingBox, extractedImages: product.extractedImages };
 }
