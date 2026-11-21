@@ -1,5 +1,9 @@
 import { expect, test, type Locator } from '@playwright/test';
 import { shortcutsFor } from './fixtures/canvas-shortcuts';
+import { PRESET_TEMPLATES } from '../src/domain/templates/templateCatalog';
+import { getPaginationBottomInset } from '../src/domain/menu/menuPagination';
+import { resolveMenuPageDimensions } from '../src/domain/menu/pageSetup';
+import { resolveMenuMargins } from '../src/domain/menu/styleRules';
 
 const fixture = '/tests/fixtures/template-editor.html';
 
@@ -134,4 +138,39 @@ test('free text retains its width when scaled and rotates with the lower handle'
     const after = (await text.boundingBox())!;
     expect(after.x + after.width / 2).toBeCloseTo(before.x + before.width / 2, 0);
     expect(after.y + after.height / 2).toBeCloseTo(before.y + before.height / 2, 0);
+});
+
+test('resizing detached text keeps unrelated measured categories on their pages', async ({ page }) => {
+    await page.goto(fixture + '?layout=scale-pages');
+    const style = PRESET_TEMPLATES[0];
+    const available = resolveMenuPageDimensions(style).heightPx - resolveMenuMargins(style).top - getPaginationBottomInset(style);
+    const taken = await page.locator('#product-container-1').evaluate(product => {
+        const header = getComputedStyle(document.getElementById('category-header-Entradas')!);
+        const body = getComputedStyle(product);
+        return parseFloat(header.height) + parseFloat(header.marginTop) + parseFloat(header.marginBottom)
+            + parseFloat(body.marginTop) + parseFloat(body.marginBottom);
+    });
+    // This measured category fits on a plain page, but not beneath the menu heading.
+    await page.addStyleTag({ content: `#product-container-1 { min-height: ${available - taken - 12}px }` });
+    const firstPage = page.locator('[data-menu-print-page][data-page-index="0"]');
+    const secondPage = page.locator('[data-menu-print-page][data-page-index="1"]');
+    const category = secondPage.locator('#product-container-1');
+    await expect(category).toHaveCount(1);
+
+    const text = firstPage.locator('#product-container-text-a');
+    await text.click();
+    const handle = text.getByRole('button', { name: 'Redimensionar pela base' }).locator('span');
+    const box = (await handle.boundingBox())!;
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    const fontSize = () => text.locator('[data-word-fit]').evaluate(el => Number(el.dataset.wordFitBaseSize));
+    const start = await fontSize();
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x, y + 14, { steps: 4 });
+    await expect.poll(fontSize).toBeGreaterThan(start);
+    await expect(category).toHaveCount(1);
+    await page.mouse.up();
+    await expect(category).toHaveCount(1);
+    await expect.poll(fontSize).toBeGreaterThan(start);
 });

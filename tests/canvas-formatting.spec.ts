@@ -357,15 +357,16 @@ for (const layout of ['list', 'cards', 'background']) {
   });
 }
 
-test('numeric arrows apply one step and repeat while held', async ({ page }) => {
+test('font sizing uses plus and minus for a step and repeats while held', async ({ page }) => {
   await page.goto('/tests/fixtures/template-editor.html?layout');
   await page.locator('#menu-title-text').focus();
   const toolbar = page.locator('[data-inline-format-toolbar]');
   const size = toolbar.getByRole('spinbutton');
   const current = Number(await size.inputValue());
-  await toolbar.getByRole('button', { name: 'Diminuir', exact: true }).click();
+  await expect(toolbar.getByRole('button', { name: 'Diminuir', exact: true })).toHaveCount(0);
+  await toolbar.getByRole('button', { name: 'Diminuir tamanho da fonte', exact: true }).click();
   await expect(size).toHaveValue(String(current - 1));
-  const down = (await toolbar.getByRole('button', { name: 'Diminuir', exact: true }).boundingBox())!;
+  const down = (await toolbar.getByRole('button', { name: 'Diminuir tamanho da fonte', exact: true }).boundingBox())!;
   await page.mouse.move(down.x + down.width / 2, down.y + down.height / 2);
   await page.mouse.down();
   await expect.poll(async () => Number(await size.inputValue())).toBeLessThan(current - 3);
@@ -373,7 +374,7 @@ test('numeric arrows apply one step and repeat while held', async ({ page }) => 
   await page.locator('#page-number-0').click();
   const pageNumberSize = toolbar.getByRole('spinbutton');
   const pageNumberStart = Number(await pageNumberSize.inputValue());
-  await toolbar.getByRole('button', { name: 'Aumentar', exact: true }).click();
+  await toolbar.getByRole('button', { name: 'Aumentar tamanho da fonte', exact: true }).click();
   await expect(pageNumberSize).toHaveValue(String(pageNumberStart + 1));
 });
 

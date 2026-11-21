@@ -767,8 +767,8 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     }, [handlers.groupedProducts, scalePreview]);
     const paginationOptions = useMemo(() => ({
         splitCategoryAcrossPages: props.splitCategoryAcrossPages,
-        measuredHeights: scalePreview ? undefined : measuredHeights,
-    }), [props.splitCategoryAcrossPages, measuredHeights, scalePreview]);
+        measuredHeights,
+    }), [props.splitCategoryAcrossPages, measuredHeights]);
     const basePages = useMemo(() => {
         const effectiveCategoryPositions = handlers.liveCategoryPositions || layoutStyle.categoryPositions;
         const effectiveStyle = effectiveCategoryPositions === layoutStyle.categoryPositions
@@ -796,14 +796,14 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
     useEffect(() => {
         if (!props.onSplitCategorySwap) return;
-        props.onSplitCategorySwap(handlers.draggedItem || readOnly ? null : findSplitCategorySwap(
+        props.onSplitCategorySwap(handlers.draggedItem || scalePreview || readOnly ? null : findSplitCategorySwap(
             products, style, handlers.groupedProducts, handlers.sortedCategories, basePages, pages, paginationOptions,
         ));
-    }, [props.onSplitCategorySwap, handlers.draggedItem, handlers.groupedProducts, handlers.sortedCategories, products, style, basePages, pages, paginationOptions, readOnly]);
+    }, [props.onSplitCategorySwap, handlers.draggedItem, handlers.groupedProducts, handlers.sortedCategories, products, style, basePages, pages, paginationOptions, readOnly, scalePreview]);
 
     React.useLayoutEffect(() => {
         const root = previewRootRef.current;
-        if (!root || scalePreview) return;
+        if (!root) return;
         const headers = Array.from(root.querySelectorAll<HTMLElement>('[data-heading-measurement]:not([data-heading-draft])'));
         const items = Array.from(root.querySelectorAll<HTMLElement>(
             '[data-pagination-chunk-content] > [data-pagination-item], [data-pagination-chunk-content] > [data-pagination-grid]'
@@ -858,7 +858,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             observer.disconnect();
             cancelAnimationFrame(frame);
         };
-    }, [pages, style.columnCount, scalePreview]);
+    }, [pages, style.columnCount]);
 
     useEffect(() => {
         onPageCountChange?.(pages.length);

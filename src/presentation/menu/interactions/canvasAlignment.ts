@@ -68,9 +68,11 @@ export function showCanvasAlignment(page: HTMLElement, guides: Guide[]) {
     page.append(overlay);
   }
   const bounds = page.getBoundingClientRect();
+  overlay!.style.setProperty('--canvas-guide-pixel', `${page.offsetWidth / bounds.width}px`);
   overlay!.replaceChildren(...guides.map(({ axis, at, span }) => {
     const line = document.createElement('span');
     line.dataset.canvasGuide = axis;
+    line.dataset.canvasGuideKind = span ? 'object' : 'center';
     const vertical = axis === 'x';
     const fraction = vertical ? (at - bounds.left) / bounds.width : (at - bounds.top) / bounds.height;
     line.style[vertical ? 'left' : 'top'] = `${fraction * 100}%`;

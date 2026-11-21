@@ -85,10 +85,16 @@ test('dragging a shape near the page center snaps it and clears the dashed guide
   await page.mouse.move(center + 3, box.y + box.height / 2, { steps: 8 });
   const guide = paper.locator('[data-canvas-guide="x"]');
   await expect(guide).toBeVisible();
+  await expect(guide).toHaveAttribute('data-canvas-guide-kind', 'center');
+  expect((await guide.boundingBox())!.width).toBeGreaterThan(2);
   await expect.poll(async () => {
     const bounds = (await layer.boundingBox())!;
     return Math.abs(bounds.x + bounds.width / 2 - center);
   }).toBeLessThan(1);
+  const otherShape = (await paper.locator('[data-added-image-id="shape-right"]').boundingBox())!;
+  await page.mouse.move(otherShape.x + otherShape.width / 2 + 2, box.y + box.height / 2, { steps: 6 });
+  await expect(guide).toHaveAttribute('data-canvas-guide-kind', 'object');
+  expect((await guide.boundingBox())!.width).toBeGreaterThan(1.5);
   await page.mouse.up();
   await expect(guide).toHaveCount(0);
 });

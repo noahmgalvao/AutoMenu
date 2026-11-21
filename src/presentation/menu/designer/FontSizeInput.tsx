@@ -119,7 +119,7 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
             max={max}
             step={1}
             inputMode="decimal"
-            className={`automenu-font-size-input h-8 w-16 rounded border border-slate-200 pl-1.5 pr-5 text-xs [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${className}`}
+            className={`automenu-font-size-input h-8 w-16 rounded border border-slate-200 pl-1.5 text-xs [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${showStepButtons ? 'pr-1.5' : 'pr-5'} ${className}`}
             value={draftValue}
             placeholder={placeholder}
             aria-label={label}
@@ -168,10 +168,12 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
                 if (normalizedValue !== effectiveValue) applyValue(normalizedValue);
             }}
         />
-        <span className="absolute inset-y-0 right-0.5 flex flex-col justify-center">
-            {renderStep(1, ChevronUp, 'Aumentar')}
-            {renderStep(-1, ChevronDown, 'Diminuir')}
-        </span>
+        {!showStepButtons && (
+            <span className="absolute inset-y-0 right-0.5 flex flex-col justify-center">
+                {renderStep(1, ChevronUp, 'Aumentar')}
+                {renderStep(-1, ChevronDown, 'Diminuir')}
+            </span>
+        )}
         </span>
         {showStepButtons && renderStep(1, Plus, 'Aumentar tamanho da fonte', true)}
         </span>

@@ -157,20 +157,23 @@ function Fixture() {
   </>;
 }
 
-function LayoutFixture({ categories, adjacent, productsInCategory, closeTexts, topText, layer, between }: {
+function LayoutFixture({ categories, adjacent, productsInCategory, closeTexts, topText, layer, between, scalePages }: {
   categories: boolean; adjacent: boolean; productsInCategory: boolean; closeTexts: boolean; topText?: 'detached' | 'attached';
   layer?: 'image' | 'shape';
   between?: boolean;
+  scalePages?: boolean;
 }) {
   const [style, setStyle] = useState<MenuStyle>((): MenuStyle => {
     const shape = layer === 'shape' ? createCanvasShape('rectangle', '#4f46e5') : undefined;
     return {
-      ...initial, categoryColumnCount: between ? 1 : 2,
+      ...initial, categoryColumnCount: between || scalePages ? 1 : 2,
       addedImages: layer ? [{ id: 'test-layer', url: shape ? canvasShapeUrl(shape) : samplePhoto, shape, x: 105, y: between ? 282 : 410, width: 128, pageIndex: 0 }] : undefined,
       customCategoryOrder: between ? ['Entradas', 'Principais', 'Sobremesas', 'ft_zone_a'] : categories ? ['Principais', 'Sobremesas', 'Entradas'] : topText === 'detached'
         ? ['ft_zone_a', 'Entradas'] : ['Entradas', 'ft_zone_a', 'ft_zone_b'],
       customProductOrder: topText === 'attached' ? { Entradas: ['text-a', '1'] } : undefined,
-      categoryPositions: between ? {
+      categoryPositions: scalePages ? {
+        ft_zone_a: { pageIndex: 0, columnIndex: 0, y: 245, pageX: 130 },
+      } : between ? {
         Entradas: { pageIndex: 0, columnIndex: 0, y: 150 },
         Principais: { pageIndex: 0, columnIndex: 0, y: 430 },
         Sobremesas: { pageIndex: 0, columnIndex: 0, y: 660 },
@@ -193,7 +196,7 @@ function LayoutFixture({ categories, adjacent, productsInCategory, closeTexts, t
   }] : categories ? products : [
     ...(productsInCategory ? products.map(product => ({ ...product, category: 'Entradas' })) : [products[0]]),
     { id: 'text-a', category: topText === 'attached' ? 'Entradas' : 'ft_zone_a', name: 'A', description: '', price: 0, isFreeText: true, freeTextWidth: 44 },
-    ...(productsInCategory || topText ? [] : [
+    ...(productsInCategory || topText || scalePages ? [] : [
       { id: 'text-b', category: 'ft_zone_b', name: 'B', description: '', price: 0, isFreeText: true, freeTextWidth: 44 },
     ]),
   ]);
@@ -231,6 +234,6 @@ createRoot(document.getElementById('root')!).render(<React.StrictMode>
   <AppServicesProvider services={services}>
     {layout !== null ? <LayoutFixture categories={layout === 'categories'} adjacent={params.has('adjacent')} productsInCategory={layout === 'products'} closeTexts={layout === 'borders'}
       layer={params.has('shape') ? 'shape' : params.has('image') ? 'image' : undefined}
-      between={layout === 'free-text-between'} topText={layout === 'top-detached' ? 'detached' : layout === 'top-attached' ? 'attached' : undefined} /> : <Fixture />}
+      scalePages={layout === 'scale-pages'} between={layout === 'free-text-between'} topText={layout === 'top-detached' ? 'detached' : layout === 'top-attached' ? 'attached' : undefined} /> : <Fixture />}
   </AppServicesProvider>
 </React.StrictMode>);

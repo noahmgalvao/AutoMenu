@@ -243,9 +243,30 @@ body {
 
 
 [data-canvas-alignment] { position: absolute; inset: 0; z-index: 1000; pointer-events: none; }
-[data-canvas-guide] { position: absolute; border-color: #6366f1; border-style: dashed; }
-[data-canvas-guide="x"] { top: 0; bottom: 0; border-left-width: 1px; }
-[data-canvas-guide="y"] { left: 0; right: 0; border-top-width: 1px; }
+[data-canvas-guide] {
+  --guide-stroke: calc(2.5 * var(--canvas-guide-pixel, 1px));
+  position: absolute;
+  border-width: 0;
+  border-style: dashed;
+  border-color: #a21caf;
+  filter: drop-shadow(0 0 var(--canvas-guide-pixel, 1px) white);
+}
+[data-canvas-guide-kind="center"] {
+  --guide-stroke: calc(3 * var(--canvas-guide-pixel, 1px));
+  border-color: #0873df;
+}
+[data-canvas-guide="x"] {
+  top: 0;
+  bottom: 0;
+  border-left-width: var(--guide-stroke);
+  transform: translateX(-50%);
+}
+[data-canvas-guide="y"] {
+  left: 0;
+  right: 0;
+  border-top-width: var(--guide-stroke);
+  transform: translateY(-50%);
+}
 
 @media (max-width: 767px) {
   [data-designer-sheet] {

@@ -1,5 +1,5 @@
 import type { FontSizeLimitKey, MenuStyle, Product } from '../../../domain/menu/model';
-import { clampFontSize, clampPhotoScale, MAX_PHOTO_SCALE, MIN_PHOTO_SCALE, resolveFontSizeLimits, resolveMinimumFontSize } from '../../../domain/menu/styleRules';
+import { clampFontSize, clampPhotoScale } from '../../../domain/menu/styleRules';
 import type { CanvasScaleTarget } from './CanvasTransformHandles';
 
 type PhotoScaleField = 'imageScale' | 'categoryImageScale';
@@ -32,40 +32,48 @@ export function captureCanvasObjectScale(style: MenuStyle, target: CanvasScaleTa
         if (style.showImages && regular.some(product => product.image)) photos.push('imageScale');
     }
 
-    const minimum = resolveMinimumFontSize(style);
-    const maximum = resolveFontSizeLimits(style);
     const sharedSizes = fields.map(field => ({
         field, size: clampFontSize(style, field, style.elementStyles?.[field]?.fontSize, defaultSize[field]),
     }));
     const localSizes = freeTexts.map(product => ({
-        product, field: 'freeText' as const,
+        product,
         size: clampFontSize(style, 'freeText', (product.styles || style.elementStyles?.productName)?.fontSize, defaultSize.freeText),
     }));
     const photoSizes = photos.map(field => ({ field, size: clampPhotoScale(style[field] || 1) }));
-    const allTextSizes = [...sharedSizes, ...localSizes];
-    const minFactor = Math.max(...allTextSizes.map(({ size }) => minimum / size),
-        ...photoSizes.map(({ size }) => MIN_PHOTO_SCALE / size));
-    const maxFactor = Math.min(...allTextSizes.map(({ field, size }) => Math.max(minimum, maximum[field]) / size),
-        ...photoSizes.map(({ size }) => MAX_PHOTO_SCALE / size));
 
-    return (requestedFactor: number): ScaleChange | undefined => {
-        const factor = Math.max(minFactor, Math.min(maxFactor, requestedFactor));
-        if (!Number.isFinite(factor) || Math.abs(1 - factor) < .001) return undefined;
+    return (factor: number): ScaleChange | undefined => {
+        if (!Number.isFinite(factor) || factor === 1) return undefined;
+
         const elementStyles = { ...style.elementStyles };
+        let changesStyle = false;
         for (const { field, size } of sharedSizes) {
-            elementStyles[field] = { ...elementStyles[field], fontSize: clampFontSize(style, field, size * factor, size) };
+            const fontSize = clampFontSize(style, field, size * factor, size);
+            if (fontSize === size) continue;
+            elementStyles[field] = { ...elementStyles[field], fontSize };
+            changesStyle = true;
         }
-        const photoChanges = Object.fromEntries(photoSizes.map(({ field, size }) => [
-            field, clampPhotoScale(Math.round(size * factor * 1000) / 1000),
-        ]));
-        const productChanges = new Map(localSizes.map(({ product, size }) => [
-            product.id, {
-                styles: { ...(product.styles || style.elementStyles?.productName), fontSize: clampFontSize(style, 'freeText', size * factor, size) },
+
+        const photoChanges: Partial<Record<PhotoScaleField, number>> = {};
+        for (const { field, size } of photoSizes) {
+            const nextSize = clampPhotoScale(Math.round(size * factor * 1000) / 1000);
+            if (nextSize === size) continue;
+            photoChanges[field] = nextSize;
+            changesStyle = true;
+        }
+
+        const productChanges = new Map<string, Pick<Product, 'styles' | 'freeTextWidth'>>();
+        for (const { product, size } of localSizes) {
+            const fontSize = clampFontSize(style, 'freeText', size * factor, size);
+            if (fontSize === size) continue;
+            productChanges.set(product.id, {
+                styles: { ...(product.styles || style.elementStyles?.productName), fontSize },
                 freeTextWidth: product.freeTextWidth || (target.type === 'freeText' ? width : undefined),
-            },
-        ]));
+            });
+        }
+
+        if (!changesStyle && !productChanges.size) return undefined;
         return {
-            style: fields.length || photos.length ? { elementStyles, ...photoChanges } : undefined,
+            style: changesStyle ? { elementStyles, ...photoChanges } : undefined,
             products: productChanges.size ? productChanges : undefined,
         };
     };

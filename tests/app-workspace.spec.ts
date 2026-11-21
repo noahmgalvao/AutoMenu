@@ -166,7 +166,8 @@ test('settings keeps its close buttons visible and numeric typing commits at the
   await minimum.fill('23');
   await minimum.press('Enter');
   await expect(minimum).toHaveValue('23');
-  const plus = settings.getByRole('button', { name: 'Aumentar Mínimo geral' });
+  await expect(settings.getByRole('button', { name: 'Aumentar Mínimo geral', exact: true })).toHaveCount(0);
+  const plus = settings.getByRole('button', { name: 'Aumentar tamanho da fonte Mínimo geral' });
   await plus.hover();
   await page.mouse.down();
   await expect.poll(async () => Number(await minimum.inputValue())).toBeGreaterThan(24);
