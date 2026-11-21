@@ -1105,11 +1105,13 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         const neighbor = offset < 0 ? first - 1 : last + 1;
         if (neighbor < 0 || neighbor >= pages.length) return;
         const order = pages.map((_, pageIndex) => pageIndex);
-        order.splice(neighbor, 1);
-        order.splice(offset < 0 ? last : first, 0, neighbor);
+        const slots = [...new Set([...selected, neighbor])].sort((left, right) => left - right);
+        slots.forEach((slot, position) => {
+            order[slot] = slots[(position - offset + slots.length) % slots.length];
+        });
         onStyleUpdate(prev => reindexMenuPages(prev, pages, order));
         handlers.replaceSelectedItems(handlers.selectedItems.map(item => item.type === 'page'
-            ? { ...item, id: String(Number(item.id) + offset) } : item));
+            ? { ...item, id: String(order.indexOf(Number(item.id))) } : item));
     };
 
     const openPageRemoval = (index: number) => {
