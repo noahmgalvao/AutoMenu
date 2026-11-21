@@ -29,7 +29,7 @@ import { isHeadingTextHit } from './menuHeadingHit';
 import type { FlowDirection } from './flowControls';
 import { getCollisionSafeFreeTextTop } from '../interactions/freeTextMovement';
 import { resolveMenuMargins } from '../../../domain/menu/styleRules';
-import { canIncreaseCanvasFontSize } from './textFit';
+import { canIncreaseCanvasFontSize, triggerLimitFeedback } from './textFit';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 import { roundPrice } from '../../../domain/menu/price';
 import { PricePropagationPrompt } from '../PricePropagationPrompt';
@@ -276,7 +276,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const [, setClipboardVersion] = useState(0);
     const [objectMenu, setObjectMenu] = useState<ObjectMenuState | null>(null);
     (handlers as any).objectMenuOpen = Boolean(objectMenu);
-    const [objectMenuPosition, setObjectMenuPosition] = useState<{ left: number; top: number } | null>(null);
+    const [objectMenuPosition, setObjectMenuPosition] = useState<{ left: number; top: number; maxHeight?: number } | null>(null);
     const [marqueeRect, setMarqueeRect] = useState<MarqueeRect | null>(null);
 
     useEffect(() => {
@@ -639,20 +639,41 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             ) || []).filter(button => button.getBoundingClientRect().width && getComputedStyle(button).visibility === 'visible') : [];
             const button = buttons.find(button => Number(button.closest<HTMLElement>('[data-shortcut-page]')?.dataset.shortcutPage) === objectMenu.pageIndex) || buttons[0];
             const anchor = button?.getBoundingClientRect();
-            const fallback = !anchor && objectMenu.anchored && item
-                ? (isObjectItem(item) ? getObjectElement(item) : previewRootRef.current?.querySelector(
-                    `[data-header-page="${headingPageIndex(item.id)}"]`,
-                ))?.getBoundingClientRect() : undefined;
-            const x = anchor?.left ?? fallback?.left ?? objectMenu.x;
-            const y = anchor ? (anchor.bottom + 6 + rect.height <= window.innerHeight - 8
-                ? anchor.bottom + 6 : anchor.top - rect.height - 6)
-                : fallback ? fallback.top - rect.height - 8 : objectMenu.y;
-            const nextPosition = {
-                left: clamp(x, 8, Math.max(8, window.innerWidth - rect.width - 8)),
-                top: clamp(y, 8, Math.max(8, window.innerHeight - rect.height - 8)),
-            };
+            const page = previewRootRef.current?.querySelector(`[data-menu-print-page][data-page-index="${objectMenu.pageIndex}"]`);
+            const repeated = item?.type === 'addedImage' || item?.type === 'freeText'
+                ? page?.querySelector(`[${item.type === 'addedImage' ? 'data-added-image-id' : 'data-canvas-free-text-id'}="${CSS.escape(item.id)}"]`)
+                : null;
+            const object = repeated || item && (isObjectItem(item) ? getObjectElement(item) : previewRootRef.current?.querySelector(
+                `[data-header-page="${headingPageIndex(item.id)}"]`,
+            ));
+            const bounds = (item?.type === 'category' ? object?.closest('[data-category-chunk]') || object : object)?.getBoundingClientRect();
+            const edge = 8;
+            const gap = 8;
+            const viewportBottom = window.innerHeight - edge;
+            const viewportRight = window.innerWidth - edge;
+            const maxHeight = Math.min(menu.scrollHeight + 2, Math.max(104, Math.round(window.innerHeight * .67)));
+            const clampX = (x: number) => clamp(x, edge, Math.max(edge, viewportRight - rect.width));
+            const clampY = (y: number, height: number) => clamp(y, edge, Math.max(edge, viewportBottom - height));
+            const x = anchor?.left ?? bounds?.left ?? objectMenu.x;
+            const y = anchor?.bottom ?? bounds?.top ?? objectMenu.y;
+            let nextPosition = { left: clampX(x), top: clampY(y, maxHeight), maxHeight };
+            if (bounds) {
+                const leftSpace = bounds.left - gap - edge;
+                const rightSpace = viewportRight - bounds.right - gap;
+                const above = bounds.top - gap - edge;
+                const below = viewportBottom - bounds.bottom - gap;
+                if (Math.max(leftSpace, rightSpace) >= rect.width) {
+                    const left = rightSpace >= rect.width ? bounds.right + gap : bounds.left - rect.width - gap;
+                    nextPosition = { left: clampX(left), top: clampY(y, maxHeight), maxHeight };
+                } else {
+                    const available = Math.max(above, below);
+                    const height = Math.min(maxHeight, Math.max(104, available));
+                    const top = below >= above ? bounds.bottom + gap : bounds.top - gap - height;
+                    nextPosition = { left: clampX(x), top: clampY(top, height), maxHeight: height };
+                }
+            }
             setObjectMenuPosition((current) => (
-                current?.left === nextPosition.left && current?.top === nextPosition.top
+                current?.left === nextPosition.left && current?.top === nextPosition.top && current?.maxHeight === nextPosition.maxHeight
                     ? current
                     : nextPosition
             ));
@@ -700,7 +721,10 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         const scale = getCanvasDragScale(frame);
         const startY = event.clientY;
         const gestureHeight = Math.max(44, frame.offsetHeight);
-        const scaleObject = captureCanvasObjectScale(style, target, products, frame.offsetWidth);
+        const handle = event.currentTarget;
+        const scaleObject = captureCanvasObjectScale(style, target, products, frame.offsetWidth, () => {
+            if (!handle.classList.contains('automenu-limit-feedback')) triggerLimitFeedback(handle);
+        });
         let next: ReturnType<typeof scaleObject>;
         return {
             preview: (point: PointerEvent) => {
@@ -1876,7 +1900,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const snapshotItems = (items: ObjectSelectionItem[]): CanvasClip => ({
         items: buildClipboardItems(items), positions: Object.fromEntries(items.map(item => [item.id, pastePosition(null, item)])),
         style: { categoryImages: style.categoryImages, categoryDividerStyles: style.categoryDividerStyles, productDividerStyles: style.productDividerStyles,
-            hiddenProductIds: style.hiddenProductIds, productPhotoCrops: style.productPhotoCrops, productImageFlips: style.productImageFlips, freeTextBorders: style.freeTextBorders, freeTextFills: style.freeTextFills },
+            hiddenProductIds: style.hiddenProductIds, productPhotoCrops: style.productPhotoCrops, productPhotoAlignments: style.productPhotoAlignments, productImageFlips: style.productImageFlips, freeTextBorders: style.freeTextBorders, freeTextFills: style.freeTextFills },
     });
     const copyItems = (items: ObjectSelectionItem[]) => {
         const clip = snapshotItems(items);
@@ -2595,15 +2619,15 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         handlers.replaceSelectedItems([{ type: field, id: headingSelectionId(field, pageIndex) }]);
         setObjectMenu(null);
     };
-    const updateHeadingPages = (action: 'replicate' | 'keep' | 'remove') => {
-        const selected = new Set([contextPageIndex, ...handlers.selectedItems.filter(item => item.type === 'menuTitle' || item.type === 'menuSubtitle')
+    const updateHeadingPages = (action: 'replicate' | 'keep' | 'remove', activePage = contextPageIndex) => {
+        const selected = new Set([activePage, ...handlers.selectedItems.filter(item => item.type === 'menuTitle' || item.type === 'menuSubtitle')
             .map(item => headingPageIndex(item.id))]);
         onStyleUpdate?.(previous => {
             const headingPages = { ...previous.headingPages };
             for (const field of menuHeadingFields) {
                 const visible = (index: number) => headingIsOnPage(previous, field, index, pages[index]?.headerCopy);
                 if (action === 'replicate') {
-                    if (visible(contextPageIndex)) headingPages[field] = 'all';
+                    if (visible(activePage)) headingPages[field] = 'all';
                 } else {
                     headingPages[field] = pages.flatMap((_, index) =>
                         visible(index) && selected.has(index) === (action === 'keep') ? [index] : []);
@@ -2616,6 +2640,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         setObjectMenu(null);
     };
     (handlers as any).editHeading = editHeading;
+    (handlers as any).removeHeading = (pageIndex: number) => updateHeadingPages('remove', pageIndex);
     const hasClipboardFormat = formatClipboardRef.current && objectMenu?.item
         ? acceptsCanvasFormat(formatClipboardRef.current.format, objectMenu.item) : false;
     const contextObjectItem = objectMenu?.item && isObjectItem(objectMenu.item)
@@ -2809,7 +2834,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     ref={objectMenuRef}
                     data-canvas-object-menu="true"
                     className="fixed z-[10000] min-w-52 max-h-[calc(100vh-16px)] select-none overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-2xl text-sm text-slate-700"
-                    style={{ left: menuLeft, top: menuTop, WebkitUserSelect: 'none', userSelect: 'none' }}
+                    style={{ left: menuLeft, top: menuTop, maxHeight: objectMenuPosition?.maxHeight, WebkitUserSelect: 'none', userSelect: 'none' }}
                     onClick={(event) => event.stopPropagation()}
                     onPointerDown={(event) => event.stopPropagation()}
                     onContextMenu={(event) => event.preventDefault()}

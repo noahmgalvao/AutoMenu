@@ -1,6 +1,8 @@
 import type { Dispatch, SetStateAction } from 'react';
 import type { MenuStyle } from '../../../domain/menu/model';
-import { clampPhotoScale } from '../../../domain/menu/styleRules';
+import { triggerLimitFeedback } from './textFit';
+import { getCanvasDragScale } from './CanvasTransformHandles';
+import { clampPhotoScale, MIN_PHOTO_SCALE, MAX_PHOTO_SCALE } from '../../../domain/menu/styleRules';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { Images, ImagePlus } from 'lucide-react';
 import { livePhotoScaleVariable } from './photoSizing';
@@ -12,6 +14,7 @@ type Props = {
     crop: Point; flips?: { horizontal?: boolean; vertical?: boolean };
     activate: () => void; choose: () => void; remove: () => void;
     type: 'product' | 'category';
+    alignment?: 'left' | 'center' | 'right';
     updateStyle: Dispatch<SetStateAction<MenuStyle>>;
 };
 const corners = [
@@ -23,6 +26,7 @@ const corners = [
 const percent = (value: number) => Math.min(100, Math.max(0, value));
 
 export function PhotoEditControls(props: Props) {
+    const [hitSize, setHitSize] = useState(32);
     const [moving, setMoving] = useState(false);
     const gesture = useRef<{ pointer: number; start: Point; corner?: number; scale: number; crop: Point; width: number; height: number; originalFit: string; excess: Point } | null>(null);
     const suppressClick = useRef(false);
@@ -35,6 +39,11 @@ export function PhotoEditControls(props: Props) {
     const scaleField = type === 'category' ? 'categoryImageScale' : 'imageScale';
     const liveScale = livePhotoScaleVariable(type);
     const setScale = (value: number, increment = false) => {
+        const current = props.scale;
+        const requested = increment ? Math.round((current + value) * 1000) / 1000 : value;
+        if ((requested <= MIN_PHOTO_SCALE || requested >= MAX_PHOTO_SCALE) && !frameRef.current?.classList.contains('automenu-limit-feedback')) {
+            triggerLimitFeedback(frameRef.current);
+        }
         updateStyle(prev => {
             const previous = prev[scaleField] || 1;
             const scale = clampPhotoScale(increment ? Math.round((previous + value) * 1000) / 1000 : value);
@@ -45,13 +54,34 @@ export function PhotoEditControls(props: Props) {
         const surface = frameRef.current?.parentElement;
         if (!surface) return;
         const scale = clampPhotoScale(value);
+        if (Math.abs(scale - value) > .001 && !frameRef.current?.classList.contains('automenu-limit-feedback')) {
+            triggerLimitFeedback(frameRef.current);
+        }
         draft.current = { scale };
         previewRoot.current = surface.closest<HTMLElement>('[data-menu-preview-canvas], [data-product-designer-edit-form]') || surface;
         previewRoot.current.style.setProperty(liveScale, String(scale));
     };
+    useLayoutEffect(() => {
+        const frame = frameRef.current;
+        if (!frame) return;
+        const refresh = () => setHitSize(Math.min(112, 36 / Math.max(.1, getCanvasDragScale(frame))));
+        refresh();
+        const observer = new ResizeObserver(refresh);
+        observer.observe(frame);
+        window.addEventListener('resize', refresh);
+        return () => {
+            observer.disconnect();
+            window.removeEventListener('resize', refresh);
+        };
+    }, []);
     useLayoutEffect(() => () => {
         previewRoot.current?.style.removeProperty(liveScale);
     }, [liveScale]);
+    const setAlignment = (alignment: NonNullable<Props['alignment']>) => updateStyle(prev => {
+        if (type === 'product') return { ...prev, name: 'Custom', productPhotoAlignments: { ...prev.productPhotoAlignments, [id]: alignment } };
+        const image = prev.categoryImages?.[id];
+        return image ? { ...prev, name: 'Custom', categoryImages: { ...prev.categoryImages, [id]: { ...image, alignment } } } : prev;
+    });
     const setCrop = (crop: Point) => updateStyle(prev => {
         if (type === 'product') return { ...prev, name: 'Custom', productPhotoCrops: { ...prev.productPhotoCrops, [id]: crop } };
         const image = prev.categoryImages?.[id];
@@ -107,6 +137,7 @@ export function PhotoEditControls(props: Props) {
             if (event.button !== 0 || !event.isPrimary) return;
             event.stopPropagation();
             const handle = (event.target as Element).closest<HTMLElement>('[data-photo-corner]');
+            if (handle) event.preventDefault();
             const rect = event.currentTarget.getBoundingClientRect();
             const img = event.currentTarget.parentElement?.querySelector('img');
             const fit = img?.naturalWidth ? Math.max(rect.width / img.naturalWidth, rect.height / img.naturalHeight) : 1;
@@ -117,7 +148,7 @@ export function PhotoEditControls(props: Props) {
                     y: Math.max(0, (img?.naturalHeight || 0) * fit - rect.height),
                 } };
             suppressClick.current = false;
-            const capture = (event.target as Element).closest('button') || event.currentTarget;
+            const capture = handle || (event.target as Element).closest('button') || event.currentTarget;
             capture.setPointerCapture(event.pointerId);
         }}
         onPointerMove={event => {
@@ -165,10 +196,11 @@ export function PhotoEditControls(props: Props) {
             </span>
         </button>}
         {props.hasPhoto && corners.map(([position], index) => <span key={index} data-photo-corner={index}
-            className={`absolute grid size-6 touch-none place-items-center ${position}`}>
+            style={{ '--photo-corner-hit': `${hitSize}px` } as React.CSSProperties}
+            className={`absolute z-10 grid touch-none place-items-center ${position}`}>
             <span className="pointer-events-none size-3 rounded-full border border-blue-600 bg-white" />
         </span>)}
         {props.active && props.hasPhoto && <ProductImageToolbar productId={props.id} anchorId={props.anchorId}
-            scale={props.scale} onScale={delta => setScale(delta, true)} onFlip={flip} onRemove={props.remove} />}
+            scale={props.scale} onScale={delta => setScale(delta, true)} alignment={props.alignment} onAlign={props.alignment ? setAlignment : undefined} onFlip={flip} onRemove={props.remove} />}
     </div>;
 }

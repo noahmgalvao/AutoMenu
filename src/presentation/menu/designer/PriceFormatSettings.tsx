@@ -11,10 +11,11 @@ import {
 const fieldClass = 'h-8 min-w-0 w-full rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-800 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500';
 const currencyOptions = [{ value: '', label: 'Sem símbolo' }, ...PRICE_CURRENCIES.map(([value, name]) => ({ value, label: `${value} · ${name}` }))];
 
-export function PriceFormatSettings({ style, setStyle, children }: {
+export function PriceFormatSettings({ style, setStyle, children, compact = false }: {
   style: MenuStyle;
   setStyle: Dispatch<SetStateAction<MenuStyle>>;
   children: ReactNode;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
@@ -25,7 +26,7 @@ export function PriceFormatSettings({ style, setStyle, children }: {
       <div className="min-w-0 flex-1">{children}</div>
       <button type="button" aria-label="Configurações de preço" title="Configurações de preço"
         aria-controls={panelId} aria-expanded={open} onClick={() => setOpen(current => !current)}
-        className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg border focus-visible:outline-2 focus-visible:outline-indigo-500 ${open
+        className={`grid ${compact ? 'size-6' : 'size-8'} shrink-0 place-items-center rounded-lg border focus-visible:outline-2 focus-visible:outline-indigo-500 ${open
           ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}>
         <Settings2 size={15} />
       </button>

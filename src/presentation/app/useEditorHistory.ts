@@ -7,6 +7,13 @@ interface HistoryState {
   productEditSession?: number;
 }
 
+interface HistoryAction {
+  undo: () => Promise<boolean>;
+  redo: () => Promise<boolean>;
+}
+
+type HistoryEntry = HistoryState | HistoryAction;
+
 interface EditorHistoryOptions {
   products: Product[];
   style: MenuStyle;
@@ -16,8 +23,10 @@ interface EditorHistoryOptions {
 }
 
 export function useEditorHistory({ products, style, setProductsRaw, setStyleRaw, pendingPersistActionLabel }: EditorHistoryOptions) {
-  const [history, setHistory] = useState<HistoryState[]>([]);
-  const [future, setFuture] = useState<HistoryState[]>([]);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [future, setFuture] = useState<HistoryEntry[]>([]);
+  const applying = useRef(false);
+  const [isApplying, setIsApplying] = useState(false);
   const nextProductEditSession = useRef(0);
   const productEditSession = useRef<number | undefined>(undefined);
   const handleProductEditChange = useCallback((id: string | null) => {
@@ -50,39 +59,42 @@ export function useEditorHistory({ products, style, setProductsRaw, setStyleRaw,
     setStyleRaw(nextStyle);
   }, [saveCheckpoint, setProductsRaw, setStyleRaw]);
 
-  const undo = () => {
-    if (history.length === 0) {
-      return;
-    }
+  const recordAction = useCallback((action: HistoryAction) => {
+    setHistory(previous => [...previous.slice(-49), action]);
+    setFuture([]);
+  }, []);
 
-    const previous = history[history.length - 1];
-    const newHistory = history.slice(0, -1);
-
-    if (productEditSession.current !== undefined && previous.productEditSession !== productEditSession.current) {
-      document.dispatchEvent(new Event('automenu:close-product-editor'));
+  const navigateHistory = async (direction: 'undo' | 'redo') => {
+    if (applying.current) return;
+    const undoing = direction === 'undo';
+    const entry = undoing ? history[history.length - 1] : future[0];
+    if (!entry) return;
+    const removeEntry = undoing ? setHistory : setFuture;
+    const addEntry = undoing ? setFuture : setHistory;
+    let inverse: HistoryEntry;
+    if ('undo' in entry) {
+      applying.current = true;
+      setIsApplying(true);
+      try {
+        if (!(await entry[direction]())) return;
+      } finally {
+        applying.current = false;
+        setIsApplying(false);
+      }
+      inverse = entry;
+    } else {
+      if (productEditSession.current !== undefined && entry.productEditSession !== productEditSession.current) {
+        document.dispatchEvent(new Event('automenu:close-product-editor'));
+      }
+      inverse = { products, style, productEditSession: entry.productEditSession };
+      setProductsRaw(entry.products);
+      setStyleRaw(entry.style);
     }
-    setFuture((prev) => [{ products, style, productEditSession: previous.productEditSession }, ...prev]);
-    setProductsRaw(previous.products);
-    setStyleRaw(previous.style);
-    setHistory(newHistory);
+    removeEntry(entries => entries.filter(candidate => candidate !== entry));
+    addEntry(entries => undoing ? [inverse, ...entries] : [...entries, inverse]);
   };
-
-  const redo = () => {
-    if (future.length === 0) {
-      return;
-    }
-
-    const next = future[0];
-    const newFuture = future.slice(1);
-
-    if (productEditSession.current !== undefined && next.productEditSession !== productEditSession.current) {
-      document.dispatchEvent(new Event('automenu:close-product-editor'));
-    }
-    setHistory((prev) => [...prev, { products, style, productEditSession: next.productEditSession }]);
-    setProductsRaw(next.products);
-    setStyleRaw(next.style);
-    setFuture(newFuture);
-  };
+  const undo = () => void navigateHistory('undo');
+  const redo = () => void navigateHistory('redo');
 
   useEffect(() => {
     const handleKeyboardUndoRedo = (event: KeyboardEvent) => {
@@ -104,14 +116,15 @@ export function useEditorHistory({ products, style, setProductsRaw, setStyleRaw,
     return () => window.removeEventListener('keydown', handleKeyboardUndoRedo);
   }, [history, future, products, style]);
 
-  const clearHistory = useCallback(() => {
-    setHistory([]);
-    setFuture([]);
+  const clearHistory = useCallback((keepMenuActions = false) => {
+    const retain = (entries: HistoryEntry[]) => keepMenuActions ? entries.filter(entry => 'undo' in entry) : [];
+    setHistory(retain);
+    setFuture(retain);
   }, []);
 
   return {
     setProducts, setStyle, setProductsAndStyle,
-    canUndo: history.length > 0, canRedo: future.length > 0,
-    undo, redo, clearHistory, handleProductEditChange,
+    canUndo: !isApplying && history.length > 0, canRedo: !isApplying && future.length > 0,
+    undo, redo, clearHistory, recordAction, handleProductEditChange,
   };
 }

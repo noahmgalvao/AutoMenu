@@ -244,10 +244,13 @@ export const canApplyLiveColumnWidths = (
   });
 };
 
+const limitFeedbackTimers = new WeakMap<HTMLElement, number>();
+
 export const triggerLimitFeedback = (element: HTMLElement | null | undefined) => {
   if (!element) return;
+  window.clearTimeout(limitFeedbackTimers.get(element));
   element.classList.remove('automenu-limit-feedback');
   void element.offsetWidth;
   element.classList.add('automenu-limit-feedback');
-  window.setTimeout(() => element.classList.remove('automenu-limit-feedback'), 850);
+  limitFeedbackTimers.set(element, window.setTimeout(() => element.classList.remove('automenu-limit-feedback'), 850));
 };

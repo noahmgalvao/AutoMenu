@@ -260,18 +260,22 @@ export const calculateItemHeight = (
 
     const priceSize = clampFontSize(style, 'productPrice', style.elementStyles?.productPrice?.fontSize, 18);
     const imgScale = style.imageScale || 1;
+    const photoAlignment = style.productPhotoAlignments?.[product.id];
     let contentHeight = 0;
 
     if (isRowLayout) {
         const productGridGap = getProductGridGap(style);
         const usableColWidth = Math.max(40, (containerWidth - (productGridGap * (columnCount - 1))) / columnCount);
-        if (style.showImages && product.image) {
-            const frame = resolveProductImageFrame(style, true);
-            const height = Math.min(usableColWidth, getProductCardImageLimit(style) * imgScale);
-            contentHeight += frame === 'template' && style.design?.image === 'background' ? 36 * imgScale : height;
+        const sidePhoto = photoAlignment === 'left' || photoAlignment === 'right';
+        const photoHeight = style.showImages && product.image
+            ? Math.min(usableColWidth * (sidePhoto ? .42 : 1), getProductCardImageLimit(style) * imgScale)
+            : 0;
+        if (photoHeight && !sidePhoto) {
+            const useBackground = !photoAlignment && resolveProductImageFrame(style, true) === 'template' && style.design?.image === 'background';
+            contentHeight += useBackground ? 36 * imgScale : photoHeight;
         }
         const cardHorizontalPadding = categoryColumnCount > 1 || columnCount > 2 ? 12 : columnCount > 1 ? 16 : 32;
-        const textContentWidth = Math.max(32, usableColWidth - cardHorizontalPadding);
+        const textContentWidth = Math.max(32, usableColWidth - cardHorizontalPadding - (sidePhoto && photoHeight ? photoHeight + 10 : 0));
         const nameCharWidth = fontSize * 0.6;
         const editButtonReserve = categoryColumnCount > 1 || columnCount > 1 ? 24 : 40;
         const nameLines = getSafeLineCount(product.name, Math.max(24, textContentWidth - editButtonReserve), nameCharWidth);
@@ -286,16 +290,17 @@ export const calculateItemHeight = (
         }
 
         const cardVerticalPadding = categoryColumnCount > 1 || columnCount > 2 ? 12 : columnCount > 1 ? 16 : PRODUCT_CARD_VERTICAL_PADDING_PX;
-        contentHeight += cardVerticalPadding + 28;
+        contentHeight = Math.max(contentHeight, sidePhoto ? photoHeight : 0) + cardVerticalPadding + 28;
     } else {
         const hasImage = Boolean(style.showImages && product.image);
+        const stackPhoto = photoAlignment === 'center' || categoryColumnCount >= 3 && !photoAlignment;
         const imgHeight = hasImage
-            ? Math.min(getProductListImageLimit(categoryColumnCount) * imgScale, containerWidth * (categoryColumnCount >= 3 ? 1 : .42))
+            ? Math.min(getProductListImageLimit(categoryColumnCount) * imgScale, containerWidth * (stackPhoto ? 1 : .42))
             : 0;
         const compactLayout = categoryColumnCount > 1;
         const innerWidth = Math.max(80, containerWidth);
         const imageGap = compactLayout ? 8 : 16;
-        const textWidth = hasImage && categoryColumnCount < 3
+        const textWidth = hasImage && !stackPhoto
             ? Math.max(80, innerWidth - imgHeight - imageGap)
             : innerWidth;
 
@@ -332,7 +337,7 @@ export const calculateItemHeight = (
             textHeight += (descSize * descriptionLineHeight * lines) + spacing.productNameToDescription;
         }
 
-        contentHeight = categoryColumnCount >= 3 && hasImage
+        contentHeight = stackPhoto && hasImage
             ? imgHeight + textHeight + PRODUCT_ITEM_VERTICAL_PADDING_PX + 8
             : Math.max(imgHeight, textHeight) + PRODUCT_ITEM_VERTICAL_PADDING_PX + 2;
     }
@@ -420,9 +425,11 @@ const createPageItemHeightCalculator = (
             const categoryImageScale = style.categoryImageScale || 1;
             const aspect = Math.min(3, Math.max(.375, (categoryImage?.width || 1) / (categoryImage?.height || 1)));
             const { limit, widthFraction, titleReserve } = getCategoryPhotoSizing(style, categoryColumnCount);
-            const maxImageWidth = Math.min(categoryColumnWidth * widthFraction, Math.max(0, categoryColumnWidth - titleReserve));
+            const centeredPhoto = categoryImage?.alignment === 'center';
+            const maxImageWidth = centeredPhoto ? categoryColumnWidth
+                : Math.min(categoryColumnWidth * widthFraction, Math.max(0, categoryColumnWidth - titleReserve));
             const imageWidth = categoryImage?.url ? Math.min(maxImageWidth, limit * categoryImageScale * Math.min(aspect, 1)) : 0;
-            const imageReserve = imageWidth ? imageWidth + 8 : 0;
+            const imageReserve = imageWidth && !centeredPhoto ? imageWidth + 8 : 0;
             const letterSpacing = categoryStyle.letterSpacing || 0;
             const categoryCharWidth = (categoryFontSize * 0.6) + letterSpacing;
             const lines = getSafeLineCount(
@@ -431,7 +438,9 @@ const createPageItemHeightCalculator = (
                 categoryCharWidth
             );
             const imageHeight = imageWidth / aspect;
-            return Math.max(categoryFontSize * 1.25 * lines, imageHeight, 28) + spacing.categoryToProduct + 8 + templateCategoryExtra(style);
+            const textHeight = Math.max(categoryFontSize * 1.25 * lines, 28);
+            return (centeredPhoto && imageHeight ? textHeight + imageHeight + 4 : Math.max(textHeight, imageHeight))
+                + spacing.categoryToProduct + 8 + templateCategoryExtra(style);
         }
         if (item.type === 'product-item') return calculateItemHeight(item.data, style, false, 1, categoryColumnWidth, categoryColumnCount);
         if (item.type === 'free-text-row') {

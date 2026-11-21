@@ -220,7 +220,7 @@ const App: React.FC = () => {
               onClose={() => setIsProfileMenuOpen(false)}
               onSelectMenu={(menuId) => void handleSelectMenu(menuId)}
               onCreateMenu={() => void handleCreateMenu()}
-              onRenameMenu={handleRenameMenu}
+              onRenameMenu={async (id, name) => { await handleRenameMenu(id, name); }}
               onDeleteMenus={handleDeleteMenus}
               onOpenSettings={() => {
                 setIsProfileMenuOpen(false);

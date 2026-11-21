@@ -949,25 +949,8 @@ export const useDraggableInteractions = (
             onStyleUpdate(previous => ({ ...previous, ...layers, name: 'Custom' }));
         }
 
-        clearPendingActivation();
-        removeGlobalListenersRef.current();
-        removeNativeTouchBlocker();
-        clearInvalidDragTargets();
-        restoreScrollableAncestors();
-        restoreBodyDragStyles();
-        resetDragState();
-    }, [
-        clearInvalidDragTargets,
-        clearPendingActivation,
-        removeNativeTouchBlocker,
-        onCommitCategoryOrder,
-        onCommitProductOrder,
-        onStyleUpdate,
-        products,
-        resetDragState,
-        restoreBodyDragStyles,
-        restoreScrollableAncestors,
-    ]);
+        cancelAndCleanup();
+    }, [cancelAndCleanup, onCommitCategoryOrder, onCommitProductOrder, onStyleUpdate, products]);
 
     useEffect(() => {
         performCommitAndCleanupRef.current = performCommitAndCleanup;

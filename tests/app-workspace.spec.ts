@@ -16,7 +16,7 @@ async function openWorkspace(page: Page, names = ['Menu de teste']) {
   const token = `${encode({ alg: 'HS256' })}.${encode({ sub: userId, exp: Math.floor(Date.now() / 1000) + 3600 })}.mock`;
   let menus = names.map((name, index) => ({
     id: `30000000-0000-4000-8000-${String(index + 3).padStart(12, '0')}`,
-    workspace_id: workspaceId, name, status: 'draft', current_draft_version_id: versionId,
+    workspace_id: workspaceId, name, status: 'draft', current_draft_version_id: versionId, created_at: timestamp, updated_at: timestamp,
   }));
   const deletionBatches: string[][] = [];
 
@@ -27,22 +27,25 @@ async function openWorkspace(page: Page, names = ['Menu de teste']) {
   await page.route('**/rest/v1/**', route => {
     const requestUrl = new URL(route.request().url());
     const table = requestUrl.pathname.split('/').pop();
-    if (table === 'menus' && route.request().method() === 'DELETE') {
-      const ids = requestUrl.searchParams.get('id')?.match(/^in\.\((.+)\)$/)?.[1].split(',') ?? [];
-      deletionBatches.push(ids);
-      menus = menus.filter(menu => !ids.includes(menu.id));
+    if (table === 'menus' && route.request().method() === 'PATCH') {
+      const editorPatch = route.request().postDataJSON();
+      const ids = requestUrl.searchParams.get('id')?.match(/^in\.\((.+)\)$/)?.[1].split(',')
+        ?? [requestUrl.searchParams.get('id')?.replace(/^eq\./, '') ?? ''];
+      if (editorPatch.status === 'archived') deletionBatches.push(ids);
+      menus = menus.map(menu => ids.includes(menu.id) ? { ...menu, ...editorPatch } : menu);
+      if (requestUrl.searchParams.has('select')) return route.fulfill({ json: menus.find(menu => ids.includes(menu.id)) });
       return route.fulfill({ status: 204 });
     }
-    if (table === 'ensure_my_workspace_menu' && !menus.length) {
+    if (table === 'ensure_my_workspace_menu' && !menus.some(menu => menu.status !== 'archived')) {
       const menu = { id: '30000000-0000-4000-8000-000000000099', workspace_id: workspaceId, name: 'Cardápio 1',
-        status: 'draft', current_draft_version_id: versionId };
-      menus = [menu];
+        status: 'draft', current_draft_version_id: versionId, created_at: timestamp, updated_at: timestamp };
+      menus = [...menus, menu];
       return route.fulfill({ json: menu });
     }
     const responses: Record<string, unknown> = {
       profiles: { user_id: userId, full_name: 'Editor de teste', default_workspace_id: workspaceId, created_at: timestamp, updated_at: timestamp },
       workspaces: { id: workspaceId, name: 'Restaurante de teste', slug: 'teste', owner_user_id: userId, status: 'active' },
-      menus,
+      menus: menus.filter(menu => menu.status !== 'archived'),
       menu_versions: [{ id: versionId, menu_id: menuId, version_number: 1, version_type: 'draft', created_at: timestamp,
         render_snapshot: { products, style, sortOption }, editor_state: { style, sortOption, freeTextProducts: [] } }],
     };
@@ -152,6 +155,32 @@ test('menu selection deletes only the checked menus in a single request and move
   await dialog.getByRole('button', { name: 'Excluir', exact: true }).click();
   await expect(activeMenuName).toHaveText('Cardápio 1');
   expect(deletionBatches[1]).toEqual(['30000000-0000-4000-8000-000000000005']);
+});
+
+test('menu rename and deletion support undo and redo', async ({ page }) => {
+  await openWorkspace(page, ['Menu ativo', 'Reserva']);
+  const profile = page.getByRole('button', { name: 'Meu perfil' });
+  const activeName = page.locator('nav span.truncate').first();
+  await profile.click();
+  await page.getByTitle('Renomear', { exact: true }).first().click();
+  await page.locator('input:focus').fill('Menu atualizado');
+  await page.getByTitle('Salvar nome').click();
+  await expect(activeName).toHaveText('Menu atualizado');
+  if (await profile.getAttribute('aria-expanded') === 'true') await profile.click();
+  await page.getByTitle('Desfazer', { exact: true }).click();
+  await expect(activeName).toHaveText('Menu ativo');
+  await page.getByTitle('Refazer', { exact: true }).click();
+  await expect(activeName).toHaveText('Menu atualizado');
+
+  await profile.click();
+  await page.getByTitle('Excluir cardápio', { exact: true }).first().click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Excluir', exact: true }).click();
+  await expect(activeName).toHaveText('Reserva');
+  if (await profile.getAttribute('aria-expanded') === 'true') await profile.click();
+  await page.getByTitle('Desfazer', { exact: true }).click();
+  await expect(activeName).toHaveText('Menu atualizado');
+  await page.getByTitle('Refazer', { exact: true }).click();
+  await expect(activeName).toHaveText('Reserva');
 });
 
 test('settings keeps its close buttons visible and numeric typing commits at the bounds', async ({ page }) => {

@@ -52,19 +52,18 @@ test('image actions reflect each photo group and adding enables it with the shar
 
   const increase = page.getByRole('button', { name: 'Aumentar imagens de categorias' });
   const decrease = page.getByRole('button', { name: 'Diminuir imagens de categorias' });
-  for (let step = 0; step < 16; step++) {
-    if (await increase.isDisabled()) break;
-    await increase.click();
-  }
-  await expect(increase).toBeDisabled();
-  const controls = increase.locator('..');
-  await expect(controls).toContainText('250%');
-  for (let step = 0; step < 21; step++) {
-    if (await decrease.isDisabled()) break;
-    await decrease.click();
-  }
-  await expect(decrease).toBeDisabled();
-  await expect(controls).toContainText(/\b50%/);
+  const value = increase.locator('..').locator('span');
+  for (let step = 0; step < 16 && await value.textContent() !== '250%'; step++) await increase.click();
+  await expect(value).toHaveText('250%');
+  await expect(value).toHaveClass(/automenu-limit-feedback/);
+  await expect(value).not.toHaveClass(/automenu-limit-feedback/);
+  await increase.click();
+  await expect(value).toHaveClass(/automenu-limit-feedback/);
+  await expect(value).toHaveText('250%');
+
+  for (let step = 0; step < 21 && await value.textContent() !== '50%'; step++) await decrease.click();
+  await expect(value).toHaveText('50%');
+  await expect(value).toHaveClass(/automenu-limit-feedback/);
 });
 
 test('product designer also offers Add when its photo group is empty and hidden', async ({ page }) => {

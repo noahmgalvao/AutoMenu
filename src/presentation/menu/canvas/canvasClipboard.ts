@@ -57,7 +57,7 @@ export function pasteCanvasObjects(products: Product[], style: MenuStyle, conten
     const next = { ...style, name: 'Custom', customCategoryOrder: [...initialOrder],
         customProductOrder: { ...style.customProductOrder }, categoryPositions: { ...style.categoryPositions }, categoryPlacements: { ...style.categoryPlacements },
         categoryImages: { ...style.categoryImages }, categoryDividerStyles: { ...style.categoryDividerStyles },
-        productPhotoCrops: { ...style.productPhotoCrops }, productImageFlips: { ...style.productImageFlips },
+        productPhotoAlignments: { ...style.productPhotoAlignments }, productPhotoCrops: { ...style.productPhotoCrops }, productImageFlips: { ...style.productImageFlips },
         productDividerStyles: { ...style.productDividerStyles }, hiddenProductIds: [...style.hiddenProductIds],
         freeTextFills: { ...style.freeTextFills }, freeTextBorders: { ...style.freeTextBorders }, freeTextBackgrounds: { ...style.freeTextBackgrounds }, addedImages: [...(style.addedImages || [])] };
     let result = [...products];
@@ -81,6 +81,7 @@ export function pasteCanvasObjects(products: Product[], style: MenuStyle, conten
         next.hiddenProductIds = next.hiddenProductIds.filter(value => value !== id);
         delete next.productDividerStyles[id];
         delete next.productPhotoCrops[id];
+        delete next.productPhotoAlignments[id];
         delete next.productImageFlips[id];
         delete next.freeTextBorders[id];
         delete next.freeTextFills[id];
@@ -153,6 +154,7 @@ export function pasteCanvasObjects(products: Product[], style: MenuStyle, conten
         }
         if (keepHidden && source.hiddenProductIds?.includes(p.id)) next.hiddenProductIds.push(id);
         copySetting(next.productPhotoCrops, id, source.productPhotoCrops?.[p.id]);
+        copySetting(next.productPhotoAlignments, id, source.productPhotoAlignments?.[p.id]);
         copySetting(next.productImageFlips, id, source.productImageFlips?.[p.id]);
         copySetting(next.productDividerStyles, id, source.productDividerStyles?.[p.id]);
         copySetting(next.freeTextBorders, id, source.freeTextBorders?.[p.id]);

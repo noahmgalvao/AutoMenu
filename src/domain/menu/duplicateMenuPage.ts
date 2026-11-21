@@ -89,6 +89,7 @@ export function duplicateMenuPage(page: PageLayout, pageIndex: number, products:
         productDividerStyles: extend(style.productDividerStyles, productCopies),
         productImageFlips: extend(style.productImageFlips, productCopies),
         productPhotoCrops: extend(style.productPhotoCrops, productCopies),
+        productPhotoAlignments: extend(style.productPhotoAlignments, productCopies),
         freeTextFills: extend(style.freeTextFills, productCopies),
         freeTextBorders: extend(style.freeTextBorders, productCopies),
         freeTextLayers: extend(style.freeTextLayers, productCopies),

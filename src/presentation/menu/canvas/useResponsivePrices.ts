@@ -43,8 +43,22 @@ function measurePriceRow(row: HTMLElement) {
     const dividerGap = row.hasAttribute('data-product-leader') ? rowGap : 0;
     const inlineWidth = row.clientWidth - nameWidth - rowGap - dividerGap;
     const fit = largestPriceSize(inlineWidth, minimum, base, measurePrice);
-    const wrappedSize = fit === null ? largestPriceSize(row.clientWidth, minimum, base, measurePrice) : base;
-    return { row, price, base, minimum, fit, wrappedSize };
+    return { row, price, base, minimum, fit, measurePrice };
+}
+
+function measureWrappedPriceSpace(row: HTMLElement, slot: HTMLElement | null) {
+    const flow = row.closest<HTMLElement>('[data-product-flow][data-photo-flow="left"], [data-product-flow][data-photo-flow="right"]');
+    const photo = flow?.querySelector<HTMLElement>(':scope > [data-template-image]');
+    if (!photo || !slot) return { left: 0, right: 0 };
+    const bounds = row.getBoundingClientRect();
+    if (slot.getBoundingClientRect().top + .5 < photo.getBoundingClientRect().bottom) return { left: 0, right: 0 };
+    const container = row.parentElement!.getBoundingClientRect();
+    const scale = bounds.width / row.offsetWidth || 1;
+    const padding = getComputedStyle(row.parentElement!);
+    return {
+        left: Math.max(0, (bounds.left - container.left) / scale - px(padding.paddingLeft)),
+        right: Math.max(0, (container.right - bounds.right) / scale - px(padding.paddingRight)),
+    };
 }
 
 export function useResponsivePrices(rootRef: RefObject<HTMLElement | null>, style: MenuStyle) {
@@ -52,7 +66,7 @@ export function useResponsivePrices(rootRef: RefObject<HTMLElement | null>, styl
     const [name, price] = [style.elementStyles.productName, style.elementStyles.productPrice];
     const textMetrics = JSON.stringify([
         style.fontFamily, style.minimumFontSize, style.fontSizeLimits,
-        style.design?.price,
+        style.design?.price, style.productPhotoAlignments, price?.textAlign,
         name?.fontFamily, name?.fontWeight, name?.italic, name?.fontSize, name?.textTransform, name?.letterSpacing,
         price?.fontFamily, price?.fontWeight, price?.italic, price?.fontSize,
     ]);
@@ -61,7 +75,7 @@ export function useResponsivePrices(rootRef: RefObject<HTMLElement | null>, styl
         if (!root) return;
         let frame = 0;
         const observed = new Set<HTMLElement>();
-        const widths = new WeakMap<HTMLElement, number>();
+        const sizes = new WeakMap<HTMLElement, string>();
         const measure = () => {
             frame = 0;
             const rows = new Set(root.querySelectorAll<HTMLElement>('[data-product-text-row]'));
@@ -82,8 +96,14 @@ export function useResponsivePrices(rootRef: RefObject<HTMLElement | null>, styl
 
             // Compare against the configured size on each pass so a wider column can restore it.
             const sharedSize = metrics.reduce((size, metric) => Math.min(size, metric.fit ?? Infinity), Infinity);
-            for (const { row, price, base, minimum, fit, wrappedSize } of metrics) {
-                row.toggleAttribute('data-price-wrap', fit === null);
+            for (const { row, price, base, minimum, fit, measurePrice } of metrics) {
+                const wrapped = fit === null;
+                row.toggleAttribute('data-price-wrap', wrapped);
+                const slot = price.closest<HTMLElement>('[data-product-price-slot]');
+                const { left, right } = wrapped ? measureWrappedPriceSpace(row, slot) : { left: 0, right: 0 };
+                slot?.style.setProperty('--automenu-price-left', `${left}px`);
+                slot?.style.setProperty('--automenu-price-right', `${right}px`);
+                const wrappedSize = wrapped ? largestPriceSize(row.clientWidth + left + right, minimum, base, measurePrice) : base;
                 price.toggleAttribute('data-price-stacked', wrappedSize === null);
                 const size = fit === null ? wrappedSize ?? minimum : sharedSize;
                 const fitted = size < base ? `${size}px` : '';
@@ -96,9 +116,9 @@ export function useResponsivePrices(rootRef: RefObject<HTMLElement | null>, styl
         const resize = new ResizeObserver(entries => {
             for (const entry of entries) {
                 if (!(entry.target instanceof HTMLElement)) continue;
-                const width = entry.contentRect.width;
-                if (width === widths.get(entry.target)) continue;
-                widths.set(entry.target, width);
+                const size = `${entry.contentRect.width}:${entry.contentRect.height}`;
+                if (size === sizes.get(entry.target)) continue;
+                sizes.set(entry.target, size);
                 schedule();
             }
         });

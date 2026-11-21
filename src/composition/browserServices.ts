@@ -8,7 +8,7 @@ import * as auth from '../infrastructure/supabase/auth';
 import { isSupabaseConfigured } from '../infrastructure/supabase/client';
 import { fetchFavorites, isPermanentFavoriteError, persistFavorite } from '../infrastructure/supabase/templateFavorites';
 import { loadWorkspaceData, loadWorkspaceMenuData } from '../infrastructure/supabase/workspace/loadWorkspace';
-import { createWorkspaceMenu, deleteWorkspaceMenus, renameWorkspaceMenu } from '../infrastructure/supabase/workspace/menus';
+import { createWorkspaceMenu, deleteWorkspaceMenus, renameWorkspaceMenu, restoreWorkspaceMenus } from '../infrastructure/supabase/workspace/menus';
 import { linkSyncedMenuProducts, listMenuProductSources, listMenuProductSyncs, unlinkSyncedMenuProducts } from '../infrastructure/supabase/workspace/productLinks';
 import { getMenuPublication, loadPublicMenuPublication, publishWorkspaceMenu, updatePublicationMenuSlug } from '../infrastructure/supabase/workspace/publications';
 import { listMenuRevisions, loadMenuRevisionState } from '../infrastructure/supabase/workspace/revisions';
@@ -19,7 +19,7 @@ export const browserServices = {
   auth: { ...auth, isConfigured: isSupabaseConfigured },
   workspace: {
     loadWorkspaceData, loadWorkspaceMenuData, saveWorkspaceState,
-    createWorkspaceMenu, deleteWorkspaceMenus, renameWorkspaceMenu,
+    createWorkspaceMenu, deleteWorkspaceMenus, renameWorkspaceMenu, restoreWorkspaceMenus,
     updateAccountIdentity, updateWorkspaceRuleSettings, listMenuRevisions, loadMenuRevisionState,
     listMenuProductSources, listMenuProductSyncs, linkSyncedMenuProducts, unlinkSyncedMenuProducts,
   },

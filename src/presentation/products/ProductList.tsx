@@ -255,10 +255,10 @@ export const ProductList: React.FC<ProductListProps> = ({
                             iconSize={15}
                           />
                         </button>
-                        {style.categoryImages?.[cat]?.url && (
+                        {isSelected && style.categoryImages?.[cat]?.url && (
                           <button
                             type="button"
-                            className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-white opacity-100 lg:opacity-0 lg:group-hover/category-image:opacity-100"
+                            className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-white"
                             onClick={(e) => { e.stopPropagation(); onRemoveCategoryImage(cat); }}
                             onPointerDown={(e) => e.stopPropagation()}
                             title="Remover imagem da categoria"
@@ -394,10 +394,11 @@ export const ProductList: React.FC<ProductListProps> = ({
                             <Edit3 size={12} />
                           </div>
                         </div>
-                        {product.image && (
+                        {pIsSelected && product.image && (
                           <button 
-                            onClick={() => onRemoveProductImage(product.id)}
-                            className="absolute top-1 left-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto"
+                            onClick={(event) => { event.stopPropagation(); onRemoveProductImage(product.id); }}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            className="absolute top-1 left-1 bg-red-500 text-white rounded-full p-0.5"
                             style={{ width: 14, height: 14 }}
                             title="Remover imagem"
                           >

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, Minus, Plus } from 'lucide-react';
+import { triggerLimitFeedback } from '../canvas/textFit';
 import { roundFontSize } from '../../../domain/menu/styleRules';
 
 interface FontSizeInputProps {
@@ -57,11 +58,7 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
         const normalizedValue = normalizeValue(nextValue);
         const accepted = onChange(normalizedValue);
         if (accepted === false) {
-            const input = inputRef.current;
-            input?.classList.remove('automenu-limit-feedback');
-            if (input) void input.offsetWidth;
-            input?.classList.add('automenu-limit-feedback');
-            window.setTimeout(() => input?.classList.remove('automenu-limit-feedback'), 850);
+            triggerLimitFeedback(inputRef.current);
             restoreCurrentValue();
             return false;
         }
@@ -70,7 +67,11 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
     stepRef.current = (direction) => {
         const current = stepValueRef.current ?? min;
         const next = normalizeValue(current + direction);
-        if (next === current && stepValueRef.current !== undefined) return;
+        if (next === current && stepValueRef.current !== undefined) {
+            if (!inputRef.current?.classList.contains('automenu-limit-feedback')) triggerLimitFeedback(inputRef.current);
+            return;
+        }
+        if (next === min || next === max) triggerLimitFeedback(inputRef.current);
         if (applyValue(next)) {
             stepValueRef.current = next;
             setDraftValue(String(next));
@@ -159,11 +160,13 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
                 onEditEnd?.();
                 const parsedValue = Number(draftValue);
                 if (!draftValue.trim() || !Number.isFinite(parsedValue) || (!commitOnBlur && parsedValue < min)) {
+                    if (draftValue.trim() && parsedValue < min) triggerLimitFeedback(inputRef.current);
                     restoreCurrentValue();
                     return;
                 }
 
                 const normalizedValue = normalizeValue(parsedValue);
+                if (parsedValue < min || max !== undefined && parsedValue > max) triggerLimitFeedback(inputRef.current);
                 setDraftValue(String(normalizedValue));
                 if (normalizedValue !== effectiveValue) applyValue(normalizedValue);
             }}

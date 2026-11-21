@@ -1,3 +1,4 @@
+import { triggerLimitFeedback } from '../canvas/textFit';
 import { clearCanvasAlignment } from './canvasAlignment';
 import React, { useState } from 'react';
 import { getImageLayerIndexes } from '../../../domain/menu/imageLayers';
@@ -156,6 +157,11 @@ export const useImageManipulation = (
 
     const resizeImageByDelta = (imgId: string, delta: number) => {
         if (!delta) return;
+        const image = style.addedImages?.find(item => item.id === imgId);
+        if (image && image.width + delta < 50) {
+            const overlay = document.querySelector<HTMLElement>(`[data-image-selection-overlay="${CSS.escape(imgId)}"]`);
+            if (!overlay?.classList.contains('automenu-limit-feedback')) triggerLimitFeedback(overlay);
+        }
         if (onStyleUpdate) {
             const imageIds = getBatchImageIds(imgId);
             onStyleUpdate(prev => ({
@@ -247,6 +253,10 @@ export const useImageManipulation = (
             const horizontalLimit = fromLeft ? right : pageWidthPx - x;
             const verticalLimit = (fromTop ? bottom : pageHeightPx - y) / aspectRatio;
             const nextWidth = clamp(width + delta, 50, Math.max(50, Math.min(horizontalLimit, verticalLimit)));
+            if (Math.abs(nextWidth - (width + delta)) > .5) {
+                const overlay = document.querySelector<HTMLElement>(`[data-image-selection-overlay="${CSS.escape(id)}"]`);
+                if (!overlay?.classList.contains('automenu-limit-feedback')) triggerLimitFeedback(overlay);
+            }
             positions.set(id, { width: nextWidth, x: fromLeft ? right - nextWidth : x, y: fromTop ? bottom - nextWidth * aspectRatio : y });
         }
         return positions;

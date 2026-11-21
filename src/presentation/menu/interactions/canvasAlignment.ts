@@ -51,8 +51,11 @@ export function alignCanvasBox(page: HTMLElement, moving: Box, excluded: Readonl
 }
 
 let overlay: HTMLDivElement | undefined;
+let releaseListeners: AbortController | undefined;
 
 export function clearCanvasAlignment() {
+  releaseListeners?.abort();
+  releaseListeners = undefined;
   overlay?.remove();
   overlay = undefined;
 }
@@ -66,6 +69,14 @@ export function showCanvasAlignment(page: HTMLElement, guides: Guide[]) {
     overlay.dataset.printControl = 'true';
     overlay.setAttribute('aria-hidden', 'true');
     page.append(overlay);
+    releaseListeners = new AbortController();
+    const options = { capture: true, signal: releaseListeners.signal };
+    const released = () => queueMicrotask(clearCanvasAlignment);
+    window.addEventListener('pointerup', released, options);
+    window.addEventListener('pointercancel', released, options);
+    window.addEventListener('touchend', event => { if (!event.touches.length) released(); }, options);
+    window.addEventListener('touchcancel', released, options);
+    window.addEventListener('blur', released, options);
   }
   const bounds = page.getBoundingClientRect();
   overlay!.style.setProperty('--canvas-guide-pixel', `${page.offsetWidth / bounds.width}px`);

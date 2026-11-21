@@ -170,8 +170,38 @@ body {
   flex-basis: 100%;
 }
 
-[data-price-wrap] > [data-price-alignment="left"] { margin-inline: 0 auto; }
-[data-price-wrap] > [data-price-alignment="center"] { margin-inline: auto; }
+[data-product-price-slot] {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  justify-content: flex-end;
+}
+[data-product-price-slot][data-price-alignment="center"] { flex: 1 0 auto; justify-content: center; }
+[data-product-text-row]:has(> [data-product-price-slot][data-price-alignment="center"]) > [data-product-title-group] {
+  flex-grow: 0 !important;
+}
+[data-price-wrap] > [data-product-price-slot] {
+  flex: 0 0 calc(100% + var(--automenu-price-left, 0px) + var(--automenu-price-right, 0px));
+  margin-inline: calc(-1 * var(--automenu-price-left, 0px)) calc(-1 * var(--automenu-price-right, 0px));
+}
+[data-price-wrap] > [data-product-price-slot][data-price-alignment="left"] { justify-content: flex-start; }
+[data-product-price-slot] > [data-price-stacked] { align-items: flex-end; }
+[data-price-wrap] > [data-product-price-slot][data-price-alignment="left"] > [data-price-stacked] { align-items: flex-start; }
+[data-product-price-slot][data-price-alignment="center"] > [data-price-stacked] { align-items: center; }
+
+[data-photo-flow="left"] > [data-template-image] { float: left; margin-inline-end: .65rem; }
+[data-photo-flow="right"] > [data-template-image] { float: right; margin-inline-start: .65rem; }
+[data-photo-flow="stack"] > [data-template-image] { margin-block-end: .5rem; }
+[data-category-photo-align="right"] { order: 1; }
+[data-template-category]:has(> [data-category-photo-align="center"]) { flex-direction: column; align-items: stretch; }
+[data-category-photo-align="center"] { align-self: center; }
+
+[data-photo-corner] { width: 24px; height: 24px; }
+@media (pointer: coarse), (max-width: 767px) {
+  [data-photo-corner] { width: var(--photo-corner-hit, 48px); height: var(--photo-corner-hit, 48px); }
+}
+
 [data-price-stacked][data-price-alignment="left"] { align-items: flex-start; }
 [data-price-stacked][data-price-alignment="center"] { align-items: center; }
 
@@ -244,12 +274,11 @@ body {
 
 [data-canvas-alignment] { position: absolute; inset: 0; z-index: 1000; pointer-events: none; }
 [data-canvas-guide] {
-  --guide-stroke: calc(2.5 * var(--canvas-guide-pixel, 1px));
+  --guide-stroke: calc(2 * var(--canvas-guide-pixel, 1px));
   position: absolute;
   border-width: 0;
   border-style: dashed;
   border-color: #a21caf;
-  filter: drop-shadow(0 0 var(--canvas-guide-pixel, 1px) white);
 }
 [data-canvas-guide-kind="center"] {
   --guide-stroke: calc(3 * var(--canvas-guide-pixel, 1px));

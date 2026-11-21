@@ -1,5 +1,5 @@
 import type { FontSizeLimitKey, MenuStyle, Product } from '../../../domain/menu/model';
-import { clampFontSize, clampPhotoScale } from '../../../domain/menu/styleRules';
+import { clampFontSize, clampPhotoScale, MIN_PHOTO_SCALE, MAX_PHOTO_SCALE, resolveMinimumFontSize, resolveFontSizeLimits } from '../../../domain/menu/styleRules';
 import type { CanvasScaleTarget } from './CanvasTransformHandles';
 
 type PhotoScaleField = 'imageScale' | 'categoryImageScale';
@@ -12,7 +12,7 @@ const defaultSize: Record<FontSizeLimitKey, number> = {
     menuTitle: 48, menuSubtitle: 18, category: 24, productName: 18, productDescription: 14, productPrice: 18, freeText: 18,
 };
 
-export function captureCanvasObjectScale(style: MenuStyle, target: CanvasScaleTarget, products: Product[], width: number) {
+export function captureCanvasObjectScale(style: MenuStyle, target: CanvasScaleTarget, products: Product[], width: number, onLimit?: () => void) {
     const selected = products.filter(product => !style.hiddenProductIds.includes(product.id)
         && (target.type === 'category' ? product.category === target.id : product.id === target.id));
     const regular = selected.filter(product => !product.isFreeText);
@@ -41,8 +41,20 @@ export function captureCanvasObjectScale(style: MenuStyle, target: CanvasScaleTa
     }));
     const photoSizes = photos.map(field => ({ field, size: clampPhotoScale(style[field] || 1) }));
 
+    const minimumFont = resolveMinimumFontSize(style);
+    const fontLimits = resolveFontSizeLimits(style);
+    const fontSizes = [...sharedSizes, ...localSizes.map(item => ({ field: 'freeText' as const, size: item.size }))];
+    const minimum = Math.min(...fontSizes.map(({ size }) => minimumFont / size), ...photoSizes.map(({ size }) => MIN_PHOTO_SCALE / size));
+    const maximum = Math.max(...fontSizes.map(({ field, size }) => Math.max(minimumFont, fontLimits[field]) / size),
+        ...photoSizes.map(({ size }) => MAX_PHOTO_SCALE / size));
+    let pastLimit = false;
+
     return (factor: number): ScaleChange | undefined => {
-        if (!Number.isFinite(factor) || factor === 1) return undefined;
+        if (!Number.isFinite(factor)) return undefined;
+        const limited = minimum <= maximum && factor !== 1 && (factor <= minimum || factor >= maximum);
+        if (limited && !pastLimit) onLimit?.();
+        pastLimit = limited;
+        if (factor === 1) return undefined;
 
         const elementStyles = { ...style.elementStyles };
         let changesStyle = false;

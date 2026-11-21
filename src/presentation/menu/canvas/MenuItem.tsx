@@ -1,4 +1,4 @@
-import { Edit3, CopyCheck, MoreHorizontal } from 'lucide-react';
+import { Edit3, CopyCheck, MoreHorizontal, Trash2 } from 'lucide-react';
 import { CanvasActionGroup, canvasActionButtonClass } from './CanvasControls';
 import { CanvasScaleHandles, CanvasRotationHandle } from './CanvasTransformHandles';
 import { headingElementId, headingSelectionId, headingMeasurementKey, type MenuHeadingField } from '../../../domain/menu/menuHeadings';
@@ -241,6 +241,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         } : undefined;
         return <InlineStyleToolbar
                 targetElementId={formattingTarget.elementId}
+                priceAlignment={type === 'product' && formattingTarget.field === 'price'}
                 positionTargetElementId={type === 'product' ? `product-name-${id}` : undefined}
                 value={{ ...value, fontSize: clampFontSize(style, fontKey, value?.fontSize, fallbackSize) }}
                 maxFontSize={fontSizeLimits[fontKey]}
@@ -263,7 +264,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     ? (direction: 1 | -1, amount: number, mode: PriceAdjustmentMode) => handlers.adjustProductPrice?.(id, direction, amount, mode)
                     : undefined}
                 priceFormatHeader={type === 'product' && formattingTarget.field === 'price' && handlers.updateStyle
-                    ? <PriceFormatSettings style={style} setStyle={handlers.updateStyle}>Alterar valor</PriceFormatSettings>
+                    ? <PriceFormatSettings compact style={style} setStyle={handlers.updateStyle}>Alterar valor</PriceFormatSettings>
                     : undefined}
                 priceAdjustmentCurrency={getMenuPriceSymbol(style)}
             />;
@@ -277,9 +278,11 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const priceStyle = style.elementStyles?.productPrice || {};
         const baseSize = clampFontSize(style, 'productPrice', priceStyle.fontSize, 18);
         const currency = getMenuPriceSymbol(style);
-        return <div data-template-price data-price-base-size={baseSize} data-price-minimum-size={minimumFontSize}
+        const alignment = priceStyle.textAlign || 'right';
+        return <div data-product-price-slot data-price-alignment={alignment}>
+        <div data-template-price data-price-base-size={baseSize} data-price-minimum-size={minimumFontSize}
             data-menu-border-surface="price" data-price-alignment={priceStyle.textAlign} data-custom-border={getBorderOverride(style, 'price')}
-            className={`relative ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap ${badgeClass}`}
+            className={`relative flex min-w-0 items-center gap-1 whitespace-nowrap ${badgeClass}`}
             style={{
                 background: getSurfaceFill(style, 'price'), borderRadius: style.borders?.price?.radius,
                 ...textContrastFill('productPrice'),
@@ -311,7 +314,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 onPointerDown={event => { if (isEditable) event.stopPropagation(); }}
                 onClick={event => formattingClick(event, 'product', product.id, 'price')}
             >{formatMenuPriceValue(product.price, style)}</span>
-        </div>;
+        </div></div>;
     };
     const activatePhoto = (type: 'product' | 'category', id: string) => {
         handlers.startPhotoEditing?.(type, id);
@@ -329,7 +332,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             scale={(type === 'category' ? style.categoryImageScale : style.imageScale) || 1} crop={crop} flips={flips}
             activate={() => activatePhoto(type, id)}
             choose={() => handlers.choosePhoto(type, id)} remove={() => handlers.removePhoto(type, id)}
-            type={type} updateStyle={handlers.updateStyle} />
+            type={type} updateStyle={handlers.updateStyle}
+            alignment={(type === 'product' ? style.productPhotoAlignments?.[id] : style.categoryImages?.[id]?.alignment) || 'left'} />
     );
     const renderProductPhoto = (product: Product, limit: number, maxWidth: string, inRow = false) => {
         const isEditable = !handlers.readOnly && handlers.isReadyToEdit?.('product', product.id);
@@ -339,7 +343,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const frame = resolveProductImageFrame(style, inRow);
         const hasFrame = frame !== 'template';
         const shaped = hasFrame && frame !== 'fill';
-        const background = inRow && style.design?.image === 'background' && !hasFrame;
+        const alignment = style.productPhotoAlignments?.[product.id];
+        const background = inRow && style.design?.image === 'background' && !hasFrame && !alignment;
         const imageRadius = style.borders?.productImage?.radius;
         const topRadius = Math.min(12, style.borders?.product?.radius ?? getProductCardRadius(style));
         const photoRadius = !shaped && inRow
@@ -352,6 +357,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             <div data-auto-photo-ratio
                 id={handlers.readOnly ? undefined : `product-image-${product.id}`}
                 data-template-image
+                data-photo-positioned={alignment || undefined}
                 data-menu-border-surface="productImage"
                 data-custom-border={getBorderOverride(style, 'productImage')}
                 data-product-image-surface={product.id}
@@ -359,7 +365,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 className={`relative shrink-0 bg-slate-100 select-none ${isEditable ? 'cursor-pointer ring-2 ring-inset ring-indigo-400' : ''}`}
                 style={{
                     ...photoDimensions('product', style.imageScale || 1, limit, maxWidth, frame),
-                    margin: inRow && !background ? '0 auto' : undefined,
+                    marginInline: alignment === 'center' ? 'auto' : undefined,
                     background: getSurfaceFill(style, 'productImage'), borderRadius: photoRadius,
                 }}
                 onClick={event => handlePhotoClick(event, 'product', product.id)}
@@ -511,6 +517,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             onClick={() => handlers.editHeading?.(activeField, pageIndex)}><Edit3 size={14} /></button>
                         <button type="button" className={canvasActionButtonClass} aria-label="Seleção múltipla" title="Seleção múltipla"
                             aria-pressed={handlers.multiSelectMode} onClick={() => handlers.setMultiSelectMode(!handlers.multiSelectMode)}><CopyCheck size={14} /></button>
+                        <button type="button" className={`${canvasActionButtonClass} !text-red-600`} aria-label="Remover cabeçalho" title="Remover cabeçalho"
+                            onClick={() => handlers.removeHeading?.(pageIndex)}><Trash2 size={14} /></button>
                         <button type="button" className={canvasActionButtonClass} aria-label="Mais ações" title="Mais ações"
                             data-open-object-menu="true" data-object-menu-type={activeField} data-object-menu-id={activeTarget.id}
                             onClick={event => handlers.openObjectMenu?.(event, activeTarget)}><MoreHorizontal size={16} /></button>
@@ -530,6 +538,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const categoryAlign = catStyle.textAlign || 'left';
         const categoryImage = style.categoryImages?.[item.data];
         const categoryImageScale = style.categoryImageScale || 1;
+        const photoAlignment = categoryImage?.alignment || 'left';
         const { limit: photoLimit, widthFraction, titleReserve } = getCategoryPhotoSizing(style);
         const categoryDividerPreset = resolveCategoryDivider(style, item.data);
         const renderCategoryDivider = (key: 'before' | 'after') => (
@@ -559,15 +568,13 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             {!handlers.readOnly && <ProductControls type="category" catName={item.data} canMoveUp={false} canMoveDown={false} canMoveLeft={false} canMoveRight={false} handlers={handlers} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showSelectionOutline={false} showAddControls={false} showGridMoveControls={false}/>}
                 <div data-template-category data-menu-border-surface="category" data-custom-border={getBorderOverride(style, 'category')} style={{ background: getSurfaceFill(style, 'category'), borderRadius: style.borders?.category?.radius }} className={`relative flex w-full max-w-full min-w-0 items-center gap-1 ${getSurfaceFill(style, 'category') || getBorderOverride(style, 'category') ? 'py-1' : ''} ${compactControls ? 'px-1' : 'px-2'} ${categoryAlign === 'center' ? 'justify-center' : categoryAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
                     <BorderDecoration style={style} scope="category" />
-                    <MenuMarkerGlyph marker={getMarker(style, 'category')} fontSize={clampFontSize(style, 'category', catStyle.fontSize, 24)}
-                        index={handlers.sortedCategories.filter((id: string) => !id.startsWith(FREE_TEXT_PREFIX)).indexOf(item.data)} color="var(--template-accent)" />
-                    {(categoryAlign === 'center' || categoryAlign === 'right') && renderCategoryDivider('before')}
                     {style.showCategoryImages !== false && (categoryImage?.url || handlers.photoIsLoading?.('category', item.data) || (isEditable && imageMenuProductId === item.data)) && (
                         <div id={handlers.readOnly ? undefined : `category-image-${item.data}`} data-product-image-surface={item.data}
-                            data-auto-photo-ratio className="relative mr-2 shrink-0"
+                            data-auto-photo-ratio data-category-photo-align={photoAlignment}
+                            className="relative shrink-0"
                             onClick={event => handlePhotoClick(event, 'category', item.data)}
                             style={photoDimensions('category', categoryImageScale, photoLimit,
-                                `min(${widthFraction * 100}%, max(0px, calc(100% - ${titleReserve}px)))`, undefined, (categoryImage?.width || 1) / (categoryImage?.height || 1))}>
+                                photoAlignment === 'center' ? '100%' : `min(${widthFraction * 100}%, max(0px, calc(100% - ${titleReserve}px)))`, undefined, (categoryImage?.width || 1) / (categoryImage?.height || 1))}>
                             {categoryImage?.url && <MenuPhoto showLoading={!handlers.readOnly && !handlers.photoIsLoading?.('category', item.data)} src={categoryImage.url} alt="" draggable={false} className="h-full w-full object-cover"
                                 style={{ objectPosition: `${categoryImage.crop?.x ?? 50}% ${categoryImage.crop?.y ?? 50}%`,
                                     transform: `scale(${categoryImage.horizontal ? -1 : 1}, ${categoryImage.vertical ? -1 : 1})` }} />}
@@ -575,6 +582,10 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             {isEditable && photoControls('category', item.data, Boolean(categoryImage?.url), categoryImage?.crop || { x: 50, y: 50 }, categoryImage)}
                         </div>
                     )}
+                    <div data-category-copy className={`relative flex min-w-0 flex-1 items-center gap-1 ${categoryAlign === 'center' ? 'justify-center' : categoryAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
+                    <MenuMarkerGlyph marker={getMarker(style, 'category')} fontSize={clampFontSize(style, 'category', catStyle.fontSize, 24)}
+                        index={handlers.sortedCategories.filter((id: string) => !id.startsWith(FREE_TEXT_PREFIX)).indexOf(item.data)} color="var(--template-accent)" />
+                    {(categoryAlign === 'center' || categoryAlign === 'right') && renderCategoryDivider('before')}
                     <AutoFitText
                         as="h2"
                         text={categoryName(item.data)}
@@ -603,6 +614,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                         contentEditable={Boolean(isEditable)} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'category', item.data)} onKeyDown={handlers.handleKeyDown} onFocus={() => handlers.setEditingField?.('category', item.data, 'category', elementId)} onMouseDown={(e) => { if (!isEditable) e.preventDefault(); }} onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }} onClick={event => formattingClick(event, 'category', item.data, 'category')}
                     />
                     {(categoryAlign === 'left' || categoryAlign === 'center') && renderCategoryDivider('after')}
+                    </div>
                 </div>
             </div>
         );
@@ -633,8 +645,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         
         const categoryColumnCount = style.categoryColumnCount || 1;
         const productColumnCount = style.columnCount || 1;
-        const compactControls = categoryColumnCount > 1;
-        const stackImage = categoryColumnCount >= 3 && style.showImages && Boolean(product.image);
+        const photoAlignment = style.productPhotoAlignments?.[product.id] || 'left';
+        const stackImage = photoAlignment === 'center' || categoryColumnCount >= 3 && !style.productPhotoAlignments?.[product.id];
         const imageSizePx = getProductListImageLimit(categoryColumnCount);
         const rawCustomMarginTop = Number(product.customMarginTop);
         const isFreeTextGhost = product.isFreeText && item.category?.startsWith(FREE_TEXT_PREFIX);
@@ -756,9 +768,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             />
                     </div>
                 ) : (
-                <div className={`flex items-start justify-between ${stackImage ? 'flex-col gap-2' : compactControls ? 'gap-2' : 'gap-4'}`}>
+                <div data-product-flow data-photo-flow={stackImage ? 'stack' : photoAlignment}
+                    className={`flow-root min-w-0 ${isNameCentered ? 'text-center' : isNameRight ? 'text-right' : 'text-left'}`}>
                     {renderProductPhoto(product, imageSizePx, stackImage ? '100%' : '42%')}
-                    <div className={`flex-grow min-w-0 ${stackImage ? 'w-full' : ''} ${isNameCentered ? 'text-center' : isNameRight ? 'text-right' : 'text-left'}`}>
                          <div
                             data-product-text-row="true"
                             data-product-leader={showProductDivider || undefined}
@@ -828,7 +840,6 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             contentEditable={Boolean(isEditable)} tabIndex={isEditable ? 0 : undefined} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'description')} onKeyDown={handlers.handleKeyDown} onFocus={() => handlers.setEditingField?.('product', product.id, 'description', `product-description-${product.id}`)} onPointerDown={(e) => { if (isEditable) e.stopPropagation(); }} onClick={event => formattingClick(event, 'product', product.id, 'description')}
                         />
                     </div>
-                    </div>
                 )}
                 </div>
                 </div>
@@ -885,6 +896,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             >
                 {(item.data as Product[]).map((product, productColumnIndex) => {
                      const isSelected = handlers.isSelected?.('product', product.id) ?? handlers.selectedId === product.id;
+                     const photoAlignment = style.productPhotoAlignments?.[product.id];
+                     const sidePhoto = photoAlignment === 'left' || photoAlignment === 'right';
                      const nameStyle = style.elementStyles?.productName || {};
                      const priceStyle = style.elementStyles?.productPrice || {};
                      const descStyle = style.elementStyles?.productDescription || {};
@@ -952,10 +965,11 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                     className={`h-full min-w-0 transition-shadow duration-150 ${isCardLayout ? 'border border-slate-200 shadow-sm group-hover:shadow-md' : 'bg-transparent'}`}
                                     style={{ '--menu-card-fill': getSurfaceFill(style, 'product'), backgroundColor: isCardLayout ? `var(--automenu-preview-cards, ${cardBackgroundColor})` : getSurfaceFill(style, 'product'), borderRadius: cardRadius } as React.CSSProperties}
                                 >
-                                    <div data-product-card-content className={`h-full min-w-0 flex flex-col ${isCardLayout || hasProductFill || getBorderOverride(style, 'product') ? 'p-1.5' : ''}`}
+                                    <div data-product-card-content data-product-flow data-photo-flow={photoAlignment ?? 'template'}
+                                        className={`h-full min-w-0 ${sidePhoto ? 'flow-root' : 'flex flex-col'} ${isCardLayout || hasProductFill || getBorderOverride(style, 'product') ? 'p-1.5' : ''}`}
                                         style={{ borderRadius: 'inherit', '--automenu-background-photo-space': `calc(36px * var(${livePhotoScaleVariable('product')}, ${style.imageScale || 1}))` } as React.CSSProperties}>
-                                        {renderProductPhoto(product, cardImageHeight, '100%', true)}
-                                        <div data-template-content className={`${isCardLayout ? (categoryColumnCount > 1 || productColumnCount > 2 ? 'p-1.5' : productColumnCount > 1 ? 'p-2' : 'p-4') : 'py-2'} flex min-w-0 flex-col flex-grow ${textAlignClass}`}>
+                                        {renderProductPhoto(product, cardImageHeight, sidePhoto ? '42%' : '100%', true)}
+                                        <div data-template-content className={`${isCardLayout ? (categoryColumnCount > 1 || productColumnCount > 2 ? 'p-1.5' : productColumnCount > 1 ? 'p-2' : 'p-4') : 'py-2'} ${sidePhoto ? 'block' : 'flex flex-col flex-grow'} min-w-0 ${textAlignClass}`}>
                                             <div
                                                 data-product-text-row="true"
                                                 data-product-leader={showProductDivider || undefined}

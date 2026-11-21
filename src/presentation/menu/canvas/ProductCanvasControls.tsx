@@ -1,3 +1,4 @@
+import { triggerLimitFeedback } from './textFit';
 import { type FlowDirection, getDirectionLabel } from './flowControls';
 import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Plus, Edit3, CopyCheck, MoreHorizontal, Trash2 } from 'lucide-react';
 import type { Product, MenuStyle } from '../../../domain/menu/model';
@@ -51,6 +52,7 @@ export const FreeTextResizeHandles = ({ product, style, handlers }: { product: P
         const text = container?.querySelector<HTMLElement>('[data-product-edit-id]');
         if (!container || !text) return;
         const scale = getRenderedScale(container);
+        const resizeHandle = event.currentTarget;
         const startX = event.clientX;
         const startY = event.clientY;
         const startWidth = container.getBoundingClientRect().width / scale;
@@ -69,7 +71,10 @@ export const FreeTextResizeHandles = ({ product, style, handlers }: { product: P
             const resizeDelta = Math.abs(horizontalDelta) >= Math.abs(verticalDelta) ? horizontalDelta : verticalDelta;
             nextWidth = Math.max(36, Math.min(maxWidth, Math.round(startWidth + resizeDelta)));
             const factor = nextWidth / Math.max(1, startWidth);
-            nextFontSize = Math.max(minimumFontSize, Math.min(maximumFontSize, Math.round(startFontSize * factor * 10) / 10));
+            const requestedSize = Math.round(startFontSize * factor * 10) / 10;
+            nextFontSize = Math.max(minimumFontSize, Math.min(maximumFontSize, requestedSize));
+            if ((requestedSize !== nextFontSize || startWidth + resizeDelta > maxWidth + .5 || startWidth + resizeDelta < 35.5)
+                && !resizeHandle.classList.contains('automenu-limit-feedback')) triggerLimitFeedback(resizeHandle);
             container.style.width = `${nextWidth}px`;
             text.style.fontSize = `${nextFontSize}px`;
         };

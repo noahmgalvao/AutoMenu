@@ -26,15 +26,15 @@
 [data-product-card-shape="arch"] [data-product-text-row] { margin-inline: 4px; margin-block-start: 4px; }
 [data-design-product="featured"] [data-template-image] { border-bottom: 3px solid var(--template-accent); }
 [data-design-image="background"] [data-template-card] { position: relative; isolation: isolate; }
-[data-design-image="background"] [data-template-card] [data-template-image]:not([data-product-photo-frame]) { position: absolute; inset: 0; height: 100% !important; z-index: -1; }
-[data-design-image="background"] [data-template-card] [data-template-image]:not([data-product-photo-frame]) img { opacity: .22; }
-[data-design-image="background"] [data-template-card]:has([data-template-image]:not([data-product-photo-frame])) [data-template-content] {
+[data-design-image="background"] [data-template-card] [data-template-image]:not([data-product-photo-frame], [data-photo-positioned]) { position: absolute; inset: 0; height: 100% !important; z-index: -1; }
+[data-design-image="background"] [data-template-card] [data-template-image]:not([data-product-photo-frame], [data-photo-positioned]) img { opacity: .22; }
+[data-design-image="background"] [data-template-card]:has([data-template-image]:not([data-product-photo-frame], [data-photo-positioned])) [data-template-content] {
   padding-top: var(--automenu-background-photo-space, 36px);
   border-radius: inherit;
   background: linear-gradient(transparent, var(--menu-card-fill, var(--template-paper)));
 }
-[data-design-image="background"] [data-product-image-editing]:has([data-template-image]:not([data-product-photo-frame])) [data-template-content] { pointer-events: none; }
-[data-design-image="background"] [data-product-image-editing] > [data-product-card-content]:has(> [data-template-image]:not([data-product-photo-frame])) { pointer-events: none; }
+[data-design-image="background"] [data-product-image-editing]:has([data-template-image]:not([data-product-photo-frame], [data-photo-positioned])) [data-template-content] { pointer-events: none; }
+[data-design-image="background"] [data-product-image-editing] > [data-product-card-content]:has(> [data-template-image]:not([data-product-photo-frame], [data-photo-positioned])) { pointer-events: none; }
 [data-design-image="background"] [data-product-image-editing] [data-template-image] { pointer-events: auto; }
 [data-design-image="background"] [data-product-image-editing] [data-template-content] [contenteditable="true"] { pointer-events: auto; }
 [data-design-image="cover"] [data-template-image] img { object-fit: cover; }

@@ -1032,3 +1032,66 @@ test('fill uses only the photo area and supports dragging a replacement photo in
   await expect(page.locator('[data-editor-popover][data-product-image-surface="1"]')
     .getByRole('button', { name: 'Remover imagem' })).toBeVisible();
 });
+
+test('list photos release the space below and can move to either edge or above the text', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=list&single-product&photo-description');
+  const product = page.locator('#product-container-1');
+  const photo = product.locator('#product-image-1');
+  const title = product.locator('#product-name-1');
+  const description = product.locator('#product-description-1');
+  const descriptionUsesLeftBelow = () => description.evaluate(node => {
+    const photo = document.getElementById('product-image-1')!.getBoundingClientRect();
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const lines = Array.from(range.getClientRects());
+    return lines.some(line => line.top >= photo.bottom - 1 && Math.abs(line.left - photo.left) < 2);
+  });
+  await expect.poll(descriptionUsesLeftBelow).toBe(true);
+  await title.click();
+  await shortcutsFor(product).getByTitle('Editar produto').click();
+  await photo.click();
+  const menu = page.locator('[data-editor-popover][data-product-image-surface="1"]');
+  await menu.getByRole('button', { name: 'Centralizar imagem' }).click();
+  await expect.poll(async () => {
+    const image = (await photo.boundingBox())!;
+    const box = (await product.boundingBox())!;
+    const name = (await title.boundingBox())!;
+    return Math.abs(image.x + image.width / 2 - box.x - box.width / 2) < 2
+      && name.y >= image.y + image.height - 1;
+  }).toBe(true);
+  await menu.getByRole('button', { name: 'Alinhar imagem à direita' }).click();
+  await expect.poll(async () => {
+    const image = (await photo.boundingBox())!;
+    const price = (await product.locator('[data-template-price]').boundingBox())!;
+    return price.x + price.width <= image.x + 1;
+  }).toBe(true);
+});
+
+test('inline prices center in the space after the name and accept left alignment on a new line', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=list&no-photos&single-product');
+  const product = page.locator('#product-container-1');
+  const price = product.locator('[data-price-value]');
+  const row = product.locator('[data-product-text-row]');
+  await product.getByRole('heading').click();
+  await shortcutsFor(product).getByTitle('Editar produto').click();
+  await price.focus();
+  const toolbar = page.locator('[data-inline-format-toolbar]');
+  const left = toolbar.getByRole('button', { name: 'Alinhar à esquerda' });
+  await expect(left).toBeDisabled();
+  await toolbar.getByRole('button', { name: 'Centralizar texto' }).click();
+  await expect.poll(() => row.evaluate(element => {
+    const bounds = element.getBoundingClientRect();
+    const name = element.querySelector('[data-divider-title]')!.getBoundingClientRect();
+    const price = element.querySelector('[data-template-price]')!.getBoundingClientRect();
+    return Math.abs((name.right + bounds.right) / 2 - (price.left + price.right) / 2);
+  })).toBeLessThan(6);
+  await row.evaluate(element => { element.style.width = '90px'; });
+  await expect(row).toHaveAttribute('data-price-wrap', '');
+  await expect(left).toBeEnabled();
+  await left.click();
+  await expect.poll(async () => {
+    const price = (await product.locator('[data-template-price]').boundingBox())!;
+    const bounds = (await row.boundingBox())!;
+    return Math.abs(price.x - bounds.x);
+  }).toBeLessThan(2);
+});

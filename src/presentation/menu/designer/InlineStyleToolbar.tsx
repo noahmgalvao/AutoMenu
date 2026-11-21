@@ -23,6 +23,7 @@ type InlineStyleToolbarProps = {
     onAdjustPrice?: (direction: 1 | -1, amount: number, mode: PriceAdjustmentMode) => void;
     priceFormatHeader?: React.ReactNode;
     priceAdjustmentCurrency?: string;
+    priceAlignment?: boolean;
     fallbackFontFamily?: string;
     decoration?: (formatButtons: React.ReactNode, onGroupBorderPanelChange: (open: boolean) => void) => React.ReactNode;
     borderOffset?: number;
@@ -31,11 +32,22 @@ type InlineStyleToolbarProps = {
     | { value?: never; onChange?: never; children: React.ReactNode }
 );
 
-export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, positionTargetElementId, value, onChange, onDismiss, dismissOnClickInCanvas = false, controls = 'all', maxFontSize, minFontSize, header, compact = false, onAdjustPrice, priceFormatHeader, priceAdjustmentCurrency, fallbackFontFamily, decoration, borderOffset, children }) => {
+export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetElementId, positionTargetElementId, value, onChange, onDismiss, dismissOnClickInCanvas = false, controls = 'all', maxFontSize, minFontSize, header, compact = false, onAdjustPrice, priceFormatHeader, priceAdjustmentCurrency, priceAlignment = false, fallbackFontFamily, decoration, borderOffset, children }) => {
     const toolbarRef = useRef<HTMLDivElement>(null);
     const contentRef = useRef<HTMLDivElement>(null);
     const [position, setPosition] = useState<React.CSSProperties>({ left: 8, top: 8, width: 270 });
     const [groupBorderOpen, setGroupBorderOpen] = useState(false);
+    const [priceCanAlignLeft, setPriceCanAlignLeft] = useState(!priceAlignment);
+    React.useLayoutEffect(() => {
+        if (!priceAlignment) { setPriceCanAlignLeft(true); return; }
+        const row = document.getElementById(targetElementId)?.closest('[data-product-text-row]');
+        const refresh = () => setPriceCanAlignLeft(Boolean(row?.hasAttribute('data-price-wrap')));
+        refresh();
+        if (!row) return;
+        const observer = new MutationObserver(refresh);
+        observer.observe(row, { attributes: true, attributeFilter: ['data-price-wrap'] });
+        return () => observer.disconnect();
+    }, [priceAlignment, targetElementId]);
     const [priceAdjustment, setPriceAdjustment] = useState('10');
     const [priceAdjustmentMode, setPriceAdjustmentMode] = useState<PriceAdjustmentMode>('percentage');
     const isSizeColorOnly = controls === 'sizeColor';
@@ -207,8 +219,9 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                             key={align}
                             aria-label={align === 'left' ? 'Alinhar à esquerda' : align === 'center' ? 'Centralizar texto' : 'Alinhar à direita'}
                             aria-pressed={value.textAlign === align}
+                            disabled={priceAlignment && align === 'left' && !priceCanAlignLeft}
                             onClick={() => onChange({ ...value, textAlign: align })}
-                            className={`rounded border p-1 ${value.textAlign === align ? 'border-indigo-200 bg-indigo-50 text-indigo-600' : 'border-slate-200 text-slate-500'}`}
+                            className={`rounded border p-1 disabled:opacity-40 ${value.textAlign === align ? 'border-indigo-200 bg-indigo-50 text-indigo-600' : 'border-slate-200 text-slate-500'}`}
                         >
                             {align === 'left' ? <AlignLeft size={14} /> : align === 'center' ? <AlignCenter size={14} /> : <AlignRight size={14} />}
                         </button>
@@ -244,8 +257,8 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                 </div>;
             })()}
             {onAdjustPrice && (
-                <div className="mt-2 border-t border-slate-100 pt-2">
-                    <div className="mb-1.5 text-[10px] font-semibold text-slate-600">{priceFormatHeader || 'Alterar valor'}</div>
+                <div className="mt-1 border-t border-slate-100 pt-1">
+                    <div className="mb-0.5 text-[10px] font-semibold text-slate-600">{priceFormatHeader || 'Alterar valor'}</div>
                     <div className="grid grid-cols-[2rem_minmax(0,1fr)_4.5rem_2rem] items-center gap-1">
                         <HoldStepButton label="Diminuir preço" disabled={!canAdjustPrice}
                             onStep={() => onAdjustPrice(-1, parsedPriceAdjustment, priceAdjustmentMode)}

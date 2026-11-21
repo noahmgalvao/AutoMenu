@@ -8,8 +8,8 @@ export const DEFAULT_FONT_SIZE_LIMITS: FontSizeLimits = {
   category: 50,
   productName: 50,
   productPrice: 60,
-  productDescription: 30,
-  freeText: 50,
+  productDescription: 35,
+  freeText: 70,
 };
 
 export const DEFAULT_MINIMUM_FONT_SIZE = 15;

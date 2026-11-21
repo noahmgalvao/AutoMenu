@@ -1,3 +1,5 @@
+import { FontSizeInput } from './FontSizeInput';
+import { triggerLimitFeedback } from '../canvas/textFit';
 import { canMoveImageLayer } from '../../../domain/menu/imageLayers';
 import { MINI_FOOD_INK } from '../../../domain/menu/miniFoods';
 import { HoldStepButton } from '../../common/HoldStepButton';
@@ -75,6 +77,12 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
   removeSelectedAddedImages,
   layerSelectedAddedImages
 }) => {
+  const imageSizeValue = React.useRef<HTMLSpanElement>(null);
+  const stepLayerSize = (delta: number) => {
+    const resized = resizeSelectedAddedImages(delta);
+    if (!resized) triggerLimitFeedback(imageSizeValue.current);
+    return resized;
+  };
   const imageInputRef = useRef<HTMLInputElement>(null);
   const layerIds = new Set(selectedAddedImageIds.includes(selectedAddedImage?.id || '')
     ? selectedAddedImageIds : selectedAddedImage ? [selectedAddedImage.id] : []);
@@ -178,12 +186,12 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                 <div className="flex items-center justify-between bg-slate-50 p-2 rounded">
                     <span className="text-xs font-bold">Tamanho</span>
                     <div className="flex items-center gap-2">
-                        <HoldStepButton label="Diminuir tamanho" onStep={() => resizeSelectedAddedImages(-20)}
+                        <HoldStepButton label="Diminuir tamanho" onStep={() => stepLayerSize(-20)}
                             className="p-1 bg-white border border-slate-200 rounded hover:bg-slate-100">
                             <Minus size={14} />
                         </HoldStepButton>
-                        <span className="text-xs w-12 text-center">{Math.round(selectedAddedImage.width)}px</span>
-                        <HoldStepButton label="Aumentar tamanho" onStep={() => resizeSelectedAddedImages(20)}
+                        <span ref={imageSizeValue} className="text-xs w-12 text-center">{Math.round(selectedAddedImage.width)}px</span>
+                        <HoldStepButton label="Aumentar tamanho" onStep={() => stepLayerSize(20)}
                             className="p-1 bg-white border border-slate-200 rounded hover:bg-slate-100">
                             <Plus size={14} />
                         </HoldStepButton>
@@ -466,12 +474,14 @@ interface LayoutSectionProps {
 }
 
 export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle }) => {
+  const scaleValues = React.useRef<Partial<Record<'imageScale' | 'categoryImageScale', HTMLSpanElement | null>>>({});
   const updateImageScale = (field: 'imageScale' | 'categoryImageScale', delta: number) => {
-    setStyle((previous) => ({
-      ...previous,
-      [field]: clampPhotoScale(Math.round(((previous[field] || 1) + delta) * 1000) / 1000),
-      name: 'Custom',
-    }));
+    const current = style[field] || 1;
+    const next = clampPhotoScale(Math.round((current + delta) * 1000) / 1000);
+    if (next === MIN_PHOTO_SCALE || next === MAX_PHOTO_SCALE) triggerLimitFeedback(scaleValues.current[field]);
+    if (next === current) return false;
+    setStyle(previous => ({ ...previous, [field]: next, name: 'Custom' }));
+    return next > MIN_PHOTO_SCALE && next < MAX_PHOTO_SCALE;
   };
 
   const updateColumnCounts = (
@@ -582,9 +592,9 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle })
             <div className="flex items-center justify-between gap-2">
               <span className="text-[10px] font-medium uppercase text-slate-400">Tamanho</span>
               <div className="flex items-center gap-2">
-                <HoldStepButton onStep={() => updateImageScale(control.scaleField, -0.1)} disabled={control.scale <= MIN_PHOTO_SCALE} className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white hover:bg-slate-100" label={`Diminuir imagens de ${control.label.toLowerCase()}`}><Minus size={14} /></HoldStepButton>
-                <span className="w-10 text-center font-mono text-xs text-slate-600">{Math.round(control.scale * 100)}%</span>
-                <HoldStepButton onStep={() => updateImageScale(control.scaleField, 0.1)} disabled={control.scale >= MAX_PHOTO_SCALE} className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white hover:bg-slate-100" label={`Aumentar imagens de ${control.label.toLowerCase()}`}><Plus size={14} /></HoldStepButton>
+                <HoldStepButton onStep={() => updateImageScale(control.scaleField, -0.1)} className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white hover:bg-slate-100" label={`Diminuir imagens de ${control.label.toLowerCase()}`}><Minus size={14} /></HoldStepButton>
+                <span ref={node => { scaleValues.current[control.scaleField] = node; }} className="w-10 text-center font-mono text-xs text-slate-600">{Math.round(control.scale * 100)}%</span>
+                <HoldStepButton onStep={() => updateImageScale(control.scaleField, 0.1)} className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white hover:bg-slate-100" label={`Aumentar imagens de ${control.label.toLowerCase()}`}><Plus size={14} /></HoldStepButton>
               </div>
             </div>
           </div>
@@ -604,24 +614,12 @@ const RuleNumberInput: React.FC<{
   value: number;
   min?: number;
   max?: number;
-  step?: number;
   normalizeValue?: (value: number) => number;
   onChange: (value: number) => void;
-}> = ({ value, min = 0, max = 300, step, normalizeValue, onChange }) => (
-  <input
-    type="number"
-    min={min}
-    max={max}
-    step={step}
-    value={value}
-    onChange={(event) => {
-      const parsed = Number(event.target.value);
-      if (Number.isFinite(parsed)) {
-        const clamped = Math.min(max, Math.max(min, parsed));
-        onChange(normalizeValue ? normalizeValue(clamped) : clamped);
-      }
-    }}
-    className="h-8 w-20 rounded border border-slate-200 bg-white px-2 text-right text-xs font-semibold text-slate-700 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
+}> = ({ value, min = 0, max = 300, normalizeValue, onChange }) => (
+  <FontSizeInput value={value} min={min} max={max} commitOnBlur
+    onChange={next => onChange(normalizeValue ? normalizeValue(next) : next)}
+    className="!w-[calc(5ch+1.75rem)] bg-white text-center font-semibold tabular-nums text-slate-700"
   />
 );
 
@@ -688,7 +686,6 @@ export const GeneralRulesSection: React.FC<GeneralRulesSectionProps> = ({ style,
             value={minimumFontSize}
             min={DEFAULT_MINIMUM_FONT_SIZE}
             max={300}
-            step={1}
             normalizeValue={roundFontSize}
             onChange={(value) => setStyle((previous) => ({
               ...previous,
@@ -720,7 +717,7 @@ export const GeneralRulesSection: React.FC<GeneralRulesSectionProps> = ({ style,
         {fontLimitRows.map(({ key, label }) => (
           <label key={key} className="flex items-center justify-between gap-3 text-xs text-slate-600">
             <span>{label}</span>
-            <RuleNumberInput value={fontSizeLimits[key]} min={minimumFontSize} max={300} step={1} normalizeValue={roundFontSize} onChange={(value) => updateFontLimit(key, value)} />
+            <RuleNumberInput value={fontSizeLimits[key]} min={minimumFontSize} max={300} normalizeValue={roundFontSize} onChange={(value) => updateFontLimit(key, value)} />
           </label>
         ))}
       </div>

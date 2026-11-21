@@ -108,7 +108,12 @@ export const withStyleDefaults = (style: MenuStyle | null | undefined): MenuStyl
       && source.menuBackgroundPhoto.url ? source.menuBackgroundPhoto : undefined,
     pageBreaks: stringArray(source.pageBreaks),
     pageSetup: normalizeMenuPageSetup(source.pageSetup),
-    fontSizeLimits: resolveFontSizeLimits({ ...base, ...source } as MenuStyle),
+    fontSizeLimits: {
+      ...resolveFontSizeLimits({ ...base, ...source } as MenuStyle),
+      ...(!source.revisedFontSizeDefaults && source.fontSizeLimits?.productDescription === 30 ? { productDescription: 35 } : {}),
+      ...(!source.revisedFontSizeDefaults && source.fontSizeLimits?.freeText === 50 ? { freeText: 70 } : {}),
+    },
+    revisedFontSizeDefaults: true,
     minimumFontSize: resolveMinimumFontSize({ ...base, ...source } as MenuStyle),
     allowSameWordBreak: source.allowSameWordBreak === true,
     priceDecimalPlaces: resolvePriceDecimalPlaces(source.priceDecimalPlaces),

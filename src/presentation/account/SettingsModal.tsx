@@ -80,7 +80,7 @@ const RuleGroup = <T extends object>({
           <span>{label}</span>
           <FontSizeInput showStepButtons={showStepButtons} label={label} min={min} max={max} value={Number(values[key])} commitOnBlur
             onChange={value => onChange(key, normalizeValue ? normalizeValue(value) : value)}
-            className="!h-9 !w-20 bg-white text-right !text-sm font-semibold text-slate-700" />
+            className="!h-9 !w-16 bg-white text-center !text-sm font-semibold tabular-nums text-slate-700" />
         </label>
       ))}
     </div>

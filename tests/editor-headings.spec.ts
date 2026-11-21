@@ -174,3 +174,12 @@ test('resizing detached text keeps unrelated measured categories on their pages'
     await expect(category).toHaveCount(1);
     await expect.poll(fontSize).toBeGreaterThan(start);
 });
+
+test('the heading quick actions can remove the selected heading', async ({ page }) => {
+    await page.goto(fixture);
+    const title = page.locator('#menu-title-text');
+    await title.click();
+    await shortcutsFor(title.locator('xpath=ancestor::header')).getByRole('button', { name: 'Remover cabeçalho' }).click();
+    await expect(title).toHaveCount(0);
+    await expect(page.locator('#menu-subtitle-text')).toHaveCount(0);
+});

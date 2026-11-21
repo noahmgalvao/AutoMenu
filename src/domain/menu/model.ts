@@ -173,6 +173,7 @@ export interface CustomMenuMarker {
 export type MenuMarker = CustomMenuMarker | MiniFoodKind | 'none' | 'dot' | 'circle' | 'diamond' | 'arrow' | 'check' | 'dash' | 'number' | 'number-circle' | 'number-square' | 'number-padded';
 
 export interface CategoryImage {
+  alignment?: NonNullable<Product['imageAlignment']>;
   crop?: { x: number; y: number };
   horizontal?: boolean;
   vertical?: boolean;
@@ -245,6 +246,7 @@ export interface MenuStyle {
   productCardShape?: 'template' | 'square' | 'rounded' | 'soft' | 'arch';
   productImageFrame?: 'template' | 'fill' | 'rounded' | 'circle' | 'arch';
   productImageFlips?: Record<string, { horizontal?: boolean; vertical?: boolean }>;
+  productPhotoAlignments?: Record<string, NonNullable<Product['imageAlignment']>>;
   productPhotoCrops?: Record<string, { x: number; y: number }>;
   imageScale?: number;
   categoryImageScale?: number;
@@ -286,6 +288,7 @@ export interface MenuStyle {
   globalRadius?: number;
   itemGap?: number;
   fontSizeLimits?: FontSizeLimits;
+  revisedFontSizeDefaults?: true;
   minimumFontSize?: number;
   allowSameWordBreak?: boolean;
   priceDecimalPlaces?: PriceDecimalPlaces;

@@ -18,6 +18,7 @@ export const ensurePrimaryMenu = async (workspaceId: string) => {
     .from('menus')
     .select('*')
     .eq('workspace_id', workspaceId)
+    .neq('status', 'archived')
     .order('created_at', { ascending: true })
     .limit(1)
     .maybeSingle();
@@ -117,11 +118,34 @@ export const deleteWorkspaceMenus = async ({
   const supabase = getSupabaseClient();
   const { error } = await supabase
     .from('menus')
-    .delete()
+    .update({ status: 'archived' })
     .in('id', menuIds)
     .eq('workspace_id', workspaceId);
 
   if (error) throw error;
+};
+
+export const restoreWorkspaceMenus = async ({ workspaceId, menus }: {
+  workspaceId: string;
+  menus: Pick<Menu, 'id' | 'status'>[];
+}) => {
+  const supabase = getSupabaseClient();
+  const restored: string[] = [];
+  for (const status of ['draft', 'published'] as const) {
+    const ids = menus.filter(menu => menu.status === status).map(menu => menu.id);
+    if (!ids.length) continue;
+    const { error } = await supabase
+      .from('menus')
+      .update({ status })
+      .eq('workspace_id', workspaceId)
+      .eq('status', 'archived')
+      .in('id', ids);
+    if (error) {
+      if (restored.length) await deleteWorkspaceMenus({ workspaceId, menuIds: restored });
+      throw error;
+    }
+    restored.push(...ids);
+  }
 };
 
 const createInitialMenuVersionPayload = (blankMenuTitle?: string) => {
@@ -305,6 +329,7 @@ export const resolveActiveMenu = async (workspaceId: string, menuId?: string | n
     .select('*')
     .eq('id', menuId)
     .eq('workspace_id', workspaceId)
+    .neq('status', 'archived')
     .maybeSingle();
 
   if (error) {
