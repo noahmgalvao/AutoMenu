@@ -8,7 +8,7 @@ import {
   createEditorState,
   createRenderSnapshot,
 } from '../../../application/workspace/state';
-import { INITIAL_PRODUCTS, INITIAL_STYLE } from '../../../domain/menu/defaults';
+import { INITIAL_PRODUCTS, createClassicMenuStyle } from '../../../domain/menu/defaults';
 import type { Menu } from '../../../domain/workspace/model';
 import { insertMenuVersionWithRetry } from './revisions';
 
@@ -148,9 +148,9 @@ export const restoreWorkspaceMenus = async ({ workspaceId, menus }: {
   }
 };
 
-const createInitialMenuVersionPayload = (blankMenuTitle?: string) => {
+export const createInitialMenuVersionPayload = (blankMenuTitle?: string) => {
   const products = assignCategoryIds(cloneJson(INITIAL_PRODUCTS));
-  const style = withStyleDefaults(cloneJson(INITIAL_STYLE));
+  const style = withStyleDefaults(createClassicMenuStyle());
   if (blankMenuTitle !== undefined) {
     style.menuTitle = blankMenuTitle;
     style.menuSubtitle = '';

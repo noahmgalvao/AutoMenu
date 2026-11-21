@@ -1,3 +1,4 @@
+import { withMenuRuleFallback } from '../../application/workspace/state';
 import { DesignerTapButton } from '../common/DesignerTapButton';
 import { MenuMultiSelectionProvider } from '../menu/interactions/MenuMultiSelection';
 import { preventBrowserContextMenu } from '../common/noBrowserSelection';
@@ -47,7 +48,7 @@ const App: React.FC = () => {
     session, isAuthLoading, isWorkspaceLoading, isAuthSubmitting, authError, loadError, setLoadError, workspaceLoadError, isConfigured,
     workspaceData, products, style, templates, sortOption, setSortOption, isSettingsSaving, isMenuActionLoading,
     setProducts, setStyle, setProductsAndStyle, setTemplates, undo, redo, canUndo, canRedo, handleProductEditChange,
-    handleSignIn, handleSignUp, handleSignOut, handleSaveSettings, handleRequestPasswordReset, handleUpdatePassword,
+    handleSignIn, handleSignUp, handleSignOut, handleSaveSettings, handleSaveTemplate, handleRequestPasswordReset, handleUpdatePassword,
     handleSelectMenu, performCreateMenu, handleRenameMenu, handleDeleteMenus, forceSaveCurrentMenu,
   } = useWorkspaceEditor({
     showStylePanel: () => setActivePanel('style'),
@@ -259,7 +260,7 @@ const App: React.FC = () => {
         onClose={() => setIsRevisionHistoryOpen(false)}
         onRestore={(revision) => {
           setProducts(revision.products);
-          setStyle(revision.style);
+          setStyle(withMenuRuleFallback(revision.style, workspaceData.workspace.settings));
           setSortOption(revision.sortOption);
           setIsRevisionHistoryOpen(false);
         }}
@@ -271,7 +272,6 @@ const App: React.FC = () => {
             open
             profile={workspaceData.profile}
             workspace={workspaceData.workspace}
-            menuStyle={style}
             email={session.user.email || ''}
             saving={isSettingsSaving}
             onClose={() => setIsSettingsOpen(false)}
@@ -334,8 +334,6 @@ const App: React.FC = () => {
               currentUserId={session.user.id}
               currentMenuId={workspaceData.menu.id}
               onPdfClick={() => requestPrint('download')}
-              productsCanChangeCategory={workspaceData.workspace.settings?.productsCanChangeCategory}
-              splitCategoryAcrossPages={workspaceData.workspace.settings.splitCategoryAcrossPages}
               onImportVisibilityChange={setIsMenuImportOpen}
             />
           </React.Suspense>
@@ -349,6 +347,7 @@ const App: React.FC = () => {
             setProducts={setProducts}
             setProductsAndStyle={setProductsAndStyle}
             templates={templates}
+            onSaveTemplate={handleSaveTemplate}
             sortOption={sortOption}
             setSortOption={setSortOption}
             undo={undo}
@@ -371,8 +370,6 @@ const App: React.FC = () => {
             workspaceId={workspaceData.workspace.id}
             currentUserId={session.user.id}
             currentMenuId={workspaceData.menu.id}
-            splitCategoryAcrossPages={workspaceData.workspace.settings.splitCategoryAcrossPages}
-            productsCanChangeCategory={workspaceData.workspace.settings?.productsCanChangeCategory}
           />
         </div>
       </div>

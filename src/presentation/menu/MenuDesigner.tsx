@@ -6,7 +6,7 @@ import { applyTemplateToCurrentStyle, getAppliedTemplateId } from '../../applica
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { flushSync } from 'react-dom';
 import type { Product, MenuStyle, SortOption, ElementStyle, AddedImage, CanvasShape } from '../../domain/menu/model';
-import { PRESET_TEMPLATES } from '../../domain/menu/defaults';
+import { INITIAL_STYLE, PRESET_TEMPLATES } from '../../domain/menu/defaults';
 import { MenuPreview } from './canvas/MenuPreview';
 import { Undo, Redo, AlertCircle, Check, X } from 'lucide-react';
 import { ZoomControls } from './designer/ZoomControls';
@@ -67,6 +67,7 @@ interface MenuDesignerProps {
     workspaceId: string;
     currentUserId: string;
     currentMenuId?: string;
+    onSaveTemplate?: (name: string, description: string, id: string) => Promise<void>;
     splitCategoryAcrossPages?: boolean;
     productsCanChangeCategory?: boolean;
 }
@@ -150,8 +151,10 @@ const formatLayoutIssueBreakdown = (categories: number, products: number, freeTe
     return `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`;
 };
 
-const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, onProductEditChange, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions, virtualLinkControls, onClose, onOpenVisual, onCanvasScroll, workspaceId, currentUserId, currentMenuId, splitCategoryAcrossPages = false, productsCanChangeCategory = false }) => {
-    const { assets: { uploadFileAsset } } = useAppServices();
+const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, onProductEditChange, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions, virtualLinkControls, onClose, onOpenVisual, onCanvasScroll, workspaceId, currentUserId, currentMenuId, onSaveTemplate, splitCategoryAcrossPages: legacySplit = false, productsCanChangeCategory: legacyDrag = false }) => {
+    const { assets: { uploadFileAsset }, workspace: { loadTemplateVersion } } = useAppServices();
+    const splitCategoryAcrossPages = style.splitCategoryAcrossPages ?? legacySplit;
+    const productsCanChangeCategory = style.productsCanChangeCategory ?? legacyDrag;
     const [scale, setScale] = useState(DEFAULT_PREVIEW_ZOOM);
     const [isDesktopViewport, setIsDesktopViewport] = useState(() => window.matchMedia('(min-width: 768px)').matches);
     const renderScale = scale * (isDesktopViewport ? DESKTOP_PREVIEW_ZOOM_RENDER_MULTIPLIER : MOBILE_PREVIEW_ZOOM_RENDER_MULTIPLIER);
@@ -706,11 +709,15 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const applyTemplate = (template: MenuStyle) =>
         setStyle((current) => applyTemplateToCurrentStyle(current, template));
 
-    const handleResetDesign = () => {
+    const handleResetDesign = async () => {
         const id = getAppliedTemplateId(style);
-        applyTemplate(templates.find((template) => template.id === id)
-            || PRESET_TEMPLATES.find((template) => template.id === id)
-            || PRESET_TEMPLATES[0]);
+        const versionId = style.appliedTemplateVersionId;
+        const currentTemplate = templates.find(template => template.id === id)
+            || PRESET_TEMPLATES.find(template => template.id === id);
+        const historical = workspaceId && versionId && versionId !== currentTemplate?.templateVersionId
+            ? await loadTemplateVersion({ workspaceId, versionId }).catch(() => null) : null;
+        setStyle(current => getAppliedTemplateId(current) !== id || current.appliedTemplateVersionId !== versionId
+            ? current : applyTemplateToCurrentStyle(current, historical || currentTemplate || INITIAL_STYLE));
     };
 
     const handleProductUpdate = (id: string, field: keyof Product, value: any) => {
@@ -2203,6 +2210,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 currentUserId={currentUserId}
                 splitCategoryAcrossPages={splitCategoryAcrossPages}
                 applyTemplate={applyTemplate}
+                onSaveTemplate={onSaveTemplate}
                 sortOption={sortOption}
                 setSortOption={setSortOption}
                 selection={selection}

@@ -102,7 +102,8 @@ export const syncWorkspaceTemplates = async (workspaceId: string, userId: string
     id: template.templateVersionId,
     template_id: template.id,
     version_number: 1,
-    style_state: template,
+    style_state: template.sourceType === 'user' && template.backgroundAssetId
+      ? { ...template, backgroundImage: undefined } : template,
     preview_asset_id: template.backgroundAssetId || null,
   }));
 
@@ -132,3 +133,27 @@ export const syncWorkspaceTemplates = async (workspaceId: string, userId: string
   const normalizedById = new Map(normalizedTemplates.map((template) => [template.id, template]));
   return mergeTemplates(workspaceTemplates.map((template) => normalizedById.get(template.id) || template), []);
 };
+
+export async function saveWorkspaceTemplate({ workspaceId, userId, template }: {
+  workspaceId: string; userId: string; template: MenuStyle;
+}) {
+  if (template.backgroundAssetId) {
+    const urls = await resolveWorkspaceAssetMap(workspaceId, [template.backgroundAssetId]);
+    const url = urls.get(template.backgroundAssetId);
+    if (!url) throw new Error('A imagem de fundo não está disponível neste workspace.');
+    template = { ...template, backgroundImage: url };
+  }
+  const saved = (await syncWorkspaceTemplates(workspaceId, userId, [template])).find(item => item.id === template.id);
+  if (!saved) throw new Error('Falha ao salvar o modelo.');
+  return saved;
+}
+
+export async function loadTemplateVersion({ workspaceId, versionId }: { workspaceId: string; versionId: string }) {
+  const { data, error } = await getSupabaseClient().from('template_versions')
+    .select('*').eq('id', versionId).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const version = mapTemplateVersionRow(data);
+  const urls = await resolveWorkspaceAssetMap(workspaceId, collectTemplateAssetIds([version]));
+  return hydrateStyleAssets({ ...version.styleState, id: version.templateId, templateVersionId: version.id }, urls);
+}

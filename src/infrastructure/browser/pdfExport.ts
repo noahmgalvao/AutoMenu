@@ -302,7 +302,7 @@ const preparePageClone = async (
     clone.style.backgroundImage = 'none';
     clone.style.backgroundColor = '#ffffff';
     clone.style.backgroundBlendMode = 'normal';
-    clone.querySelectorAll('[data-menu-background-image="true"]').forEach((node) => node.remove());
+    clone.querySelectorAll('[data-menu-background-image="true"], [data-template-decoration]').forEach((node) => node.remove());
   }
 
   sandbox.appendChild(clone);

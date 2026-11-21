@@ -1,3 +1,4 @@
+import { withMenuRuleFallback } from '../../../application/workspace/state';
 import type { Profile, Workspace, LoadedWorkspaceData, MenuVersion, Menu } from '../../../domain/workspace/model';
 import type { MenuStyle, Product } from '../../../domain/menu/model';
 import { getSupabaseClient } from '../client';
@@ -106,7 +107,7 @@ export const loadWorkspaceMenuData = async ({
     menu,
     currentVersion,
     products: snapshotProducts,
-    style: editorState.style,
+    style: withMenuRuleFallback(editorState.style, workspace.settings),
     templates,
     sortOption: editorState.sortOption,
   };
@@ -229,7 +230,7 @@ export const loadWorkspaceData = async (userId: string, menuId?: string | null):
         menu,
         currentVersion,
         products: snapshotProducts,
-        style: editorState!.style,
+        style: withMenuRuleFallback(editorState!.style, workspace.settings),
         templates,
         sortOption: editorState!.sortOption,
       };
@@ -288,7 +289,7 @@ export const loadWorkspaceData = async (userId: string, menuId?: string | null):
     menu,
     currentVersion,
     products: snapshotProducts,
-    style: editorState.style,
+    style: withMenuRuleFallback(editorState.style, workspace.settings),
     templates,
     sortOption: editorState.sortOption,
   };

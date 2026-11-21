@@ -47,8 +47,8 @@ export interface WorkspaceGateway {
   restoreWorkspaceMenus(input: { workspaceId: string; menus: Pick<Menu, 'id' | 'status'>[] }): Promise<void>;
   updateAccountIdentity(input: { userId: string; workspaceId: string; fullName: string; workspaceName: string }):
     Promise<{ fullName: string; workspaceName: string }>;
-  updateWorkspaceRuleSettings(input: { workspaceId: string; splitCategoryAcrossPages: boolean; productsCanChangeCategory: boolean }):
-    Promise<{ splitCategoryAcrossPages: boolean; productsCanChangeCategory: boolean }>;
+  saveWorkspaceTemplate(input: { workspaceId: string; userId: string; template: MenuStyle }): Promise<MenuStyle>;
+  loadTemplateVersion(input: { workspaceId: string; versionId: string }): Promise<MenuStyle | null>;
   listMenuRevisions(menuId: string): Promise<MenuVersion[]>;
   loadMenuRevisionState(input: { workspaceId: string; versionId: string }): Promise<WorkspaceMenuContent>;
   listMenuProductSources(input: { workspaceId: string; currentMenuId: string; currentProducts: Product[] }): Promise<MenuProductSource[]>;

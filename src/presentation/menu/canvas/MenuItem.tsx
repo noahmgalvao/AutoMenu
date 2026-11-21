@@ -19,7 +19,7 @@ import type { PriceAdjustmentMode } from '../../../domain/menu/pricePropagation'
 import { MenuPhoto, PhotoLoading } from './MenuPhoto';
 import { livePhotoScaleVariable, photoDimensions } from './photoSizing';
 import { PhotoEditControls } from './PhotoEditControls';
-import { getProductCardRadius, getProductPhotoFrameRadius, getProductCardCornerRadii } from './templateStyles';
+import { getProductCardRadius, getProductPhotoFrameRadius, getProductCardCornerRadii, templateFontStack } from './templateStyles';
 import { AutoFitText } from './AutoFitText';
 import { CanvasTextDivider } from './CanvasTextDivider';
 import { isHeadingTextHit } from './menuHeadingHit';
@@ -288,7 +288,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 ...textContrastFill('productPrice'),
                 color: `var(--automenu-preview-text, ${priceStyle.color || style.textColor})`,
                 ...getTextOutlineStyle(priceStyle.textOutline),
-                fontFamily: priceStyle.fontFamily,
+                fontFamily: templateFontStack(style, priceStyle.fontFamily),
                 fontSize: `var(--automenu-fitted-price-size, ${baseSize}px)`,
                 fontWeight: priceStyle.fontWeight,
                 fontStyle: priceStyle.italic ? 'italic' : 'normal',
@@ -333,7 +333,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             activate={() => activatePhoto(type, id)}
             choose={() => handlers.choosePhoto(type, id)} remove={() => handlers.removePhoto(type, id)}
             type={type} updateStyle={handlers.updateStyle}
-            alignment={(type === 'product' ? style.productPhotoAlignments?.[id] : style.categoryImages?.[id]?.alignment) || 'left'} />
+            alignment={(type === 'product' ? style.productPhotoAlignments?.[id] ?? style.productPhotoAlignmentDefault : style.categoryImages?.[id]?.alignment ?? style.categoryPhotoAlignmentDefault) || 'left'} />
     );
     const renderProductPhoto = (product: Product, limit: number, maxWidth: string, inRow = false) => {
         const isEditable = !handlers.readOnly && handlers.isReadyToEdit?.('product', product.id);
@@ -343,7 +343,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const frame = resolveProductImageFrame(style, inRow);
         const hasFrame = frame !== 'template';
         const shaped = hasFrame && frame !== 'fill';
-        const alignment = style.productPhotoAlignments?.[product.id];
+        const alignment = style.productPhotoAlignments?.[product.id] ?? style.productPhotoAlignmentDefault;
         const background = inRow && style.design?.image === 'background' && !hasFrame && !alignment;
         const imageRadius = style.borders?.productImage?.radius;
         const topRadius = Math.min(12, style.borders?.product?.radius ?? getProductCardRadius(style));
@@ -364,7 +364,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 data-product-photo-frame={hasFrame ? frame : undefined}
                 className={`relative shrink-0 bg-slate-100 select-none ${isEditable ? 'cursor-pointer ring-2 ring-inset ring-indigo-400' : ''}`}
                 style={{
-                    ...photoDimensions('product', style.imageScale || 1, limit, maxWidth, frame),
+                    ...photoDimensions('product', style.imageScale || 1, limit, maxWidth, frame, 1, style.productPhotoRatio),
                     marginInline: alignment === 'center' ? 'auto' : undefined,
                     background: getSurfaceFill(style, 'productImage'), borderRadius: photoRadius,
                 }}
@@ -443,7 +443,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             color: `var(--automenu-preview-primary, ${fieldStyle.color || (title ? style.primaryColor : style.textColor)})`,
                             ...textContrastFill(field),
                             ...getTextOutlineStyle(fieldStyle.textOutline),
-                            fontFamily: fieldStyle.fontFamily || style.fontFamily,
+                            fontFamily: templateFontStack(style, fieldStyle.fontFamily || style.fontFamily),
                             fontWeight: fieldStyle.fontWeight || (title ? '700' : undefined),
                             fontStyle: fieldStyle.italic ? 'italic' : 'normal',
                             textDecoration: fieldStyle.underline ? 'underline' : 'none',
@@ -539,7 +539,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const categoryAlign = catStyle.textAlign || 'left';
         const categoryImage = style.categoryImages?.[item.data];
         const categoryImageScale = style.categoryImageScale || 1;
-        const photoAlignment = categoryImage?.alignment || 'left';
+        const photoAlignment = categoryImage?.alignment || style.categoryPhotoAlignmentDefault || 'left';
         const { limit: photoLimit, widthFraction, titleReserve } = getCategoryPhotoSizing(style);
         const categoryDividerPreset = resolveCategoryDivider(style, item.data);
         const renderCategoryDivider = (key: 'before' | 'after') => (
@@ -575,7 +575,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             className="relative shrink-0"
                             onClick={event => handlePhotoClick(event, 'category', item.data)}
                             style={photoDimensions('category', categoryImageScale, photoLimit,
-                                photoAlignment === 'center' ? '100%' : `min(${widthFraction * 100}%, max(0px, calc(100% - ${titleReserve}px)))`, undefined, (categoryImage?.width || 1) / (categoryImage?.height || 1))}>
+                                photoAlignment === 'center' ? '100%' : `min(${widthFraction * 100}%, max(0px, calc(100% - ${titleReserve}px)))`, undefined, (categoryImage?.width || 1) / (categoryImage?.height || 1), style.categoryPhotoRatio)}>
                             {categoryImage?.url && <MenuPhoto showLoading={!handlers.readOnly && !handlers.photoIsLoading?.('category', item.data)} src={categoryImage.url} alt="" draggable={false} className="h-full w-full object-cover"
                                 style={{ objectPosition: `${categoryImage.crop?.x ?? 50}% ${categoryImage.crop?.y ?? 50}%`,
                                     transform: `scale(${categoryImage.horizontal ? -1 : 1}, ${categoryImage.vertical ? -1 : 1})` }} />}
@@ -603,7 +603,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             color: `var(--automenu-preview-primary, ${catStyle.color || style.primaryColor})`,
                             ...textContrastFill('category'),
                             ...getTextOutlineStyle(catStyle.textOutline),
-                            fontFamily: catStyle.fontFamily,
+                            fontFamily: templateFontStack(style, catStyle.fontFamily),
                             fontSize: `${clampFontSize(style, 'category', catStyle.fontSize, 24)}px`,
                             fontWeight: catStyle.fontWeight,
                             fontStyle: catStyle.italic ? 'italic' : 'normal',
@@ -646,8 +646,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         
         const categoryColumnCount = style.categoryColumnCount || 1;
         const productColumnCount = style.columnCount || 1;
-        const photoAlignment = style.productPhotoAlignments?.[product.id] || 'left';
-        const stackImage = photoAlignment === 'center' || categoryColumnCount >= 3 && !style.productPhotoAlignments?.[product.id];
+        const photoAlignment = style.productPhotoAlignments?.[product.id] ?? style.productPhotoAlignmentDefault ?? 'left';
+        const stackImage = photoAlignment === 'center' || categoryColumnCount >= 3 && !style.productPhotoAlignments?.[product.id] && !style.productPhotoAlignmentDefault;
         const imageSizePx = getProductListImageLimit(categoryColumnCount);
         const rawCustomMarginTop = Number(product.customMarginTop);
         const isFreeTextGhost = product.isFreeText && item.category?.startsWith(FREE_TEXT_PREFIX);
@@ -741,7 +741,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 color: nameStyle.color || style.textColor,
                                 ...textContrastFill(`freeText:${product.id}`),
                                 ...getTextOutlineStyle(nameStyle.textOutline),
-                                fontFamily: nameStyle.fontFamily,
+                                fontFamily: templateFontStack(style, nameStyle.fontFamily),
                                 fontSize: `${clampFontSize(style, 'freeText', nameStyle.fontSize, 18)}px`,
                                 fontWeight: nameStyle.fontWeight,
                                 fontStyle: nameStyle.italic ? 'italic' : 'normal',
@@ -801,7 +801,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                         color: nameStyle.color || style.textColor,
                                         ...textContrastFill('productName'),
                                         ...getTextOutlineStyle(nameStyle.textOutline),
-                                        fontFamily: nameStyle.fontFamily,
+                                        fontFamily: templateFontStack(style, nameStyle.fontFamily),
                                         fontSize: `${clampFontSize(style, 'productName', nameStyle.fontSize, 18)}px`,
                                         fontWeight: nameStyle.fontWeight,
                                         fontStyle: nameStyle.italic ? 'italic' : 'normal',
@@ -831,8 +831,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 color: `var(--automenu-preview-text, ${descStyle.color || style.textColor})`,
                                 ...textContrastFill('productDescription'),
                                 ...getTextOutlineStyle(descStyle.textOutline),
-                                fontFamily: descStyle.fontFamily,
+                                fontFamily: templateFontStack(style, descStyle.fontFamily),
                                 fontSize: `${clampFontSize(style, 'productDescription', descStyle.fontSize, 14)}px`,
+                                lineHeight: descStyle.lineHeight,
                                 fontWeight: descStyle.fontWeight,
                                 textAlign: descStyle.textAlign || nameStyle.textAlign,
                                 fontStyle: descStyle.italic ? 'italic' : 'normal',
@@ -897,7 +898,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             >
                 {(item.data as Product[]).map((product, productColumnIndex) => {
                      const isSelected = handlers.isSelected?.('product', product.id) ?? handlers.selectedId === product.id;
-                     const photoAlignment = style.productPhotoAlignments?.[product.id];
+                     const photoAlignment = style.productPhotoAlignments?.[product.id] ?? style.productPhotoAlignmentDefault;
                      const sidePhoto = photoAlignment === 'left' || photoAlignment === 'right';
                      const nameStyle = style.elementStyles?.productName || {};
                      const priceStyle = style.elementStyles?.productPrice || {};
@@ -999,7 +1000,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         data-placeholder-field="product-name"
                                                         data-product-edit-id={product.id}
                                                         className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] [word-break:normal] leading-snug outline-none rounded ${isEditable ? editableTextClassName : ''}`}
-                                                        style={{ ...textContrastFill('productName'), color: `var(--automenu-preview-text, ${nameStyle.color || style.textColor})`, ...getTextOutlineStyle(nameStyle.textOutline), fontFamily: nameStyle.fontFamily, fontSize: clampFontSize(style, 'productName', nameStyle.fontSize, 18), fontWeight: nameStyle.fontWeight, fontStyle: nameStyle.italic ? 'italic' : 'normal', textDecoration: nameStyle.underline ? 'underline' : 'none', textAlign: nameStyle.textAlign, textTransform: nameStyle.textTransform }}
+                                                        style={{ ...textContrastFill('productName'), color: `var(--automenu-preview-text, ${nameStyle.color || style.textColor})`, ...getTextOutlineStyle(nameStyle.textOutline), fontFamily: templateFontStack(style, nameStyle.fontFamily), fontSize: clampFontSize(style, 'productName', nameStyle.fontSize, 18), fontWeight: nameStyle.fontWeight, fontStyle: nameStyle.italic ? 'italic' : 'normal', textDecoration: nameStyle.underline ? 'underline' : 'none', textAlign: nameStyle.textAlign, textTransform: nameStyle.textTransform }}
                                                         contentEditable={Boolean(isEditable)}
                                                         suppressContentEditableWarning
                                                         onBlur={(e) => handlers.handleBlur(e, 'product', product.id, 'name')}
@@ -1029,7 +1030,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                 data-placeholder-field="product-description"
                                                 data-product-edit-id={product.id}
                                                 className={`max-w-full opacity-75 break-words [overflow-wrap:anywhere] [word-break:normal] flex-grow outline-none rounded ${isEditable ? `min-h-[1.5em] ${editableTextClassName}` : 'line-clamp-4'}`}
-                                                style={{ ...textContrastFill('productDescription'), color: `var(--automenu-preview-text, ${descStyle.color || style.textColor})`, ...getTextOutlineStyle(descStyle.textOutline), fontFamily: descStyle.fontFamily, fontSize: clampFontSize(style, 'productDescription', descStyle.fontSize, 14), fontWeight: descStyle.fontWeight, fontStyle: descStyle.italic ? 'italic' : 'normal', textDecoration: descStyle.underline ? 'underline' : 'none', textAlign: descStyle.textAlign }}
+                                                style={{ ...textContrastFill('productDescription'), color: `var(--automenu-preview-text, ${descStyle.color || style.textColor})`, ...getTextOutlineStyle(descStyle.textOutline), fontFamily: templateFontStack(style, descStyle.fontFamily), fontSize: clampFontSize(style, 'productDescription', descStyle.fontSize, 14), lineHeight: descStyle.lineHeight, fontWeight: descStyle.fontWeight, fontStyle: descStyle.italic ? 'italic' : 'normal', textDecoration: descStyle.underline ? 'underline' : 'none', textAlign: descStyle.textAlign }}
                                                 contentEditable={Boolean(isEditable)}
                                                 tabIndex={isEditable ? 0 : undefined}
                                                 suppressContentEditableWarning

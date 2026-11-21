@@ -1,10 +1,11 @@
+import { canvasShapeUrl as decorationUrl } from '../../../domain/menu/canvasShapes';
 import { CanvasRotationHandle, CanvasScaleHandles } from './CanvasTransformHandles';
 import { getTextOutlineStyle } from './textOutlineStyle';
 import { getContentLayer, getImageLayer } from '../../../domain/menu/imageLayers';
 import { CanvasLayerImage } from './CanvasLayerImage';
 import { PhotoLoading } from './MenuPhoto';
 import type { SelectionItem } from '../interactions/types';
-import { getTemplateColors, getTemplateDesignAttributes } from './templateStyles';
+import { getTemplateColors, getTemplateDesignAttributes, templateFontStack } from './templateStyles';
 import '../designer/templateDesign.css';
 import React from 'react';
 import type { AddedImage, Product, MenuStyle } from '../../../domain/menu/model';
@@ -16,12 +17,12 @@ import type { PageLayout, CategoryChunkLayout, PageItem } from '../../../domain/
 import { FREE_TEXT_PREFIX } from '../../../domain/menu/flow';
 import { selectionLayerClasses } from './selectionLayers';
 import { getDirectionLabel, type FlowDirection } from './flowControls';
-import { getMiniFoodTextureKind, normalizeTextureUrl } from '../../../domain/menu/defaults';
+import { resolveTexture } from '../../../domain/menu/defaults';
 import { InlineStyleToolbar } from '../designer/InlineStyleToolbar';
 import { resolveMenuMargins, resolveMinimumFontSize, roundFontSize } from '../../../domain/menu/styleRules';
 import { getColumnGridTemplate, getPageColumnWidths } from '../../../domain/menu/categoryColumns';
 import { ColumnResizeHandles } from './ColumnResizeHandles';
-import { isMiniFoodKind, MINI_FOODS, miniFoodTextureUrl } from '../../../domain/menu/miniFoods';
+import { isMiniFoodKind, MINI_FOODS } from '../../../domain/menu/miniFoods';
 import { canvasShapeUrl, applyCanvasShapeParameters, getSelectedLayerIds, getShapeTextStyle } from '../../../domain/menu/canvasShapes';
 import { ShapeTextEditor } from './ShapeTextEditor';
 import { ShapeSettings } from '../designer/ShapePicker';
@@ -152,12 +153,10 @@ export const MenuPage: React.FC<MenuPageProps> = ({
     const backgroundPhoto = style.menuBackgroundPhoto?.url;
     const pageBackground = (style.pageBackgrounds || [])
         .find((background) => background.pageIndex === pageIndex);
-    const textureKind = !pageBackground?.url && style.miniFoodTextureColor ? getMiniFoodTextureKind(style.backgroundImage) : undefined;
-    const backgroundTexture = textureKind
-        ? miniFoodTextureUrl(textureKind, style.miniFoodTextureColor)
-        : normalizeTextureUrl(pageBackground?.url || style.backgroundImage);
-    const isImportedMenu = style.appliedTemplateId ? style.templateBackgroundFit === 'fill' : style.sourceType === 'ai_import';
-    const backgroundSource = backgroundTexture || (!isImportedMenu && !style.appliedTemplateId ? style.sourceImage : '');
+    const texture = resolveTexture(pageBackground?.url || style.backgroundImage,
+        style.miniFoodTextureColor, style.miniFoodTextureScale);
+    const isImportedMenu = style.templateBackgroundFit === 'fill' || style.sourceType === 'ai_import' && style.appliedTemplateId === undefined;
+    const backgroundSource = texture.url || (style.appliedTemplateId === undefined && !isImportedMenu ? style.sourceImage : '');
     const decorativeBackground = {
         texture: 'repeating-linear-gradient(35deg, transparent 0 6px, rgba(140, 110, 80, .046) 6px 7px)',
         split: 'linear-gradient(90deg, var(--template-tint) 0 34%, transparent 34%)',
@@ -205,12 +204,14 @@ export const MenuPage: React.FC<MenuPageProps> = ({
     const shapeEditor = activeImage?.shape ? activeImage
         : selectedLayers && [...(style.addedImages || [])].reverse().find(image => image.shape && selectedLayers.has(image.id));
     const pageStyle: React.CSSProperties = {
-        fontFamily: style.fontFamily + (style.design ? ', Georgia, serif' : ''),
+        fontFamily: style.productPhotoRatio ? templateFontStack(style, style.fontFamily)
+            : style.fontFamily + (style.design ? ', Georgia, serif' : ''),
         ...getTemplateColors(style),
         backgroundColor: isImportedMenu && !backgroundPhoto ? 'transparent' : 'var(--template-paper)',
         color: 'var(--template-ink)',
-        backgroundImage: backgroundPhoto ? 'none' : !isImportedMenu && backgroundSource ? `url(${backgroundSource})` : style.design ? decorativeBackground[style.design.background] : 'none',
-        backgroundSize: 'cover',
+        backgroundImage: backgroundPhoto ? 'none' : (!isImportedMenu || texture.tiled) && backgroundSource ? `url("${backgroundSource}")` : style.design ? decorativeBackground[style.design.background] : 'none',
+        backgroundSize: texture.tiled ? 'auto' : 'cover',
+        backgroundRepeat: texture.tiled ? 'repeat' : 'no-repeat',
         backgroundPosition: 'center',
         backgroundBlendMode: 'normal',
         width: `${pageDimensions.widthPx}px`,
@@ -531,7 +532,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 }}
                 onDoubleClick={readOnly ? undefined : (e) => handlers.handlePageDoubleClick(e, pageIndex)}
             >
-                {(backgroundPhoto || (isImportedMenu && backgroundSource)) && (
+                {(backgroundPhoto || (isImportedMenu && !texture.tiled && backgroundSource)) && (
                     <img
                         data-menu-background-image="true"
                         src={backgroundPhoto || backgroundSource}
@@ -545,12 +546,17 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         style={{ objectFit: backgroundPhoto ? 'cover' : 'fill', zIndex: 0 }}
                     />
                 )}
-                {needsOverlay && !backgroundPhoto && !style.appliedTemplateId && !isImportedMenu && <div className="absolute inset-0 bg-white/90 pointer-events-none z-0" />}
+                {needsOverlay && !backgroundPhoto && style.appliedTemplateId === undefined && !isImportedMenu && <div className="absolute inset-0 bg-white/90 pointer-events-none z-0" />}
                 {handlers.columnResizeGuide?.pageIndex === pageIndex && (
                     <div data-column-resize-guide data-print-control="true"
                         className="pointer-events-none absolute inset-y-0 z-[90] w-0.5 border-l-2 border-dashed border-rose-500"
                         style={{ left: `${handlers.columnResizeGuide.x}px` }} />
                 )}
+                {!backgroundPhoto && !pageBackground?.url && style.templateDecoration?.map(({ shape, x, y, width, opacity, height }, index) => (
+                    <img key={index} data-template-decoration aria-hidden="true" alt="" draggable={false}
+                        src={decorationUrl(shape, false)} className="pointer-events-none absolute"
+                        style={{ left: `${x * 100}%`, top: `${y * 100}%`, width: `${width * 100}%`, opacity, height: height !== undefined ? `${height * 100}%` : undefined, objectFit: 'fill' }} />
+                ))}
                 {addedImagePreview && !readOnly && (
                     <div data-added-image-preview data-print-control="true"
                         className="pointer-events-none absolute z-[70] bg-slate-100"

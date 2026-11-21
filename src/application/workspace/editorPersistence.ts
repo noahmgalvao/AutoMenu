@@ -16,7 +16,7 @@ export const getPersistSignature = (payload: Pick<PersistPayload, 'products' | '
   JSON.stringify({
     products: payload.products,
     style: payload.style,
-    templates: payload.templates,
+    templates: payload.templates.filter(template => template.scope !== 'workspace' || template.sourceType !== 'user'),
     sortOption: payload.sortOption,
   });
 

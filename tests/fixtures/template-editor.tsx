@@ -5,13 +5,16 @@ import { AppServicesProvider } from '../../src/presentation/app/AppServicesProvi
 import MenuDesigner from '../../src/presentation/menu/MenuDesigner';
 import { ProductDesigner } from '../../src/presentation/products/ProductDesigner';
 import { MenuPreview } from '../../src/presentation/menu/canvas/MenuPreview';
+import legacyCatalogSeed from '../../supabase/migrations/20261116120000_template_catalog.sql?raw';
+import { INITIAL_STYLE } from '../../src/domain/menu/defaults';
 import { PRESET_TEMPLATES } from '../../src/domain/templates/templateCatalog';
 import { canvasShapeUrl, createCanvasShape } from '../../src/domain/menu/canvasShapes';
 import type { MenuStyle, Product, SortOption } from '../../src/domain/menu/model';
 import type { TemplateDesign } from '../../src/domain/templates/model';
 import '../../src/presentation/styles.css';
 
-const initial = { ...PRESET_TEMPLATES[0], menuTitle: 'Casa São Bento', menuSubtitle: 'Cozinha de estação' };
+const legacyFixture: MenuStyle = JSON.parse(legacyCatalogSeed.split('\n')[7].trim().replace(/,$/, '').replace(/''/g, "'")).style_state;
+const initial = { ...legacyFixture, appliedTemplateId: 'moderno-limpo', menuTitle: 'Casa São Bento', menuSubtitle: 'Cozinha de estação' };
 const imported: MenuStyle = {
   ...initial, id: 'imported-1', name: 'Café da Vó', scope: 'workspace',
   sourceType: 'ai_import', templateVersionId: 'original-version', catalogMetadata: undefined, design: undefined,
@@ -37,7 +40,7 @@ function Fixture() {
   const splitCategory = params.has('split-category');
   const batchLayers = params.has('batch-layers');
   const [history, setHistory] = useState<MenuStyle[]>(() => !photoMode ? [
-    batchLayers ? {
+    params.has('neutral') ? { ...INITIAL_STYLE, menuTitle: initial.menuTitle, menuSubtitle: initial.menuSubtitle } : batchLayers ? {
       ...initial,
       addedImages: [
         ...batchShapes.map(shape => ({

@@ -1,3 +1,4 @@
+import { NO_TEMPLATE_ID } from '../menu/defaults';
 import type { MenuStyle } from '../menu/model';
 
 export type TemplateTab = 'all' | 'favorites' | 'mine';
@@ -10,10 +11,11 @@ const normalize = (value: string) => value.normalize('NFD').replace(/\p{Diacriti
 export function filterTemplates(templates: MenuStyle[], tab: TemplateTab, query: string, favorites: ReadonlySet<string>) {
   const words = normalize(query).split(/\s+/).filter(Boolean);
   return templates.filter((template) => {
+    if (template.id === NO_TEMPLATE_ID && tab !== 'all') return false;
     if (tab === 'favorites' && !favorites.has(template.id)) return false;
     if (tab === 'mine' && template.scope === 'system') return false;
     const info = template.catalogMetadata;
-    const index = normalize([template.name, info?.description, info?.category, template.fontFamily,
+    const index = normalize([template.name, template.templateDescription, template.id === NO_TEMPLATE_ID ? 'em branco padrão' : '', info?.description, info?.category, template.fontFamily,
       ...(info?.tags || []), ...(info?.keywords || []), template.scope !== 'system' ? 'Importado Meus modelos' : 'Modelo pronto'].join(' '));
     return words.every((word) => index.includes(word));
   });

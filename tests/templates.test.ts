@@ -53,7 +53,7 @@ test('applying a design preserves imported data, visibility and positions of use
   }
   assert.equal(result.addedImages?.[0].assetId, 'asset');
   assert.equal(result.floatingText?.[0].text, 'Texto original');
-  assert.equal(result.categoryPlacements, undefined);
+  assert.deepEqual(result.categoryPlacements, { Massas: { pageIndex: 0, columnIndex: 0 } });
   assert.equal(getAppliedTemplateId(result), template.id);
   assert.equal(getAppliedTemplateId({...result, appliedTemplateId: undefined, id: 'modern-clean'}), 'moderno-limpo');
   const {widthPx, heightPx} = resolveMenuPageDimensions(result);
@@ -134,4 +134,95 @@ test('all designs paginate short, medium and long menus without losing products'
   const pages = finalizeMenuPages([], {...PRESET_TEMPLATES[0],
     addedImages:[{id:'1',url:'/logo',x:0,y:0,width:10,pageIndex:7}]});
   assert.equal(pages.length,8);
+});
+
+test('the classic base is independent and keeps explicit neutrality across hydration', async () => {
+  const { createClassicMenuStyle, INITIAL_STYLE, NO_TEMPLATE_ID } = await import('../src/domain/menu/defaults');
+  const { withStyleDefaults, withMenuRuleFallback } = await import('../src/application/workspace/state');
+  const draft = createClassicMenuStyle();
+  assert.deepEqual([draft.fontFamily, draft.margins?.left, draft.contentSpacing?.headerToContent, draft.elementStyles.menuTitle?.fontSize],
+    ['Inter', 56, 28, 44]);
+  assert.deepEqual([draft.elementStyles.productPrice.color, draft.fontSizeLimits?.productDescription, draft.fontSizeLimits?.freeText],
+    ['#047857', 35, 70]);
+  draft.elementStyles.productPrice.color = '#000000';
+  assert.equal(INITIAL_STYLE.elementStyles.productPrice.color, '#047857');
+  const authored = { ...PRESET_TEMPLATES[0], menuTitle: 'Meu cardápio', menuSubtitle: 'Da casa', hiddenProductIds: ['p'],
+    headingPages: { menuTitle: [0] }, productPhotoAlignments: { p: 'right' as const } };
+  const neutral = withStyleDefaults(JSON.parse(JSON.stringify(applyTemplateToCurrentStyle(authored, INITIAL_STYLE))));
+  assert.equal(neutral.appliedTemplateId, null);
+  assert.equal(getAppliedTemplateId(neutral), NO_TEMPLATE_ID);
+  assert.equal(neutral.design, undefined);
+  assert.equal(neutral.menuTitle, 'Meu cardápio');
+  assert.equal(neutral.menuSubtitle, 'Da casa');
+  assert.deepEqual(neutral.headingPages, { menuTitle: [0] });
+  assert.deepEqual(neutral.productPhotoAlignments, { p: 'right' });
+  const legacy = withStyleDefaults({ ...authored, splitCategoryAcrossPages: undefined, productsCanChangeCategory: false });
+  const effective = withMenuRuleFallback(legacy, { splitCategoryAcrossPages: true, productsCanChangeCategory: true });
+  assert.equal(effective.splitCategoryAcrossPages, true);
+  assert.equal(effective.productsCanChangeCategory, false);
+  assert.equal(neutral.splitCategoryAcrossPages, false);
+  assert.deepEqual(filterTemplates([INITIAL_STYLE, ...PRESET_TEMPLATES], 'all', 'padrão em branco', new Set()).map(x => x.id), [NO_TEMPLATE_ID]);
+});
+
+test('workspace templates snapshot the live design without source object IDs', async () => {
+  const { createWorkspaceTemplate } = await import('../src/application/templates/portableTemplateStyle');
+  const { createCanvasShape } = await import('../src/domain/menu/canvasShapes');
+  const original = { ...PRESET_TEMPLATES[0], menuTitle: 'Segredo', menuSubtitle: 'Outro texto', showPrices: false,
+    splitCategoryAcrossPages: true, productsCanChangeCategory: false, hiddenProductIds: ['original'],
+    productPhotoAlignments: { original: 'left' as const }, categoryImages: { Segredo: { url: '/secret.jpg' } },
+    textContrastFills: { 'freeText:original': '#000000', productName: '#ffffff' },
+    sourceImage: '/source.jpg', addedImages: [
+      { id: 'decoration', url: '/shape.svg', x: 10, y: 20, width: 42, pageIndex: 0,
+        repeatAsBackground: true, shape: { ...createCanvasShape('star', '#222222'), text: 'Segredo' } },
+    ] };
+  const saved = createWorkspaceTemplate(original, ' Menu novo ', '  ', ' ', 'fresh-id');
+  assert.equal(saved.name, 'Modelo de Menu novo');
+  assert.equal(saved.templateDescription, undefined);
+  assert.equal(saved.sourceType, 'user');
+  assert.equal(saved.scope, 'workspace');
+  assert.equal(saved.menuTitle, '');
+  assert.equal(saved.templateDecoration?.[0]?.shape.text, undefined);
+  assert.ok(!JSON.stringify(saved).includes('Segredo'));
+  assert.ok(!JSON.stringify(saved).includes('original'));
+  assert.equal(saved.addedImages, undefined);
+  const other = { ...PRESET_TEMPLATES[1], menuTitle: 'Destino', hiddenProductIds: ['other'], showPrices: true,
+    productPhotoAlignments: { other: 'center' as const }, productsCanChangeCategory: true,
+    textContrastFills: { 'freeText:other': '#111111' } };
+  const applied = applyTemplateToCurrentStyle(other, saved);
+  assert.deepEqual(applied.productPhotoAlignments, other.productPhotoAlignments);
+  assert.deepEqual(applied.hiddenProductIds, ['other']);
+  assert.equal(applied.menuTitle, 'Destino');
+  assert.equal(applied.splitCategoryAcrossPages, true);
+  assert.equal(applied.productsCanChangeCategory, false);
+  assert.equal(applied.showPrices, false);
+  assert.deepEqual(applied.textContrastFills, { 'freeText:other': '#111111', productName: '#ffffff' });
+  assert.equal(applyTemplateToCurrentStyle(applied, saved).templateDecoration?.length, 1);
+});
+
+test('Mix and individual texture size are deterministic and independent of the default color', async () => {
+  const { SAMPLE_BACKGROUNDS, resolveTexture, normalizeTextureUrl } = await import('../src/domain/menu/defaults');
+  const { isMiniFoodKind } = await import('../src/domain/menu/miniFoods');
+  const { mixTextureToken } = await import('../src/domain/menu/textureTiles');
+  assert.equal(SAMPLE_BACKGROUNDS.length, 14);
+  assert.ok(!isMiniFoodKind('mini-food:mix'));
+  for (const token of [mixTextureToken, 'texture:mini-food:burger']) {
+    const original = resolveTexture(token);
+    assert.equal(original.tiled, true);
+    assert.equal(resolveTexture(token, undefined, 100).url, original.url);
+    assert.notEqual(resolveTexture(token, undefined, 150).url, original.url);
+  }
+  assert.equal(resolveTexture('https://www.transparenttextures.com/patterns/gplay.png').tiled, false);
+  assert.equal(normalizeTextureUrl('https://www.transparenttextures.com/patterns/natural-paper.png'), 'texture:natural-paper');
+});
+
+test('normal creation and the workspace recovery payload both start from the classic design', async () => {
+  const { createInitialMenuVersionPayload } = await import('../src/infrastructure/supabase/workspace/menus');
+  const first = createInitialMenuVersionPayload();
+  const blank = createInitialMenuVersionPayload('Meu novo cardápio');
+  assert.equal(first.editorState.style.appliedTemplateId, null);
+  assert.equal(blank.editorState.style.menuTitle, 'Meu novo cardápio');
+  assert.equal(blank.editorState.style.menuSubtitle, '');
+  assert.equal(blank.renderSnapshot.style.fontFamily, 'Inter');
+  assert.equal(blank.renderSnapshot.products.length, first.renderSnapshot.products.length);
+  assert.notEqual(first.editorState.style.elementStyles, blank.editorState.style.elementStyles);
 });

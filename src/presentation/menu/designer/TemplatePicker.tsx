@@ -1,12 +1,12 @@
+import { CATALOG_VERSION } from '../../../domain/templates/templateCatalog';
+import { INITIAL_STYLE, NO_TEMPLATE_ID } from '../../../domain/menu/defaults';
 import React, { memo, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, ArrowUp, Check, ChevronDown, Grid2X2, Heart, Search, X } from 'lucide-react';
 import type { MenuStyle, Product, SortOption } from '../../../domain/menu/model';
 import { useTemplateFavorites } from './useTemplateFavorites';
 import { getAppliedTemplateId } from '../../../application/templates/templateApplication';
-import { getTemplateColors, getTemplateDesignAttributes } from '../canvas/templateStyles';
 import { filterTemplates, stepTemplate, swipeDirection, TEMPLATE_TABS, type TemplateTab } from '../../../domain/templates/templateBrowse';
-import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 import { TemplatePreviewSurface } from './TemplatePreviewSurface';
 
 interface Props {
@@ -26,15 +26,14 @@ type Favorites = ReturnType<typeof useTemplateFavorites>;
 const Thumbnail = memo(function Thumbnail({ template }: { template: MenuStyle }) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
-  const dimensions = resolveMenuPageDimensions(template);
+  const atlasIndex = template.id === NO_TEMPLATE_ID ? 50
+    : template.catalogMetadata?.catalogVersion === CATALOG_VERSION ? template.catalogMetadata.sortOrder - 1 : -1;
   useEffect(() => {
     const target = ref.current;
     if (!target) return;
     if (typeof IntersectionObserver === 'undefined') { setVisible(true); return; }
     const observer = new IntersectionObserver(([entry]) => {
-      if (!entry.isIntersecting) return;
-      setVisible(true);
-      observer.disconnect();
+      setVisible(entry.isIntersecting);
     });
     observer.observe(target);
     return () => observer.disconnect();
@@ -42,29 +41,17 @@ const Thumbnail = memo(function Thumbnail({ template }: { template: MenuStyle })
 
   return (
     <div ref={ref} aria-hidden="true" className="template-thumbnail-stage grid h-full w-full place-items-center overflow-hidden bg-slate-100 p-1">
-      {visible && <div {...getTemplateDesignAttributes(template)} className="template-thumbnail" style={{
-        ...getTemplateColors(template),
-        backgroundColor: template.backgroundColor, color: template.textColor,
-        aspectRatio: dimensions.widthPx / dimensions.heightPx,
-        width: dimensions.widthPx <= dimensions.heightPx ? '70%' : '100%',
-      } as React.CSSProperties}>
-        <div data-template-header><strong data-menu-heading="title">{template.name}</strong></div>
-        <div className="template-thumbnail-sections" style={{ gridTemplateColumns: `repeat(${template.categoryColumnCount || 1}, 1fr)` }}>
-          {Array.from({ length: Math.max(2, template.categoryColumnCount || 1) }, (_, group) => (
-            <div key={group} className="min-w-0">
-              <div data-template-category>{group === 0 ? 'Da casa' : group === 1 ? 'Especiais' : 'Doces'}</div>
-              <div className="template-thumbnail-sections" style={{ gridTemplateColumns: `repeat(${template.columnCount}, 1fr)` }}>
-                {Array.from({ length: Math.max(2, template.columnCount) }, (_, item) => (
-                  <div key={item} data-template-card className="template-thumbnail-product">
-                    {template.showImages && <div data-template-image />}
-                    <i /><b data-template-price /><i />
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>}
+      {visible && (atlasIndex >= 0
+        ? <div className="h-full w-full rounded-sm bg-no-repeat" style={{
+            backgroundImage: 'url("/template-previews/catalog-v3.webp")',
+            backgroundSize: '600% 900%',
+            backgroundPosition: `${(atlasIndex % 6) * 20}% ${Math.floor(atlasIndex / 6) * 12.5}%`,
+          }} />
+        : <div className="h-full w-full">
+            <TemplatePreviewSurface current={INITIAL_STYLE} template={template} thumbnail products={[]}
+              sortOption={{ field: 'name', direction: 'asc' }} pageIndex={0} onPageChange={() => undefined}
+              heart={0} onHeartEnd={() => undefined} />
+          </div>)}
     </div>
   );
 });
@@ -72,6 +59,7 @@ const Thumbnail = memo(function Thumbnail({ template }: { template: MenuStyle })
 function FavoriteButton({ template, favorites, discovery = false }: {
   template: MenuStyle; favorites: Favorites; discovery?: boolean;
 }) {
+  if (template.id === NO_TEMPLATE_ID) return null;
   const active = favorites.ids.has(template.id);
   return <button type="button" aria-pressed={active}
     aria-label={`${active ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}: ${template.name}`}
@@ -109,10 +97,10 @@ function TemplateOption({ template, active, favorites, choose, gallery }: {
   const pendingChoice = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(pendingChoice.current), []);
   return <div data-template-option={template.id} className={gallery ? "template-gallery-tile" : `relative flex min-w-0 rounded-lg border ${active ? 'border-indigo-400 bg-indigo-50' : 'border-transparent hover:bg-slate-50'}`} data-current={active || undefined}>
-    <button type="button" aria-current={active || undefined}
+    <button type="button" aria-label={template.name} aria-current={active || undefined}
       className={`flex min-w-0 flex-1 gap-2 rounded-lg p-2 text-left ${gallery ? 'flex-col' : 'items-center'} ${focusStyle}`}
       onClick={(event) => {
-        if (!gallery || event.detail === 0) { choose(); return; }
+        if (!gallery || event.detail === 0 || template.id === NO_TEMPLATE_ID) { choose(); return; }
         if (pendingChoice.current) {
           clearTimeout(pendingChoice.current);
           pendingChoice.current = undefined;
@@ -127,9 +115,11 @@ function TemplateOption({ template, active, favorites, choose, gallery }: {
       <div className={`shrink-0 overflow-hidden rounded-md ${gallery ? 'template-gallery-thumbnail w-full' : 'h-16 w-14'}`}><Thumbnail template={template} /></div>
       <div className={`min-w-0 ${gallery ? 'pr-9' : ''}`}>
         <div className="truncate text-sm font-semibold">{template.name}</div>
-        <div className="template-option-description line-clamp-2 text-xs text-slate-600">{template.catalogMetadata?.description || 'Modelo do seu workspace'}</div>
+        {(template.templateDescription || template.catalogMetadata?.description) && <div className="template-option-description line-clamp-2 text-xs text-slate-600">
+          {template.templateDescription || template.catalogMetadata?.description}
+        </div>}
         {!gallery && <div className="mt-1 truncate text-[10px] font-semibold text-indigo-700">
-          {template.scope === 'system' ? 'Pronto' : template.sourceType === 'ai_import' ? 'Importado' : 'Meu modelo'}
+          {template.id === NO_TEMPLATE_ID ? 'Padrão' : template.scope === 'system' ? 'Pronto' : template.sourceType === 'ai_import' ? 'Importado' : 'Meu modelo'}
           {template.catalogMetadata?.tags.length ? ' · ' + template.catalogMetadata.tags.join(' · ') : ''}
         </div>}
       </div>
@@ -171,6 +161,7 @@ function Discover({ current, products, sortOption, splitCategoryAcrossPages, app
     setHeart(0);
   }, [focused?.id]);
   const likePreview = () => {
+    if (focused?.id === NO_TEMPLATE_ID) return;
     if (!focused) return;
     lastLiked.current = performance.now();
     favorites.toggle(focused.id, focused.name, true);
@@ -379,7 +370,10 @@ function Discover({ current, products, sortOption, splitCategoryAcrossPages, app
 }
 
 export function TemplatePicker(props: Props) {
-  const { current, templates, userId, applyTemplate } = props;
+  const { current, templates: library, userId, applyTemplate } = props;
+  const templates = useMemo(() => [...library, {
+    ...INITIAL_STYLE, templateDescription: 'Volta à formatação padrão e mantém seu conteúdo.',
+  }], [library]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [discover, setDiscover] = useState(false);
   const [tab, setTab] = useState<TemplateTab>('all');

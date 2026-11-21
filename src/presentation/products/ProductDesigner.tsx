@@ -50,10 +50,12 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
     onClose,
     onPdfClick,
     isOpen = true,
-    productsCanChangeCategory,
-    splitCategoryAcrossPages,
+    productsCanChangeCategory: legacyDrag,
+    splitCategoryAcrossPages: legacySplit,
     onImportVisibilityChange,
 }) => {
+    const productsCanChangeCategory = style.productsCanChangeCategory ?? legacyDrag;
+    const splitCategoryAcrossPages = style.splitCategoryAcrossPages ?? legacySplit;
     const { workspace: { linkSyncedMenuProducts } } = useAppServices();
 
     const {

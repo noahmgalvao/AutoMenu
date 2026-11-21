@@ -1,3 +1,4 @@
+import { refineTemplate } from './templateArt';
 import type { MenuPageSetup } from '../menu/pageModel';
 import type { MenuStyle } from '../menu/model';
 import type { TemplateDesign } from './model';
@@ -64,20 +65,20 @@ const recipes: Recipe[] = [
   ["landscape-premium", "Landscape Premium", "Editorial", "Cabeçalho dividido e três colunas arejadas.", "Instrument Serif", "#f7f4ea", "#252c2e", "#6f5340", "A3", "landscape", 3, 1, ["split", "ribbon", "editorial", "none", "16:9", "right", "bordered", "ornamental", "solid"], 56, 23, 81],
 ];
 
-export const CATALOG_VERSION = 2;
+export const CATALOG_VERSION = 3;
 export const LEGACY_TEMPLATE_IDS = new Map([
   ['modern-clean', 'moderno-limpo'], ['elegant-dark', 'bistro-elegante'],
   ['casual-grid', 'cafe-aconchegante'], ['rustic-cards', 'padaria-artesanal'],
 ]);
 
-export const PRESET_TEMPLATES: MenuStyle[] = recipes.map((recipe, index) => {
+export const PRESET_TEMPLATES: MenuStyle[] = recipes.map((recipe, index): MenuStyle => {
   const [id, name, segment, description, fontFamily, backgroundColor, textColor, primaryColor, preset,
     orientation, categoryColumnCount, columnCount, composition, margin, gap, title] = recipe;
   const [header, category, product, image, imageRatio, price, card, divider, background] = composition;
   const align = header === 'centered' || header === 'banner' ? 'center' : 'left';
   const compact = categoryColumnCount > 1 || columnCount > 1 || product === 'compact';
   return {
-    id, name, scope: 'system', sourceType: 'preset', isLocked: true, templateVersionId: id + '::catalog-v2',
+    id, name, scope: 'system', sourceType: 'preset', isLocked: true, templateVersionId: id + '::catalog-v' + CATALOG_VERSION,
     catalogMetadata: {
       description, category: segment, layoutFamily: product, pagePreset: preset, orientation,
       tags: [segment, orientation === 'landscape' ? 'Paisagem' : 'Retrato', preset],
@@ -90,7 +91,10 @@ export const PRESET_TEMPLATES: MenuStyle[] = recipes.map((recipe, index) => {
     backgroundColor, textColor, primaryColor, fontFamily,
     cardBackgroundColor: backgroundColor,
     layoutMode: product === 'card' || product === 'featured' ? 'cards' : columnCount > 1 ? 'grid' : 'list',
-    showImages: image !== 'none', categoryColumnCount, columnCount, hiddenProductIds: [],
+    showImages: image !== 'none', showCategoryImages: image !== 'none', categoryColumnCount, columnCount, hiddenProductIds: [],
+    splitCategoryAcrossPages: product === 'compact' || categoryColumnCount > 1, productsCanChangeCategory: false,
+    minimumFontSize: 15, revisedFontSizeDefaults: true, allowSameWordBreak: false, showPrices: true,
+    fontSizeLimits: { menuTitle: 120, menuSubtitle: 50, category: 50, productName: 50, productPrice: 60, productDescription: 35, freeText: 70 },
     globalRadius: card === 'soft' ? 18 : card === 'elevated' ? 12 : card === 'bordered' ? 4 : 0,
     imageScale: compact ? 0.8 : 1,
     margins: { top: margin, right: margin, bottom: margin, left: margin, columnGap: compact ? 18 : 28 },
@@ -104,4 +108,4 @@ export const PRESET_TEMPLATES: MenuStyle[] = recipes.map((recipe, index) => {
       productDescription: { fontSize: compact ? 13 : 15, color: textColor, fontFamily: product === 'editorial' ? 'Inter' : fontFamily, lineHeight: 1.4 },
     },
   };
-});
+}).map(refineTemplate);

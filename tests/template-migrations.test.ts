@@ -4,7 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { PGlite } from '@electric-sql/pglite';
 
-const seedPath = 'supabase/migrations/20261116120000_template_catalog.sql';
+const legacySeedPath = 'supabase/migrations/20261116120000_template_catalog.sql';
+const seedPath = 'supabase/migrations/20261121150000_template_catalog_v3.sql';
 const favoritesPath = 'supabase/migrations/20261116120100_template_favorites.sql';
 const user = '00000000-0000-0000-0000-000000000001';
 const other = '00000000-0000-0000-0000-000000000002';
@@ -44,10 +45,13 @@ test('catalog migration is idempotent and Postgres enforces favorite ownership a
         ('other-import','other','workspace','ai_import','Outro');
       insert into public.template_versions values ('original','my-import',1,'{"keep":"original"}');
     `);
+    await db.exec('begin;' + await readFile(legacySeedPath, 'utf8') + 'commit;');
     const seed = await readFile(seedPath,'utf8');
     await db.exec('begin;' + seed + 'commit;');
     await db.exec('begin;' + seed + 'commit;');
     assert.equal((await db.query<{count: string}>("select count(*) from public.templates where scope='system' and catalog_active")).rows[0].count, 50);
+    assert.equal((await db.query<{count: number}>("select count(*)::int from public.template_versions where template_id='swiss-grid'")).rows[0].count, 2);
+    assert.equal((await db.query("select id from public.templates where id='sem-modelo'")).rows.length, 0);
     assert.deepEqual((await db.query("select style_state from public.template_versions where id='original'")).rows,
       [{style_state:{keep:'original'}}]);
     await db.exec(await readFile(favoritesPath,'utf8'));

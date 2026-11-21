@@ -11,7 +11,12 @@ import { useCategoryColumnResize } from './useCategoryColumnResize';
 // Re-export constants needed by components if any (legacy compatibility)
 export { NUDGE_STEP };
 
-export const useMenuInteractions = (props: InteractionProps) => {
+export const useMenuInteractions = (input: InteractionProps) => {
+    const props = {
+        ...input,
+        splitCategoryAcrossPages: input.style.splitCategoryAcrossPages ?? input.splitCategoryAcrossPages,
+        productsCanChangeCategory: input.style.productsCanChangeCategory ?? input.productsCanChangeCategory,
+    };
     // 0. State needed for composition (lifted up for useKeyboardMovement)
     const [draftItem, setDraftItem] = useState<DraftItem | null>(null);
 

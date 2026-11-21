@@ -17,7 +17,7 @@ import { findSplitCategorySwap } from '../src/domain/menu/splitCategorySwap';
 import { resolveMenuMargins } from '../src/domain/menu/styleRules';
 import { PRESET_TEMPLATES } from '../src/domain/templates/templateCatalog';
 
-const style: MenuStyle = { ...PRESET_TEMPLATES[0], categoryColumnCount: 2, columnCount: 1, layoutMode: 'list' };
+const style: MenuStyle = { ...PRESET_TEMPLATES[0], templateHeadingVisibility: undefined, splitCategoryAcrossPages: undefined, categoryColumnCount: 2, columnCount: 1, layoutMode: 'list' };
 const margins = resolveMenuMargins(style);
 const dimensions = resolveMenuPageDimensions(style);
 const columnWidth = (dimensions.widthPx - margins.left - margins.right - margins.columnGap) / 2;

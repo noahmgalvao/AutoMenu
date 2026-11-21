@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises';
 const url = '/tests/fixtures/template-editor.html';
 
 async function openDiscovery(page: Page) {
-  await page.getByRole('button', { name: 'Minimal Editorial', exact: true }).click();
+  await page.getByRole('button', { name: 'Editorial Essencial', exact: true }).click();
   await page.getByRole('button', { name: 'Descobrir', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Descobrir modelos' })).toBeVisible();
 }
@@ -33,10 +33,10 @@ test('desktop discovery leaves the editor untouched until Apply and records one 
   await expect(canvas).toContainText('Casa São Bento');
   await expect(dialog.getByText('Arraste para cima para ver o próximo')).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Próximo modelo' })).toHaveCount(0);
-  await expect(dialog.getByRole('heading', { name: 'Minimal Editorial' })).toHaveCount(0);
+  await expect(dialog.getByRole('heading', { name: 'Editorial Essencial' })).toHaveCount(0);
   await expect(canvas.locator('[contenteditable=true],button')).toHaveCount(0);
   await page.keyboard.press('ArrowDown');
-  await expect(dialog.getByRole('img', { name: /Prévia de Swiss Grid/ })).toBeVisible();
+  await expect(dialog.getByRole('img', { name: /Prévia de Grade Suíça/ })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
   await expect(page.getByTestId('editor-state')).toHaveAttribute('data-edits','0');
@@ -44,7 +44,7 @@ test('desktop discovery leaves the editor untouched until Apply and records one 
   await openDiscovery(page);
   await page.mouse.move(300, 320);
   await page.mouse.wheel(0, 120);
-  await expect(dialog.getByRole('img', { name: /Prévia de Swiss Grid/ })).toBeVisible();
+  await expect(dialog.getByRole('img', { name: /Prévia de Grade Suíça/ })).toBeVisible();
   await page.keyboard.press('Enter');
   await expect(dialog).toHaveCount(0);
   await expect(page.getByTestId('editor-state')).toHaveAttribute('data-applied','swiss-grid');
@@ -54,7 +54,7 @@ test('desktop discovery leaves the editor untouched until Apply and records one 
 });
 
 test('quick search finds imported templates and favorites survive refresh', async ({ page }) => {
-  await page.getByRole('button',{name:'Minimal Editorial',exact:true}).click();
+  await page.getByRole('button',{name:'Editorial Essencial',exact:true}).click();
   await page.getByRole('button',{name:'Meus modelos',exact:true}).click();
   await page.getByRole('textbox',{name:'Pesquisar modelos'}).fill('cafe da vo');
   const favorite = page.getByRole('button',{name:'Adicionar aos favoritos: Café da Vó',exact:true});
@@ -63,7 +63,7 @@ test('quick search finds imported templates and favorites survive refresh', asyn
   await favorite.click();
   await persisted;
   await page.reload();
-  await page.getByRole('button',{name:'Minimal Editorial',exact:true}).click();
+  await page.getByRole('button',{name:'Editorial Essencial',exact:true}).click();
   await page.getByRole('button',{name:'Favoritos',exact:true}).click();
   await expect(page.getByRole('button',{name:'Remover dos favoritos: Café da Vó',exact:true})).toBeVisible();
 });
@@ -74,7 +74,7 @@ for (const viewport of [{width:360,height:720},{width:430,height:932}]) {
     test('fullscreen preview swipes, opens the gallery and cancels with browser back', async ({ page, context }) => {
       await openDiscovery(page);
       const dialog = page.getByRole('dialog');
-      const surface = dialog.getByRole('img',{name:/Prévia de Minimal Editorial/});
+      const surface = dialog.getByRole('img',{name:/Prévia de Editorial Essencial/});
       const box = await surface.boundingBox();
       expect(box).toBeTruthy();
       const cdp = await context.newCDPSession(page);
@@ -83,12 +83,12 @@ for (const viewport of [{width:360,height:720},{width:430,height:932}]) {
       await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
       await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:y-90}]});
       await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
-      await expect(dialog.getByRole('img', { name: /Prévia de Swiss Grid/ })).toBeVisible();
+      await expect(dialog.getByRole('img', { name: /Prévia de Grade Suíça/ })).toBeVisible();
       await dialog.getByRole('button',{name:'Ver todos'}).tap();
       await expect(dialog.getByRole('button', { name: 'Voltar à prévia' })).toBeVisible();
-      await expect(dialog.locator('[data-template-option]')).toHaveCount(51);
+      await expect(dialog.locator('[data-template-option]')).toHaveCount(52);
       await dialog.getByRole('button', { name: 'Voltar à prévia' }).tap();
-      await expect(dialog.getByRole('img', { name: /Prévia de Swiss Grid/ })).toBeVisible();
+      await expect(dialog.getByRole('img', { name: /Prévia de Grade Suíça/ })).toBeVisible();
       await dialog.getByRole('button', { name: 'Ver todos' }).tap();
       const search = dialog.getByRole('textbox', { name: 'Pesquisar modelos' });
       await expect(search).toBeVisible();
@@ -107,12 +107,12 @@ for (const viewport of [{width:360,height:720},{width:430,height:932}]) {
 }
 
 test('queued favorites sync after reconnect without editing the menu', async ({ page, context }) => {
-  await page.getByRole('button',{name:'Minimal Editorial',exact:true}).click();
+  await page.getByRole('button',{name:'Editorial Essencial',exact:true}).click();
   await expect(page.getByText('Carregando favoritos…')).toHaveCount(0);
   await context.setOffline(true);
-  const favorite = page.getByRole('button',{name:'Adicionar aos favoritos: Minimal Editorial',exact:true});
+  const favorite = page.getByRole('button',{name:'Adicionar aos favoritos: Editorial Essencial',exact:true});
   await favorite.click();
-  await expect(page.getByRole('button',{name:'Remover dos favoritos: Minimal Editorial',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Remover dos favoritos: Editorial Essencial',exact:true})).toBeVisible();
   const persisted = page.waitForResponse((response) => response.url().includes('template_favorites') && response.request().method() === 'POST');
   await context.setOffline(false);
   await persisted;
@@ -128,13 +128,13 @@ test('favorites survive a reload during a service failure and save when it recov
     return route.fulfill({ json: [...saved].map(template_id => ({ template_id })) });
   });
   await page.reload();
-  await page.getByRole('button', { name: 'Minimal Editorial', exact: true }).click();
+  await page.getByRole('button', { name: 'Editorial Essencial', exact: true }).click();
   const favorite = page.locator('[data-template-option="moderno-limpo"]').getByRole('button', { name: /favoritos/i });
   await favorite.click();
   await expect(favorite).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByText(/sincroniza|pendente/i)).toHaveCount(0);
   await page.reload();
-  await page.getByRole('button', { name: 'Minimal Editorial', exact: true }).click();
+  await page.getByRole('button', { name: 'Editorial Essencial', exact: true }).click();
   await expect(favorite).toHaveAttribute('aria-pressed', 'true');
   available = true;
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
@@ -681,7 +681,7 @@ test.describe('mobile product formatting', () => {
 });
 
 test('exports a landscape screen-sized PDF using the same dimensions as the editor', async ({ page }, testInfo) => {
-  await page.getByRole('button',{name:'Minimal Editorial',exact:true}).click();
+  await page.getByRole('button',{name:'Editorial Essencial',exact:true}).click();
   await page.getByRole('textbox',{name:'Pesquisar modelos'}).fill('Menu Board 16:9');
   await page.locator('[data-template-option="menu-board"] > button').click();
   await expect(page.locator('[data-menu-print-page]').first()).toHaveAttribute('data-menu-page-width-mm','320');
@@ -736,4 +736,46 @@ test('the editor uses one landscape column for a single category and restores po
   await expect(columns).toHaveCount(1);
   await page.getByRole('button', { name: 'Retrato', exact: true }).click();
   await expect(columns).toHaveCount(2);
+});
+
+test('Sem modelo is searchable and applies the classic design without losing content', async ({ page }) => {
+  await page.goto(url);
+  const paper = page.locator('[data-menu-print-page]').first();
+  const original = await paper.getAttribute('data-design-schema-version');
+  await page.getByRole('button', { name: 'Editorial Essencial', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Pesquisar modelos' }).fill('em branco padrão');
+  const option = page.locator('[data-template-option]');
+  await expect(option).toHaveCount(1);
+  await expect(option.getByRole('button', { name: /favoritos/i })).toHaveCount(0);
+  await option.getByRole('button', { name: 'Sem modelo', exact: true }).click();
+  await expect(paper).not.toHaveAttribute('data-design-schema-version');
+  await expect(paper).toHaveCSS('font-family', 'Inter');
+  await expect(paper.getByText('Burrata da casa', { exact: true })).toBeVisible();
+  await page.getByTitle('Desfazer', { exact: true }).click();
+  await expect(paper).toHaveAttribute('data-design-schema-version', original!);
+  await page.getByTitle('Refazer', { exact: true }).click();
+  await page.getByRole('button', { name: 'Descobrir', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('img', { name: /Prévia de Sem modelo/ })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: /favoritos: Sem modelo/ })).toHaveCount(0);
+});
+
+test('local texture gallery offers new patterns and scales Mix at the default color', async ({ page }) => {
+  await page.goto(url + '?neutral');
+  const texture = page.getByRole('combobox', { name: 'Textura de fundo' });
+  await texture.click();
+  const gallery = page.getByRole('listbox', { name: 'Textura de fundo' });
+  await expect(gallery.getByRole('option')).toHaveCount(14);
+  await expect(gallery.getByRole('option', { name: /Azulejo|Diamantes suaves/ })).toHaveCount(0);
+  await gallery.getByRole('option', { name: 'Mini comidas', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Mini comida', exact: true }).click();
+  await page.getByRole('option', { name: 'Mix', exact: true }).click();
+  const paper = page.locator('[data-menu-print-page]').first();
+  const original = await paper.evaluate(node => getComputedStyle(node).backgroundImage);
+  const scale = page.getByRole('slider', { name: /Tamanho dos ícones/ });
+  expect(original).toContain('data:image/svg+xml');
+  await scale.press('End');
+  await expect(scale).toHaveValue('160');
+  await expect(paper).not.toHaveCSS('background-image', original);
+  await expect(paper).toHaveCSS('background-repeat', 'repeat');
 });

@@ -16,10 +16,10 @@ async function drag(page: Page, from: { x: number; y: number }, to: { x: number;
 
 test('discovery swipes between pages and repeats the central like without unliking', async ({ page }) => {
   await page.goto(fixture + '?dense-list');
-  await page.getByRole('button', { name: 'Minimal Editorial', exact: true }).click();
+  await page.getByRole('button', { name: 'Editorial Essencial', exact: true }).click();
   await page.getByRole('button', { name: 'Descobrir', exact: true }).click();
   const dialog = page.getByRole('dialog');
-  const preview = dialog.getByRole('img', { name: /Prévia de Minimal Editorial/ });
+  const preview = dialog.getByRole('img', { name: /Prévia de Editorial Essencial/ });
   const box = (await preview.boundingBox())!;
   const x = box.x + box.width / 2;
   const y = box.y + box.height / 2;

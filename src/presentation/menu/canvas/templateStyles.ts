@@ -48,3 +48,14 @@ export function getProductPhotoFrameRadius(frame: MenuStyle['productImageFrame']
   if (frame === 'arch') return `50% 50% ${radius ?? 8}px ${radius ?? 8}px / 34% 34% ${radius ?? 8}px ${radius ?? 8}px`;
   return `${radius ?? (frame === 'rounded' ? 12 : 6)}px`;
 }
+
+
+// Match the typographic role if a font cannot be downloaded.
+export function templateFontStack(style: MenuStyle, font?: string) {
+  if (!font) return undefined;
+  if (!style.productPhotoRatio) return font;
+  if (/mono|courier/i.test(font)) return `"${font}", "Liberation Mono", monospace`;
+  if (/serif|garamond|lora|baskervville|playfair|fraunces|alegreya/i.test(font)) return `"${font}", Georgia, serif`;
+  if (/condensed|oswald|anton/i.test(font)) return `"${font}", "DejaVu Sans Condensed", sans-serif`;
+  return `"${font}", "Liberation Sans", sans-serif`;
+}

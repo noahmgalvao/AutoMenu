@@ -1,6 +1,6 @@
 import type { SortOption, Product, MenuStyle } from '../../domain/menu/model';
 import type { WorkspaceBootstrapData, MenuEditorState } from '../../domain/workspace/model';
-import { PRESET_TEMPLATES, INITIAL_STYLE } from '../../domain/menu/defaults';
+import { PRESET_TEMPLATES, createClassicMenuStyle } from '../../domain/menu/defaults';
 import { FREE_TEXT_PREFIX } from '../../domain/menu/flow';
 import { roundPrice, resolvePriceCurrencySymbol, resolvePriceDecimalPlaces, resolvePriceDecimalSeparator } from '../../domain/menu/price';
 import { roundFontSize, resolveFontSizeLimits, resolveMinimumFontSize, clampPhotoScale } from '../../domain/menu/styleRules';
@@ -65,7 +65,7 @@ export const slugify = (value: string) => {
 };
 
 export const withStyleDefaults = (style: MenuStyle | null | undefined): MenuStyle => {
-  const base = cloneJson(INITIAL_STYLE);
+  const base = createClassicMenuStyle();
   const source = isRecord(style) ? style as Partial<MenuStyle> : {};
   const layoutMode = source.layoutMode === 'grid' && !source.design ? 'cards' : source.layoutMode || base.layoutMode;
   const stringArray = (value: unknown) => (
@@ -77,7 +77,7 @@ export const withStyleDefaults = (style: MenuStyle | null | undefined): MenuStyl
       )
     : {};
   const withRoundedFontSize = (baseStyle: Record<string, any> | undefined, sourceStyle: Record<string, any> | undefined) => {
-    const merged = { ...(baseStyle || {}), ...(sourceStyle || {}) };
+    const merged = { ...(isRecord(sourceStyle) ? sourceStyle : baseStyle || {}) };
     return Number.isFinite(Number(merged.fontSize))
       ? { ...merged, fontSize: roundFontSize(merged.fontSize) }
       : merged;
@@ -87,6 +87,10 @@ export const withStyleDefaults = (style: MenuStyle | null | undefined): MenuStyl
     ...base,
     ...source,
     layoutMode,
+    appliedTemplateId: style ? source.appliedTemplateId : base.appliedTemplateId,
+    splitCategoryAcrossPages: style ? source.splitCategoryAcrossPages : base.splitCategoryAcrossPages,
+    productsCanChangeCategory: style ? source.productsCanChangeCategory : base.productsCanChangeCategory,
+    margins: source.margins ?? (style ? undefined : base.margins),
     design: normalizeTemplateDesign(source.design),
     catalogMetadata: source.catalogMetadata,
     templateVersionId: source.templateVersionId,
@@ -127,14 +131,7 @@ export const withStyleDefaults = (style: MenuStyle | null | undefined): MenuStyl
       [source.categoryImageScale, source.imageScale, base.imageScale]
         .map(value => Number(value ?? NaN)).find(Number.isFinite) ?? 1
     ),
-    margins: {
-      ...(base.margins || {}),
-      ...(isRecord(source.margins) ? source.margins : {}),
-    } as MenuStyle['margins'],
-    contentSpacing: {
-      ...(base.contentSpacing || {}),
-      ...(isRecord(source.contentSpacing) ? source.contentSpacing : {}),
-    } as MenuStyle['contentSpacing'],
+    contentSpacing: source.contentSpacing ?? (style ? undefined : base.contentSpacing),
     elementStyles: {
       ...base.elementStyles,
       ...(isRecord(source.elementStyles) ? source.elementStyles : {}),
@@ -280,3 +277,12 @@ export const describeRevisionChange = (previousSnapshot: Record<string, any> | n
 export const productComparisonSignature = (products: Product[]) => JSON.stringify(
   canonicalizeMenuValue(products.filter((product) => !product.isFreeText).sort((left, right) => left.id.localeCompare(right.id))),
 );
+
+
+export function withMenuRuleFallback(style: MenuStyle, legacy?: Pick<MenuStyle, 'splitCategoryAcrossPages' | 'productsCanChangeCategory'>): MenuStyle {
+  return {
+    ...style,
+    splitCategoryAcrossPages: style.splitCategoryAcrossPages ?? legacy?.splitCategoryAcrossPages ?? false,
+    productsCanChangeCategory: style.productsCanChangeCategory ?? legacy?.productsCanChangeCategory ?? false,
+  };
+}

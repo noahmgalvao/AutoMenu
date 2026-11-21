@@ -6,6 +6,7 @@ import {
   getMiniFoodTextureKind,
   MINI_FOOD_BACKGROUNDS,
   normalizeTextureUrl,
+  resolveTexture,
   SAMPLE_BACKGROUNDS,
 } from '../../../domain/menu/defaults';
 
@@ -53,20 +54,18 @@ const miniFoodTextureOptions: TextureOption[] = MINI_FOOD_BACKGROUNDS.map((textu
 }));
 
 const getTexturePreviewStyle = (url: string): React.CSSProperties => {
-  const kind = getMiniFoodTextureKind(url);
-  const preview = kind ? miniFoodIconUrl(kind) : url;
+  const preview = resolveTexture(url);
   return {
-    backgroundColor: '#ffffff',
-    backgroundImage: preview ? `url(${preview})` : 'none',
+    backgroundImage: preview.url ? `url("${preview.url}")` : 'none',
     backgroundPosition: 'center',
-    backgroundRepeat: 'no-repeat',
-    backgroundSize: kind ? 'contain' : 'cover',
+    backgroundRepeat: preview.tiled ? 'repeat' : 'no-repeat',
+    backgroundSize: preview.tiled ? '56px' : 'cover',
   };
 };
 
 const foldSearch = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('pt-BR').trim();
 
-export function DesignerPicker<T extends SelectOption>({ label, value, options, preferred, choose, render, renderAction, searchLabel, empty, gap, compact = false }: {
+export function DesignerPicker<T extends SelectOption>({ label, value, options, preferred, choose, render, renderAction, searchLabel, empty, gap, compact = false, gallery = false }: {
   label: string;
   value: T;
   options: readonly T[];
@@ -78,6 +77,7 @@ export function DesignerPicker<T extends SelectOption>({ label, value, options, 
   empty?: string;
   gap?: number;
   compact?: boolean;
+  gallery?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -140,7 +140,7 @@ export function DesignerPicker<T extends SelectOption>({ label, value, options, 
           <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">{preferred?.label}</div>
           {preferredMatches.map(renderOption)}
         </div>}
-        {matches.map(renderOption)}
+        {gallery ? <div role="presentation" className="grid grid-cols-2 gap-1">{matches.map(renderOption)}</div> : matches.map(renderOption)}
         {!matches.length && !preferredMatches.length && <div role="status" className="p-2 text-slate-500">{empty}</div>}
       </div>
     </div>}
@@ -182,16 +182,17 @@ export const FontSelect: React.FC<{
   </div>;
 };
 
-export function TextureSelect({ value, onChange }: { value?: string; onChange: (url: string) => void }) {
+export function TextureSelect({ value, onChange, paper = '#fff' }: { value?: string; onChange: (url: string) => void; paper?: string }) {
   const normalizedValue = normalizeTextureUrl(value);
   const selectedOption = getMiniFoodTextureKind(normalizedValue)
     ? textureOptions.find(option => getMiniFoodTextureKind(option.value))
     : textureOptions.find(option => option.value === normalizedValue);
 
-  return <DesignerPicker label="Textura de fundo" value={selectedOption || textureOptions[0]}
+  const current = selectedOption || { value: normalizedValue, url: normalizedValue, label: 'Textura legada' };
+  return <DesignerPicker gallery label="Textura de fundo" value={current}
     options={textureOptions} choose={option => onChange(option.url)} render={option => (
       <span className="flex min-w-0 items-center gap-2">
-        <span className="h-5 w-7 shrink-0 rounded border border-slate-200" style={getTexturePreviewStyle(option.url)} />
+        <span className="h-5 w-7 shrink-0 rounded border border-slate-200" style={{ ...getTexturePreviewStyle(option.url), backgroundColor: paper }} />
         <span className="truncate">{option.label}</span>
       </span>
     )} />;
@@ -204,7 +205,7 @@ export function MiniFoodTextureSelect({ value, onChange }: { value?: string; onC
     render={option => {
       const kind = getMiniFoodTextureKind(option.url);
       return <span className="flex min-w-0 items-center gap-2">
-        {kind && <img src={miniFoodIconUrl(kind)} alt="" className="h-5 w-5 shrink-0" draggable={false} />}
+        {kind && kind !== 'mini-food:mix' && <img src={miniFoodIconUrl(kind)} alt="" className="h-5 w-5 shrink-0" draggable={false} />}
         <span className="truncate">{option.label}</span>
       </span>;
     }} />;

@@ -215,7 +215,8 @@ export interface MenuStyle {
   freeTextBackgrounds?: Record<string, { x: number; y: number; width: number; pageIndex: number }>;
   markers?: Partial<Record<'category' | 'product', MenuMarker>>;
   catalogMetadata?: TemplateCatalogMetadata;
-  appliedTemplateId?: string;
+  appliedTemplateId?: string | null;
+  templateDescription?: string;
   appliedTemplateVersionId?: string | null;
   templateBackgroundFit?: 'cover' | 'fill';
   id: string;
@@ -233,6 +234,15 @@ export interface MenuStyle {
   textColor: string;
   backgroundImage?: string;
   miniFoodTextureColor?: string;
+  miniFoodTextureScale?: number;
+  templateHeadingVisibility?: Partial<Record<'menuTitle' | 'menuSubtitle', boolean>>;
+  productPhotoAlignmentDefault?: NonNullable<Product['imageAlignment']>;
+  categoryPhotoAlignmentDefault?: NonNullable<Product['imageAlignment']>;
+  categoryPhotoRatio?: number;
+  productPhotoRatio?: number;
+  categoryDividerStyle?: CategoryDividerStyle;
+  templateDecoration?: { shape: CanvasShape; x: number; y: number; width: number; opacity?: number; height?: number }[];
+  templateBackgroundOrigin?: 'template' | 'author';
   backgroundAssetId?: string | null;
   pageBackgrounds?: PageBackground[];
   menuBackgroundPhoto?: Pick<AddedImage, 'url' | 'assetId'> & { originKey?: string };
@@ -291,6 +301,8 @@ export interface MenuStyle {
   revisedFontSizeDefaults?: true;
   minimumFontSize?: number;
   allowSameWordBreak?: boolean;
+  splitCategoryAcrossPages?: boolean;
+  productsCanChangeCategory?: boolean;
   priceDecimalPlaces?: PriceDecimalPlaces;
   priceDecimalSeparator?: PriceDecimalSeparator;
   priceCurrencySymbol?: string;

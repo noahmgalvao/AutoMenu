@@ -18,7 +18,7 @@ test('the editor offers the same 50 mini foods as textures, shapes and markers',
   expect((await miniFood.boundingBox())?.height).toEqual((await paper.boundingBox())?.height);
   await miniFood.click();
   await page.getByRole('combobox', { name: 'Mini comida', exact: true }).click();
-  await expect(page.getByRole('listbox').getByRole('option')).toHaveText(foodNames);
+  await expect(page.getByRole('listbox').getByRole('option')).toHaveText([...foodNames, 'Mix'].sort((a, b) => a.localeCompare(b, 'pt-BR')));
   await page.getByRole('option', { name: 'Batata frita', exact: true }).click();
   await expect(page.locator('[data-menu-print-page]').first()).toHaveCSS('background-image', /data:image\/svg\+xml/);
 

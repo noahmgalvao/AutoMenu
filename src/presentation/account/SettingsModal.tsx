@@ -1,97 +1,26 @@
-import { FontSizeInput } from '../menu/designer/FontSizeInput';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { KeyRound, Loader2, RotateCcw, ShieldCheck, UserRound, X } from 'lucide-react';
-import {
-  DEFAULT_FONT_SIZE_LIMITS,
-  DEFAULT_MENU_CONTENT_SPACING,
-  DEFAULT_MENU_MARGINS,
-  DEFAULT_MINIMUM_FONT_SIZE,
-} from '../../domain/menu/defaults';
-import type {
-  FontSizeLimitKey,
-  FontSizeLimits,
-  MenuContentSpacing,
-  MenuMargins,
-  MenuStyle,
-} from '../../domain/menu/model';
+import { KeyRound, Loader2, X } from 'lucide-react';
 import type { Profile, Workspace } from '../../domain/workspace/model';
 import { getErrorMessage } from '../../application/errorMessages';
-import {
-  resolveFontSizeLimits,
-  resolveMenuContentSpacing,
-  resolveMenuMargins,
-  resolveMinimumFontSize,
-  roundFontSize,
-} from '../../domain/menu/styleRules';
 
 interface SettingsModalProps {
   open: boolean;
   profile: Profile;
   workspace: Workspace;
-  menuStyle: MenuStyle;
   email: string;
   saving: boolean;
   onClose: () => void;
-  onSave: (values: {
-    fullName: string;
-    workspaceName: string;
-    splitCategoryAcrossPages: boolean;
-    productsCanChangeCategory: boolean;
-    minimumFontSize: number;
-    allowSameWordBreak: boolean;
-    showPrices: boolean;
-    fontSizeLimits: FontSizeLimits;
-    margins: MenuMargins;
-    contentSpacing: MenuContentSpacing;
-  }, section: 'account' | 'rules') => Promise<void>;
+  onSave: (values: { fullName: string; workspaceName: string }) => Promise<void>;
   onRequestPasswordReset: () => Promise<void>;
   onUpdatePassword: (password: string, nonce: string) => Promise<void>;
 }
 
 const AUTO_SAVE_DELAY_MS = 600;
 
-const RuleGroup = <T extends object>({
-  title,
-  rows,
-  values,
-  min = 0,
-  max,
-  normalizeValue,
-  onChange,
-  headerContent,
-  showStepButtons = false,
-}: {
-  title: string;
-  rows: Array<[keyof T & string, string]>;
-  values: T;
-  min?: number;
-  max: number;
-  normalizeValue?: (value: number) => number;
-  onChange: (key: keyof T & string, value: number) => void;
-  headerContent?: React.ReactNode;
-  showStepButtons?: boolean;
-}) => (
-  <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-    <h3 className="mb-3 text-sm font-bold text-slate-800">{title}</h3>
-    {headerContent}
-    <div className="grid gap-x-5 gap-y-2 sm:grid-cols-2">
-      {rows.map(([key, label]) => (
-        <label key={key} className="flex items-center justify-between gap-3 text-sm text-slate-600">
-          <span>{label}</span>
-          <FontSizeInput showStepButtons={showStepButtons} label={label} min={min} max={max} value={Number(values[key])} commitOnBlur
-            onChange={value => onChange(key, normalizeValue ? normalizeValue(value) : value)}
-            className="!h-9 !w-16 bg-white text-center !text-sm font-semibold tabular-nums text-slate-700" />
-        </label>
-      ))}
-    </div>
-  </section>
-);
-
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   open,
   profile,
   workspace,
-  menuStyle,
   email,
   saving,
   onClose,
@@ -99,21 +28,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onRequestPasswordReset,
   onUpdatePassword,
 }) => {
-  const [section, setSection] = useState<'account' | 'rules'>('account');
   const [fullName, setFullName] = useState(profile.fullName || '');
   const [workspaceName, setWorkspaceName] = useState(workspace.name);
-  const [splitCategoryAcrossPages, setSplitCategoryAcrossPages] = useState(
-    workspace.settings.splitCategoryAcrossPages
-  );
-  const [productsCanChangeCategory, setProductsCanChangeCategory] = useState(
-    workspace.settings.productsCanChangeCategory ?? false
-  );
-  const [minimumFontSize, setMinimumFontSize] = useState(() => resolveMinimumFontSize(menuStyle));
-  const [allowSameWordBreak, setAllowSameWordBreak] = useState(menuStyle.allowSameWordBreak === true);
-  const [showPrices, setShowPrices] = useState(menuStyle.showPrices !== false);
-  const [fontSizeLimits, setFontSizeLimits] = useState(() => resolveFontSizeLimits(menuStyle));
-  const [margins, setMargins] = useState(() => resolveMenuMargins(menuStyle));
-  const [contentSpacing, setContentSpacing] = useState(() => resolveMenuContentSpacing(menuStyle));
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sendingPasswordEmail, setSendingPasswordEmail] = useState(false);
@@ -123,32 +39,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [updatingPassword, setUpdatingPassword] = useState(false);
   const savedAccountSignatureRef = useRef('');
-  const savedRulesSignatureRef = useRef('');
-
-  const getValues = useCallback(() => ({
-    fullName,
-    workspaceName,
-    splitCategoryAcrossPages,
-    productsCanChangeCategory,
-    minimumFontSize,
-    allowSameWordBreak,
-    showPrices,
-    fontSizeLimits,
-    margins,
-    contentSpacing,
-  }), [
-    allowSameWordBreak,
-    contentSpacing,
-    fontSizeLimits,
-    fullName,
-    margins,
-    minimumFontSize,
-    productsCanChangeCategory,
-    showPrices,
-    splitCategoryAcrossPages,
-    workspaceName,
-  ]);
-
   const saveAccountIfChanged = useCallback(async () => {
     const signature = JSON.stringify({ fullName, workspaceName });
     if (signature === savedAccountSignatureRef.current || !fullName.trim() || !workspaceName.trim()) return;
@@ -156,78 +46,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setMessage(null);
     setError(null);
     try {
-      await onSave(getValues(), 'account');
+      await onSave({ fullName, workspaceName });
       setMessage('Alterações salvas automaticamente.');
     } catch (saveError) {
       setError(getErrorMessage(saveError, 'Falha ao salvar configurações.'));
     }
-  }, [fullName, getValues, onSave, workspaceName]);
-
-  const saveRulesIfChanged = useCallback(async () => {
-    const signature = JSON.stringify({
-      splitCategoryAcrossPages,
-      productsCanChangeCategory,
-      minimumFontSize,
-      allowSameWordBreak,
-      showPrices,
-      fontSizeLimits,
-      margins,
-      contentSpacing,
-    });
-    if (signature === savedRulesSignatureRef.current) return;
-    savedRulesSignatureRef.current = signature;
-    setMessage(null);
-    setError(null);
-    try {
-      await onSave(getValues(), 'rules');
-      setMessage('Alterações salvas automaticamente.');
-    } catch (saveError) {
-      setError(getErrorMessage(saveError, 'Falha ao salvar configurações.'));
-    }
-  }, [
-    allowSameWordBreak,
-    contentSpacing,
-    fontSizeLimits,
-    getValues,
-    margins,
-    minimumFontSize,
-    onSave,
-    productsCanChangeCategory,
-    showPrices,
-    splitCategoryAcrossPages,
-  ]);
+  }, [fullName, onSave, workspaceName]);
 
   useEffect(() => {
     if (!open) return;
-    const nextMinimumFontSize = resolveMinimumFontSize(menuStyle);
-    const nextAllowSameWordBreak = menuStyle.allowSameWordBreak === true;
-    const nextShowPrices = menuStyle.showPrices !== false;
-    const nextFontSizeLimits = resolveFontSizeLimits(menuStyle);
-    const nextMargins = resolveMenuMargins(menuStyle);
-    const nextContentSpacing = resolveMenuContentSpacing(menuStyle);
     setFullName(profile.fullName || '');
     setWorkspaceName(workspace.name);
-    setSplitCategoryAcrossPages(workspace.settings.splitCategoryAcrossPages);
-    setProductsCanChangeCategory(workspace.settings.productsCanChangeCategory ?? false);
-    setMinimumFontSize(nextMinimumFontSize);
-    setAllowSameWordBreak(nextAllowSameWordBreak);
-    setShowPrices(nextShowPrices);
-    setFontSizeLimits(nextFontSizeLimits);
-    setMargins(nextMargins);
-    setContentSpacing(nextContentSpacing);
     savedAccountSignatureRef.current = JSON.stringify({
       fullName: profile.fullName || '',
       workspaceName: workspace.name,
-    });
-    savedRulesSignatureRef.current = JSON.stringify({
-      splitCategoryAcrossPages: workspace.settings.splitCategoryAcrossPages,
-      productsCanChangeCategory: workspace.settings.productsCanChangeCategory ?? false,
-      minimumFontSize: nextMinimumFontSize,
-      allowSameWordBreak: nextAllowSameWordBreak,
-      showPrices: nextShowPrices,
-      fontSizeLimits: nextFontSizeLimits,
-      margins: nextMargins,
-      contentSpacing: nextContentSpacing,
     });
     setMessage(null);
     setError(null);
@@ -243,29 +75,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     return () => window.clearTimeout(timeout);
   }, [open, saveAccountIfChanged]);
 
-  useEffect(() => {
-    if (!open) return;
-    const timeout = window.setTimeout(() => void saveRulesIfChanged(), AUTO_SAVE_DELAY_MS);
-    return () => window.clearTimeout(timeout);
-  }, [open, saveRulesIfChanged]);
-
   if (!open) return null;
 
   const closeAndSave = () => {
     void saveAccountIfChanged();
-    void saveRulesIfChanged();
     onClose();
-  };
-
-  const resetRules = () => {
-    setSplitCategoryAcrossPages(false);
-    setProductsCanChangeCategory(false);
-    setMinimumFontSize(DEFAULT_MINIMUM_FONT_SIZE);
-    setAllowSameWordBreak(false);
-    setShowPrices(true);
-    setFontSizeLimits({ ...DEFAULT_FONT_SIZE_LIMITS });
-    setMargins({ ...DEFAULT_MENU_MARGINS });
-    setContentSpacing({ ...DEFAULT_MENU_CONTENT_SPACING });
   };
 
   const requestPasswordReset = async () => {
@@ -326,17 +140,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"><X size={20} /></button>
         </header>
         <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
-        <aside className="w-full shrink-0 border-b border-slate-200 bg-slate-50 p-3 sm:w-44 sm:border-b-0 sm:border-r">
-          <button type="button" onClick={() => setSection('account')} className={`mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${section === 'account' ? 'bg-indigo-100 font-semibold text-indigo-700' : 'text-slate-600 hover:bg-white'}`}>
-            <UserRound size={16} /> Minha Conta
-          </button>
-          <button type="button" onClick={() => setSection('rules')} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${section === 'rules' ? 'bg-indigo-100 font-semibold text-indigo-700' : 'text-slate-600 hover:bg-white'}`}>
-            <ShieldCheck size={16} /> Regras Gerais
-          </button>
-        </aside>
-
         <form onSubmit={event => event.preventDefault()} className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain p-4 sm:p-6">
-          {section === 'account' ? (
             <div className="space-y-5">
               <label className="block space-y-1.5 text-sm font-medium text-slate-700">
                 Nome do responsável
@@ -365,113 +169,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 )}
               </div>
             </div>
-          ) : (
-            <div className="space-y-4">
-              <section className="rounded-xl border border-slate-200 p-4">
-                <h3 className="mb-3 text-sm font-bold text-slate-800">Exibição dos preços</h3>
-                <div className="space-y-3">
-                  <label className="flex cursor-pointer items-center gap-3 text-sm text-slate-700">
-                    <input type="checkbox" checked={showPrices} onChange={(event) => setShowPrices(event.target.checked)} className="h-4 w-4 rounded border-slate-300 text-indigo-600" />
-                    <span>Mostrar preços no cardápio</span>
-                  </label>
-                </div>
-              </section>
-
-              <RuleGroup
-                title="Limite de tamanho das fontes"
-                showStepButtons
-                rows={[
-                  ['menuTitle', 'Título'],
-                  ['menuSubtitle', 'Subtítulo'],
-                  ['category', 'Nome das categorias'],
-                  ['productName', 'Nome dos produtos'],
-                  ['productPrice', 'Preço dos produtos'],
-                  ['productDescription', 'Descrições dos produtos'],
-                  ['freeText', 'Texto livre'],
-                ]}
-                values={fontSizeLimits}
-                min={minimumFontSize}
-                max={300}
-                normalizeValue={roundFontSize}
-                headerContent={(
-                  <label className="mb-3 flex items-center justify-between gap-3 border-b border-slate-200 pb-3 text-sm font-semibold text-slate-700">
-                    <span>Mínimo geral</span>
-                    <FontSizeInput showStepButtons label="Mínimo geral" min={DEFAULT_MINIMUM_FONT_SIZE} max={300} value={minimumFontSize} commitOnBlur
-                      className="!h-9 !w-20 bg-white text-right !text-sm font-semibold text-slate-700"
-                      onChange={value => {
-                        setMinimumFontSize(value);
-                        setFontSizeLimits((previous) => ({
-                          menuTitle: Math.max(value, previous.menuTitle),
-                          menuSubtitle: Math.max(value, previous.menuSubtitle),
-                          category: Math.max(value, previous.category),
-                          productName: Math.max(value, previous.productName),
-                          productPrice: Math.max(value, previous.productPrice),
-                          productDescription: Math.max(value, previous.productDescription),
-                          freeText: Math.max(value, previous.freeText),
-                        }));
-                      }} />
-                  </label>
-                )}
-                onChange={(key, value) => setFontSizeLimits((previous) => ({
-                  ...previous,
-                  [key as FontSizeLimitKey]: roundFontSize(value),
-                }))}
-              />
-
-              <RuleGroup
-                title="Margens"
-                rows={[
-                  ['top', 'Superior'],
-                  ['bottom', 'Inferior'],
-                  ['left', 'Esquerda'],
-                  ['right', 'Direita'],
-                  ['columnGap', 'Entre colunas'],
-                ]}
-                values={margins}
-                max={300}
-                onChange={(key, value) => setMargins((previous) => ({ ...previous, [key]: value }))}
-              />
-
-              <RuleGroup
-                title="Espaçamentos"
-                rows={[
-                  ['headerToContent', 'Cabeçalho → primeira categoria'],
-                  ['categoryToProduct', 'Categoria → produto'],
-                  ['productNameToDescription', 'Produto → descrição'],
-                  ['betweenProducts', 'Entre produtos'],
-                  ['productNameToPrice', 'Nome → preço (horizontal)'],
-                ]}
-                values={contentSpacing}
-                max={200}
-                onChange={(key, value) => setContentSpacing((previous) => ({ ...previous, [key]: value }))}
-              />
-
-              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 hover:bg-slate-50">
-                <input type="checkbox" checked={splitCategoryAcrossPages} onChange={(event) => setSplitCategoryAcrossPages(event.target.checked)} className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600" />
-                <span>
-                  <span className="block font-semibold text-slate-800">Quebra de página entre produtos da mesma categoria</span>
-                  <span className="mt-1 block text-sm text-slate-500">Permite continuar os produtos da categoria na página seguinte quando não houver espaço.</span>
-                </span>
-              </label>
-
-              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 hover:bg-slate-50">
-                <input type="checkbox" checked={allowSameWordBreak} onChange={(event) => setAllowSameWordBreak(event.target.checked)} className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600" />
-                <span>
-                  <span className="block font-semibold text-slate-800">Permitir quebra de linha na mesma palavra</span>
-                  <span className="mt-1 block text-sm text-slate-500">Ex.: permitir “HAMBU” / “RGUER” em duas linhas. Desativado, o texto reduz até o mínimo.</span>
-                </span>
-              </label>
-
-              <button
-                type="button"
-                onClick={resetRules}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
-              >
-                <RotateCcw size={16} /> Redefinir regras ao padrão
-              </button>
-            </div>
-          )}
-
           {message && <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div>}
           {error && <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 

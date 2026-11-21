@@ -183,31 +183,35 @@ test('menu rename and deletion support undo and redo', async ({ page }) => {
   await expect(activeName).toHaveText('Reserva');
 });
 
-test('settings keeps its close buttons visible and numeric typing commits at the bounds', async ({ page }) => {
+test('menu rules commit numeric values and are separate from account settings', async ({ page }) => {
   await openWorkspace(page);
   await page.getByRole('button', { name: 'Meu perfil' }).click();
   await page.getByRole('button', { name: 'Configurações', exact: true }).click();
-  const settings = page.getByRole('dialog', { name: 'Configurações' });
-  await settings.getByRole('button', { name: 'Regras Gerais', exact: true }).click();
-  const minimum = settings.getByRole('spinbutton', { name: 'Mínimo geral', exact: true });
+  const account = page.getByRole('dialog', { name: 'Configurações' });
+  await expect(account.getByText('Regras gerais', { exact: false })).toHaveCount(0);
+  await account.getByRole('button', { name: 'Fechar', exact: true }).click();
+  const gear = page.getByRole('button', { name: 'Configurações do cardápio' });
+  await gear.click();
+  const rules = page.getByRole('dialog', { name: 'Regras gerais' });
+  const minimum = rules.getByRole('spinbutton', { name: 'Mínimo geral', exact: true });
   await minimum.fill('1');
   await expect(minimum).toHaveValue('1');
   await minimum.fill('23');
   await minimum.press('Enter');
   await expect(minimum).toHaveValue('23');
-  await expect(settings.getByRole('button', { name: 'Aumentar Mínimo geral', exact: true })).toHaveCount(0);
-  const plus = settings.getByRole('button', { name: 'Aumentar tamanho da fonte Mínimo geral' });
-  await plus.hover();
-  await page.mouse.down();
-  await expect.poll(async () => Number(await minimum.inputValue())).toBeGreaterThan(24);
-  await page.mouse.up();
-  await settings.getByRole('button', { name: 'Redefinir regras ao padrão' }).scrollIntoViewIfNeeded();
-  const top = settings.getByRole('button', { name: 'Fechar configurações' });
-  const footer = settings.getByRole('button', { name: 'Fechar', exact: true });
-  await expect(top).toBeInViewport();
-  await expect(footer).toBeInViewport();
-  await footer.click();
-  await expect(settings).toHaveCount(0);
+  await expect(rules.getByText('Limites máximos', { exact: true })).toBeVisible();
+  const split = rules.getByRole('checkbox', { name: 'Continuar categoria na página seguinte' });
+  await split.check();
+  await rules.getByRole('checkbox', { name: 'Permitir mudar produto de categoria ao arrastar' }).check();
+  await rules.getByRole('button', { name: 'Aplicar', exact: true }).click();
+  await expect(gear).toBeFocused();
+  await gear.click();
+  await expect(split).toBeChecked();
+  await expect(minimum).toHaveValue('23');
+  await rules.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  await page.getByTitle('Desfazer', { exact: true }).click();
+  await gear.click();
+  await expect(minimum).toHaveValue('15');
 });
 
 test('mobile header returns after scrolling and stays accessible above either expanded panel', async ({ page }) => {
@@ -296,4 +300,64 @@ test('starting multi-selection on paper also enables it in the product designer'
   await page.locator('[data-canvas-object-menu]').getByRole('button', { name: 'Seleção múltipla' }).click();
   await page.getByTitle('Designer de produtos').click();
   await expect(page.locator('#designer-sheet-products [data-drag-scope][data-drag-column-container]').first()).toHaveClass(/select-none/);
+});
+
+test('saving a workspace model is durable, retries the same ID and reappears after reload', async ({ page }) => {
+  await openWorkspace(page);
+  const rows = new Map<string, Record<string, unknown>>();
+  const versions = new Map<string, Record<string, unknown>>();
+  const attempts: string[] = [];
+  let failVersion = true;
+
+  await page.route('**/rest/v1/templates?*', async route => {
+    const url = new URL(route.request().url());
+    if (route.request().method() === 'POST') {
+      for (const row of route.request().postDataJSON()) if (!rows.has(row.id)) rows.set(row.id, { ...row, current_version_id: null });
+      return route.fulfill({ status: 201 });
+    }
+    if (route.request().method() === 'PATCH') {
+      const id = url.searchParams.get('id')?.slice(3) || '';
+      rows.set(id, { ...rows.get(id), ...route.request().postDataJSON() });
+      return route.fulfill({ status: 204 });
+    }
+    return route.fulfill({ json: url.searchParams.has('workspace_id') ? [...rows.values()] : [] });
+  });
+  await page.route('**/rest/v1/template_versions?*', async route => {
+    if (route.request().method() === 'POST') {
+      const [version] = route.request().postDataJSON();
+      attempts.push(version.id);
+      if (failVersion) {
+        failVersion = false;
+        return route.fulfill({ status: 503, json: { message: 'Temporariamente indisponível.' } });
+      }
+      versions.set(version.id, version);
+      return route.fulfill({ status: 201 });
+    }
+    return route.fulfill({ json: [...versions.values()] });
+  });
+
+  await page.getByRole('button', { name: 'Salvar como modelo' }).click();
+  const form = page.getByRole('dialog', { name: 'Salvar como modelo' });
+  await form.getByRole('textbox', { name: 'Descrição (opcional)', exact: true }).fill('  Preferências da casa  ');
+  await form.getByRole('button', { name: 'Salvar modelo' }).click();
+  await expect(form.getByRole('alert')).toBeVisible();
+  await expect(form.getByRole('textbox', { name: 'Descrição (opcional)', exact: true })).toHaveValue('  Preferências da casa  ');
+  await form.getByRole('button', { name: 'Salvar modelo' }).click();
+  await expect(page.getByText('Modelo salvo', { exact: true })).toBeVisible();
+  expect(attempts).toHaveLength(2);
+  expect(attempts[0]).toBe(attempts[1]);
+  expect(rows.size).toBe(1);
+  expect([...rows.values()][0]).toMatchObject({ scope: 'workspace', source_type: 'user', name: 'Modelo de Menu de teste' });
+  expect([...versions.values()][0]).toMatchObject({
+    style_state: { templateDescription: 'Preferências da casa', menuTitle: '', hiddenProductIds: [] },
+  });
+  await reloadAndFindModel();
+
+  async function reloadAndFindModel() {
+    await page.reload();
+    await page.getByRole('button', { name: 'Escolher modelo', exact: true }).click();
+    await page.getByRole('button', { name: 'Meus modelos', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Pesquisar modelos' }).fill('preferencias');
+    await expect(page.getByRole('button', { name: 'Modelo de Menu de teste', exact: true })).toBeVisible();
+  }
 });

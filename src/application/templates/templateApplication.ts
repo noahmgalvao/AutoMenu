@@ -1,3 +1,5 @@
+import { INITIAL_STYLE, NO_TEMPLATE_ID } from '../../domain/menu/defaults';
+import { projectTemplateStyle } from './portableTemplateStyle';
 import { normalizeTemplateDesign } from '../../domain/templates/templateDesign';
 import type { MenuPageSetup } from '../../domain/menu/pageModel';
 import type { MenuStyle } from '../../domain/menu/model';
@@ -42,66 +44,59 @@ export function resizeMenuStyle(current: MenuStyle, setup: MenuPageSetup): MenuS
         }];
       })),
     categoryPositions: current.categoryPositions && Object.fromEntries(Object.entries(current.categoryPositions)
-      .filter(([, position]) => position.pageX !== undefined)
       .map(([category, position]) => [category, {
-        ...position, pageX: clamp(position.pageX! * xRatio, 0, to.widthPx - 24),
+        ...position, pageX: position.pageX === undefined ? undefined : clamp(position.pageX * xRatio, 0, to.widthPx - 24),
         y: clamp(position.y * yRatio, 0, to.heightPx - 28),
       }])),
-    categoryPlacements: undefined,
+    categoryPlacements: current.categoryPlacements,
   };
 }
 
-export const getAppliedTemplateId = (style: MenuStyle) =>
-  style.appliedTemplateId ?? LEGACY_TEMPLATE_IDS.get(style.id) ?? style.id;
+export const getAppliedTemplateId = (style: MenuStyle) => {
+  if (style.appliedTemplateId === null || style.id === NO_TEMPLATE_ID && !style.appliedTemplateId) return NO_TEMPLATE_ID;
+  const id = style.appliedTemplateId;
+  return id ? LEGACY_TEMPLATE_IDS.get(id) ?? id : LEGACY_TEMPLATE_IDS.get(style.id);
+};
 
 export function applyTemplateToCurrentStyle(current: MenuStyle, template: MenuStyle): MenuStyle {
-  const resized = resizeMenuStyle({ ...current, margins: template.margins, pagePadding: template.pagePadding }, normalizeMenuPageSetup(template.pageSetup));
-  const sameColumns = (current.categoryColumnCount || 1) === (template.categoryColumnCount || 1);
-  const sameProductColumns = current.columnCount === template.columnCount;
-  const sameLayout = current.layoutMode === template.layoutMode;
-  const visual = structuredClone(template);
+  const visual = projectTemplateStyle(template);
+  const resized = resizeMenuStyle({ ...current, margins: visual.margins, pagePadding: visual.pagePadding }, normalizeMenuPageSetup(visual.pageSetup));
+  const sameColumns = (current.categoryColumnCount || 1) === (visual.categoryColumnCount || 1)
+    && current.columnCount === visual.columnCount && current.layoutMode === visual.layoutMode;
+  const neutral = template.id === NO_TEMPLATE_ID;
+  const columns = visual.categoryColumnCount || 1;
+  const remap = <T extends { columnIndex: number }>(positions?: Record<string, T>) => positions
+    && Object.fromEntries(Object.entries(positions).map(([key, position]) => [key, {
+      ...position, columnIndex: Math.min(position.columnIndex, columns - 1),
+    }]));
+  const authorBackground = current.backgroundAssetId && (current.templateBackgroundOrigin === 'author'
+    || !current.templateBackgroundOrigin && !current.appliedTemplateId);
+
   return {
-    ...resized,
-    appliedTemplateId: template.id,
-    appliedTemplateVersionId: template.templateVersionId,
+    ...resized, ...visual,
+    appliedTemplateId: neutral ? null : template.id,
+    appliedTemplateVersionId: neutral ? null : template.templateVersionId,
     name: template.name,
-    fontFamily: visual.fontFamily,
-    primaryColor: visual.primaryColor,
     backgroundColor: current.menuBackgroundPhoto ? current.backgroundColor : visual.backgroundColor,
-    textColor: visual.textColor,
-    backgroundImage: visual.backgroundImage,
-    miniFoodTextureColor: visual.miniFoodTextureColor,
-    backgroundAssetId: visual.backgroundAssetId,
-    templateBackgroundFit: visual.sourceType === 'ai_import' ? 'fill' : 'cover',
-    layoutMode: visual.layoutMode,
-    showImages: visual.showImages,
-    showCategoryImages: visual.showCategoryImages,
-    categoryImageScale: visual.categoryImageScale ?? visual.imageScale,
-    columnCount: visual.columnCount,
-    categoryColumnCount: visual.categoryColumnCount,
-    categoryColumnWidths: visual.categoryColumnWidths?.length === (visual.categoryColumnCount || 1)
-      ? visual.categoryColumnWidths : undefined,
-    categoryPlacements: sameColumns && sameProductColumns && sameLayout ? resized.categoryPlacements : undefined,
-    categoryPositions: sameColumns && sameProductColumns && sameLayout ? resized.categoryPositions
-      : resized.categoryPositions && Object.fromEntries(Object.entries(resized.categoryPositions)
-        .filter(([, position]) => position.pageX !== undefined)
-        .map(([category, position]) => [category, {
-          ...position, columnIndex: Math.min(position.columnIndex, (visual.categoryColumnCount || 1) - 1),
-        }])),
-    pagePadding: visual.pagePadding,
-    margins: resized.margins,
-    itemGap: visual.itemGap,
-    contentSpacing: visual.contentSpacing,
-    globalRadius: visual.globalRadius,
-    cardBackgroundColor: visual.cardBackgroundColor,
-    cardBackgroundColorOverride: visual.cardBackgroundColorOverride,
-    borders: visual.borders,
-    markers: visual.markers,
-    imageScale: visual.imageScale,
-    fontSizeLimits: visual.fontSizeLimits,
-    elementStyles: visual.elementStyles,
-    elementColorOverrides: visual.elementColorOverrides,
+    backgroundImage: authorBackground ? current.backgroundImage : visual.backgroundImage,
+    backgroundAssetId: authorBackground ? current.backgroundAssetId : visual.backgroundAssetId,
+    textContrastFills: current.textContrastFills ? {
+      ...Object.fromEntries(Object.entries(current.textContrastFills).filter(([key]) => key.startsWith('freeText:'))),
+      ...visual.textContrastFills,
+    } : visual.textContrastFills,
+    templateBackgroundOrigin: authorBackground ? 'author' : 'template',
+    templateBackgroundFit: authorBackground ? current.templateBackgroundFit ?? (current.sourceType === 'ai_import' ? 'fill' : undefined)
+      : visual.templateBackgroundFit ?? (template.sourceType === 'ai_import' ? 'fill' : undefined),
+    splitCategoryAcrossPages: visual.splitCategoryAcrossPages ?? INITIAL_STYLE.splitCategoryAcrossPages,
+    productsCanChangeCategory: visual.productsCanChangeCategory ?? INITIAL_STYLE.productsCanChangeCategory,
+    minimumFontSize: visual.minimumFontSize ?? INITIAL_STYLE.minimumFontSize,
+    fontSizeLimits: visual.fontSizeLimits ?? structuredClone(INITIAL_STYLE.fontSizeLimits),
+    revisedFontSizeDefaults: true,
+    categoryColumnWidths: visual.categoryColumnWidths?.length === columns ? visual.categoryColumnWidths : undefined,
+    categoryPlacements: remap(resized.categoryPlacements),
+    categoryPositions: sameColumns ? resized.categoryPositions : remap(resized.categoryPositions),
+    pageSetup: resized.pageSetup, margins: resized.margins,
+    portraitPageLayout: undefined,
     design: normalizeTemplateDesign(visual.design),
-    pageSetup: resized.pageSetup,
   };
 }

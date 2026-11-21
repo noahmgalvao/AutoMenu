@@ -1,3 +1,4 @@
+import { useMenuPageMeasurements } from '../canvas/useMenuPageMeasurements';
 import { Heart } from 'lucide-react';
 import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MenuStyle, Product, SortOption } from '../../../domain/menu/model';
@@ -11,7 +12,7 @@ import { useResponsivePrices } from '../canvas/useResponsivePrices';
 
 const sampleImage = (base: string, topping: string, herb: string) =>
   'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 240">
+    `<svg xmlns="http://www.w3.org/2000/svg" width="360" height="240" viewBox="0 0 360 240">
     <defs><radialGradient id="table"><stop stop-color="#f6e9d7"/><stop offset="1" stop-color="${base}"/></radialGradient></defs>
     <rect width="360" height="240" fill="url(#table)"/>
     <ellipse cx="183" cy="126" rx="103" ry="102" fill="#2f241b" opacity=".15"/>
@@ -27,7 +28,7 @@ const sampleImage = (base: string, topping: string, herb: string) =>
     }).join('')}</svg>`,
   );
 
-const sampleProducts: Product[] = [
+export const sampleProducts: Product[] = [
   { id: 'sample-1', category: 'Entradas', name: 'Burrata da casa', description: 'Tomates assados, manjericão e azeite extravirgem.', price: 38, image: sampleImage('#db976f', '#f1c19c', '#576343') },
   { id: 'sample-2', category: 'Entradas', name: 'Crostini de cogumelos', description: 'Pão rústico, cogumelos salteados e tomilho.', price: 29 },
   { id: 'sample-3', category: 'Principais', name: 'Risoto de abóbora', description: 'Arroz arbóreo, queijo curado e manteiga de sálvia.', price: 62, image: sampleImage('#dca769', '#b86c39', '#495939') },
@@ -46,10 +47,11 @@ interface TemplatePreviewProps {
   onPageChange: (index: number) => void;
   heart: number;
   onHeartEnd: () => void;
+  thumbnail?: boolean;
 }
 
 export const TemplatePreviewSurface = memo(function TemplatePreviewSurface({
-  current, template, products, sortOption, splitCategoryAcrossPages, pageIndex, onPageChange, heart, onHeartEnd,
+  current, template, products, sortOption, splitCategoryAcrossPages, pageIndex, onPageChange, heart, onHeartEnd, thumbnail,
 }: TemplatePreviewProps) {
   const sample = products.length === 0;
   const content = sample ? sampleProducts : products;
@@ -58,20 +60,22 @@ export const TemplatePreviewSurface = memo(function TemplatePreviewSurface({
     return sample ? { ...applied, menuTitle: 'Casa Aurora', menuSubtitle: 'Cozinha da estação' } : applied;
   }, [current, template, sample]);
   const { groupedProductsBase, sortedCategoriesBase } = useMenuData({ products: content, style, sortOption });
+  const [measuredHeights, setMeasuredHeights] = useState<ReadonlyMap<string, number>>(() => new Map());
   const pages = useMemo(() => {
     const placements = { ...style.categoryPositions, ...style.categoryPlacements };
     const calculated = calculatePagination(
       content, style, groupedProductsBase, sortedCategoriesBase,
-      Object.keys(placements).length > 0 ? placements : null, { splitCategoryAcrossPages },
+      Object.keys(placements).length > 0 ? placements : null, { splitCategoryAcrossPages, measuredHeights },
     );
     return finalizeMenuPages(calculated, style, content);
-  }, [content, style, groupedProductsBase, sortedCategoriesBase, splitCategoryAcrossPages]);
+  }, [content, style, groupedProductsBase, sortedCategoriesBase, splitCategoryAcrossPages, measuredHeights]);
   const { widthPx, heightPx } = resolveMenuPageDimensions(style);
   const stage = useRef<HTMLDivElement>(null);
   useResponsivePrices(stage, style);
   const [scale, setScale] = useState(0);
   const lastPage = Math.max(0, pages.length - 1);
   const visibleIndex = Math.min(pageIndex, lastPage);
+  useMenuPageMeasurements(stage, pages, style.columnCount, setMeasuredHeights, scale > 0 ? visibleIndex : undefined);
   useLayoutEffect(() => {
     if (pageIndex !== visibleIndex) onPageChange(visibleIndex);
   }, [onPageChange, pageIndex, visibleIndex]);
@@ -105,7 +109,7 @@ export const TemplatePreviewSurface = memo(function TemplatePreviewSurface({
         {heart > 0 && <div key={heart} data-discover-like-heart className="template-discover-like-heart"
           aria-hidden="true" onAnimationEnd={onHeartEnd}><Heart fill="currentColor" /></div>}
       </div>
-      {pages.length > 1 && <nav aria-label="Páginas da prévia" className="template-discover-pages" data-template-preview-controls>
+      {!thumbnail && pages.length > 1 && <nav aria-label="Páginas da prévia" className="template-discover-pages" data-template-preview-controls>
         <button type="button" className="rounded-md p-2 hover:bg-white/15 disabled:opacity-40" disabled={visibleIndex === 0}
           onClick={() => onPageChange(visibleIndex - 1)} aria-label="Página anterior">←</button>
         <span>Página {visibleIndex + 1} / {pages.length}</span>

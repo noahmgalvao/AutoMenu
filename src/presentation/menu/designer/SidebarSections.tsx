@@ -23,7 +23,7 @@ import { CategoryDividerPicker } from './CategoryDividerPicker';
 import { getProductCardRadius, PRODUCT_CARD_SHAPES, PRODUCT_IMAGE_FRAMES } from '../canvas/templateStyles';
 import { 
   Type, ImagePlus, Loader2, Minus, Plus,
-  Layout, List, Maximize, Palette, ArrowUpAZ, SortAsc, SortDesc, BringToFront, SendToBack, SlidersHorizontal,
+  Layout, List, Maximize, Palette, ArrowUpAZ, SortAsc, SortDesc, BringToFront, SendToBack,
   Wallpaper, ImageIcon, Eye, EyeOff, FileCog, RectangleHorizontal, RectangleVertical
 } from 'lucide-react';
 
@@ -612,12 +612,13 @@ interface GeneralRulesSectionProps {
 
 const RuleNumberInput: React.FC<{
   value: number;
+  label?: string;
   min?: number;
   max?: number;
   normalizeValue?: (value: number) => number;
   onChange: (value: number) => void;
-}> = ({ value, min = 0, max = 300, normalizeValue, onChange }) => (
-  <FontSizeInput value={value} min={min} max={max} commitOnBlur
+}> = ({ value, label, min = 0, max = 300, normalizeValue, onChange }) => (
+  <FontSizeInput label={label} value={value} min={min} max={max} commitOnBlur
     onChange={next => onChange(normalizeValue ? normalizeValue(next) : next)}
     className="!w-[calc(5ch+1.75rem)] bg-white text-center font-semibold tabular-nums text-slate-700"
   />
@@ -674,15 +675,24 @@ export const GeneralRulesSection: React.FC<GeneralRulesSectionProps> = ({ style,
 
   return (
     <section className="space-y-3">
-      <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-400">
-        <SlidersHorizontal size={14} /> Regras gerais
-      </h3>
+      {([
+        ['showPrices', 'Mostrar preços no cardápio', true],
+        ['splitCategoryAcrossPages', 'Continuar categoria na página seguinte', false],
+        ['productsCanChangeCategory', 'Permitir mudar produto de categoria ao arrastar', false],
+      ] as const).map(([key, label, fallback]) => (
+        <label key={key} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-700">
+          {label}<input type="checkbox" checked={style[key] ?? fallback}
+            onChange={event => { const checked = event.target.checked; setStyle(previous => ({ ...previous, [key]: checked, name: 'Custom' })); }}
+            className="size-4 shrink-0 accent-indigo-600" />
+        </label>
+      ))}
 
       <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
         <h4 className="text-xs font-bold text-slate-600">Limite de tamanho das fontes</h4>
         <label className="flex items-center justify-between gap-3 border-b border-slate-200 pb-2 text-xs font-semibold text-slate-700">
           <span>Mínimo geral</span>
           <RuleNumberInput
+            label="Mínimo geral"
             value={minimumFontSize}
             min={DEFAULT_MINIMUM_FONT_SIZE}
             max={300}
@@ -714,10 +724,11 @@ export const GeneralRulesSection: React.FC<GeneralRulesSectionProps> = ({ style,
             }))}
           />
         </label>
+        <h4 className="pt-1 text-xs font-bold text-slate-600">Limites máximos</h4>
         {fontLimitRows.map(({ key, label }) => (
           <label key={key} className="flex items-center justify-between gap-3 text-xs text-slate-600">
             <span>{label}</span>
-            <RuleNumberInput value={fontSizeLimits[key]} min={minimumFontSize} max={300} normalizeValue={roundFontSize} onChange={(value) => updateFontLimit(key, value)} />
+            <RuleNumberInput label={label} value={fontSizeLimits[key]} min={minimumFontSize} max={300} normalizeValue={roundFontSize} onChange={(value) => updateFontLimit(key, value)} />
           </label>
         ))}
       </div>
@@ -864,15 +875,23 @@ export const StyleSection: React.FC<StyleSectionProps> = ({ style, setStyle }) =
     </div>
         <div className="space-y-1">
         <label className="text-[10px] uppercase font-bold text-slate-400">Textura de fundo</label>
-        <TextureSelect value={style.backgroundImage} onChange={(url) => setStyle(prev => ({ ...prev, backgroundImage: url, name: 'Custom' }))} />
+        <TextureSelect paper={style.backgroundColor} value={style.backgroundImage} onChange={(url) => setStyle(prev => ({ ...prev, backgroundAssetId: null, backgroundImage: url, name: 'Custom' }))} />
+        {(style.menuBackgroundPhoto?.url || style.pageBackgrounds?.some(background => background.url)) &&
+          <p className="text-xs text-slate-500">Fundos de página e fotos integradas têm prioridade sobre a textura.</p>}
         {isMiniFoodSelected && (
             <div className="space-y-1 pt-1">
                 <label className="text-[10px] uppercase font-bold text-slate-400">Mini comida</label>
                 <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-                    <MiniFoodTextureSelect value={style.backgroundImage} onChange={url => setStyle(prev => ({ ...prev, backgroundImage: url, name: 'Custom' }))} />
+                    <MiniFoodTextureSelect value={style.backgroundImage} onChange={url => setStyle(prev => ({ ...prev, backgroundAssetId: null, backgroundImage: url, name: 'Custom' }))} />
                     <ColorPicker value={style.miniFoodTextureColor || MINI_FOOD_INK} label="Cor da textura de mini comidas"
                         onChange={color => setStyle(prev => ({ ...prev, miniFoodTextureColor: color, name: 'Custom' }))} />
                 </div>
+                <label className="grid gap-1 pt-1 text-xs font-medium text-slate-600">
+                    <span>Tamanho dos ícones <output className="float-right tabular-nums">{style.miniFoodTextureScale ?? 100}%</output></span>
+                    <input type="range" aria-label="Tamanho dos ícones" min={60} max={160} step={1} value={style.miniFoodTextureScale ?? 100}
+                        onChange={event => { const size = Number(event.target.value); setStyle(prev => ({ ...prev, miniFoodTextureScale: size })); }}
+                        className="w-full accent-indigo-600" />
+                </label>
             </div>
         )}
     </div>

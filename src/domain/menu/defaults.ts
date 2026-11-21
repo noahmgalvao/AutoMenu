@@ -1,4 +1,4 @@
-import { PRESET_TEMPLATES } from '../templates/templateCatalog';
+import { getTextureTile, isTextureToken, MINI_FOOD_MIX, miniFoodTextureTile, mixTextureToken, TEXTURE_OPTIONS, type MiniFoodTextureKind } from './textureTiles';
 import { MINI_FOODS, miniFoodTextureUrl, type MiniFoodKind } from './miniFoods';
 import type { FontSizeLimits, MenuContentSpacing, MenuMargins, Product, MenuStyle } from './model';
 
@@ -74,15 +74,34 @@ export const INITIAL_PRODUCTS: Product[] = [
 ];
 
 export { PRESET_TEMPLATES } from '../templates/templateCatalog';
-export const INITIAL_STYLE: MenuStyle = PRESET_TEMPLATES[0];
+export const NO_TEMPLATE_ID = 'sem-modelo';
 
-const BACKGROUND_TEXTURES = [
-  { name: 'Sem textura', url: '' },
-  { name: 'Papel natural', url: 'https://www.transparenttextures.com/patterns/natural-paper.png' },
-  { name: 'Papel arroz', url: 'https://www.transparenttextures.com/patterns/rice-paper.png' },
-  { name: 'Azulejo discreto', url: 'https://www.transparenttextures.com/patterns/gplay.png' },
-  { name: 'Diamantes suaves', url: 'https://www.transparenttextures.com/patterns/diamond-upholstery.png' },
-];
+// Classic design from constants.ts at 1610606, independent of the library.
+export const INITIAL_STYLE: MenuStyle = {
+  id: NO_TEMPLATE_ID, name: 'Sem modelo', appliedTemplateId: null,
+  menuTitle: 'CARDÁPIO', menuSubtitle: 'Seleção da Casa',
+  fontFamily: 'Inter', backgroundColor: '#ffffff', textColor: '#111827', primaryColor: '#3730a3',
+  cardBackgroundColor: '#f8fafc', backgroundImage: '', layoutMode: 'list',
+  columnCount: 1, categoryColumnCount: 1, hiddenProductIds: [],
+  showImages: true, showCategoryImages: true, imageScale: 1, categoryImageScale: 1,
+  showPrices: true, showCurrencySymbol: true, showPageNumbers: true, priceDecimalPlaces: 2, priceDecimalSeparator: ',',
+  pageSetup: { preset: 'A4', orientation: 'portrait', widthMm: 210, heightMm: 297 },
+  pagePadding: 56, itemGap: 18, globalRadius: 16,
+  margins: { top: 56, right: 56, bottom: 56, left: 56, columnGap: DEFAULT_MENU_MARGINS.columnGap },
+  contentSpacing: { ...DEFAULT_MENU_CONTENT_SPACING, headerToContent: 28, categoryToProduct: 14, betweenProducts: 18 },
+  minimumFontSize: DEFAULT_MINIMUM_FONT_SIZE, fontSizeLimits: DEFAULT_FONT_SIZE_LIMITS, revisedFontSizeDefaults: true,
+  allowSameWordBreak: false, splitCategoryAcrossPages: false, productsCanChangeCategory: false,
+  elementStyles: {
+    menuTitle: { fontSize: 44, fontWeight: '700', color: '#111827', textAlign: 'center', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 },
+    menuSubtitle: { fontSize: 16, fontWeight: '500', color: '#4b5563', textAlign: 'center', marginBottom: 28 },
+    category: { fontSize: 22, fontWeight: '700', textAlign: 'left', color: '#3730a3', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 14 },
+    productName: { fontSize: 18, fontWeight: '700', textAlign: 'left', color: '#111827' },
+    productPrice: { fontSize: 18, fontWeight: '700', textAlign: 'right', color: '#047857' },
+    productDescription: { fontSize: 14, fontWeight: '400', textAlign: 'left', color: '#4b5563', lineHeight: 1.45 },
+  },
+};
+
+export const createClassicMenuStyle = () => structuredClone(INITIAL_STYLE);
 
 const LEGACY_MINI_FOOD_TEXTURES: { kind: MiniFoodKind; url: string }[] = [
   { kind: 'mini-food:burger', url: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI3OTQiIGhlaWdodD0iMTEyMyIgdmlld0JveD0iMCAwIDc5NCAxMTIzIj48cmVjdCB3aWR0aD0iNzk0IiBoZWlnaHQ9IjExMjMiIGZpbGw9IiNmZmZhZjMiLz48ZGVmcz48ZyBpZD0iaSI+PGcgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjOWEzNDEyIiBzdHJva2Utd2lkdGg9IjEuOCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNNCAxNWgxNmE0IDQgMCAwIDEgLTQgNGgtOGE0IDQgMCAwIDEgLTQgLTQiLz48cGF0aCBkPSJNMTIgNGMzLjc4MyAwIDYuOTUzIDIuMTMzIDcuNzg2IDVoLTE1LjU3MmMuODMzIC0yLjg2NyA0LjAwMyAtNSA3Ljc4NiAtNSIvPjxwYXRoIGQ9Ik01IDEyaDE0Ii8+PC9nPjwvZz48cGF0dGVybiBpZD0icCIgd2lkdGg9IjExOCIgaGVpZ2h0PSIxMTgiIHBhdHRlcm5Vbml0cz0idXNlclNwYWNlT25Vc2UiPjx1c2UgaHJlZj0iI2kiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDE2IDE4KSBzY2FsZSgxLjE4KSByb3RhdGUoLTkgMTIgMTIpIiBvcGFjaXR5PSIuMTYiLz48dXNlIGhyZWY9IiNpIiB0cmFuc2Zvcm09InRyYW5zbGF0ZSg3NiA2OCkgc2NhbGUoLjkyKSByb3RhdGUoMTIgMTIgMTIpIiBvcGFjaXR5PSIuMTIiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSI3OTQiIGhlaWdodD0iMTEyMyIgZmlsbD0idXJsKCNwKSIvPjwvc3ZnPg==' },
@@ -103,8 +122,14 @@ const removeMiniFoodBackgroundColor = (url: string) => {
   return `data:image/svg+xml;base64,${btoa(transparentSvg)}`;
 };
 
-export const MINI_FOOD_BACKGROUNDS = MINI_FOODS.map(food => ({ ...food, url: miniFoodTextureUrl(food.kind) }));
-const miniFoodTextures = new Map<string, MiniFoodKind>(MINI_FOOD_BACKGROUNDS.map(({ kind, url }) => [url, kind]));
+export const MINI_FOOD_BACKGROUNDS = [
+  { name: 'Mix', url: mixTextureToken },
+  ...MINI_FOODS.map(food => ({ name: food.name, url: `texture:${food.kind}` })),
+].sort((left, right) => left.name.localeCompare(right.name, 'pt-BR'));
+const miniFoodTextures = new Map<string, MiniFoodTextureKind>(
+  MINI_FOODS.flatMap(({ kind }) => [[miniFoodTextureUrl(kind), kind], [`texture:${kind}`, kind]]),
+);
+miniFoodTextures.set(mixTextureToken, MINI_FOOD_MIX);
 const transparentMiniFoodUrls = new Map<string, string>();
 
 for (const { kind, url } of LEGACY_MINI_FOOD_TEXTURES) {
@@ -113,13 +138,26 @@ for (const { kind, url } of LEGACY_MINI_FOOD_TEXTURES) {
   miniFoodTextures.set(transparent, kind);
 }
 
-export const normalizeTextureUrl = (url?: string) => transparentMiniFoodUrls.get(url || '') || url || '';
+const localPaperTokens = new Map([
+  ['https://www.transparenttextures.com/patterns/natural-paper.png', 'texture:natural-paper'],
+  ['https://www.transparenttextures.com/patterns/rice-paper.png', 'texture:rice-paper'],
+]);
+export const normalizeTextureUrl = (url = '') => localPaperTokens.get(url) ?? transparentMiniFoodUrls.get(url) ?? url;
 export const getMiniFoodTextureKind = (url?: string) => miniFoodTextures.get(normalizeTextureUrl(url));
 export const isMiniFoodTexture = (url?: string) => getMiniFoodTextureKind(url) !== undefined;
 
+export function resolveTexture(value?: string, color?: string, size?: number) {
+  const url = normalizeTextureUrl(value);
+  const food = getMiniFoodTextureKind(url);
+  if (food) return { url: miniFoodTextureTile(food, color, size), tiled: true };
+  if (isTextureToken(url)) return { url: getTextureTile(url) || '', tiled: true };
+  return { url, tiled: false };
+}
+
 export const SAMPLE_BACKGROUNDS = [
-  ...BACKGROUND_TEXTURES,
-  { name: 'Mini comidas', url: miniFoodTextureUrl('mini-food:burger') },
+  { name: 'Sem textura', url: '' },
+  ...TEXTURE_OPTIONS,
+  { name: 'Mini comidas', url: 'texture:mini-food:burger' },
 ];
 
 export const FONTS = [

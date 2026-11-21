@@ -13,14 +13,15 @@ import { linkSyncedMenuProducts, listMenuProductSources, listMenuProductSyncs, u
 import { getMenuPublication, loadPublicMenuPublication, publishWorkspaceMenu, updatePublicationMenuSlug } from '../infrastructure/supabase/workspace/publications';
 import { listMenuRevisions, loadMenuRevisionState } from '../infrastructure/supabase/workspace/revisions';
 import { saveWorkspaceState } from '../infrastructure/supabase/workspace/saveWorkspace';
-import { updateAccountIdentity, updateWorkspaceRuleSettings } from '../infrastructure/supabase/workspace/settings';
+import { loadTemplateVersion, saveWorkspaceTemplate } from '../infrastructure/supabase/workspace/templates';
+import { updateAccountIdentity } from '../infrastructure/supabase/workspace/settings';
 
 export const browserServices = {
   auth: { ...auth, isConfigured: isSupabaseConfigured },
   workspace: {
     loadWorkspaceData, loadWorkspaceMenuData, saveWorkspaceState,
     createWorkspaceMenu, deleteWorkspaceMenus, renameWorkspaceMenu, restoreWorkspaceMenus,
-    updateAccountIdentity, updateWorkspaceRuleSettings, listMenuRevisions, loadMenuRevisionState,
+    updateAccountIdentity, saveWorkspaceTemplate, loadTemplateVersion, listMenuRevisions, loadMenuRevisionState,
     listMenuProductSources, listMenuProductSyncs, linkSyncedMenuProducts, unlinkSyncedMenuProducts,
   },
   publications: { getMenuPublication, loadPublicMenuPublication, publishWorkspaceMenu, updatePublicationMenuSlug, updatePortablePublicationMenuSlug },

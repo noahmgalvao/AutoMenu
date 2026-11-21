@@ -1,3 +1,4 @@
+import { isTextureToken } from '../../../domain/menu/textureTiles';
 import { storedCategoryKey } from '../../../domain/menu/categoryName';
 import type { MenuStyle, Product, AddedImage, CategoryImage } from '../../../domain/menu/model';
 import type { MenuEditorState, TemplateVersion, Asset, Category } from '../../../domain/workspace/model';
@@ -141,7 +142,7 @@ export const normalizeProductAssets = async (workspaceId: string, userId: string
 };
 
 export const normalizeStyleAssets = async (workspaceId: string, userId: string, style: MenuStyle) => {
-  const backgroundRef = isMiniFoodTexture(style.backgroundImage)
+  const backgroundRef = (isTextureToken(normalizeTextureUrl(style.backgroundImage)) || isMiniFoodTexture(style.backgroundImage))
     ? { assetId: null, url: normalizeTextureUrl(style.backgroundImage) }
     : await ensureAssetReference({
         url: style.backgroundImage,

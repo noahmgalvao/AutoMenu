@@ -1,17 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type SetStateAction } from 'react';
 import type { AuthSession } from '../../application/account/authGateway';
 import { getErrorMessage } from '../../application/errorMessages';
+import { createWorkspaceTemplate } from '../../application/templates/portableTemplateStyle';
 import { INITIAL_STYLE, PRESET_TEMPLATES } from '../../domain/menu/defaults';
 import type {
-  FontSizeLimits,
-  MenuContentSpacing,
-  MenuMargins,
   MenuStyle,
   Product,
   SortOption,
 } from '../../domain/menu/model';
 import type { LoadedWorkspaceData, Menu } from '../../domain/workspace/model';
-import { DEFAULT_SORT_OPTION, normalizeWorkspaceClientState } from '../../application/workspace/state';
+import { DEFAULT_SORT_OPTION, normalizeWorkspaceClientState, withMenuRuleFallback } from '../../application/workspace/state';
 import { useAppServices } from './AppServicesProvider';
 import { useEditorHistory } from './useEditorHistory';
 import { getPersistSignature, saveWorkspaceStateWithRetry, waitForSaveRetry, type PersistPayload } from '../../application/workspace/editorPersistence';
@@ -22,6 +20,10 @@ import {
 
 const SAVE_ERROR_MESSAGE = 'Não foi possível salvar as alterações. Entre em contato com o suporte.';
 const SAVE_DEBOUNCE_MS = 2000;
+
+function mergeDurableTemplates(current: MenuStyle[], saved: MenuStyle[] = []) {
+  return [...new Map([...current, ...saved].map(template => [template.id, template])).values()];
+}
 
 type MenuHistoryAction =
   | { type: 'rename'; id: string; previousName: string; name: string }
@@ -37,7 +39,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
   const { auth, workspace: workspaceGateway } = useAppServices();
   const { getInitialSession, subscribeToAuth, sendPasswordReauthentication, signInWithEmail, signOutCurrentUser,
     signUpWithEmail, updatePasswordWithNonce, isConfigured } = auth;
-  const { createWorkspaceMenu, deleteWorkspaceMenus, renameWorkspaceMenu, restoreWorkspaceMenus, updateAccountIdentity, updateWorkspaceRuleSettings,
+  const { createWorkspaceMenu, deleteWorkspaceMenus, renameWorkspaceMenu, restoreWorkspaceMenus, updateAccountIdentity, saveWorkspaceTemplate,
     loadWorkspaceData, loadWorkspaceMenuData, saveWorkspaceState } = workspaceGateway;
   const [session, setSession] = useState<AuthSession | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
@@ -51,6 +53,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
   const [products, setProductsRaw] = useState<Product[]>([]);
   const [style, setStyleRaw] = useState<MenuStyle>(INITIAL_STYLE);
   const [templates, setTemplatesRaw] = useState<MenuStyle[]>(PRESET_TEMPLATES);
+  const durableTemplates = useRef(new Map<string, MenuStyle[]>());
   const [sortOption, setSortOption] = useState<SortOption>(DEFAULT_SORT_OPTION);
   const [isSettingsSaving, setIsSettingsSaving] = useState(false);
   const [isMenuActionLoading, setIsMenuActionLoading] = useState(false);
@@ -97,6 +100,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
 
     try {
       const result = await saveWorkspaceStateWithRetry(payload, saveWorkspaceState);
+      result.templates = mergeDurableTemplates(result.templates, durableTemplates.current.get(payload.workspaceId));
 
       setWorkspaceData((prev) => {
         if (!prev) return prev;
@@ -204,9 +208,15 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     const pendingUpdatedAt = pendingSnapshot ? Date.parse(pendingSnapshot.updatedAt) : 0;
     const serverUpdatedAt = Date.parse(data.currentVersion.createdAt || '') || 0;
     const shouldRestorePending = Boolean(pendingSnapshot && pendingUpdatedAt > serverUpdatedAt);
-    const restoredState = shouldRestorePending && pendingSnapshot
+    const snapshot = shouldRestorePending && pendingSnapshot
       ? normalizeWorkspaceClientState(pendingSnapshot)
       : data;
+    const restoredState = {
+      ...snapshot,
+      style: withMenuRuleFallback(snapshot.style, data.workspace.settings),
+      templates: mergeDurableTemplates(mergeDurableTemplates(snapshot.templates, data.templates),
+        durableTemplates.current.get(data.workspace.id)),
+    };
     const serverSignature = options.knownSavedSignature || getPersistSignature({
         products: data.products,
         style: data.style,
@@ -244,7 +254,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     }
     skipNextPersistRef.current = restoredSignature === savedSignature;
     lastSavedSignatureRef.current = savedSignature;
-    setWorkspaceData(data);
+    setWorkspaceData(hydratedData);
     setProductsRaw(restoredState.products);
     setStyleRaw(restoredState.style);
     setTemplatesRaw(restoredState.templates);
@@ -354,6 +364,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
       setWorkspaceData(null);
       setProductsRaw([]);
       setStyleRaw(INITIAL_STYLE);
+      durableTemplates.current.clear();
       setTemplatesRaw(PRESET_TEMPLATES);
       setSortOption(DEFAULT_SORT_OPTION);
       return;
@@ -687,88 +698,33 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     }
   };
 
-  const handleSaveSettings = async (values: {
-    fullName: string;
-    workspaceName: string;
-    splitCategoryAcrossPages: boolean;
-    productsCanChangeCategory: boolean;
-    minimumFontSize: number;
-    allowSameWordBreak: boolean;
-    showPrices: boolean;
-    fontSizeLimits: FontSizeLimits;
-    margins: MenuMargins;
-    contentSpacing: MenuContentSpacing;
-  }, section: 'account' | 'rules') => {
+  const handleSaveSettings = async (values: { fullName: string; workspaceName: string }) => {
     if (!session || !workspaceData) return;
     setIsSettingsSaving(true);
     try {
-      if (section === 'account') {
-        const updated = await updateAccountIdentity({
-          userId: session.user.id,
-          workspaceId: workspaceData.workspace.id,
-          fullName: values.fullName,
-          workspaceName: values.workspaceName,
-        });
-        setWorkspaceData((previous) => previous ? {
-          ...previous,
-          profile: { ...previous.profile, fullName: updated.fullName },
-          workspace: { ...previous.workspace, name: updated.workspaceName },
-        } : previous);
-        return;
-      }
-
-      const {
-        fontSizeLimits,
-        minimumFontSize,
-        allowSameWordBreak,
-        showPrices,
-        margins,
-        contentSpacing,
-      } = values;
-      setStyle((previous) => ({
+      const updated = await updateAccountIdentity({
+        userId: session.user.id, workspaceId: workspaceData.workspace.id, ...values,
+      });
+      setWorkspaceData(previous => previous ? {
         ...previous,
-        fontSizeLimits,
-        minimumFontSize,
-        allowSameWordBreak,
-        showPrices,
-        margins,
-        contentSpacing,
-        elementStyles: Object.fromEntries(Object.entries(previous.elementStyles).map(([key, elementStyle]) => {
-          const fontLimitKey = key === 'menuTitle' || key === 'menuSubtitle' || key === 'category'
-            || key === 'productName' || key === 'productPrice' || key === 'productDescription'
-            ? key
-            : null;
-          if (!fontLimitKey || !elementStyle?.fontSize) return [key, elementStyle];
-          return [key, {
-            ...elementStyle,
-            fontSize: Math.min(fontSizeLimits[fontLimitKey], Math.max(minimumFontSize, elementStyle.fontSize)),
-          }];
-        })) as MenuStyle['elementStyles'],
-        pagePadding: (margins.top + margins.bottom + margins.left + margins.right) / 4,
-        itemGap: contentSpacing.betweenProducts,
-        name: 'Custom',
-      }));
-
-      const currentWorkspaceSettings = workspaceData.workspace.settings;
-      if (
-        currentWorkspaceSettings.splitCategoryAcrossPages !== values.splitCategoryAcrossPages
-        || Boolean(currentWorkspaceSettings.productsCanChangeCategory) !== values.productsCanChangeCategory
-      ) {
-        const workspaceSettings = await updateWorkspaceRuleSettings({
-          workspaceId: workspaceData.workspace.id,
-          splitCategoryAcrossPages: values.splitCategoryAcrossPages,
-          productsCanChangeCategory: values.productsCanChangeCategory,
-        });
-        setWorkspaceData((previous) => previous ? {
-          ...previous,
-          workspace: {
-            ...previous.workspace,
-            settings: workspaceSettings,
-          },
-        } : previous);
-      }
+        profile: { ...previous.profile, fullName: updated.fullName },
+        workspace: { ...previous.workspace, name: updated.workspaceName },
+      } : previous);
     } finally {
       setIsSettingsSaving(false);
+    }
+  };
+
+  const handleSaveTemplate = async (name: string, description: string, id: string) => {
+    if (!session || !workspaceData) throw new Error('Cardápio indisponível.');
+    const workspaceId = workspaceData.workspace.id;
+    const template = createWorkspaceTemplate(style, workspaceData.menu.name, name, description, id);
+    const saved = await saveWorkspaceTemplate({ workspaceId, userId: session.user.id, template });
+    if (menuHistoryScope.current !== `${session.user.id}:${workspaceId}`) return;
+    durableTemplates.current.set(workspaceId, mergeDurableTemplates(durableTemplates.current.get(workspaceId) || [], [saved]));
+    setTemplatesRaw(current => mergeDurableTemplates(current, [saved]));
+    for (const cached of Object.values(menuCacheRef.current)) {
+      if (cached.workspace.id === workspaceId) cached.templates = mergeDurableTemplates(cached.templates, [saved]);
     }
   };
 
@@ -1024,7 +980,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     workspaceLoadError: workspaceLoadFailure?.userId === authenticatedUserId ? workspaceLoadFailure?.message : null,
     workspaceData, products, style, templates, sortOption, setSortOption, isSettingsSaving, isMenuActionLoading,
     setProducts, setStyle, setProductsAndStyle, setTemplates, undo, redo, canUndo: canUndo && !isMenuActionLoading, canRedo: canRedo && !isMenuActionLoading, handleProductEditChange,
-    handleSignIn, handleSignUp, handleSignOut, handleSaveSettings, handleRequestPasswordReset, handleUpdatePassword,
+    handleSignIn, handleSignUp, handleSignOut, handleSaveSettings, handleSaveTemplate, handleRequestPasswordReset, handleUpdatePassword,
     handleSelectMenu, performCreateMenu, handleRenameMenu, handleDeleteMenus, forceSaveCurrentMenu,
   };
 }

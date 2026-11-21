@@ -260,7 +260,8 @@ export const calculateItemHeight = (
 
     const priceSize = clampFontSize(style, 'productPrice', style.elementStyles?.productPrice?.fontSize, 18);
     const imgScale = style.imageScale || 1;
-    const photoAlignment = style.productPhotoAlignments?.[product.id];
+    const photoAlignment = style.productPhotoAlignments?.[product.id] ?? style.productPhotoAlignmentDefault;
+    const photoRatio = style.productImageFrame === 'circle' ? 1 : style.productPhotoRatio || 1;
     let contentHeight = 0;
 
     if (isRowLayout) {
@@ -268,14 +269,14 @@ export const calculateItemHeight = (
         const usableColWidth = Math.max(40, (containerWidth - (productGridGap * (columnCount - 1))) / columnCount);
         const sidePhoto = photoAlignment === 'left' || photoAlignment === 'right';
         const photoHeight = style.showImages && product.image
-            ? Math.min(usableColWidth * (sidePhoto ? .42 : 1), getProductCardImageLimit(style) * imgScale)
+            ? Math.min(usableColWidth * (sidePhoto ? .42 : 1), getProductCardImageLimit(style) * imgScale * Math.min(1, photoRatio)) / photoRatio
             : 0;
         if (photoHeight && !sidePhoto) {
             const useBackground = !photoAlignment && resolveProductImageFrame(style, true) === 'template' && style.design?.image === 'background';
             contentHeight += useBackground ? 36 * imgScale : photoHeight;
         }
         const cardHorizontalPadding = categoryColumnCount > 1 || columnCount > 2 ? 12 : columnCount > 1 ? 16 : 32;
-        const textContentWidth = Math.max(32, usableColWidth - cardHorizontalPadding - (sidePhoto && photoHeight ? photoHeight + 10 : 0));
+        const textContentWidth = Math.max(32, usableColWidth - cardHorizontalPadding - (sidePhoto && photoHeight ? photoHeight * photoRatio + 10 : 0));
         const nameCharWidth = fontSize * 0.6;
         const editButtonReserve = categoryColumnCount > 1 || columnCount > 1 ? 24 : 40;
         const nameLines = getSafeLineCount(product.name, Math.max(24, textContentWidth - editButtonReserve), nameCharWidth);
@@ -295,13 +296,13 @@ export const calculateItemHeight = (
         const hasImage = Boolean(style.showImages && product.image);
         const stackPhoto = photoAlignment === 'center' || categoryColumnCount >= 3 && !photoAlignment;
         const imgHeight = hasImage
-            ? Math.min(getProductListImageLimit(categoryColumnCount) * imgScale, containerWidth * (stackPhoto ? 1 : .42))
+            ? Math.min(getProductListImageLimit(categoryColumnCount) * imgScale * Math.min(1, photoRatio), containerWidth * (stackPhoto ? 1 : .42)) / photoRatio
             : 0;
         const compactLayout = categoryColumnCount > 1;
         const innerWidth = Math.max(80, containerWidth);
         const imageGap = compactLayout ? 8 : 16;
         const textWidth = hasImage && !stackPhoto
-            ? Math.max(80, innerWidth - imgHeight - imageGap)
+            ? Math.max(80, innerWidth - imgHeight * photoRatio - imageGap)
             : innerWidth;
 
         let textHeight = 0;
@@ -423,9 +424,9 @@ const createPageItemHeightCalculator = (
             const dividerReserve = categoryStyle.textAlign === 'center' ? 64 : 32;
             const categoryImage = style.showCategoryImages !== false ? style.categoryImages?.[item.data] : undefined;
             const categoryImageScale = style.categoryImageScale || 1;
-            const aspect = Math.min(3, Math.max(.375, (categoryImage?.width || 1) / (categoryImage?.height || 1)));
+            const aspect = Math.min(3, Math.max(.375, style.categoryPhotoRatio ?? (categoryImage?.width || 1) / (categoryImage?.height || 1)));
             const { limit, widthFraction, titleReserve } = getCategoryPhotoSizing(style, categoryColumnCount);
-            const centeredPhoto = categoryImage?.alignment === 'center';
+            const centeredPhoto = (categoryImage?.alignment ?? style.categoryPhotoAlignmentDefault) === 'center';
             const maxImageWidth = centeredPhoto ? categoryColumnWidth
                 : Math.min(categoryColumnWidth * widthFraction, Math.max(0, categoryColumnWidth - titleReserve));
             const imageWidth = categoryImage?.url ? Math.min(maxImageWidth, limit * categoryImageScale * Math.min(aspect, 1)) : 0;
@@ -694,7 +695,7 @@ const buildLockedPagination = (
         const fullHeights = calculators.map((calculateHeight) => (
             calculateHeight(headerItem) + contentItems.reduce((sum, item) => sum + calculateHeight(item), 0)
         ));
-        const keepTogether = !options.splitCategoryAcrossPages && fullHeights.some((height) => height <= emptyColumnHeight);
+        const keepTogether = !(style.splitCategoryAcrossPages ?? options.splitCategoryAcrossPages) && fullHeights.some((height) => height <= emptyColumnHeight);
         let remainingItems = [...contentItems];
         let currentPlacement = placement;
         let startsCategory = true;
@@ -927,7 +928,7 @@ export const calculatePagination = (
     };
 
     const balanceColumns = (page: PageLayout): PageLayout => {
-        if (!style.design || page.columns.length < 2 || style.categoryColumnWidths?.length
+        if (!style.design || page.columns.length < 2 || style.categoryColumnWidths?.length && !style.productPhotoRatio
             || Object.keys(style.categoryPositions || {}).length) return page;
         const chunks = page.columns.flatMap((column) => column.chunks);
         const lanes = Math.min(chunks.length, page.columns.length);
@@ -938,14 +939,17 @@ export const calculatePagination = (
         let targetHeight = remainingHeight / lanes;
         chunks.forEach((chunk, position) => {
             const current = columns[index];
-            const overflow = current.estimatedHeight + chunk.estimatedHeight + CATEGORY_CHUNK_GAP_PX > targetHeight;
+            const heightAt = (lane: number) => style.categoryColumnWidths?.length
+                ? chunk.items.reduce((height, item) => height + calculators[lane](item), 0) : chunk.estimatedHeight;
+            const overflow = current.estimatedHeight + heightAt(index) + CATEGORY_CHUNK_GAP_PX > targetHeight;
             if (current.chunks.length && index + 1 < lanes && (overflow || chunks.length - position === lanes - index - 1)) {
                 index++;
                 targetHeight = remainingHeight / (lanes - index);
             }
             const column = columns[index];
-            column.estimatedHeight += chunk.estimatedHeight + (column.chunks.length ? CATEGORY_CHUNK_GAP_PX : 0);
-            column.chunks.push({ ...chunk, columnIndex: index });
+            const estimatedHeight = heightAt(index);
+            column.estimatedHeight += estimatedHeight + (column.chunks.length ? CATEGORY_CHUNK_GAP_PX : 0);
+            column.chunks.push({ ...chunk, columnIndex: index, estimatedHeight });
             remainingHeight -= chunk.estimatedHeight + CATEGORY_CHUNK_GAP_PX;
         });
         const limit = baseColumnHeight - headerHeight(page);
@@ -1060,7 +1064,7 @@ export const calculatePagination = (
         const fullHeights = calculators.map((calculateHeight) => (
             calculateHeight(headerItem) + items.reduce((sum, item) => sum + calculateHeight(item), 0)
         ));
-        const keepTogether = !options.splitCategoryAcrossPages && fullHeights.some((height) => height <= emptyColumnHeight);
+        const keepTogether = !(style.splitCategoryAcrossPages ?? options.splitCategoryAcrossPages) && fullHeights.some((height) => height <= emptyColumnHeight);
         let remainingItems = [...items];
         let startsCategory = true;
 

@@ -7,7 +7,8 @@ export type HeadingPages = Partial<Record<MenuHeadingField, 'all' | number[]>>;
 export function headingIsOnPage(style: MenuStyle, field: MenuHeadingField, pageIndex: number, legacyCopy = false) {
     if (!(style[field] ?? (field === 'menuTitle' ? 'MENU' : '')).trim()) return false;
     const pages = style.headingPages?.[field];
-    return pages === 'all' || (pages ? pages.includes(pageIndex) : pageIndex === 0 || legacyCopy);
+    return pages === 'all' || (pages ? pages.includes(pageIndex)
+        : style.templateHeadingVisibility?.[field] !== false && (pageIndex === 0 || legacyCopy));
 }
 
 export const headingSelectionId = (field: MenuHeadingField, pageIndex: number) =>
