@@ -1,3 +1,4 @@
+import { reindexMenuPages } from '../../../domain/menu/reindexMenuPages';
 import { captureCanvasObjectScale } from './canvasObjectScale';
 import { getCanvasDragScale, type CanvasScaleTarget } from './CanvasTransformHandles';
 import { headingElementId, headingIsOnPage, headingPageIndex, headingSelectionId, menuHeadingFields, remapHeadingPages, type MenuHeadingField } from '../../../domain/menu/menuHeadings';
@@ -1083,32 +1084,32 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const handleAddPage = (index: number, position: 'before' | 'after' = 'after') => {
         const insertIndex = position === 'after' ? index + 1 : index;
 
-        onStyleUpdate?.(prev => {
-            const blankPages = (prev.blankPages || []).map((blankPage) => (
-                blankPage.index >= insertIndex
-                    ? { ...blankPage, index: blankPage.index + 1 }
-                    : blankPage
-            ));
-
-            return {
-                ...prev,
-                headingPages: remapHeadingPages(prev, page => page >= insertIndex ? page + 1 : page),
-                blankPages: [...blankPages, {
-                    id: crypto.randomUUID(),
-                    index: insertIndex,
-                    fixedPosition: insertIndex < basePages.length,
-                }],
-                name: 'Custom',
-            };
-        });
-
-        handlers.setSelectedPageIndex(insertIndex);
-        handlers.handleSelection('page', String(insertIndex));
+        if (!onStyleUpdate) return;
+        const order = pages.map((_, index) => index);
+        order.splice(insertIndex, 0, -1);
+        onStyleUpdate(prev => reindexMenuPages(prev, pages, order));
+        handlers.replaceSelectedItems([{ type: 'page', id: String(insertIndex) }]);
         window.setTimeout(() => {
             document
                 .querySelector<HTMLElement>(`[data-page-index="${insertIndex}"]`)
                 ?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
         }, 80);
+    };
+
+    const handleMovePage = (index: number, direction: 'before' | 'after') => {
+        if (!onStyleUpdate) return;
+        const selected = selectedPageIndexes.includes(index) ? selectedPageIndexes : [index];
+        const first = Math.min(...selected);
+        const last = Math.max(...selected);
+        const offset = direction === 'before' ? -1 : 1;
+        const neighbor = offset < 0 ? first - 1 : last + 1;
+        if (neighbor < 0 || neighbor >= pages.length) return;
+        const order = pages.map((_, pageIndex) => pageIndex);
+        order.splice(neighbor, 1);
+        order.splice(offset < 0 ? last : first, 0, neighbor);
+        onStyleUpdate(prev => reindexMenuPages(prev, pages, order));
+        handlers.replaceSelectedItems(handlers.selectedItems.map(item => item.type === 'page'
+            ? { ...item, id: String(Number(item.id) + offset) } : item));
     };
 
     const openPageRemoval = (index: number) => {
@@ -2590,6 +2591,32 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             ]));
         }
     };
+    const addSubtitle = (pageIndex: number) => {
+        const id = headingSelectionId('menuSubtitle', pageIndex);
+        const elementId = headingElementId('menuSubtitle', pageIndex);
+        flushSync(() => {
+            handlers.replaceSelectedItems([{ type: 'menuSubtitle', id }]);
+            handlers.startMenuTextEditing('menuSubtitle', elementId, id);
+            setObjectMenu(null);
+        });
+        document.getElementById(elementId)?.focus({ preventScroll: true });
+    };
+    (handlers as any).commitSubtitleDraft = (pageIndex: number, value: string) => {
+        if (!value.trim()) {
+            handlers.setFormattingTarget(null);
+            return;
+        }
+        onStyleUpdate?.(previous => {
+            const visible = pages.flatMap((page, index) =>
+                index === pageIndex || headingIsOnPage(previous, 'menuSubtitle', index, page.headerCopy) ? [index] : []);
+            const next: MenuStyle = {
+                ...previous, name: 'Custom', menuSubtitle: value,
+                headingPages: { ...previous.headingPages, menuSubtitle: previous.headingPages?.menuSubtitle === 'all' ? 'all' : visible },
+            };
+            return reflowPositionsForMenuHeadings(previous, next, pages, measuredHeights);
+        });
+    };
+
     const editHeading = (field: MenuHeadingField, pageIndex: number) => {
         const id = headingSelectionId(field, pageIndex);
         const elementId = headingElementId(field, pageIndex);
@@ -2780,7 +2807,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             </div>, document.body)}
             {!readOnly && handlers.showAddModal && (createPortal(<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm" onClick={() => handlers.setShowAddModal(null)}> <div className="bg-white p-4 rounded-xl shadow-2xl animate-fade-in" onClick={e => e.stopPropagation()}> <h3 className="text-lg font-bold mb-4">Itens ocultos</h3> <div className="space-y-2 max-h-60 overflow-y-auto"> {products.filter(p => p.category === handlers.showAddModal!.category && !handlers.groupedProducts[handlers.showAddModal!.category]?.find(gp => gp.id === p.id)).map(p => (<button key={p.id} onClick={() => restoreProduct(p.id)} className="w-full p-2 text-left hover:bg-slate-100 rounded flex justify-between items-center"> <span>{p.name}</span> <Plus size={14} /> </button>))} </div> <div className="mt-4 pt-4 border-t"> <button onClick={createNewInModal} className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"> Criar novo item </button> </div> </div> </div>, document.body))}
 
-            <div className={`relative isolate flex flex-row items-start w-fit mx-auto ${readOnly ? 'gap-4 p-0 min-h-0' : 'gap-8 px-8 pb-20 pt-16 min-h-full'}`}>
+            <div className={`relative isolate flex flex-row items-start w-fit mx-auto ${readOnly ? 'gap-4 p-0 min-h-0' : 'gap-8 px-[52px] pb-20 pt-16 min-h-full'}`}>
                 {pages.map((pageContent, i) => (
                     visiblePageIndex != null && i !== visiblePageIndex ? null :
                     <MenuPage
@@ -2794,6 +2821,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                         needsOverlay={!!style.sourceImage}
                         pageCount={pages.length}
                         onAddPage={handleAddPage}
+                        onMovePage={handleMovePage}
                         onDeletePage={openPageRemoval}
                         onSetPageNumbersVisible={(visible) => onStyleUpdate?.((previous) => ({
                             ...previous,
@@ -2912,7 +2940,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                             <CopyPlus size={15} /> {isHeadingReplicated ? 'Usar só nesta página' : 'Replicar para outras páginas'}
                         </button>
                         {headingContext.type === 'menuTitle' && !headingIsOnPage(style, 'menuSubtitle', contextPageIndex, pages[contextPageIndex]?.headerCopy) && (
-                            <button type="button" onClick={() => addHeading('menuSubtitle', contextPageIndex)}
+                            <button type="button" onClick={() => addSubtitle(contextPageIndex)}
                                 className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
                                 <Plus size={15} /> Adicionar subtítulo
                             </button>

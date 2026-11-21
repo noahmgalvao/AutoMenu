@@ -171,10 +171,9 @@ export const useSelectionState = (
         if (selectedPageIndexes.length <= 1) return { before: true, after: true };
         if (!selectedPageIndexes.includes(pageIndex)) return { before: false, after: false };
 
-        const selectedPageSet = new Set(selectedPageIndexes);
         return {
-            before: !selectedPageSet.has(pageIndex - 1),
-            after: !selectedPageSet.has(pageIndex + 1),
+            before: pageIndex === Math.min(...selectedPageIndexes),
+            after: pageIndex === Math.max(...selectedPageIndexes),
         };
     }, [selectedItems]);
 

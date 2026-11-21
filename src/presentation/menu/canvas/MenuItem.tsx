@@ -396,8 +396,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const hasTitle = item.title ?? true;
         const hasSubtitle = item.subtitle ?? Boolean(style.menuSubtitle?.trim());
         const titleId = headingElementId('menuTitle', pageIndex);
-        const showSubtitleDraft = !hasSubtitle && !style.menuSubtitle?.trim() && !handlers.readOnly &&
-            (formattingTarget?.elementId === titleId || formattingTarget?.elementId === headingElementId('menuSubtitle', pageIndex));
+        const editingNewSubtitle = !hasSubtitle && formattingTarget?.elementId === headingElementId('menuSubtitle', pageIndex);
+        const showSubtitleDraft = !hasSubtitle && !handlers.readOnly &&
+            (editingNewSubtitle || !style.menuSubtitle?.trim() && formattingTarget?.elementId === titleId);
         const showSubtitle = hasSubtitle || showSubtitleDraft;
         const selectedTitle = handlers.isSelected?.('menuTitle', headingSelectionId('menuTitle', pageIndex));
         const selectedSubtitle = handlers.isSelected?.('menuSubtitle', headingSelectionId('menuSubtitle', pageIndex));
@@ -420,8 +421,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             const fontSize = clampFontSize(style, field, fieldStyle.fontSize, title ? 48 : 18);
             return (
                 <div data-menu-heading-frame={title ? 'title' : 'subtitle'}
-                    className="relative min-w-0"
-                    style={{ marginBottom: showSubtitle && title ? fieldStyle.marginBottom ?? 10 : contentSpacing.headerToContent }}
+                    className={draft ? 'absolute inset-x-0 top-full z-10 min-w-0' : 'relative min-w-0'}
+                    style={{ marginBottom: draft ? 0 : hasSubtitle && title ? fieldStyle.marginBottom ?? 10 : contentSpacing.headerToContent }}
                 >
                     <AutoFitText
                         as={title ? 'h1' : 'p'}
@@ -434,10 +435,10 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                         id={handlers.readOnly ? undefined : elementId}
                         tabIndex={handlers.readOnly ? undefined : 0}
                         data-menu-heading={title ? 'title' : 'subtitle'}
-                        data-subtitle-placeholder={draft ? 'Adicionar subtítulo' : undefined}
+                        data-subtitle-placeholder={draft && !editing ? 'Adicionar subtítulo' : undefined}
                         data-print-control={draft ? 'true' : undefined}
                         aria-label={draft ? 'Adicionar subtítulo' : undefined}
-                        className={`outline-none ${title ? 'tracking-tight' : 'opacity-90'} ${editing ? 'cursor-text select-text' : 'cursor-default select-none'} ${draft ? `w-fit ${fieldStyle.textAlign === 'left' ? 'mr-auto' : fieldStyle.textAlign === 'right' ? 'ml-auto' : 'mx-auto'}` : ''} empty:before:opacity-50 empty:before:content-[attr(data-subtitle-placeholder)]`}
+                        className={`outline-none ${title ? 'tracking-tight' : 'opacity-90'} ${editing ? 'cursor-text select-text' : 'cursor-default select-none'} ${draft ? `min-w-px w-fit ${fieldStyle.textAlign === 'left' ? 'mr-auto' : fieldStyle.textAlign === 'right' ? 'ml-auto' : 'mx-auto'}` : ''} empty:before:opacity-50 empty:before:content-[attr(data-subtitle-placeholder)]`}
                         style={{
                             color: `var(--automenu-preview-primary, ${fieldStyle.color || (title ? style.primaryColor : style.textColor)})`,
                             ...textContrastFill(field),
@@ -452,7 +453,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                         }}
                         onPointerDown={handlers.readOnly ? undefined : event => {
                             if (!editing) event.preventDefault();
-                            else if (!isMenuHeadingTextHit(event)) {
+                            else if (!draft && !isMenuHeadingTextHit(event)) {
                                 preventHeadingFocusOutsideText(event);
                                 handlers.setFormattingTarget?.(null);
                             }
@@ -480,7 +481,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                         }}
                         contentEditable={editing || undefined}
                         suppressContentEditableWarning
-                        onBlur={handlers.readOnly ? undefined : event => handlers.handleBlur(event, 'menu', id, field)}
+                        onBlur={handlers.readOnly ? undefined : event => draft && editing ? handlers.commitSubtitleDraft?.(pageIndex, event.currentTarget.innerText) : handlers.handleBlur(event, 'menu', id, field)}
                         onKeyDown={event => {
                             handlers.handleKeyDown?.(event);
                             if (event.key === 'Enter' && !event.shiftKey || event.key === 'Escape') {
@@ -500,7 +501,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 data-heading-draft={showSubtitleDraft || undefined}
                 data-template-header data-header-page={pageIndex} data-menu-border-surface="header" data-custom-border={getBorderOverride(style, 'header')}
                 className={`relative flow-root text-center pointer-events-auto ${selected ? 'ring-2 ring-indigo-500 bg-indigo-50/10' : ''}`}
-                style={{ zIndex: 20, background: getSurfaceFill(style, 'header'), borderRadius: style.borders?.header?.radius }}>
+                style={{ zIndex: showSubtitleDraft ? 65 : 20, background: getSurfaceFill(style, 'header'), borderRadius: style.borders?.header?.radius }}>
                 <BorderDecoration style={style} scope="header" />
                 {heroImage && <img src={heroImage} data-template-hero-image alt="" draggable={false} onError={event => { event.currentTarget.hidden = true; }} />}
                 {hasTitle && renderHeading('menuTitle', titleStyle)}

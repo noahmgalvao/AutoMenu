@@ -826,7 +826,7 @@ export function finalizeMenuPages(basePages: PageLayout[], style: MenuStyle, pro
             };
             copy.flatItems = buildPageFlatItems(copy);
             while (pages.length < blankPage.index) pages.push(emptyPage());
-            const replace = existing && !existing.blankPageId && !pageHasItems(existing) && blankPage.index > 0 ? 1 : 0;
+            const replace = existing && !existing.blankPageId && !pageHasItems(existing) ? 1 : 0;
             pages.splice(blankPage.index, replace, copy);
             continue;
         }
@@ -834,7 +834,7 @@ export function finalizeMenuPages(basePages: PageLayout[], style: MenuStyle, pro
             const belongsToBlankPage = (chunk: CategoryChunkLayout) => (chunk.category.startsWith(FREE_TEXT_PREFIX) || style.categoryPositions?.[chunk.category]?.pageX !== undefined)
                 && style.categoryPositions?.[chunk.category]?.pageIndex === blankPage.index;
             const remaining = existing.columns.map(column => ({ ...column, chunks: column.chunks.filter(chunk => !belongsToBlankPage(chunk)) }));
-            if (remaining.every(column => !column.chunks.length) && (blankPage.index > 0 || !existing.mainHeader)) {
+            if (remaining.every(column => !column.chunks.length) && (blankPage.fixedPosition || blankPage.index > 0 || !existing.mainHeader)) {
                 pages[blankPage.index] = { ...existing, blankPageId: blankPage.id };
                 continue;
             }

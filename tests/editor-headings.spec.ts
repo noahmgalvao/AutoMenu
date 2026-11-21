@@ -183,3 +183,68 @@ test('the heading quick actions can remove the selected heading', async ({ page 
     await expect(title).toHaveCount(0);
     await expect(page.locator('#menu-subtitle-text')).toHaveCount(0);
 });
+
+test('adding a subtitle focuses an empty editor and only changes layout when text is saved', async ({ page }) => {
+    await page.goto(fixture);
+    const title = page.locator('#menu-title-text');
+    const subtitle = page.locator('#menu-subtitle-text');
+    const header = title.locator('xpath=ancestor::header');
+    await subtitle.focus();
+    await subtitle.fill('');
+    await subtitle.press('Enter');
+    const originalHeight = await header.evaluate(node => (node as HTMLElement).offsetHeight);
+    const open = async () => {
+        await title.click({ button: 'right' });
+        await page.locator('[data-canvas-object-menu]').getByRole('button', { name: 'Adicionar subtítulo' }).click();
+        await expect(subtitle).toBeFocused();
+        await expect(subtitle).toBeEmpty();
+        await expect(subtitle).not.toHaveAttribute('data-subtitle-placeholder');
+        expect(await header.evaluate(node => (node as HTMLElement).offsetHeight)).toBe(originalHeight);
+    };
+    await open();
+    await subtitle.press('Escape');
+    await expect(subtitle).toHaveCount(0);
+    await open();
+    await subtitle.fill('Almoço de domingo');
+    await subtitle.press('Enter');
+    await expect(subtitle).toHaveText('Almoço de domingo');
+    expect(await header.evaluate(node => (node as HTMLElement).offsetHeight)).toBeGreaterThan(originalHeight);
+});
+
+test('page actions sit above the next page and operate at the edges of a selection', async ({ page }) => {
+    await page.goto(fixture + '?batch-layers&editable');
+    const paper = page.locator('[data-menu-print-page]');
+    const frame = (index: number) => paper.nth(index).locator('..');
+    const clickPaper = (index: number, modifiers: ('Control' | 'Shift')[] = []) =>
+        paper.nth(index).click({ position: { x: 10, y: 165 }, modifiers });
+    const after = (index: number) => frame(index).getByTitle('Adicionar página depois');
+    const before = (index: number) => frame(index).getByTitle('Adicionar página antes');
+    await clickPaper(0);
+    await after(0).scrollIntoViewIfNeeded();
+    expect(await after(0).evaluate(button => {
+        const box = button.getBoundingClientRect();
+        return button.contains(document.elementFromPoint(box.right - 5, box.top + box.height / 2));
+    })).toBe(true);
+    await frame(0).getByTitle('Trocar com a próxima página').click();
+    await expect(paper).toHaveCount(2);
+    await expect(paper.nth(0)).toHaveAttribute('data-blank-page-id', 'layers-page');
+    await expect(paper.nth(1).getByText('Burrata da casa', { exact: true })).toBeVisible();
+    await expect(paper.nth(1).locator('[data-added-image-id]')).toHaveCount(4);
+    await after(1).click();
+    await expect(paper).toHaveCount(3);
+    await clickPaper(0);
+    await clickPaper(1, ['Control']);
+    await expect(before(0)).toBeVisible();
+    await expect(after(0)).toHaveCount(0);
+    await expect(before(1)).toHaveCount(0);
+    await expect(after(1)).toBeVisible();
+    await frame(1).getByTitle('Trocar com a próxima página').click();
+    await expect(paper.nth(1)).toHaveAttribute('data-blank-page-id', 'layers-page');
+    await expect(paper.nth(2).getByText('Burrata da casa', { exact: true })).toBeVisible();
+    await expect(before(1)).toBeVisible();
+    await expect(after(2)).toBeVisible();
+    await before(1).click();
+    await expect(paper).toHaveCount(4);
+    await expect(paper.nth(2)).toHaveAttribute('data-blank-page-id', 'layers-page');
+    await expect(paper.nth(3).getByText('Burrata da casa', { exact: true })).toBeVisible();
+});
