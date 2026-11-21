@@ -82,7 +82,7 @@ export const getCollisionSafeFreeTextTop = ({
         ...excludeProductIds.map((productId) => `product-container-${productId}`),
     ]);
     const objects = Array.from(root.querySelectorAll<HTMLElement>(
-        '[id^="product-container-"], [id^="category-header-"], #menu-title-text, #menu-subtitle-text'
+        '[id^="product-container-"], [id^="category-header-"], [data-menu-heading]'
     ))
         .filter((element) => (
             element.isConnected &&
@@ -321,7 +321,7 @@ const getFreeTextSurfaceGap = (
         ? (columnRect?.top ?? pageRect.top + pagePadding)
         : (columnRect?.bottom ?? pageRect.bottom - pagePadding);
     const surfaces = Array.from(pageElement.querySelectorAll<HTMLElement>(
-        '[id^="product-container-"], [id^="category-header-"], #menu-title-text, #menu-subtitle-text, [data-added-image-drag="true"]'
+        '[id^="product-container-"], [id^="category-header-"], [data-menu-heading], [data-added-image-drag="true"]'
     ))
         .filter((element) => (
             element !== currentElement &&

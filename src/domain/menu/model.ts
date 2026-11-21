@@ -1,6 +1,7 @@
 import type { BoundingBox, ExtractedImage } from '../imports/model';
 import type { TemplateDesign, TemplateCatalogMetadata, TemplateScope, TemplateSourceType } from '../templates/model';
 import type { MiniFoodKind } from './miniFoods';
+import type { HeadingPages } from './menuHeadings';
 import type { MenuPageSetup } from './pageModel';
 
 export interface TextOutline {
@@ -79,6 +80,7 @@ export interface Product {
   imageAssetId?: string | null;
   imageAlignment?: 'left' | 'center' | 'right';
   isFreeText?: boolean;
+  rotation?: number;
   customMarginTop?: number;
   freeTextWidth?: number;
   styles?: ElementStyle;
@@ -114,6 +116,7 @@ export interface AddedImage {
   repeatAsBackground?: boolean;
   backgroundPromptDismissed?: boolean;
   previousZIndex?: number;
+  rotation?: number;
   flipHorizontal?: boolean;
   flipVertical?: boolean;
   shape?: CanvasShape;
@@ -221,6 +224,7 @@ export interface MenuStyle {
   templateVersionId?: string | null;
   isLocked?: boolean;
   menuTitle: string;
+  headingPages?: HeadingPages;
   menuSubtitle: string;
   fontFamily: string;
   primaryColor: string;

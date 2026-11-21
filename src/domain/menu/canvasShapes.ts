@@ -147,9 +147,16 @@ export function applyCanvasShapeParameters(image: AddedImage, patch: CanvasShape
   const applicable = getCanvasShapeParameters(image.shape);
   const updates = Object.fromEntries(Object.entries(patch).filter(([key]) => key in applicable));
   if (Object.keys(updates).length === 0) return image;
-  const shape = { ...image.shape, ...updates };
+  return updateCanvasShape(image, { ...image.shape, ...updates });
+}
+
+export function rotateCanvasShape(image: AddedImage, rotation: number): AddedImage {
+  return image.shape ? updateCanvasShape(image, { ...image.shape, rotation }) : { ...image, rotation };
+}
+
+function updateCanvasShape(image: AddedImage, shape: CanvasShape): AddedImage {
   const url = canvasShapeUrl(shape);
-  if (shape.rotation === image.shape.rotation) return { ...image, shape, url };
+  if (!image.shape || shape.rotation === image.shape.rotation) return { ...image, shape, url };
   const previous = getCanvasShapeDimensions(image.shape);
   const next = getCanvasShapeDimensions(shape);
   const scale = image.width / previous.width;

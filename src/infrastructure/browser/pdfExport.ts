@@ -250,6 +250,11 @@ const stripEditorState = (page: HTMLElement) => {
   page.querySelectorAll('button, [data-print-control="true"], .automenu-image-resize-handle').forEach((node) => node.remove());
   page.querySelectorAll<HTMLElement>('[contenteditable]').forEach((node) => node.removeAttribute('contenteditable'));
   page.querySelectorAll<HTMLElement>('*').forEach((node) => {
+    // html2canvas reads transform matrices instead of the standalone rotate property.
+    if (node.style.rotate && node.style.rotate !== 'none') {
+      node.style.transform = [`rotate(${node.style.rotate})`, node.style.transform].filter(Boolean).join(' ');
+      node.style.removeProperty('rotate');
+    }
     node.classList.remove(
       'ring-4',
       'ring-2',

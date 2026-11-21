@@ -48,7 +48,7 @@ export function writeCanvasCopy(clip: CanvasClip) {
 export function copiedProductFields(product: Product) {
     return { name: product.name, price: product.price, description: product.description,
         image: product.image || '', imageAssetId: product.imageAssetId ?? null, imageAlignment: product.imageAlignment,
-        styles: product.styles, boundingBox: product.boundingBox, extractedImages: product.extractedImages };
+        styles: product.styles, rotation: product.rotation, boundingBox: product.boundingBox, extractedImages: product.extractedImages };
 }
 
 export function pasteCanvasObjects(products: Product[], style: MenuStyle, content: PasteContent, target: CanvasObject | null, position: CategoryPosition,

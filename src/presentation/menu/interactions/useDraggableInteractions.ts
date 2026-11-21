@@ -2386,8 +2386,8 @@ export const useDraggableInteractions = (
             if (typeof document === 'undefined') return null;
             const scope = escapeSelectorValue(dragScope);
             const blocksCategoryDrop = Array.from(document.querySelectorAll<HTMLElement>(
-                options.includeFreeTextTargets ? '#menu-title-text, #menu-subtitle-text'
-                    : '[data-added-image-drag="true"]:not([data-canvas-background-layer]), #menu-title-text, #menu-subtitle-text'
+                options.includeFreeTextTargets ? '[data-menu-heading]'
+                    : '[data-added-image-drag="true"]:not([data-canvas-background-layer]), [data-menu-heading]'
             )).some((element) => {
                 const rect = element.getBoundingClientRect();
                 return pointer.x >= rect.left && pointer.x <= rect.right && pointer.y >= rect.top && pointer.y <= rect.bottom;
@@ -2935,7 +2935,7 @@ export const useDraggableInteractions = (
                             if (image || backgroundText) {
                                 const page = element.closest<HTMLElement>('[data-menu-print-page]');
                                 const scale = page ? page.getBoundingClientRect().width / Math.max(1, page.offsetWidth) : 1;
-                                member.layer = { ...captureImageDrag(item.id, Number(page?.dataset.pageIndex || 0), rect, start, scale || 1), backgroundText };
+                                member.layer = { ...captureImageDrag(item.id, Number(page?.dataset.pageIndex || 0), rect, start, scale || 1, element), backgroundText };
                             }
                         }
                         selectionDragRef.current = {

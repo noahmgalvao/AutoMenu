@@ -1,3 +1,4 @@
+import { headingIsOnPage, headingMeasurementKey } from './menuHeadings';
 import { categoryName } from './categoryName';
 import type { Product, MenuStyle } from './model';
 import { resolveMenuMargins, resolveMinimumFontSize, resolveMenuContentSpacing, clampFontSize, resolveProductImageFrame } from './styleRules';
@@ -20,7 +21,7 @@ const PRODUCT_CARD_VERTICAL_PADDING_PX = 24;
 const PRODUCT_CARD_IMAGE_HEIGHT_PX = 168;
 
 export type PageItem =
-    | { type: 'main-header' }
+    | { type: 'main-header'; title?: boolean; subtitle?: boolean }
     | { type: 'category-header'; data: string; category: string }
     | { type: 'product-item'; data: Product; category: string }
     | { type: 'free-text-row'; data: Product[]; category: string }
@@ -166,19 +167,25 @@ const getCategoryColumnWidth = (
     );
 };
 
-const getMainHeaderHeight = (style: MenuStyle, measuredHeights?: PaginationOptions['measuredHeights']) => {
-    const measured = measuredHeights?.get('main-header');
+const getPageHeader = (style: MenuStyle, index: number, legacyCopy = false): Extract<PageItem, { type: 'main-header' }> | null => {
+    const title = headingIsOnPage(style, 'menuTitle', index, legacyCopy);
+    const subtitle = headingIsOnPage(style, 'menuSubtitle', index, legacyCopy);
+    return title || subtitle ? { type: 'main-header', title, subtitle } : null;
+};
+
+const getMainHeaderHeight = (style: MenuStyle, header: PageItem | null, measuredHeights?: PaginationOptions['measuredHeights']) => {
+    if (header?.type !== 'main-header') return 0;
+    const title = header.title ?? true;
+    const subtitle = header.subtitle ?? Boolean(style.menuSubtitle?.trim());
+    const legacyMetric = title && subtitle === Boolean(style.menuSubtitle?.trim()) ? measuredHeights?.get('main-header') : undefined;
+    const measured = measuredHeights?.get(headingMeasurementKey(title, subtitle)) ?? legacyMetric;
     if (measured !== undefined) return measured;
     const spacing = resolveMenuContentSpacing(style);
     const titleSize = clampFontSize(style, 'menuTitle', style.elementStyles?.menuTitle?.fontSize, 48);
-    const hasSubtitle = Boolean(style.menuSubtitle?.trim());
-    const titleBottom = hasSubtitle
-        ? (style.elementStyles?.menuTitle?.marginBottom ?? 10)
-        : spacing.headerToContent;
-    if (!hasSubtitle) return (titleSize * 1.22) + titleBottom + templateHeaderExtra(style);
-
     const subtitleSize = clampFontSize(style, 'menuSubtitle', style.elementStyles?.menuSubtitle?.fontSize, 18);
-    return (titleSize * 1.22) + titleBottom + (subtitleSize * 1.35) + spacing.headerToContent + templateHeaderExtra(style);
+    return (title ? titleSize * 1.22 : 0) + (subtitle ? subtitleSize * 1.35 : 0)
+        + (title && subtitle ? style.elementStyles?.menuTitle?.marginBottom ?? 10 : 0)
+        + spacing.headerToContent + templateHeaderExtra(style);
 };
 
 const getPaginationContentHeight = (style: MenuStyle) => Math.max(
@@ -186,8 +193,41 @@ const getPaginationContentHeight = (style: MenuStyle) => Math.max(
     resolveMenuPageDimensions(style).heightPx - resolveMenuMargins(style).top - getPaginationBottomInset(style),
 );
 
+/** Keep each placed category's offset relative to the content start when a heading is added or removed. */
+export function reflowPositionsForMenuHeadings(
+    previous: MenuStyle,
+    next: MenuStyle,
+    pages: PageLayout[],
+    measuredHeights: PaginationOptions['measuredHeights'],
+): MenuStyle {
+    if (!previous.categoryPositions) return next;
+    const heightChanges = pages.map((page, index) =>
+        getMainHeaderHeight(next, getPageHeader(next, index, page.headerCopy), measuredHeights)
+        - getMainHeaderHeight(previous, page.mainHeader, measuredHeights));
+    if (!heightChanges.some(Boolean)) return next;
+    const top = resolveMenuMargins(next).top;
+    return {
+        ...next,
+        categoryPositions: Object.fromEntries(Object.entries(previous.categoryPositions).map(([category, position]) => [
+            category,
+            !category.startsWith(FREE_TEXT_PREFIX) && position.pageX === undefined && heightChanges[position.pageIndex]
+                ? { ...position, y: Math.max(top, position.y + heightChanges[position.pageIndex]) }
+                : position,
+        ])),
+    };
+}
+
+const getEmptyColumnHeight = (style: MenuStyle, baseHeight: number, options: PaginationOptions) => {
+    const title = style.headingPages?.menuTitle === 'all' && headingIsOnPage(style, 'menuTitle', 0);
+    const subtitle = style.headingPages?.menuSubtitle === 'all' && headingIsOnPage(style, 'menuSubtitle', 0);
+    const headerHeight = title || subtitle
+        ? getMainHeaderHeight(style, { type: 'main-header', title, subtitle }, options.measuredHeights)
+        : 0;
+    return Math.max(1, baseHeight - headerHeight);
+};
+
 export function getPaginationColumnLimit(style: MenuStyle, page: PageLayout, options: PaginationOptions) {
-    return getPaginationContentHeight(style) - (page.mainHeader ? getMainHeaderHeight(style, options.measuredHeights) : 0);
+    return getPaginationContentHeight(style) - getMainHeaderHeight(style, page.mainHeader, options.measuredHeights);
 }
 
 // Helper function to estimate item height dynamically
@@ -424,8 +464,8 @@ const createPageItemHeightCalculator = (
     };
 };
 
-const createLockedPage = (categoryColumnCount: number, includeMainHeader: boolean): PageLayout => ({
-    mainHeader: includeMainHeader ? { type: 'main-header' } : null,
+const createLockedPage = (categoryColumnCount: number, mainHeader: PageItem | null): PageLayout => ({
+    mainHeader,
     columns: Array.from({ length: categoryColumnCount }, (_, columnIndex) => ({
         columnIndex,
         chunks: [],
@@ -473,7 +513,8 @@ const buildLockedPagination = (
     const categoryColumnCount = style.categoryColumnCount || 1;
     const margins = resolveMenuMargins(style);
     const baseColumnHeight = getPaginationContentHeight(style);
-    const headerHeight = getMainHeaderHeight(style, options.measuredHeights);
+    const headerHeight = (page: PageLayout) => getMainHeaderHeight(style, page.mainHeader, options.measuredHeights);
+    const emptyColumnHeight = getEmptyColumnHeight(style, baseColumnHeight, options);
     const normalizePlacement = (placement?: CategoryPlacementAssignment | null): CategoryPlacementAssignment => {
         const pageIndex = Number(placement?.pageIndex);
         const columnIndex = Number(placement?.columnIndex);
@@ -484,7 +525,7 @@ const buildLockedPagination = (
         };
     };
     const getLockedPageColumnCount = (_pageIndex: number) => categoryColumnCount;
-    const pages: PageLayout[] = [createLockedPage(getLockedPageColumnCount(0), true)];
+    const pages: PageLayout[] = [createLockedPage(getLockedPageColumnCount(0), getPageHeader(style, 0))];
     const getNextChunkId = createCategoryChunkIdFactory();
     let fallbackPlacement: CategoryPlacementAssignment = { pageIndex: 0, columnIndex: 0 };
 
@@ -493,7 +534,7 @@ const buildLockedPagination = (
     const ensurePage = (pageIndex: number) => {
         const safePageIndex = Number.isFinite(pageIndex) ? Math.max(0, Math.floor(pageIndex)) : 0;
         while (pages.length <= safePageIndex) {
-            pages.push(createLockedPage(getLockedPageColumnCount(pages.length), false));
+            pages.push(createLockedPage(getLockedPageColumnCount(pages.length), getPageHeader(style, pages.length)));
         }
         return pages[safePageIndex];
     };
@@ -512,11 +553,11 @@ const buildLockedPagination = (
             || requestedPosition.columnIndex !== placement.columnIndex
         ) return 0;
 
-        const contentStartY = margins.top + (page.mainHeader ? headerHeight : 0);
+        const contentStartY = margins.top + headerHeight(page);
         const requestedOffset = Math.max(0, requestedPosition.y - contentStartY);
         const normalGap = hasChunks(column) ? CATEGORY_CHUNK_GAP_PX : 0;
         const naturalOffset = column.estimatedHeight + normalGap;
-        const remainingHeight = baseColumnHeight - (page.mainHeader ? headerHeight : 0) - naturalOffset;
+        const remainingHeight = baseColumnHeight - headerHeight(page) - naturalOffset;
         return Math.max(0, Math.min(requestedOffset - naturalOffset, remainingHeight - height));
     };
 
@@ -554,7 +595,7 @@ const buildLockedPagination = (
     const getRemainingHeight = (placement: CategoryPlacementAssignment) => {
         const page = ensurePage(placement.pageIndex);
         const column = page.columns[Math.max(0, Math.min(placement.columnIndex, page.columns.length - 1))];
-        const columnLimit = baseColumnHeight - (page.mainHeader ? headerHeight : 0);
+        const columnLimit = baseColumnHeight - headerHeight(page);
         const gapBeforeChunk = hasChunks(column) ? CATEGORY_CHUNK_GAP_PX : 0;
         return columnLimit - column.estimatedHeight - gapBeforeChunk;
     };
@@ -644,7 +685,7 @@ const buildLockedPagination = (
         const fullHeights = calculators.map((calculateHeight) => (
             calculateHeight(headerItem) + contentItems.reduce((sum, item) => sum + calculateHeight(item), 0)
         ));
-        const keepTogether = !options.splitCategoryAcrossPages && fullHeights.some((height) => height <= baseColumnHeight);
+        const keepTogether = !options.splitCategoryAcrossPages && fullHeights.some((height) => height <= emptyColumnHeight);
         let remainingItems = [...contentItems];
         let currentPlacement = placement;
         let startsCategory = true;
@@ -675,7 +716,7 @@ const buildLockedPagination = (
                 if (!startsCategory) return firstItemHeight;
                 return keepTogether ? fullHeights[index] : calculateHeight(headerItem) + firstItemHeight;
             };
-            const fittingColumn = findCategoryColumn(page.columns, currentPlacement.columnIndex, baseColumnHeight, requiredHeight,
+            const fittingColumn = findCategoryColumn(page.columns, currentPlacement.columnIndex, emptyColumnHeight, requiredHeight,
                 (columnIndex) => getRemainingHeight({ pageIndex: currentPlacement.pageIndex, columnIndex }));
             if (fittingColumn === undefined) {
                 currentPlacement = { pageIndex: currentPlacement.pageIndex + 1, columnIndex: 0 };
@@ -738,6 +779,7 @@ export function finalizeMenuPages(basePages: PageLayout[], style: MenuStyle, pro
         })),
     });
     const pages = [...basePages];
+    const pageHasItems = (page: PageLayout) => page.columns.some(column => column.chunks.length);
     const hasPageCopies = style.blankPages?.some(page => page.copiedLayout);
     const hidden = hasPageCopies ? new Set(style.hiddenProductIds) : undefined;
     const productsById = new Map(hasPageCopies
@@ -766,7 +808,7 @@ export function finalizeMenuPages(basePages: PageLayout[], style: MenuStyle, pro
                 return { columnIndex, chunks, estimatedHeight: chunks.reduce((sum, chunk) => sum + chunk.estimatedHeight, 0) };
             });
             const copy: PageLayout = {
-                mainHeader: layout.showHeader ? { type: 'main-header' } : null,
+                mainHeader: getPageHeader(style, blankPage.index, layout.showHeader),
                 headerCopy: layout.showHeader,
                 columns,
                 columnCount: columns.length,
@@ -775,7 +817,7 @@ export function finalizeMenuPages(basePages: PageLayout[], style: MenuStyle, pro
             };
             copy.flatItems = buildPageFlatItems(copy);
             while (pages.length < blankPage.index) pages.push(emptyPage());
-            const replace = existing && !existing.blankPageId && !existing.flatItems.length ? 1 : 0;
+            const replace = existing && !existing.blankPageId && !pageHasItems(existing) && blankPage.index > 0 ? 1 : 0;
             pages.splice(blankPage.index, replace, copy);
             continue;
         }
@@ -783,7 +825,7 @@ export function finalizeMenuPages(basePages: PageLayout[], style: MenuStyle, pro
             const belongsToBlankPage = (chunk: CategoryChunkLayout) => (chunk.category.startsWith(FREE_TEXT_PREFIX) || style.categoryPositions?.[chunk.category]?.pageX !== undefined)
                 && style.categoryPositions?.[chunk.category]?.pageIndex === blankPage.index;
             const remaining = existing.columns.map(column => ({ ...column, chunks: column.chunks.filter(chunk => !belongsToBlankPage(chunk)) }));
-            if (!existing.mainHeader && remaining.every(column => !column.chunks.length)) {
+            if (remaining.every(column => !column.chunks.length) && (blankPage.index > 0 || !existing.mainHeader)) {
                 pages[blankPage.index] = { ...existing, blankPageId: blankPage.id };
                 continue;
             }
@@ -798,10 +840,19 @@ export function finalizeMenuPages(basePages: PageLayout[], style: MenuStyle, pro
         pages.splice(Math.max(0, Math.min(blankPage.index, pages.length)), 0, { ...emptyPage(), blankPageId: blankPage.id });
     }
     const assets = [...(style.pageBackgrounds || []), ...(style.addedImages || []), ...(style.floatingText || [])];
+    const lastHeadingPage = Math.max(-1, ...Object.values(style.headingPages || {}).flatMap(visibility =>
+        Array.isArray(visibility) ? visibility.filter(index => Number.isSafeInteger(index) && index >= 0) : []));
     const minimumPageCount = assets.reduce((count, asset) =>
-        Number.isSafeInteger(asset.pageIndex) && asset.pageIndex >= 0 ? Math.max(count, asset.pageIndex + 1) : count, 1);
+        Number.isSafeInteger(asset.pageIndex) && asset.pageIndex >= 0 ? Math.max(count, asset.pageIndex + 1) : count, Math.max(1, lastHeadingPage + 1));
     while (pages.length < minimumPageCount) pages.push(emptyPage());
-    return pages;
+    return pages.map((page, index) => {
+        const mainHeader = getPageHeader(style, index, page.headerCopy === true);
+        if (page.mainHeader?.type === 'main-header' && mainHeader
+            && page.mainHeader.title === mainHeader.title && page.mainHeader.subtitle === mainHeader.subtitle
+            || !page.mainHeader && !mainHeader) return page;
+        const next = { ...page, mainHeader };
+        return { ...next, flatItems: buildPageFlatItems(next) };
+    });
 }
 
 export const calculatePagination = (
@@ -814,7 +865,8 @@ export const calculatePagination = (
 ): PageLayout[] => {
     const categoryColumnCount = style.categoryColumnCount || 1;
     const baseColumnHeight = getPaginationContentHeight(style);
-    const headerHeight = getMainHeaderHeight(style, options.measuredHeights);
+    const headerHeight = (page: PageLayout) => getMainHeaderHeight(style, page.mainHeader, options.measuredHeights);
+    const emptyColumnHeight = getEmptyColumnHeight(style, baseColumnHeight, options);
     const pageBreaks = new Set(style.pageBreaks || []);
     const hidden = new Set(style.hiddenProductIds);
     for (const page of style.blankPages || []) {
@@ -837,8 +889,8 @@ export const calculatePagination = (
 
     const getNextChunkId = createCategoryChunkIdFactory();
 
-    const createPage = (includeMainHeader: boolean, pageColumnCount: number = categoryColumnCount): MutablePage => ({
-        mainHeader: includeMainHeader ? { type: 'main-header' } : null,
+    const createPage = (mainHeader: PageItem | null, pageColumnCount: number = categoryColumnCount): MutablePage => ({
+        mainHeader,
         columns: Array.from({ length: pageColumnCount }, (_, columnIndex) => ({
             columnIndex,
             chunks: [],
@@ -887,21 +939,21 @@ export const calculatePagination = (
             column.chunks.push({ ...chunk, columnIndex: index });
             remainingHeight -= chunk.estimatedHeight + CATEGORY_CHUNK_GAP_PX;
         });
-        const limit = baseColumnHeight - (page.mainHeader ? headerHeight : 0);
+        const limit = baseColumnHeight - headerHeight(page);
         if (columns.some((column) => column.estimatedHeight > limit)) return page;
         const balanced = { ...page, columns };
         return { ...balanced, flatItems: buildPageFlatItems(balanced) };
     };
 
     const pages: PageLayout[] = [];
-    let currentPage = createPage(true);
+    let currentPage = createPage(getPageHeader(style, 0));
     let currentColumnIndex = 0;
     const calculators = Array.from({ length: categoryColumnCount }, (_, columnIndex) => (
         createPageItemHeightCalculator(style, categoryColumnCount, columnIndex, options.measuredHeights)
     ));
     const getItemHeight = (item: PageItem) => calculators[currentColumnIndex](item);
 
-    const getColumnLimit = (page: MutablePage) => baseColumnHeight - (page.mainHeader ? headerHeight : 0);
+    const getColumnLimit = (page: MutablePage) => baseColumnHeight - headerHeight(page);
     const getCurrentColumnHeight = () => currentPage._columnHeights[currentColumnIndex];
     const getRemainingHeight = (index = currentColumnIndex) => {
         const column = currentPage.columns[index];
@@ -912,7 +964,7 @@ export const calculatePagination = (
         Boolean(page.mainHeader) || page.columns.some((column) => column.chunks.length > 0);
     const startNextPage = () => {
         pages.push(finalizePage(currentPage));
-        currentPage = createPage(false, categoryColumnCount);
+        currentPage = createPage(getPageHeader(style, pages.length), categoryColumnCount);
         currentColumnIndex = 0;
     };
 
@@ -947,7 +999,7 @@ export const calculatePagination = (
 
         while (remainingItems.length > 0) {
             const nextItemHeight = getItemHeight(remainingItems[0]);
-            if (currentPage.mainHeader && nextItemHeight > getColumnLimit(currentPage) && nextItemHeight <= baseColumnHeight) {
+            if (currentPage.mainHeader && nextItemHeight > getColumnLimit(currentPage) && nextItemHeight <= emptyColumnHeight) {
                 startNextPage();
             }
 
@@ -991,7 +1043,7 @@ export const calculatePagination = (
     const placeCategory = (category: string, items: PageItem[]) => {
         if (items.length === 0) return;
 
-        if (pageBreaks.has(category) && pageHasAnyContent(currentPage)) {
+        if (pageBreaks.has(category) && (pages.length === 0 && currentPage.mainHeader || currentPage.columns.some(column => column.chunks.length))) {
             startNextPage();
         }
 
@@ -999,7 +1051,7 @@ export const calculatePagination = (
         const fullHeights = calculators.map((calculateHeight) => (
             calculateHeight(headerItem) + items.reduce((sum, item) => sum + calculateHeight(item), 0)
         ));
-        const keepTogether = !options.splitCategoryAcrossPages && fullHeights.some((height) => height <= baseColumnHeight);
+        const keepTogether = !options.splitCategoryAcrossPages && fullHeights.some((height) => height <= emptyColumnHeight);
         let remainingItems = [...items];
         let startsCategory = true;
 
@@ -1010,7 +1062,7 @@ export const calculatePagination = (
                 if (!startsCategory) return firstItemHeight;
                 return keepTogether ? fullHeights[index] : calculateHeight(headerItem) + firstItemHeight;
             };
-            const fittingColumn = findCategoryColumn(currentPage.columns, currentColumnIndex, baseColumnHeight, requiredHeight, getRemainingHeight);
+            const fittingColumn = findCategoryColumn(currentPage.columns, currentColumnIndex, emptyColumnHeight, requiredHeight, getRemainingHeight);
             if (fittingColumn === undefined) {
                 startNextPage();
                 continue;

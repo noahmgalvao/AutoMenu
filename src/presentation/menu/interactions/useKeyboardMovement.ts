@@ -89,7 +89,7 @@ export const useKeyboardMovement = (
 
     const handlePageDoubleClick = (e: React.MouseEvent, pageIndex: number, handleSelection: any, setSelectedPageIndex: any) => {
         const pageEl = e.currentTarget as HTMLElement;
-        if (isCanvasObjectOrControlTarget(e.target, pageEl)) {
+        if (isCanvasObjectOrControlTarget(e.target, pageEl, e)) {
             return;
         }
 

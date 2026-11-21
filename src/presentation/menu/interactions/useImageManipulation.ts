@@ -95,7 +95,7 @@ export const useImageManipulation = (
         }
         
         const currentScale: number = (typeof scale === 'number' && scale > 0) ? scale : 1;
-        const drag = captureImageDrag(imgId, pageIndex, rect, { x: startX, y: startY }, currentScale);
+        const drag = captureImageDrag(imgId, pageIndex, rect, { x: startX, y: startY }, currentScale, el);
 
         const handlePointerMove = (moveEvent: PointerEvent) => {
             if (moveEvent.pointerId !== pointerId) return;

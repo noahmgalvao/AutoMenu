@@ -17,13 +17,17 @@ export const getRenderedImageDragPages = () => {
         .sort((left, right) => left.pageIndex - right.pageIndex);
 };
 
-export function captureImageDrag(id: string, pageIndex: number, rect: DOMRect, start: Point, scale: number) {
+export function captureImageDrag(id: string, pageIndex: number, rect: DOMRect, start: Point, scale: number, element: HTMLElement) {
+    const width = Math.max(1, rect.width / scale);
+    const height = Math.max(1, rect.height / scale);
+    const rotated = getComputedStyle(element).rotate !== 'none';
+    const insetX = rotated ? (width - element.offsetWidth) / 2 : 0;
+    const insetY = rotated ? (height - element.offsetHeight) / 2 : 0;
     return {
         id, pageIndex, scale,
         offsetX: (start.x - rect.left) / scale,
         offsetY: (start.y - rect.top) / scale,
-        height: Math.max(1, rect.height / scale),
-        width: Math.max(1, rect.width / scale),
+        height, width, insetX, insetY,
     };
 }
 
@@ -73,8 +77,8 @@ export function moveDraggedLayers(
         }
         return {
             pageIndex: image.repeatAsBackground ? image.pageIndex : pageIndex,
-            x: Math.max(0, Math.min(x, widthPx - image.width)),
-            y: Math.max(0, Math.min(y, heightPx - drag.height)),
+            x: Math.max(0, Math.min(x, widthPx - (drag.insetX ? drag.width : image.width))) + drag.insetX,
+            y: Math.max(0, Math.min(y, heightPx - drag.height)) + drag.insetY,
         };
     };
     const addedImages = imageMoves.size ? style.addedImages?.map(image => {

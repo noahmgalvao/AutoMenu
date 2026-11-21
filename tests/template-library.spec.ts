@@ -326,7 +326,7 @@ test('the paper menu activates multi-select and duplicates and removes the reque
   const openPaper = (index: number) => pages.nth(index).click({ button: 'right', position: { x: 10, y: 125 } });
   await openPaper(0);
   await expect(menu.getByRole('button')).toHaveText([
-    'Seleção múltipla', 'Duplicar', 'Colar', 'Definir imagem de fundo', 'Remover página',
+    'Seleção múltipla', 'Duplicar', 'Colar', 'Adicionar título', 'Definir imagem de fundo', 'Remover página',
   ]);
   const multiselect = menu.getByRole('button', { name: 'Seleção múltipla' });
   await multiselect.click();

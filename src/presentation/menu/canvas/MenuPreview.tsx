@@ -1,3 +1,6 @@
+import { captureCanvasObjectScale } from './canvasObjectScale';
+import { getCanvasDragScale, type CanvasScaleTarget } from './CanvasTransformHandles';
+import { headingElementId, headingIsOnPage, headingPageIndex, headingSelectionId, menuHeadingFields, remapHeadingPages, type MenuHeadingField } from '../../../domain/menu/menuHeadings';
 import { duplicateMenuPage } from '../../../domain/menu/duplicateMenuPage';
 import { isCanvasObjectOrControlTarget } from './canvasHitTargets';
 import { CanvasImageCropDialog } from './CanvasImageCropDialog';
@@ -6,10 +9,10 @@ import { categoryKey, categoryName } from '../../../domain/menu/categoryName';
 import { copiedProductFields, lastCanvasCopy, matchingCanvasCopy, pasteCanvasObjects, writeCanvasCopy, type CanvasClip, type CopiedObject, type PasteContent } from './canvasClipboard';
 import { hasPhotosForType, livePhotoScaleVariable, type PhotoType } from './photoSizing';
 import React, { useMemo, useEffect, useRef, useCallback, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import type { CategoryPosition, ElementStyle, Product, MenuStyle, SortOption } from '../../../domain/menu/model';
 import { Crop, AlertTriangle, BringToFront, Copy, CopyCheck, CopyPlus, Edit3, EyeOff, Wallpaper, FlipHorizontal2, FlipVertical2, Images, Layers, Paintbrush, Clipboard, Plus, Scissors, SendToBack, Trash2 } from 'lucide-react';
-import { calculatePagination, finalizeMenuPages, getPaginationHeightKey, getSavedCategoryPlacements } from '../../../domain/menu/menuPagination';
+import { calculatePagination, finalizeMenuPages, getPaginationHeightKey, getSavedCategoryPlacements, reflowPositionsForMenuHeadings } from '../../../domain/menu/menuPagination';
 import { findSplitCategorySwap, type SplitCategorySwap } from '../../../domain/menu/splitCategorySwap';
 import { FREE_TEXT_PREFIX, SAFETY_BUFFER } from '../../../domain/menu/flow';
 import { isPristineNewCategory, isPristineNewProduct } from '../../../domain/menu/pristineItems';
@@ -20,7 +23,7 @@ import { NUDGE_STEP, type DraftItem, type MoveDirection, type SelectionItem } fr
 import { MenuPage, type AddedImagePreview } from './MenuPage';
 import { canMoveImageLayer, getContentLayer, getFreeTextLayer, getImageLayerIndexes, hasForegroundImage, moveImageToMenuBackground } from '../../../domain/menu/imageLayers';
 import { getCanvasViewportFocus, observeAnchorScroll } from './canvasViewport';
-import { getSelectedLayerIds, setCanvasImageBackground } from '../../../domain/menu/canvasShapes';
+import { getSelectedLayerIds, rotateCanvasShape, setCanvasImageBackground } from '../../../domain/menu/canvasShapes';
 import { acceptsCanvasFormat, applyCanvasFormat, captureCanvasFormat, type CanvasFormat, type FormatObject } from './canvasFormatting';
 import { isHeadingTextHit } from './menuHeadingHit';
 import type { FlowDirection } from './flowControls';
@@ -88,6 +91,9 @@ interface MenuPreviewProps {
 
 type ObjectSelectionItem = SelectionItem & { type: 'product' | 'category' | 'freeText' | 'addedImage' };
 type CanvasContextMenuItem = FormatObject;
+
+const isHeadingSelectionOnPage = (item: SelectionItem, pageIndex: number) =>
+    (item.type === 'menuTitle' || item.type === 'menuSubtitle') && headingPageIndex(item.id) === pageIndex;
 
 type NativeClipboardPayload =
     | { type: 'objects'; clip: CanvasClip }
@@ -179,7 +185,9 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const [backgroundPromptPosition, setBackgroundPromptPosition] = useState<{ left: number; top: number }>();
     const backgroundPromptRef = useRef<HTMLDivElement | null>(null);
     const promptedLayerIds = useRef(new Set<string>());
-    const formatClipboardRef = useRef<{ format: CanvasFormat; source: FormatObject; armed: boolean } | null>(null);
+    const formatClipboardRef = useRef<{
+        format: CanvasFormat; source: FormatObject; armed: boolean; headings?: Partial<Record<MenuHeadingField, CanvasFormat>>;
+    } | null>(null);
     const skipBackgroundDismissClickRef = useRef(false);
     const productImageInputRef = useRef<HTMLInputElement | null>(null);
     const photoUploads = useRef(new Map<string, symbol>());
@@ -218,6 +226,8 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const blankPageClicks = useRef({ page: null as HTMLElement | null, consecutive: 0 });
     useReplacePlaceholderOnInput(previewRootRef);
     useResponsivePrices(previewRootRef, props.style);
+    const [scalePreview, setScalePreview] = useState<ReturnType<ReturnType<typeof captureCanvasObjectScale>>>();
+    const [rotationPreview, setRotationPreview] = useState<{ type: 'addedImage' | 'freeText'; id: string; rotation: number }>();
     const [measuredHeights, setMeasuredHeights] = useState<ReadonlyMap<string, number>>(() => new Map());
     const [imageCropId, setImageCropId] = useState<string | null>(null);
     const openImageCrop = (id: string) => {
@@ -629,7 +639,10 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             ) || []).filter(button => button.getBoundingClientRect().width && getComputedStyle(button).visibility === 'visible') : [];
             const button = buttons.find(button => Number(button.closest<HTMLElement>('[data-shortcut-page]')?.dataset.shortcutPage) === objectMenu.pageIndex) || buttons[0];
             const anchor = button?.getBoundingClientRect();
-            const fallback = !anchor && objectMenu.anchored && item && isObjectItem(item) ? getObjectElement(item)?.getBoundingClientRect() : undefined;
+            const fallback = !anchor && objectMenu.anchored && item
+                ? (isObjectItem(item) ? getObjectElement(item) : previewRootRef.current?.querySelector(
+                    `[data-header-page="${headingPageIndex(item.id)}"]`,
+                ))?.getBoundingClientRect() : undefined;
             const x = anchor?.left ?? fallback?.left ?? objectMenu.x;
             const y = anchor ? (anchor.bottom + 6 + rect.height <= window.innerHeight - 8
                 ? anchor.bottom + 6 : anchor.top - rect.height - 6)
@@ -681,29 +694,105 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     // 3. Font Loading
     const usedFonts = useMemo(() => getConfiguredCanvasFonts(style, products), [style, products]);
 
+    const startCanvasScale = (event: React.PointerEvent<HTMLButtonElement>, target: CanvasScaleTarget, direction: -1 | 1) => {
+        const frame = event.currentTarget.parentElement;
+        if (!frame) return;
+        const scale = getCanvasDragScale(frame);
+        const startY = event.clientY;
+        const gestureHeight = Math.max(44, frame.offsetHeight);
+        const scaleObject = captureCanvasObjectScale(style, target, products, frame.offsetWidth);
+        let next: ReturnType<typeof scaleObject>;
+        return {
+            preview: (point: PointerEvent) => {
+                const delta = (point.clientY - startY) * direction / scale;
+                next = scaleObject(1 + delta / gestureHeight);
+                setScalePreview(next);
+            },
+            finish: (commit: boolean) => {
+                setScalePreview(undefined);
+                if (!commit || !next) return;
+                const { style: styleChange, products: productChanges } = next;
+                if (styleChange && productChanges && props.onPasteObjects) {
+                    props.onPasteObjects(products.map(product => ({ ...product, ...productChanges.get(product.id) })),
+                        { ...style, ...styleChange, name: 'Custom' }, 'Redimensionar categoria');
+                } else {
+                    if (styleChange) onStyleUpdate?.(previous => ({ ...previous, ...styleChange, name: 'Custom' }));
+                    const updates = Array.from(productChanges || []).flatMap(([id, change]) => [
+                        { id, field: 'styles' as const, value: change.styles },
+                        { id, field: 'freeTextWidth' as const, value: change.freeTextWidth },
+                    ]);
+                    if (updates.length && props.onUpdateProducts) props.onUpdateProducts(updates);
+                    else updates.forEach(update => props.onUpdateProduct?.(update.id, update.field, update.value));
+                }
+            },
+        };
+    };
+    const rotateCanvasImage = (id: string, rotation: number, commit: boolean) => {
+        setRotationPreview(commit ? undefined : { type: 'addedImage', id, rotation });
+        if (!commit) return;
+        onStyleUpdate?.(previous => {
+            const source = previous.addedImages?.find(image => image.id === id);
+            if (!source || (source.shape?.rotation ?? source.rotation ?? 0) === rotation) return previous;
+            const updated = rotateCanvasShape(source, rotation);
+            return { ...previous, name: 'Custom', addedImages: previous.addedImages?.map(image => image.id === id ? updated : image) };
+        });
+    };
+    const rotateCanvasText = (id: string, rotation: number, commit: boolean) => {
+        setRotationPreview(commit ? undefined : { type: 'freeText', id, rotation });
+        if (commit && (products.find(product => product.id === id)?.rotation ?? 0) !== rotation) {
+            props.onUpdateProduct?.(id, 'rotation', rotation);
+        }
+    };
+    Object.assign(handlers, {
+        startCanvasScale, rotateCanvasImage, rotateCanvasText,
+        isScalingCanvasObject: Boolean(scalePreview),
+        liveTextRotation: rotationPreview?.type === 'freeText' ? rotationPreview : undefined,
+    });
+
     // 4. Pagination
+    const layoutStyle = useMemo(() => scalePreview?.style ? { ...style, ...scalePreview.style } : style, [style, scalePreview]);
+    const layoutProducts = useMemo(() => scalePreview?.products
+        ? products.map(product => {
+            const change = scalePreview.products!.get(product.id);
+            return change ? { ...product, ...change } : product;
+        }) : products, [products, scalePreview]);
+    const layoutGroups = useMemo(() => {
+        if (!scalePreview?.products) return handlers.groupedProducts;
+        return Object.fromEntries(Object.entries(handlers.groupedProducts).map(([key, group]) => [
+            key, group.map(product => {
+                const change = scalePreview.products!.get(product.id);
+                return change ? { ...product, ...change } : product;
+            }),
+        ]));
+    }, [handlers.groupedProducts, scalePreview]);
     const paginationOptions = useMemo(() => ({
-        splitCategoryAcrossPages: props.splitCategoryAcrossPages, measuredHeights,
-    }), [props.splitCategoryAcrossPages, measuredHeights]);
+        splitCategoryAcrossPages: props.splitCategoryAcrossPages,
+        measuredHeights: scalePreview ? undefined : measuredHeights,
+    }), [props.splitCategoryAcrossPages, measuredHeights, scalePreview]);
     const basePages = useMemo(() => {
-        const effectiveCategoryPositions = handlers.liveCategoryPositions || style.categoryPositions;
-        const effectiveStyle = effectiveCategoryPositions === style.categoryPositions
-            ? style
-            : { ...style, categoryPositions: effectiveCategoryPositions };
+        const effectiveCategoryPositions = handlers.liveCategoryPositions || layoutStyle.categoryPositions;
+        const effectiveStyle = effectiveCategoryPositions === layoutStyle.categoryPositions
+            ? layoutStyle
+            : { ...layoutStyle, categoryPositions: effectiveCategoryPositions };
         return calculatePagination(
-            products,
+            layoutProducts,
             effectiveStyle,
-            handlers.groupedProducts,
+            layoutGroups,
             handlers.sortedCategories,
             handlers.liveCategoryPageAssignments || getSavedCategoryPlacements(effectiveStyle),
             paginationOptions,
         );
-    }, [products, paginationOptions, style, handlers.groupedProducts, handlers.sortedCategories, handlers.liveCategoryPageAssignments, handlers.liveCategoryPositions]);
+    }, [layoutProducts, paginationOptions, layoutStyle, layoutGroups, handlers.sortedCategories, handlers.liveCategoryPageAssignments, handlers.liveCategoryPositions]);
 
-    const canvasStyle = useMemo(() => handlers.liveCanvasLayers
-        ? { ...style, ...handlers.liveCanvasLayers } : style, [handlers.liveCanvasLayers, style]);
+    const canvasStyle = useMemo(() => {
+        const current = handlers.liveCanvasLayers ? { ...layoutStyle, ...handlers.liveCanvasLayers } : layoutStyle;
+        if (rotationPreview?.type !== 'addedImage') return current;
+        return { ...current, addedImages: current.addedImages?.map(image =>
+            image.id === rotationPreview.id ? rotateCanvasShape(image, rotationPreview.rotation) : image) };
+    }, [handlers.liveCanvasLayers, layoutStyle, rotationPreview]);
     const pages = useMemo(() => finalizeMenuPages(basePages, handlers.liveCategoryPositions
-        ? { ...canvasStyle, categoryPositions: handlers.liveCategoryPositions } : canvasStyle, products), [basePages, canvasStyle, handlers.liveCategoryPositions, products]);
+        ? { ...canvasStyle, categoryPositions: handlers.liveCategoryPositions } : canvasStyle, layoutProducts),
+    [basePages, canvasStyle, handlers.liveCategoryPositions, layoutProducts]);
 
     useEffect(() => {
         if (!props.onSplitCategorySwap) return;
@@ -714,8 +803,8 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
     React.useLayoutEffect(() => {
         const root = previewRootRef.current;
-        if (!root) return;
-        const header = root.querySelector<HTMLElement>('[data-pagination-item="main-header"]');
+        if (!root || scalePreview) return;
+        const headers = Array.from(root.querySelectorAll<HTMLElement>('[data-heading-measurement]:not([data-heading-draft])'));
         const items = Array.from(root.querySelectorAll<HTMLElement>(
             '[data-pagination-chunk-content] > [data-pagination-item], [data-pagination-chunk-content] > [data-pagination-grid]'
         ));
@@ -723,7 +812,12 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         const measure = () => {
             if (root.style.getPropertyValue(livePhotoScaleVariable('product')) || root.style.getPropertyValue(livePhotoScaleVariable('category'))) return;
             const next = new Map<string, number>();
-            if (header?.offsetWidth) next.set('main-header', parseFloat(getComputedStyle(header).height));
+            for (const header of headers) {
+                if (header.offsetWidth && header.dataset.headingMeasurement) {
+                    const css = getComputedStyle(header);
+                    next.set(header.dataset.headingMeasurement, parseFloat(css.height));
+                }
+            }
             for (const item of items) {
                 const column = item.closest<HTMLElement>('[data-drag-column-container="category"]');
                 if (!column?.offsetWidth) continue;
@@ -757,14 +851,14 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             cancelAnimationFrame(frame);
             frame = requestAnimationFrame(measure);
         });
-        if (header) observer.observe(header);
+        headers.forEach(header => observer.observe(header));
         items.forEach((item) => observer.observe(item));
         measure();
         return () => {
             observer.disconnect();
             cancelAnimationFrame(frame);
         };
-    }, [pages, style.columnCount]);
+    }, [pages, style.columnCount, scalePreview]);
 
     useEffect(() => {
         onPageCountChange?.(pages.length);
@@ -974,6 +1068,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
             return {
                 ...prev,
+                headingPages: remapHeadingPages(prev, page => page >= insertIndex ? page + 1 : page),
                 blankPages: [...blankPages, {
                     id: crypto.randomUUID(),
                     index: insertIndex,
@@ -1067,6 +1162,8 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
                 return {
                     ...prev, hiddenProductIds: Array.from(currentHidden), pageBreaks: newPageBreaks, blankPages,
+                    headingPages: remapHeadingPages(prev, page => removedPages.has(page) ? undefined
+                        : page - pageIndexesToDelete.filter(index => index < page).length),
                     addedImages: prev.addedImages?.filter(image => image.repeatAsBackground || !removedPages.has(image.pageIndex)).map(shift),
                     floatingText: remainingAssets(prev.floatingText),
                     pageBackgrounds: remainingAssets(prev.pageBackgrounds),
@@ -1285,14 +1382,19 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             if (!isCurrentObject) event.preventDefault();
         }
 
+        const heading = target?.closest<HTMLElement>('[data-menu-heading]');
+        const headingHit = heading && isHeadingTextHit(heading, event);
+        const headingType = heading?.dataset.menuHeading === 'title' ? 'menuTitle' : 'menuSubtitle';
         const isBlankTouchTarget = Boolean(
             pageElement
             && event.pointerType === 'touch'
+            && !headingHit
             && !target?.closest(
-                '[data-drag-type], [data-added-image-drag="true"], #menu-title-text, #menu-subtitle-text, button, input, textarea, select, [contenteditable="true"], [data-drag-ignore="true"], [data-inline-format-toolbar="true"]'
+                '[data-drag-type], [data-added-image-drag="true"], button, input, textarea, select, [contenteditable="true"], [data-drag-ignore="true"], [data-inline-format-toolbar="true"]'
             )
         );
-        if (isBlankTouchTarget) {
+        const isHeadingLongPress = pageElement && event.pointerType === 'touch' && headingHit && !heading?.isContentEditable;
+        if (isBlankTouchTarget || isHeadingLongPress) {
             if (backgroundPressRef.current) window.clearTimeout(backgroundPressRef.current.timeoutId);
             const pointerId = event.pointerId;
             const startX = event.clientX;
@@ -1302,11 +1404,16 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 if (!press || press.pointerId !== pointerId) return;
                 backgroundPressRef.current = null;
                 suppressBackgroundPressClickRef.current = true;
-                if (!handlers.multiSelectMode) handlers.handleSelection(null, null);
+                const pageIndex = Number(pageElement?.dataset.pageIndex);
+                const item = isHeadingLongPress ? { type: headingType, id: headingSelectionId(headingType, pageIndex) } as const : null;
+                if (item && !handlers.selectedItems.some(selected => isHeadingSelectionOnPage(selected, pageIndex))) {
+                    handlers.handleSelection(item.type, item.id);
+                }
+                if (!item && !handlers.multiSelectMode) handlers.handleSelection(null, null);
                 handlers.setEditingId(null);
                 setObjectMenuPosition(null);
-                setObjectMenu({ x: startX, y: startY, item: null, pageIndex: Number(pageElement?.dataset.pageIndex),
-                    pasteAt: lastPastePosition.current ?? undefined });
+                setObjectMenu({ x: startX, y: startY, item, pageIndex, anchored: Boolean(item),
+                    pasteAt: item ? undefined : lastPastePosition.current ?? undefined });
                 window.setTimeout(() => { suppressBackgroundPressClickRef.current = false; }, 800);
             }, 480);
             backgroundPressRef.current = { pointerId, startX, startY, timeoutId };
@@ -1318,7 +1425,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             || event.button !== 0
             || Boolean(document.body.dataset.automenuImageInteraction)
             || target?.closest(
-                '[data-drag-type], [data-added-image-drag="true"], #menu-title-text, #menu-subtitle-text, button, input, textarea, select, [contenteditable="true"], [data-drag-ignore="true"], [data-inline-format-toolbar="true"]'
+                '[data-drag-type], [data-added-image-drag="true"], [data-menu-heading], button, input, textarea, select, [contenteditable="true"], [data-drag-ignore="true"], [data-inline-format-toolbar="true"]'
             )
         ) {
             return;
@@ -1483,7 +1590,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             overlappingFreeTexts.map(({ element }) => element),
         );
         const hasNonFreeTextCollision = Array.from(pageEl.querySelectorAll<HTMLElement>(
-            '[id^="product-container-"], [id^="category-header-"], #menu-title-text, #menu-subtitle-text, [data-added-image-drag="true"]',
+            '[id^="product-container-"], [id^="category-header-"], [data-menu-heading], [data-added-image-drag="true"]',
         )).some((element) => {
             if (freeTextElements.has(element)) return false;
             const rect = element.getBoundingClientRect();
@@ -2081,7 +2188,15 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         if (!compatible.length) return false;
 
         clipboard.armed = false;
-        onStyleUpdate?.(previous => applyCanvasFormat(previous, format, compatible));
+        onStyleUpdate?.(previous => {
+            if (clipboard.headings && compatible.some(target => target.type === 'menuTitle' || target.type === 'menuSubtitle')) {
+                return menuHeadingFields.reduce((current, type) => {
+                    const headingFormat = clipboard.headings?.[type];
+                    return headingFormat ? applyCanvasFormat(current, headingFormat, [{ type, id: type }]) : current;
+                }, previous);
+            }
+            return applyCanvasFormat(previous, format, compatible);
+        });
         if (format.type === 'text') {
             const updates = compatible.filter(target => target.type === 'freeText').flatMap(({ id }) => [
                 { id, field: 'styles' as const, value: { ...format.text } },
@@ -2111,7 +2226,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             if (id) target = { type: 'addedImage', id };
         } else if (heading && isHeadingTextHit(heading, event)) {
             const type = heading.dataset.menuHeading === 'title' ? 'menuTitle' : 'menuSubtitle';
-            target = { type, id: type };
+            target = { type, id: headingSelectionId(type, Number(heading.closest<HTMLElement>('[data-page-index]')?.dataset.pageIndex || 0)) };
         } else if (product?.dataset.dragId) {
             const id = product.dataset.dragId;
             target = { type: products.find(item => item.id === id)?.isFreeText ? 'freeText' : 'product', id };
@@ -2274,8 +2389,9 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
         const page = (event.currentTarget as HTMLElement).closest<HTMLElement>('[data-page-index], [data-object-page-index], [data-shortcut-page]');
         const pageIndex = page ? Number(page.dataset.pageIndex ?? page.dataset.objectPageIndex ?? page.dataset.shortcutPage) : undefined;
-        const objectItems = (handlers.selectedItems || []).filter(isObjectItem);
-        const isTargetSelected = objectItems.some((selected) => selected.type === item.type && selected.id === item.id);
+        const objectItems = handlers.selectedItems || [];
+        const isTargetSelected = objectItems.some(selected => selected.type === item.type && selected.id === item.id
+            || (item.type === 'menuTitle' || item.type === 'menuSubtitle') && isHeadingSelectionOnPage(selected, headingPageIndex(item.id)));
         if (!isTargetSelected) handlers.handleSelection(item.type, item.id, { backgroundPage: pageIndex });
 
         setObjectMenuPosition(null);
@@ -2286,10 +2402,11 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
     const openBackgroundMenu = useCallback((event: React.MouseEvent) => {
         const target = event.target as HTMLElement | null;
+        const heading = target?.closest<HTMLElement>('[data-menu-heading]');
+        if (heading && isHeadingTextHit(heading, event)) return;
         if (target?.closest([
             '[data-drag-type]',
             '[data-added-image-drag="true"]',
-            '[data-menu-heading]',
             'button',
             'input',
             'textarea',
@@ -2411,7 +2528,94 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     const isDeletingSelectedPages = pendingDeletePageIndexes.length > 1;
     const isBackgroundMenu = Boolean(objectMenu && !objectMenu.item);
     const contextPageIndex = objectMenu?.pageIndex ?? objectMenu?.pasteAt?.pageIndex ?? 0;
-    const headingContext = objectMenu?.item?.type === 'menuTitle' || objectMenu?.item?.type === 'menuSubtitle' ? objectMenu.item : null;
+    const headingContext = objectMenu?.item?.type === 'menuTitle' || objectMenu?.item?.type === 'menuSubtitle'
+        ? { type: objectMenu.item.type, id: objectMenu.item.id } : null;
+    const isHeadingReplicated = headingContext && (menuHeadingFields.some(field => style.headingPages?.[field] === 'all')
+        || pages.filter(page => page.mainHeader).length > 1);
+    const headingClipboard = useRef<{ plainText: string; fields: Partial<Record<MenuHeadingField, string>> }>(undefined);
+    const visibleHeadingFields = menuHeadingFields.filter(field =>
+        headingIsOnPage(style, field, contextPageIndex, pages[contextPageIndex]?.headerCopy));
+    const copyHeading = () => {
+        const fields = Object.fromEntries(visibleHeadingFields.map(field => [field, style[field]]));
+        const plainText = visibleHeadingFields.map(field => style[field]).join('\n');
+        headingClipboard.current = { fields, plainText };
+        void navigator.clipboard?.writeText(plainText).catch(() => {});
+        setObjectMenu(null);
+    };
+    const pasteHeading = async (field: MenuHeadingField) => {
+        setObjectMenu(null);
+        const copied = headingClipboard.current;
+        const text = await navigator.clipboard?.readText().catch(() => '') || copied?.plainText || '';
+        if (!text.trim()) return;
+        const fields = copied?.plainText === text ? copied.fields : { [field]: text };
+        onStyleUpdate?.(previous => {
+            const headingPages = { ...previous.headingPages };
+            for (const name of menuHeadingFields) {
+                if (!fields[name] || headingIsOnPage(previous, name, contextPageIndex, pages[contextPageIndex]?.headerCopy)
+                    || headingPages[name] === 'all') continue;
+                headingPages[name] = pages.flatMap((page, index) =>
+                    index === contextPageIndex || headingIsOnPage(previous, name, index, page.headerCopy) ? [index] : []);
+            }
+            return reflowPositionsForMenuHeadings(previous, { ...previous, ...fields, headingPages, name: 'Custom' }, pages, measuredHeights);
+        });
+    };
+    const copyHeadingFormatting = (source: { type: MenuHeadingField; id: string }) => {
+        if (copyFormatting(source) && formatClipboardRef.current) {
+            formatClipboardRef.current.headings = Object.fromEntries(visibleHeadingFields.map(type => [
+                type, captureCanvasFormat({ type, id: source.id }, style, products),
+            ]));
+        }
+    };
+    const editHeading = (field: MenuHeadingField, pageIndex: number) => {
+        const id = headingSelectionId(field, pageIndex);
+        const elementId = headingElementId(field, pageIndex);
+        if (!document.getElementById(elementId)) return;
+        flushSync(() => {
+            const selected = handlers.selectedItems.some(item => isHeadingSelectionOnPage(item, pageIndex));
+            if (!selected) handlers.handleSelection(field, id);
+            handlers.startMenuTextEditing(field, elementId, id);
+            setObjectMenu(null);
+        });
+        const element = document.getElementById(elementId);
+        if (element) {
+            element.focus({ preventScroll: true });
+            window.getSelection()?.collapse(element, element.childNodes.length);
+        }
+    };
+    const addHeading = (field: MenuHeadingField, pageIndex: number) => {
+        onStyleUpdate?.(previous => {
+            const visible = pages.flatMap((page, index) =>
+                headingIsOnPage(previous, field, index, page.headerCopy) ? [index] : []);
+            const next: MenuStyle = {
+                ...previous, name: 'Custom', [field]: previous[field]?.trim() ? previous[field] : field === 'menuTitle' ? 'Novo título' : 'Novo subtítulo',
+                headingPages: { ...previous.headingPages, [field]: previous.headingPages?.[field] === 'all' ? 'all' : [...new Set([...visible, pageIndex])] },
+            };
+            return reflowPositionsForMenuHeadings(previous, next, pages, measuredHeights);
+        });
+        handlers.replaceSelectedItems([{ type: field, id: headingSelectionId(field, pageIndex) }]);
+        setObjectMenu(null);
+    };
+    const updateHeadingPages = (action: 'replicate' | 'keep' | 'remove') => {
+        const selected = new Set([contextPageIndex, ...handlers.selectedItems.filter(item => item.type === 'menuTitle' || item.type === 'menuSubtitle')
+            .map(item => headingPageIndex(item.id))]);
+        onStyleUpdate?.(previous => {
+            const headingPages = { ...previous.headingPages };
+            for (const field of menuHeadingFields) {
+                const visible = (index: number) => headingIsOnPage(previous, field, index, pages[index]?.headerCopy);
+                if (action === 'replicate') {
+                    if (visible(contextPageIndex)) headingPages[field] = 'all';
+                } else {
+                    headingPages[field] = pages.flatMap((_, index) =>
+                        visible(index) && selected.has(index) === (action === 'keep') ? [index] : []);
+                }
+            }
+            return reflowPositionsForMenuHeadings(previous, { ...previous, name: 'Custom', headingPages }, pages, measuredHeights);
+        });
+        if (action === 'remove') handlers.replaceSelectedItems(handlers.selectedItems.filter(item =>
+            (item.type !== 'menuTitle' && item.type !== 'menuSubtitle') || !selected.has(headingPageIndex(item.id))));
+        setObjectMenu(null);
+    };
+    (handlers as any).editHeading = editHeading;
     const hasClipboardFormat = formatClipboardRef.current && objectMenu?.item
         ? acceptsCanvasFormat(formatClipboardRef.current.format, objectMenu.item) : false;
     const contextObjectItem = objectMenu?.item && isObjectItem(objectMenu.item)
@@ -2456,6 +2660,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         <div
             ref={previewRootRef}
             data-menu-preview-canvas
+            style={{ '--canvas-handle-inverse': Math.min(4, 1 / Math.max(.1, props.scale || 1)) } as React.CSSProperties}
             inert={readOnly ? true : undefined}
             aria-label={readOnly ? 'Pré-visualização do cardápio, somente leitura' : undefined}
             className={`flex justify-start w-full relative ${readOnly ? 'pointer-events-none select-none min-h-0 min-w-0' : 'min-h-full min-w-full md:cursor-grab'}`}
@@ -2481,7 +2686,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     return;
                 }
                 const paper = target?.closest<HTMLElement>('[data-menu-print-page]') || null;
-                const blank = paper && !isCanvasObjectOrControlTarget(target, paper);
+                const blank = paper && !isCanvasObjectOrControlTarget(target, paper, event);
                 const previous = blankPageClicks.current;
                 blankPageClicks.current = blank
                     ? { page: paper, consecutive: previous.page === paper && event.detail > 1 ? previous.consecutive + 1 : 1 }
@@ -2491,7 +2696,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             onDoubleClickCapture={readOnly ? undefined : event => {
                 const target = event.target;
                 const paper = target instanceof Element && target.closest<HTMLElement>('[data-menu-print-page]');
-                if (!paper || isCanvasObjectOrControlTarget(target, paper)) return;
+                if (!paper || isCanvasObjectOrControlTarget(target, paper, event)) return;
                 const pair = blankPageClicks.current;
                 blankPageClicks.current = { page: null, consecutive: 0 };
                 if (pair.page !== paper || pair.consecutive < 2) event.stopPropagation();
@@ -2560,7 +2765,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                         page={pageContent}
                         style={canvasStyle}
                         handlers={handlers}
-                        products={products}
+                        products={layoutProducts}
                         needsOverlay={!!style.sourceImage}
                         pageCount={pages.length}
                         onAddPage={handleAddPage}
@@ -2625,6 +2830,11 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                             className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
                             <Clipboard size={15} /> Colar
                         </button>
+                        <button type="button" disabled={headingIsOnPage(style, 'menuTitle', contextPageIndex, pages[contextPageIndex]?.headerCopy)}
+                            onClick={() => addHeading('menuTitle', contextPageIndex)}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-40">
+                            <Plus size={15} /> Adicionar título
+                        </button>
                         {style.menuBackgroundPhoto ? (
                             <button type="button" onClick={() => {
                                 if (props.onRemoveBackgroundPhoto) props.onRemoveBackgroundPhoto();
@@ -2648,28 +2858,43 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     </>
                     ) : headingContext ? (
                         <>
-                        {headingContext.type === 'menuTitle' && !style.menuSubtitle?.trim() && (
-                        <button
-                            onClick={() => {
-                                onStyleUpdate?.((previous) => ({
-                                    ...previous,
-                                    menuSubtitle: 'Novo subtítulo',
-                                    name: 'Custom',
-                                }));
-                                handlers.handleSelection('menuSubtitle', 'menuSubtitle');
-                                setObjectMenu(null);
-                            }}
-                            className="w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-2"
-                        >
-                            <Plus size={15} /> Adicionar subtítulo
+                        <button type="button" onClick={() => editHeading(headingContext.type, contextPageIndex)}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
+                            <Edit3 size={15} /> {headingContext.type === 'menuTitle' ? 'Editar título' : 'Editar subtítulo'}
                         </button>
-                        )}
-                        <button type="button" onClick={() => copyFormatting(headingContext)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
+                        <button type="button" aria-pressed={handlers.multiSelectMode} onClick={() => {
+                            handlers.setMultiSelectMode(!handlers.multiSelectMode);
+                            setObjectMenu(null);
+                        }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 aria-pressed:bg-indigo-50">
+                            <CopyCheck size={15} /> Seleção múltipla
+                        </button>
+                        <button type="button" onClick={copyHeading} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
+                            <Copy size={15} /> Copiar
+                        </button>
+                        <button type="button" onClick={() => copyHeadingFormatting(headingContext)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
                             <Paintbrush size={15} /> Copiar formatação
+                        </button>
+                        <button type="button" onClick={() => void pasteHeading(headingContext.type)}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
+                            <Clipboard size={15} /> Colar
                         </button>
                         <button type="button" disabled={!hasClipboardFormat} onClick={() => pasteFormattingClipboard([headingContext])}
                             className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
                             <Paintbrush size={15} /> Colar formatação
+                        </button>
+                        <button type="button" onClick={() => updateHeadingPages(isHeadingReplicated ? 'keep' : 'replicate')}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
+                            <CopyPlus size={15} /> {isHeadingReplicated ? 'Usar só nesta página' : 'Replicar para outras páginas'}
+                        </button>
+                        {headingContext.type === 'menuTitle' && !headingIsOnPage(style, 'menuSubtitle', contextPageIndex, pages[contextPageIndex]?.headerCopy) && (
+                            <button type="button" onClick={() => addHeading('menuSubtitle', contextPageIndex)}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
+                                <Plus size={15} /> Adicionar subtítulo
+                            </button>
+                        )}
+                        <button type="button" onClick={() => updateHeadingPages('remove')}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-red-600 hover:bg-red-50">
+                            <Trash2 size={15} /> Remover
                         </button>
                         </>
                     ) : (

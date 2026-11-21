@@ -1,3 +1,7 @@
+import { Edit3, CopyCheck, MoreHorizontal } from 'lucide-react';
+import { CanvasActionGroup, canvasActionButtonClass } from './CanvasControls';
+import { CanvasScaleHandles, CanvasRotationHandle } from './CanvasTransformHandles';
+import { headingElementId, headingSelectionId, headingMeasurementKey, type MenuHeadingField } from '../../../domain/menu/menuHeadings';
 import { getTextOutlineStyle } from './textOutlineStyle';
 import { MenuMarkerGlyph } from './MenuMarkerGlyph';
 import { getContentLayer, getFreeTextLayer } from '../../../domain/menu/imageLayers';
@@ -30,6 +34,7 @@ import { PriceFormatSettings } from '../designer/PriceFormatSettings';
 interface MenuItemProps {
     item: any;
     idx: number;
+    pageIndex?: number;
     style: MenuStyle;
     handlers: any; // Return type of useMenuInteractions
     products: Product[];
@@ -75,6 +80,7 @@ const preventHeadingFocusOutsideText = (event: React.PointerEvent<HTMLElement>) 
 export const MenuItem: React.FC<MenuItemProps> = ({
     item,
     idx,
+    pageIndex = 0,
     style,
     handlers,
     products,
@@ -381,125 +387,135 @@ export const MenuItem: React.FC<MenuItemProps> = ({
     if (item.type === 'main-header') {
         const titleStyle = style.elementStyles?.menuTitle || {};
         const subStyle = style.elementStyles?.menuSubtitle || {};
-        const hasSubtitle = Boolean(style.menuSubtitle?.trim());
-        const showSubtitleDraft = !hasSubtitle && !handlers.readOnly &&
-            (formattingTarget?.type === 'menuTitle' || formattingTarget?.type === 'menuSubtitle');
+        const hasTitle = item.title ?? true;
+        const hasSubtitle = item.subtitle ?? Boolean(style.menuSubtitle?.trim());
+        const titleId = headingElementId('menuTitle', pageIndex);
+        const showSubtitleDraft = !hasSubtitle && !style.menuSubtitle?.trim() && !handlers.readOnly &&
+            (formattingTarget?.elementId === titleId || formattingTarget?.elementId === headingElementId('menuSubtitle', pageIndex));
         const showSubtitle = hasSubtitle || showSubtitleDraft;
-        const heroImage = style.design?.header === 'hero' && style.showImages && style.design.image !== 'none'
-            ? products.find((product) => product.image && !product.isFreeText && !style.hiddenProductIds.includes(product.id))?.image : undefined;
-        const isTitleSelected = handlers.isSelected?.('menuTitle', 'menuTitle') ?? handlers.selectedId === 'menuTitle';
-        const isSubtitleSelected = handlers.isSelected?.('menuSubtitle', 'menuSubtitle') ?? handlers.selectedId === 'menuSubtitle';
-        const subtitlePlaceholderAlignment = style.design?.header === 'split' ? ''
-            : subStyle.textAlign === 'left' ? 'empty:mr-auto'
-            : subStyle.textAlign === 'right' ? 'empty:ml-auto' : 'empty:mx-auto';
-        
+        const selectedTitle = handlers.isSelected?.('menuTitle', headingSelectionId('menuTitle', pageIndex));
+        const selectedSubtitle = handlers.isSelected?.('menuSubtitle', headingSelectionId('menuSubtitle', pageIndex));
+        const selected = !handlers.readOnly && (selectedTitle || selectedSubtitle);
+        const activeField: MenuHeadingField = formattingTarget?.elementId === titleId ? 'menuTitle'
+            : selectedSubtitle || !hasTitle || formattingTarget?.elementId === headingElementId('menuSubtitle', pageIndex)
+                ? 'menuSubtitle' : 'menuTitle';
+        const activeTarget = { type: activeField, id: headingSelectionId(activeField, pageIndex) };
+        const activeLabel = activeField === 'menuTitle' ? 'título' : 'subtítulo';
+        const heroImage = hasTitle && style.design?.header === 'hero' && style.showImages && style.design.image !== 'none'
+            ? products.find(product => product.image && !product.isFreeText && !style.hiddenProductIds.includes(product.id))?.image : undefined;
+
+        const renderHeading = (field: MenuHeadingField, fieldStyle: ElementStyle) => {
+            const title = field === 'menuTitle';
+            const id = headingSelectionId(field, pageIndex);
+            const elementId = headingElementId(field, pageIndex);
+            const target = { type: field, id };
+            const editing = !handlers.readOnly && formattingTarget?.elementId === elementId;
+            const draft = !title && showSubtitleDraft;
+            const fontSize = clampFontSize(style, field, fieldStyle.fontSize, title ? 48 : 18);
+            return (
+                <div data-menu-heading-frame={title ? 'title' : 'subtitle'}
+                    className="relative min-w-0"
+                    style={{ marginBottom: showSubtitle && title ? fieldStyle.marginBottom ?? 10 : contentSpacing.headerToContent }}
+                >
+                    <AutoFitText
+                        as={title ? 'h1' : 'p'}
+                        text={title ? style.menuTitle ?? 'MENU' : hasSubtitle ? style.menuSubtitle : ''}
+                        baseFontSize={fontSize}
+                        minimumFontSize={minimumFontSize}
+                        allowSameWordBreak={allowSameWordBreak}
+                        fitScope={field}
+                        widthMode="parent"
+                        id={handlers.readOnly ? undefined : elementId}
+                        tabIndex={handlers.readOnly ? undefined : 0}
+                        data-menu-heading={title ? 'title' : 'subtitle'}
+                        data-subtitle-placeholder={draft ? 'Adicionar subtítulo' : undefined}
+                        data-print-control={draft ? 'true' : undefined}
+                        aria-label={draft ? 'Adicionar subtítulo' : undefined}
+                        className={`outline-none ${title ? 'tracking-tight' : 'opacity-90'} ${editing ? 'cursor-text select-text' : 'cursor-default select-none'} ${draft ? `w-fit ${fieldStyle.textAlign === 'left' ? 'mr-auto' : fieldStyle.textAlign === 'right' ? 'ml-auto' : 'mx-auto'}` : ''} empty:before:opacity-50 empty:before:content-[attr(data-subtitle-placeholder)]`}
+                        style={{
+                            color: `var(--automenu-preview-primary, ${fieldStyle.color || (title ? style.primaryColor : style.textColor)})`,
+                            ...textContrastFill(field),
+                            ...getTextOutlineStyle(fieldStyle.textOutline),
+                            fontFamily: fieldStyle.fontFamily || style.fontFamily,
+                            fontWeight: fieldStyle.fontWeight || (title ? '700' : undefined),
+                            fontStyle: fieldStyle.italic ? 'italic' : 'normal',
+                            textDecoration: fieldStyle.underline ? 'underline' : 'none',
+                            textAlign: fieldStyle.textAlign || (!title && style.design?.header === 'split' ? 'right' : undefined),
+                            textTransform: fieldStyle.textTransform,
+                            letterSpacing: fieldStyle.letterSpacing ? `${fieldStyle.letterSpacing}px` : undefined,
+                        }}
+                        onPointerDown={handlers.readOnly ? undefined : event => {
+                            if (!editing) event.preventDefault();
+                            else if (!isMenuHeadingTextHit(event)) {
+                                preventHeadingFocusOutsideText(event);
+                                handlers.setFormattingTarget?.(null);
+                            }
+                        }}
+                        onContextMenu={handlers.readOnly ? undefined : event => {
+                            if (isMenuHeadingTextHit(event)) handlers.openObjectMenu?.(event, target);
+                        }}
+                        onClick={handlers.readOnly ? undefined : event => {
+                            if (!isMenuHeadingTextHit(event)) return;
+                            event.stopPropagation();
+                            if ((selected || draft) && !handlers.multiSelectMode && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
+                                if (!editing) handlers.editHeading?.(field, pageIndex);
+                                focusCanvasFieldAtClick(event);
+                            } else {
+                                const target = selected && (handlers.multiSelectMode || event.ctrlKey || event.metaKey)
+                                    ? activeTarget : { type: field, id };
+                                handlers.handleSelection(target.type, target.id, { shiftKey: event.shiftKey, ctrlKey: event.ctrlKey || event.metaKey });
+                            }
+                        }}
+                        onFocus={handlers.readOnly ? undefined : () => {
+                            if (!editing && !handlers.multiSelectMode) {
+                                handlers.handleSelection(field, id);
+                                handlers.startMenuTextEditing?.(field, elementId, id);
+                            }
+                        }}
+                        contentEditable={editing || undefined}
+                        suppressContentEditableWarning
+                        onBlur={handlers.readOnly ? undefined : event => handlers.handleBlur(event, 'menu', id, field)}
+                        onKeyDown={event => {
+                            handlers.handleKeyDown?.(event);
+                            if (event.key === 'Enter' && !event.shiftKey || event.key === 'Escape') {
+                                event.currentTarget.blur();
+                                handlers.setFormattingTarget?.(null);
+                            }
+                        }}
+                    />
+                    {renderFormattingToolbar(field, id, fieldStyle)}
+                </div>
+            );
+        };
+
         return (
-            <header 
-                key={`header-${idx}`} 
-                data-block-id="main-header"
-                data-pagination-item="main-header"
-                data-template-header
-                data-menu-border-surface="header" data-custom-border={getBorderOverride(style, 'header')}
-                className={`text-center group relative pointer-events-auto ${isTitleSelected || isSubtitleSelected ? 'ring-2 ring-indigo-500' : ''}`}
-                style={{ marginBottom: 0, zIndex: 20, background: getSurfaceFill(style, 'header'), borderRadius: style.borders?.header?.radius }}
-            >
-            <BorderDecoration style={style} scope="header" />
-            {heroImage && <img src={heroImage} data-template-hero-image alt="" draggable={false} onError={(event) => { event.currentTarget.hidden = true; }} />}
-            {formattingTarget?.type === 'menuTitle' && renderFormattingToolbar('menuTitle', 'menuTitle', titleStyle)}
-            {formattingTarget?.type === 'menuSubtitle' && renderFormattingToolbar('menuSubtitle', 'menuSubtitle', subStyle)}
-            <AutoFitText
-                as="h1"
-                text={style.menuTitle ?? 'MENU'}
-                baseFontSize={clampFontSize(style, 'menuTitle', titleStyle.fontSize, 48)}
-                minimumFontSize={minimumFontSize}
-                allowSameWordBreak={allowSameWordBreak}
-                fitScope="menuTitle"
-                widthMode="parent"
-                id={handlers.readOnly ? undefined : "menu-title-text"}
-                data-menu-heading="title"
-                className={`tracking-tight outline-none focus:bg-blue-50/50 rounded cursor-text ${isTitleSelected ? 'ring-2 ring-indigo-500 bg-indigo-50/20' : ''}`}
-                style={{ 
-                    color: `var(--automenu-preview-primary, ${titleStyle.color || style.primaryColor})`,
-                    ...textContrastFill('menuTitle'),
-                    ...getTextOutlineStyle(titleStyle.textOutline),
-                    fontFamily: titleStyle.fontFamily || style.fontFamily,
-                    fontSize: `${clampFontSize(style, 'menuTitle', titleStyle.fontSize, 48)}px`,
-                    fontWeight: titleStyle.fontWeight || '700',
-                    fontStyle: titleStyle.italic ? 'italic' : 'normal',
-                    textDecoration: titleStyle.underline ? 'underline' : 'none',
-                    textAlign: titleStyle.textAlign as any,
-                    textTransform: titleStyle.textTransform,
-                    marginBottom: `${showSubtitle ? (titleStyle.marginBottom ?? 10) : contentSpacing.headerToContent}px`
-                }} 
-                onPointerDown={handlers.readOnly ? undefined : preventHeadingFocusOutsideText}
-                onContextMenu={handlers.readOnly ? undefined : (event) => {
-                    if (isMenuHeadingTextHit(event)) handlers.openObjectMenu?.(event, { type: 'menuTitle', id: 'menuTitle' });
-                }}
-                onClick={(e) => {
-                    if (!isMenuHeadingTextHit(e)) return;
-                    e.stopPropagation();
-                    if (handlers.editingId && document.activeElement !== e.currentTarget) {
-                        focusCanvasFieldAtClick(e);
-                        return;
-                    }
-                    handlers.handleSelection('menuTitle', 'menuTitle', { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey });
-                    handlers.setSelectedPageIndex(null);
-                }}
-                onFocus={() => {
-                    handlers.handleSelection('menuTitle', 'menuTitle');
-                    handlers.startMenuTextEditing?.('menuTitle', 'menu-title-text');
-                }}
-                contentEditable={handlers.readOnly ? undefined : true} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'menu', 'header', 'menuTitle')} onKeyDown={handlers.handleKeyDown}
-            />
-            {showSubtitle && <AutoFitText
-                as="p"
-                text={hasSubtitle ? style.menuSubtitle : ''}
-                data-subtitle-placeholder={showSubtitleDraft ? 'Adicionar subtítulo' : undefined}
-                data-print-control={showSubtitleDraft ? 'true' : undefined}
-                aria-label={showSubtitleDraft ? 'Adicionar subtítulo' : undefined}
-                baseFontSize={clampFontSize(style, 'menuSubtitle', subStyle.fontSize, 18)}
-                minimumFontSize={minimumFontSize}
-                allowSameWordBreak={allowSameWordBreak}
-                fitScope="menuSubtitle"
-                widthMode="parent"
-                id={handlers.readOnly ? undefined : "menu-subtitle-text"}
-                data-menu-heading="subtitle"
-                onContextMenu={handlers.readOnly ? undefined : (event) => {
-                    if (isMenuHeadingTextHit(event)) handlers.openObjectMenu?.(event, { type: 'menuSubtitle', id: 'menuSubtitle' });
-                }}
-                className={`opacity-90 outline-none focus:bg-blue-50/50 rounded cursor-text empty:before:pointer-events-none empty:before:opacity-50 empty:before:content-[attr(data-subtitle-placeholder)] ${showSubtitleDraft ? `empty:w-fit ${subtitlePlaceholderAlignment}` : ''} ${isSubtitleSelected ? 'ring-2 ring-indigo-500 bg-indigo-50/20' : ''}`}
-                style={{
-                    color: `var(--automenu-preview-primary, ${subStyle.color || style.textColor})`,
-                    ...textContrastFill('menuSubtitle'),
-                    ...getTextOutlineStyle(subStyle.textOutline),
-                    fontFamily: subStyle.fontFamily || style.fontFamily,
-                    fontSize: `${clampFontSize(style, 'menuSubtitle', subStyle.fontSize, 18)}px`,
-                    fontWeight: subStyle.fontWeight,
-                    fontStyle: subStyle.italic ? 'italic' : 'normal',
-                    textDecoration: subStyle.underline ? 'underline' : 'none',
-                    textAlign: subStyle.textAlign || (style.design?.header === 'split' ? 'right' : 'center'),
-                    textTransform: subStyle.textTransform,
-                    letterSpacing: subStyle.letterSpacing ? `${subStyle.letterSpacing}px` : undefined,
-                    marginBottom: `${contentSpacing.headerToContent}px`
-                }}
-                onPointerDown={handlers.readOnly ? undefined : preventHeadingFocusOutsideText}
-                onClick={(e) => {
-                    if (!isMenuHeadingTextHit(e)) return;
-                    e.stopPropagation();
-                    if (handlers.editingId && document.activeElement !== e.currentTarget) {
-                        focusCanvasFieldAtClick(e);
-                        return;
-                    }
-                    handlers.handleSelection('menuSubtitle', 'menuSubtitle', { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey });
-                    handlers.setSelectedPageIndex(null);
-                }}
-                onFocus={() => {
-                    handlers.handleSelection('menuSubtitle', 'menuSubtitle');
-                    handlers.startMenuTextEditing?.('menuSubtitle', 'menu-subtitle-text');
-                }}
-                contentEditable={handlers.readOnly ? undefined : true} suppressContentEditableWarning onBlur={(e) => handlers.handleBlur(e, 'menu', 'subheader', 'menuSubtitle')} onKeyDown={handlers.handleKeyDown}
-            />
-            }
+            <header data-block-id="main-header" data-pagination-item="main-header"
+                data-heading-measurement={headingMeasurementKey(hasTitle, hasSubtitle)}
+                data-heading-draft={showSubtitleDraft || undefined}
+                data-template-header data-header-page={pageIndex} data-menu-border-surface="header" data-custom-border={getBorderOverride(style, 'header')}
+                className={`relative flow-root text-center pointer-events-auto ${selected ? 'ring-2 ring-indigo-500 bg-indigo-50/10' : ''}`}
+                style={{ zIndex: 20, background: getSurfaceFill(style, 'header'), borderRadius: style.borders?.header?.radius }}>
+                <BorderDecoration style={style} scope="header" />
+                {heroImage && <img src={heroImage} data-template-hero-image alt="" draggable={false} onError={event => { event.currentTarget.hidden = true; }} />}
+                {hasTitle && renderHeading('menuTitle', titleStyle)}
+                {showSubtitle && renderHeading('menuSubtitle', subStyle)}
+                {selected && !showSubtitleDraft && !handlers.multiSelectMode && handlers.startCanvasScale && (
+                    <CanvasScaleHandles target={{ ...activeTarget, headingFields: [
+                        ...(hasTitle ? ['menuTitle' as const] : []),
+                        ...(hasSubtitle ? ['menuSubtitle' as const] : []),
+                    ] }} start={handlers.startCanvasScale} />
+                )}
+                {selected && (
+                    <CanvasActionGroup direction="top" kind="quick">
+                        <button type="button" className={canvasActionButtonClass} aria-label={`Editar ${activeLabel}`} title={`Editar ${activeLabel}`}
+                            onClick={() => handlers.editHeading?.(activeField, pageIndex)}><Edit3 size={14} /></button>
+                        <button type="button" className={canvasActionButtonClass} aria-label="Seleção múltipla" title="Seleção múltipla"
+                            aria-pressed={handlers.multiSelectMode} onClick={() => handlers.setMultiSelectMode(!handlers.multiSelectMode)}><CopyCheck size={14} /></button>
+                        <button type="button" className={canvasActionButtonClass} aria-label="Mais ações" title="Mais ações"
+                            data-open-object-menu="true" data-object-menu-type={activeField} data-object-menu-id={activeTarget.id}
+                            onClick={event => handlers.openObjectMenu?.(event, activeTarget)}><MoreHorizontal size={16} /></button>
+                    </CanvasActionGroup>
+                )}
             </header>
         );
     }
@@ -606,6 +622,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const canMoveDown = visibleCatProducts.length > 1 && pIndex >= 0 && pIndex < visibleCatProducts.length - 1;
         
         const isBeingDragged = handlers.isCanvasObjectDragging?.(productSelectionType, product.id);
+        const rotation = handlers.liveTextRotation?.id === product.id ? handlers.liveTextRotation.rotation : product.rotation;
         const nameStyle = product.isFreeText && product.styles ? product.styles : (style.elementStyles?.productName || {});
         const priceStyle = style.elementStyles?.productPrice || {};
         const descStyle = style.elementStyles?.productDescription || {};
@@ -653,6 +670,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                         borderRadius: product.isFreeText ? style.freeTextBorders?.[product.id]?.radius : style.borders?.product?.radius,
                         width: product.isFreeText ? (product.freeTextWidth ? `${product.freeTextWidth}px` : 'fit-content') : undefined,
                         maxWidth: product.isFreeText ? '100%' : undefined,
+                        rotate: product.isFreeText && rotation ? rotation + 'deg' : undefined,
                         touchAction: product.isFreeText && !isEditable && !backgroundText && !handlers.readOnly ? 'none' : undefined,
                         marginTop: customMarginTop,
                         marginBottom: isFreeTextGhost
@@ -671,6 +689,15 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                         columnCount={renderedCategoryColumnCount || categoryColumnCount}
                         onResizeStart={handlers.startCategoryColumnResize}
                     />
+                )}
+                {!handlers.readOnly && primary && isSelected && !isBeingDragged && !handlers.editingId
+                    && !handlers.multiSelectMode && handlers.startCanvasScale && (
+                    <CanvasScaleHandles target={{ type: productSelectionType, id: product.id }} start={handlers.startCanvasScale} />
+                )}
+                {!handlers.readOnly && primary && product.isFreeText && isSelected && !isBeingDragged && !handlers.editingId
+                    && !handlers.multiSelectMode && handlers.rotateCanvasText && (
+                    <CanvasRotationHandle rotation={product.rotation ?? 0} belowScaleHandle
+                        onRotate={(rotation, commit) => handlers.rotateCanvasText(product.id, rotation, commit)} />
                 )}
                 {product.isFreeText && isSelected && !handlers.isResizingCategoryColumns && (
                     <FreeTextResizeHandles product={product} style={style} handlers={handlers} />
@@ -903,6 +930,10 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 style={{ zIndex: isBeingDragged ? 65 : getContentLayer(style) * 10 + (isSelected || isEditable ? 1 : 0), borderRadius: isCardLayout ? cardRadius : undefined }}
                             >
                                 <BorderDecoration style={style} scope="product" />
+                                {!handlers.readOnly && isSelected && !isBeingDragged && !handlers.editingId
+                                    && !handlers.multiSelectMode && handlers.startCanvasScale && (
+                                    <CanvasScaleHandles target={{ type: 'product', id: product.id }} start={handlers.startCanvasScale} />
+                                )}
                                 {isSelected && handlers.selectedId === product.id && !handlers.editingId && !handlers.multiSelectMode && (
                                     <ColumnResizeHandles columnIndex={columnIndex} columnCount={categoryColumnCount}
                                         onResizeStart={handlers.startCategoryColumnResize} />

@@ -1,3 +1,4 @@
+import { headingIsOnPage, menuHeadingFields, remapHeadingPages } from './menuHeadings';
 import { categoryKey, categoryName } from './categoryName';
 import { FREE_TEXT_PREFIX } from './flow';
 import type { CopiedPageLayout, MenuStyle, Product } from './model';
@@ -65,9 +66,15 @@ export function duplicateMenuPage(page: PageLayout, pageIndex: number, products:
         })];
     const categoryMap = new Map(Array.from(categoryCopies, ([key, copy]) => [key, copy.key]));
     const duplicateId = crypto.randomUUID();
+    const headingPages = remapHeadingPages(style, page => page >= index ? page + 1 : page);
+    for (const field of menuHeadingFields) {
+        const visible = headingPages?.[field];
+        if (Array.isArray(visible) && headingIsOnPage(style, field, pageIndex, page.headerCopy)) visible.push(index);
+    }
     const nextStyle: MenuStyle = {
         ...style,
         name: 'Custom',
+        headingPages,
         blankPages: [
             ...(style.blankPages || []).map(slot => slot.index >= index ? { ...slot, index: slot.index + 1 } : slot),
             { id: duplicateId, index, fixedPosition: true, copiedLayout },

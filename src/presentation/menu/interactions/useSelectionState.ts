@@ -580,8 +580,8 @@ export const useSelectionState = (
         if (isReadyToEdit(type, id)) activateEditingItem(type, id, field, elementId);
     };
 
-    const startMenuTextEditing = (type: 'menuTitle' | 'menuSubtitle', elementId: string) => {
-        setFormattingTarget({ type, id: type, field: type, elementId });
+    const startMenuTextEditing = (type: 'menuTitle' | 'menuSubtitle', elementId: string, id: string = type) => {
+        setFormattingTarget({ type, id, field: type, elementId });
     };
 
     return {

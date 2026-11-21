@@ -1,3 +1,4 @@
+import { CanvasRotationHandle, CanvasScaleHandles } from './CanvasTransformHandles';
 import { getTextOutlineStyle } from './textOutlineStyle';
 import { getContentLayer, getImageLayer } from '../../../domain/menu/imageLayers';
 import { CanvasLayerImage } from './CanvasLayerImage';
@@ -303,7 +304,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 data-drag-flow-index={isDragTarget ? flowIndex : undefined}
                 onDragOver={(e) => handlers.handleDragOverItem?.(e, chunk.category, 'category')}
                 className={`relative rounded-xl ${!isFreeTextTarget && ((renderedStyle.fills?.categoryGroup && renderedStyle.fills.categoryGroup !== 'transparent')
-                    || renderedStyle.borders?.categoryGroup?.sides.length) ? 'p-1.5' : ''} ${isCategoryDragged || Number.isFinite(desiredPageY) ? 'transition-none' : 'transition-all duration-200'} pointer-events-none ${isCategorySelected || isCategoryDragged ? `ring-2 ring-indigo-500 bg-indigo-50/10 ${selectionLayerClasses.outline}` : ''}`}
+                    || renderedStyle.borders?.categoryGroup?.sides.length) ? 'p-1.5' : ''} ${isCategoryDragged || handlers.isScalingCanvasObject || Number.isFinite(desiredPageY) ? 'transition-none' : 'transition-all duration-200'} pointer-events-none ${isCategorySelected || isCategoryDragged ? `ring-2 ring-indigo-500 bg-indigo-50/10 ${selectionLayerClasses.outline}` : ''}`}
             >
                 {!isFreeTextTarget && <>
                     {renderedStyle.fills?.categoryGroup && <div data-category-group-paint aria-hidden="true"
@@ -311,6 +312,10 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         style={{ zIndex: getContentLayer(style) * 10, background: renderedStyle.fills.categoryGroup }} />}
                     <BorderDecoration style={renderedStyle} scope="categoryGroup" />
                 </>}
+                {!readOnly && isCategorySelected && isCategoryControlAnchor && !isCategoryDragged && !handlers.editingId
+                    && !handlers.multiSelectMode && handlers.startCanvasScale && (
+                    <CanvasScaleHandles target={{ type: 'category', id: chunk.category }} start={handlers.startCanvasScale} />
+                )}
                 {isCategorySelected && isCategoryControlAnchor && !isCategoryDragged && !handlers.editingId && !handlers.multiSelectMode && (
                     <ColumnResizeHandles
                         columnIndex={chunk.columnIndex}
@@ -381,8 +386,9 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                     key="main-header"
                     item={page.mainHeader}
                     idx={0}
+                    pageIndex={pageIndex}
                     style={renderedStyle}
-                    handlers={page.headerCopy ? { ...handlers, readOnly: true, formattingTarget: null } : handlers}
+                    handlers={handlers}
                     products={products}
                     inGroup={false}
                 />
@@ -572,6 +578,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                                 left: `${img.x}px`,
                                 top: `${img.y}px`,
                                 width: `${img.width}px`,
+                                rotate: img.rotation ? img.rotation + 'deg' : undefined,
                                 zIndex: getImageLayer(img) * 10,
                                 touchAction: 'none',
                             }}
@@ -637,6 +644,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                             left: `${img.x}px`,
                             top: `${img.y}px`,
                             width: `${img.width}px`,
+                            rotate: img.rotation ? img.rotation + 'deg' : undefined,
                             zIndex: 70,
                             touchAction: 'none',
                         }}
@@ -680,6 +688,11 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                                 <CanvasLayerImage image={img} ghost />
                                 <div className={`pointer-events-none absolute inset-0 ring-2 ring-indigo-500 ${handlers.isReadyToEdit?.('addedImage', img.id)
                                     && formattingShapeId !== img.id ? 'bg-indigo-500/15' : ''}`} />
+                                {activeImage?.id === img.id && !handlers.multiSelectMode && !handlers.draggedImageId
+                                    && formattingShapeId !== img.id && handlers.rotateCanvasImage && (
+                                    <CanvasRotationHandle rotation={img.shape?.rotation ?? img.rotation ?? 0}
+                                        onRotate={(rotation, commit) => handlers.rotateCanvasImage(img.id, rotation, commit)} />
+                                )}
                                 {img.shape && !isMiniFoodKind(img.shape.kind) && formattingShapeId === img.id && activeImage?.id === img.id &&
                                     <ShapeTextEditor shape={img.shape} imageWidth={img.width}
                                         targetId={`added-image-${pageIndex}-${img.id}`}

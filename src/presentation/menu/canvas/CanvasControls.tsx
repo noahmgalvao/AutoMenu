@@ -65,6 +65,7 @@ function placeControls(
         blockers.push(handle.getBoundingClientRect());
     });
 
+    const handles = Array.from(page.querySelectorAll('[data-canvas-transform-handle]'), handle => handle.getBoundingClientRect());
     for (const { node, anchor, direction, kind, hoverOnly } of active) {
         const target = anchor.getBoundingClientRect();
         const bounds = canvas || pageBounds;
@@ -155,7 +156,7 @@ function placeControls(
             : preferredTop - (kind === 'quick' ? height + margin : leading ? edgeOffset : 0));
         const maxTop = Math.min(maximumTop, side ? Math.max(preferredTop, target.bottom) + height / 2
             : preferredTop + (kind !== 'quick' && !leading ? edgeOffset : 0));
-        const occupied = [...blockers];
+        const occupied = kind === 'quick' ? [...blockers] : [...blockers, ...handles];
         if (kind === 'resize') {
             const range = document.createRange();
             anchor.querySelectorAll('[data-word-fit]').forEach(text => {

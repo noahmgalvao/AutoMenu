@@ -86,9 +86,10 @@ test('a cleared subtitle can be restored from the title editor', async ({ page }
   await page.goto('/tests/fixtures/template-editor.html');
   const title = page.locator('#menu-title-text');
   const subtitle = page.locator('#menu-subtitle-text');
+  await subtitle.focus();
   await subtitle.fill('');
   await subtitle.press('Enter');
-  await title.click();
+  await title.focus();
 
   const placeholder = page.getByLabel('Adicionar subtítulo');
   await expect(placeholder).toBeVisible();
@@ -118,6 +119,9 @@ test.describe('heading hit areas', () => {
         return { text: { x: (text.left + text.right) / 2, y }, gap: { x: gapX, y } };
       });
       await page.mouse.click(points.gap.x, points.gap.y);
+      await expect(heading).not.toBeFocused();
+      await page.touchscreen.tap(points.text.x, points.text.y);
+      await expect(heading.locator('xpath=ancestor::header')).toHaveClass(/ring-indigo-500/);
       await expect(heading).not.toBeFocused();
       await page.touchscreen.tap(points.text.x, points.text.y);
       await expect(heading).toBeFocused();
@@ -450,7 +454,8 @@ test('editing selected categories keeps their products available as the formatti
   await expect(price).toHaveAttribute('contenteditable', 'true');
   const title = page.locator('#menu-title-text');
   await title.click();
-  await expect(title).toBeFocused();
+  await expect(title.locator('xpath=ancestor::header')).toHaveClass(/ring-indigo-500/);
+  await expect(title).not.toBeFocused();
   await expect(price).toHaveAttribute('contenteditable', 'false');
   await expect(price).not.toHaveClass(/bg-indigo-500\/15/);
 });
