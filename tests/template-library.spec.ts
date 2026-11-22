@@ -35,6 +35,10 @@ test('desktop discovery leaves the editor untouched until Apply and records one 
   await expect(dialog.getByRole('button', { name: 'Próximo modelo' })).toHaveCount(0);
   await expect(dialog.getByRole('heading', { name: 'Editorial Essencial' })).toHaveCount(0);
   await expect(canvas.locator('[contenteditable=true],button')).toHaveCount(0);
+  await page.keyboard.press('ArrowUp');
+  await expect(dialog.getByRole('img', { name: /Prévia de Sem modelo/ })).toBeVisible();
+  await page.keyboard.press('ArrowDown');
+  await expect(dialog.getByRole('img', { name: /Prévia de Editorial Essencial/ })).toBeVisible();
   await page.keyboard.press('ArrowDown');
   await expect(dialog.getByRole('img', { name: /Prévia de Grade Suíça/ })).toBeVisible();
   await page.keyboard.press('Escape');
@@ -51,6 +55,30 @@ test('desktop discovery leaves the editor untouched until Apply and records one 
   await expect(page.getByTestId('editor-state')).toHaveAttribute('data-edits','1');
   await page.getByRole('button',{name:'Desfazer'}).click();
   await expect(page.getByTestId('editor-state')).toHaveAttribute('data-edits','0');
+});
+
+test('discovery opens on Todos every time and keeps personal templates in their own tab', async ({ page }) => {
+  await page.getByRole('button', { name: 'Editorial Essencial', exact: true }).click();
+  await page.getByRole('button', { name: 'Meus modelos', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Pesquisar modelos' }).fill('cafe da vo');
+  await expect(page.getByRole('button', { name: 'Café da Vó', exact: true })).toBeVisible();
+  const discovery = page.getByRole('button', { name: 'Descobrir', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'Descobrir modelos' });
+  await discovery.click();
+  await expect(dialog.getByRole('img', { name: /Prévia de Editorial Essencial/ })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Ver todos' }).click();
+  await expect(dialog.getByRole('button', { name: 'Todos', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(dialog.getByRole('textbox', { name: 'Pesquisar modelos' })).toHaveValue('');
+  const personal = dialog.getByRole('button', { name: 'Café da Vó', exact: true });
+  await expect(personal).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Meus modelos', exact: true }).click();
+  await expect(personal).toBeVisible();
+  await dialog.getByRole('button', { name: 'Favoritos', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  await discovery.click();
+  await dialog.getByRole('button', { name: 'Ver todos' }).click();
+  await expect(dialog.getByRole('button', { name: 'Todos', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(personal).toHaveCount(0);
 });
 
 test('quick search finds imported templates and favorites survive refresh', async ({ page }) => {
@@ -80,13 +108,20 @@ for (const viewport of [{width:360,height:720},{width:430,height:932}]) {
       const cdp = await context.newCDPSession(page);
       const x = Math.round(box!.x + box!.width / 2);
       const y = Math.round(box!.y + box!.height / 2);
-      await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
-      await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:y-90}]});
-      await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+      const swipe = async (delta: number) => {
+        await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
+        await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:y+delta}]});
+        await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+      };
+      await swipe(90);
+      await expect(dialog.getByRole('img', { name: /Prévia de Sem modelo/ })).toBeVisible();
+      await swipe(-90);
+      await expect(surface).toBeVisible();
+      await swipe(-90);
       await expect(dialog.getByRole('img', { name: /Prévia de Grade Suíça/ })).toBeVisible();
       await dialog.getByRole('button',{name:'Ver todos'}).tap();
       await expect(dialog.getByRole('button', { name: 'Voltar à prévia' })).toBeVisible();
-      await expect(dialog.locator('[data-template-option]')).toHaveCount(52);
+      await expect(dialog.locator('[data-template-option]')).toHaveCount(51);
       await dialog.getByRole('button', { name: 'Voltar à prévia' }).tap();
       await expect(dialog.getByRole('img', { name: /Prévia de Grade Suíça/ })).toBeVisible();
       await dialog.getByRole('button', { name: 'Ver todos' }).tap();

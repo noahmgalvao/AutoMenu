@@ -12,6 +12,7 @@ export function filterTemplates(templates: MenuStyle[], tab: TemplateTab, query:
   const words = normalize(query).split(/\s+/).filter(Boolean);
   return templates.filter((template) => {
     if (template.id === NO_TEMPLATE_ID && tab !== 'all') return false;
+    if (tab === 'all' && template.scope !== 'system' && template.id !== NO_TEMPLATE_ID) return false;
     if (tab === 'favorites' && !favorites.has(template.id)) return false;
     if (tab === 'mine' && template.scope === 'system') return false;
     const info = template.catalogMetadata;
@@ -22,9 +23,10 @@ export function filterTemplates(templates: MenuStyle[], tab: TemplateTab, query:
 }
 
 export function stepTemplate(templates: MenuStyle[], focused: string | undefined, delta: number) {
-  if (!templates.length) return undefined;
+  const count = templates.length;
+  if (!count) return undefined;
   const index = templates.findIndex((template) => template.id === focused);
-  return templates[index < 0 ? 0 : Math.max(0, Math.min(templates.length - 1, index + delta))].id;
+  return templates[index < 0 ? 0 : ((index + delta) % count + count) % count].id;
 }
 
 export const swipeDirection = (dx: number, dy: number) =>

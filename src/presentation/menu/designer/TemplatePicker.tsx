@@ -130,14 +130,15 @@ function TemplateOption({ template, active, favorites, choose, gallery }: {
   </div>;
 }
 
-function Discover({ current, products, sortOption, splitCategoryAcrossPages, applyTemplate, query, setQuery,
-  tab, setTab, results, favorites, onClose,
-}: Props & {
-  query: string; setQuery: (query: string) => void; tab: TemplateTab; setTab: (tab: TemplateTab) => void;
-  results: MenuStyle[]; favorites: Favorites; onClose: () => void;
+function Discover({ current, templates, products, sortOption, splitCategoryAcrossPages, applyTemplate, favorites, onClose,
+}: Omit<Props, 'userId'> & {
+  favorites: Favorites; onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const list = useRef<HTMLDivElement>(null);
+  const [tab, setTab] = useState<TemplateTab>('all');
+  const [query, setQuery] = useState('');
+  const results = useMemo(() => filterTemplates(templates, tab, query, favorites.ids), [templates, tab, query, favorites.ids]);
   const [focusId, setFocusId] = useState(getAppliedTemplateId(current));
   const [gallery, setGallery] = useState(false);
   const gesture = useRef<{ x: number; y: number; pointerId: number } | null>(null);
@@ -441,6 +442,6 @@ export function TemplatePicker(props: Props) {
       </div>
       <span className="sr-only" role="status">{favorites.announcement}</span>
     </div>}
-    {discover && <Discover {...props} {...{ query, setQuery, tab, setTab, results, favorites }} onClose={closeDiscovery} />}
+    {discover && <Discover {...props} templates={templates} favorites={favorites} onClose={closeDiscovery} />}
   </div>;
 }

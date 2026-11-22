@@ -65,17 +65,19 @@ test('filters include import scope, favorites and accent-insensitive metadata se
   const imported = {...PRESET_TEMPLATES[0], id: 'mine', name: 'Pão da Vó', scope: 'workspace' as const};
   const all = [...PRESET_TEMPLATES, imported];
   const favorites = new Set([imported.id, 'patisserie-rose']);
-  assert.equal(filterTemplates(all,'all','',favorites).length, 51);
+  assert.deepEqual(filterTemplates(all,'all','',favorites).map(({id})=>id), PRESET_TEMPLATES.map(({id})=>id));
+  assert.deepEqual(filterTemplates(all,'all','pao da vo',favorites), []);
   assert.deepEqual(filterTemplates(all,'mine','pao da vo',favorites).map(({id})=>id), ['mine']);
   assert.deepEqual(filterTemplates(all,'favorites','PÂTISSERIE Rose',favorites).map(({id})=>id), ['patisserie-rose']);
   assert.equal(filterTemplates(all,'all','editorial paisagem',favorites).length > 0, true);
 });
 
-test('arrow and swipe navigation clamp to the filtered results', () => {
+test('arrow and swipe navigation wrap at both ends of the filtered results', () => {
   assert.equal(stepTemplate([], undefined, 1), undefined);
-  assert.equal(stepTemplate(PRESET_TEMPLATES, 'moderno-limpo', -1), 'moderno-limpo');
+  assert.equal(stepTemplate(PRESET_TEMPLATES, 'moderno-limpo', -1), 'landscape-premium');
   assert.equal(stepTemplate(PRESET_TEMPLATES, 'moderno-limpo', 1), 'swiss-grid');
-  assert.equal(stepTemplate(PRESET_TEMPLATES, 'landscape-premium', 1), 'landscape-premium');
+  assert.equal(stepTemplate(PRESET_TEMPLATES, 'landscape-premium', 1), 'moderno-limpo');
+  assert.equal(stepTemplate(PRESET_TEMPLATES.slice(0, 1), 'moderno-limpo', -1), 'moderno-limpo');
   assert.equal(swipeDirection(5,-90),1);
   assert.equal(swipeDirection(0,90),-1);
   assert.equal(swipeDirection(100,60),0);
