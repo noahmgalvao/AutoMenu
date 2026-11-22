@@ -3,6 +3,7 @@ import { triggerLimitFeedback } from '../canvas/textFit';
 import { canMoveImageLayer } from '../../../domain/menu/imageLayers';
 import { MINI_FOOD_INK } from '../../../domain/menu/miniFoods';
 import { HoldStepButton } from '../../common/HoldStepButton';
+import { BooleanRadio } from '../../common/BooleanRadio';
 import { ColorPicker } from './ColorPicker';
 import { DecorationControls } from './Decorations';
 import { ShapeChoices, ShapePicker, ShapeSettings } from './ShapePicker';
@@ -612,16 +613,19 @@ interface GeneralRulesSectionProps {
 
 const RuleNumberInput: React.FC<{
   value: number;
-  label?: string;
+  label: string;
   min?: number;
   max?: number;
   normalizeValue?: (value: number) => number;
   onChange: (value: number) => void;
 }> = ({ value, label, min = 0, max = 300, normalizeValue, onChange }) => (
-  <FontSizeInput label={label} value={value} min={min} max={max} commitOnBlur
-    onChange={next => onChange(normalizeValue ? normalizeValue(next) : next)}
-    className="!w-[calc(5ch+1.75rem)] bg-white text-center font-semibold tabular-nums text-slate-700"
-  />
+  <div className="grid content-between justify-items-start gap-1 text-xs text-slate-700">
+    <span>{label}</span>
+    <FontSizeInput label={label} value={value} min={min} max={max} commitOnBlur showStepButtons stepSubject=""
+      onChange={next => onChange(normalizeValue ? normalizeValue(next) : next)}
+      className="!w-12 bg-white text-center font-semibold tabular-nums text-slate-700"
+    />
+  </div>
 );
 
 export const GeneralRulesSection: React.FC<GeneralRulesSectionProps> = ({ style, setStyle }) => {
@@ -679,18 +683,17 @@ export const GeneralRulesSection: React.FC<GeneralRulesSectionProps> = ({ style,
         ['showPrices', 'Mostrar preços no cardápio', true],
         ['splitCategoryAcrossPages', 'Continuar categoria na página seguinte', false],
         ['productsCanChangeCategory', 'Permitir mudar produto de categoria ao arrastar', false],
-      ] as const).map(([key, label, fallback]) => (
-        <label key={key} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-700">
-          {label}<input type="checkbox" checked={style[key] ?? fallback}
-            onChange={event => { const checked = event.target.checked; setStyle(previous => ({ ...previous, [key]: checked, name: 'Custom' })); }}
-            className="size-4 shrink-0 accent-indigo-600" />
-        </label>
+        ['allowSameWordBreak', 'Permitir quebra de linha na mesma palavra', false,
+          'Ex.: permitir “HAMBU” / “RGUER” em duas linhas. Desativado, o texto reduz até o mínimo.'],
+      ] as const).map(([key, label, fallback, description]) => (
+        <BooleanRadio key={key} label={label} value={style[key] ?? fallback} description={description}
+          className="border-slate-200 bg-slate-50"
+          onChange={value => setStyle(previous => ({ ...previous, [key]: value, name: 'Custom' }))} />
       ))}
 
       <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
         <h4 className="text-xs font-bold text-slate-600">Limite de tamanho das fontes</h4>
-        <label className="flex items-center justify-between gap-3 border-b border-slate-200 pb-2 text-xs font-semibold text-slate-700">
-          <span>Mínimo geral</span>
+        <div className="border-b border-slate-200 pb-2">
           <RuleNumberInput
             label="Mínimo geral"
             value={minimumFontSize}
@@ -723,59 +726,41 @@ export const GeneralRulesSection: React.FC<GeneralRulesSectionProps> = ({ style,
               name: 'Custom',
             }))}
           />
-        </label>
+        </div>
         <h4 className="pt-1 text-xs font-bold text-slate-600">Limites máximos</h4>
-        {fontLimitRows.map(({ key, label }) => (
-          <label key={key} className="flex items-center justify-between gap-3 text-xs text-slate-600">
-            <span>{label}</span>
-            <RuleNumberInput label={label} value={fontSizeLimits[key]} min={minimumFontSize} max={300} normalizeValue={roundFontSize} onChange={(value) => updateFontLimit(key, value)} />
-          </label>
-        ))}
+        <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+          {fontLimitRows.map(({ key, label }) => (
+            <RuleNumberInput key={key} label={label} value={fontSizeLimits[key]} min={minimumFontSize} max={300}
+              normalizeValue={roundFontSize} onChange={(value) => updateFontLimit(key, value)} />
+          ))}
+        </div>
       </div>
-
-      <label className="flex cursor-pointer items-start justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <span className="min-w-0">
-          <span className="block text-xs font-bold text-slate-700">Permitir quebra de linha na mesma palavra</span>
-          <span className="mt-1 block text-[10px] leading-relaxed text-slate-500">
-            Ex.: permitir “HAMBU” / “RGUER” em duas linhas. Desativado, o texto reduz até o mínimo.
-          </span>
-        </span>
-        <input
-          type="checkbox"
-          checked={style.allowSameWordBreak === true}
-          onChange={(event) => setStyle((previous) => ({
-            ...previous,
-            allowSameWordBreak: event.target.checked,
-            name: 'Custom',
-          }))}
-          className="mt-0.5 h-4 w-4 shrink-0 accent-indigo-600"
-        />
-      </label>
 
       <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
         <h4 className="text-xs font-bold text-slate-600">Margens</h4>
-        {marginRows.map(({ key, label }) => (
-          <label key={key} className="flex items-center justify-between gap-3 text-xs text-slate-600">
-            <span>{label}</span>
+        <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+          {marginRows.map(({ key, label }) => (
             <RuleNumberInput
+              key={key}
+              label={label}
               value={margins[key]}
-              max={300}
               onChange={(value) => setStyle((previous) => ({
                 ...previous,
                 margins: { ...resolveMenuMargins(previous), [key]: value },
                 name: 'Custom',
               }))}
             />
-          </label>
-        ))}
+          ))}
+        </div>
       </div>
 
       <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
         <h4 className="text-xs font-bold text-slate-600">Espaçamentos</h4>
-        {spacingRows.map(({ key, label }) => (
-          <label key={key} className="flex items-center justify-between gap-3 text-xs text-slate-600">
-            <span>{label}</span>
+        <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+          {spacingRows.map(({ key, label }) => (
             <RuleNumberInput
+              key={key}
+              label={label}
               value={contentSpacing[key]}
               max={200}
               onChange={(value) => setStyle((previous) => ({
@@ -784,8 +769,8 @@ export const GeneralRulesSection: React.FC<GeneralRulesSectionProps> = ({ style,
                 name: 'Custom',
               }))}
             />
-          </label>
-        ))}
+          ))}
+        </div>
       </div>
     </section>
   );

@@ -72,14 +72,8 @@
   padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right))
     max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
 }
-.template-discover-surface > div, .template-discover-slide { height: 100%; }
-.template-discover-drag { transition: transform 180ms ease-out; }
+.template-discover-drag { height: 100%; transition: transform 180ms ease-out; }
 .template-discover-drag[data-dragging="true"] { transition: none; cursor: grabbing; }
-.template-discover-slide { animation: template-slide-in 260ms cubic-bezier(.22,.8,.26,1) both; }
-@keyframes template-slide-in {
-  from { opacity: .35; transform: translateY(var(--discover-enter, 0)); }
-  to { opacity: 1; transform: translateY(0); }
-}
 .template-immersive-preview { position: relative; display: flex; height: 100%; flex-direction: column; }
 .template-discover-pages {
   position: absolute;
@@ -96,30 +90,6 @@
   font-size: .72rem;
   white-space: nowrap;
 }
-.template-discover-hint {
-  position: absolute;
-  z-index: 2;
-  top: 50%;
-  left: 50%;
-  display: grid;
-  justify-items: center;
-  gap: .45rem;
-  width: max-content;
-  max-width: calc(100% - 6.5rem);
-  transform: translate(-50%, -50%);
-  padding: .85rem 1rem;
-  border-radius: 1rem;
-  background: #171720db;
-  box-shadow: 0 .6rem 2rem #0004;
-  font-size: .82rem;
-  font-weight: 650;
-  text-align: center;
-  pointer-events: none;
-  animation: template-swipe-hint 2.9s both;
-}
-.template-discover-hint svg { animation: template-swipe-arrow 850ms ease-in-out 3; }
-@keyframes template-swipe-hint { 0%, 100% { opacity: 0; } 10%, 82% { opacity: 1; } }
-@keyframes template-swipe-arrow { 0%, 100% { transform: translateY(3px); } 50% { transform: translateY(-5px); } }
 .template-discover-actions {
   position: absolute;
   z-index: 2;

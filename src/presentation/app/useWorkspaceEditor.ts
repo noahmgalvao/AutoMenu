@@ -306,7 +306,6 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
   useEffect(() => {
     if (!workspaceData) return;
 
-    activeMenuIdRef.current = workspaceData.menu.id;
     menuCacheRef.current[workspaceData.menu.id] = {
       ...workspaceData,
       products,
@@ -356,6 +355,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
   useEffect(() => {
     if (!authenticatedUserId) {
       workspaceLoadRequestRef.current += 1;
+      setIsWorkspaceLoading(false);
       activeMenuIdRef.current = null;
       menuCacheRef.current = {};
       menuSavedSignatureCacheRef.current = {};
@@ -387,6 +387,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     workspaceData.menus.forEach((menu) => {
       if (
         menu.id === workspaceData.menu.id ||
+        menu.id === activeMenuIdRef.current ||
         menuCacheRef.current[menu.id] ||
         prefetchingMenuIdsRef.current.has(menu.id)
       ) {
@@ -419,7 +420,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
   }, [isWorkspaceLoading, session, templates, workspaceData]);
 
   useEffect(() => {
-    if (!session || !workspaceData || isWorkspaceLoading || menuIdsBeingDeleted.current?.has(workspaceData.menu.id)) {
+    if (!session || !workspaceData || menuIdsBeingDeleted.current?.has(workspaceData.menu.id)) {
       return;
     }
 
@@ -464,7 +465,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
         clearTimeout(persistTimeoutRef.current);
       }
     };
-  }, [isWorkspaceLoading, products, session, sortOption, style, templates, workspaceData]);
+  }, [products, session, sortOption, style, templates, workspaceData]);
 
   const flushPendingSave = useCallback(() => {
     const payload = latestPersistPayloadRef.current;
@@ -685,7 +686,14 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     }
   };
 
+  const cancelWorkspaceRefresh = () => {
+    if (!isWorkspaceLoading) return;
+    workspaceLoadRequestRef.current += 1;
+    setIsWorkspaceLoading(false);
+  };
+
   const handleSignOut = async () => {
+    cancelWorkspaceRefresh();
     try {
       await forceSaveCurrentMenu();
       await signOutCurrentUser();
@@ -700,6 +708,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
 
   const handleSaveSettings = async (values: { fullName: string; workspaceName: string }) => {
     if (!session || !workspaceData) return;
+    cancelWorkspaceRefresh();
     setIsSettingsSaving(true);
     try {
       const updated = await updateAccountIdentity({
@@ -754,13 +763,13 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     menuCacheRef.current[workspaceData.menu.id] = currentSnapshot;
 
     const requestId = ++workspaceLoadRequestRef.current;
+    setIsWorkspaceLoading(false);
     const cachedData = menuCacheRef.current[menuId];
     const cachedSignature = cachedData ? getPersistSignature(cachedData) : null;
     const cachedSavedSignature = menuSavedSignatureCacheRef.current[menuId] || null;
     const cachedIsDirty = Boolean(cachedSignature && cachedSavedSignature && cachedSignature !== cachedSavedSignature);
 
     activeMenuIdRef.current = menuId;
-    writeLastActiveMenuId(session.user.id, menuId);
     setIsMenuActionLoading(!cachedData);
     setLoadError(null);
     showStylePanel();
@@ -768,7 +777,8 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     saveCurrentMenuInBackground();
 
     if (cachedData) {
-      hydrateWorkspaceState(cachedData, { preserveSavedSignature: true });
+      hydrateWorkspaceState({ ...cachedData, profile: workspaceData.profile, workspace: workspaceData.workspace },
+        { preserveSavedSignature: true });
     }
 
     try {
@@ -794,6 +804,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
       hydrateWorkspaceState(data);
     } catch (error) {
       if (requestId !== workspaceLoadRequestRef.current) return;
+      if (!cachedData) activeMenuIdRef.current = workspaceData.menu.id;
       setLoadError(getErrorMessage(error, 'Falha ao trocar cardápio.'));
     } finally {
       if (requestId === workspaceLoadRequestRef.current) {
@@ -805,6 +816,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
   const performCreateMenu = async (name: string, sourceMenuId: string | null) => {
     if (!session || !workspaceData) return;
 
+    cancelWorkspaceRefresh();
     setIsMenuActionLoading(true);
     setLoadError(null);
     showStylePanel();
@@ -860,6 +872,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     const nextName = name.trim() || 'Cardápio';
     if (nextName === previousName) return true;
 
+    cancelWorkspaceRefresh();
     menuOperation.current = true;
     setIsMenuActionLoading(true);
     setLoadError(null);
@@ -885,6 +898,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     const ids = new Set(removedMenus.map(menu => menu.id));
     if (!ids.size) return false;
 
+    cancelWorkspaceRefresh();
     const { workspace } = workspaceData;
     const userId = session.user.id;
     const deletingActiveMenu = ids.has(workspaceData.menu.id);
@@ -954,6 +968,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     }
     if (direction === 'redo') return handleDeleteMenus(action.menus.map(menu => menu.id), false);
     if (!workspaceData || !session || menuOperation.current) return false;
+    cancelWorkspaceRefresh();
     menuOperation.current = true;
     setIsMenuActionLoading(true);
     setLoadError(null);
@@ -976,7 +991,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
   };
 
   return {
-    session, isAuthLoading, isWorkspaceLoading, isAuthSubmitting, authError, loadError, setLoadError, isConfigured,
+    session, isAuthLoading, isAuthSubmitting, authError, loadError, setLoadError, isConfigured,
     workspaceLoadError: workspaceLoadFailure?.userId === authenticatedUserId ? workspaceLoadFailure?.message : null,
     workspaceData, products, style, templates, sortOption, setSortOption, isSettingsSaving, isMenuActionLoading,
     setProducts, setStyle, setProductsAndStyle, setTemplates, undo, redo, canUndo: canUndo && !isMenuActionLoading, canRedo: canRedo && !isMenuActionLoading, handleProductEditChange,

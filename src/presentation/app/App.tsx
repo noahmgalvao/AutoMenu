@@ -45,7 +45,7 @@ const App: React.FC = () => {
 
   const [isMenuImportOpen, setIsMenuImportOpen] = useState(false);
   const {
-    session, isAuthLoading, isWorkspaceLoading, isAuthSubmitting, authError, loadError, setLoadError, workspaceLoadError, isConfigured,
+    session, isAuthLoading, isAuthSubmitting, authError, loadError, setLoadError, workspaceLoadError, isConfigured,
     workspaceData, products, style, templates, sortOption, setSortOption, isSettingsSaving, isMenuActionLoading,
     setProducts, setStyle, setProductsAndStyle, setTemplates, undo, redo, canUndo, canRedo, handleProductEditChange,
     handleSignIn, handleSignUp, handleSignOut, handleSaveSettings, handleSaveTemplate, handleRequestPasswordReset, handleUpdatePassword,
@@ -177,7 +177,7 @@ const App: React.FC = () => {
             {!isMenuImportOpen && (
               <button
                 onClick={() => void handleCreateMenu()}
-                disabled={isMenuActionLoading || isWorkspaceLoading}
+                disabled={isMenuActionLoading}
                 className="md:hidden p-3 rounded-xl transition-all text-slate-400 hover:text-indigo-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Novo cardÃ¡pio"
               >
@@ -216,7 +216,7 @@ const App: React.FC = () => {
               menus={workspaceData.menus}
               activeMenuId={workspaceData.menu.id}
               isOpen={isProfileMenuOpen}
-              loading={isMenuActionLoading || isWorkspaceLoading}
+              loading={isMenuActionLoading}
               onToggle={() => setIsProfileMenuOpen((prev) => !prev)}
               onClose={() => setIsProfileMenuOpen(false)}
               onSelectMenu={(menuId) => void handleSelectMenu(menuId)}
@@ -296,7 +296,7 @@ const App: React.FC = () => {
           {!isMenuImportOpen && (
             <button
               onClick={() => void handleCreateMenu()}
-              disabled={isMenuActionLoading || isWorkspaceLoading}
+              disabled={isMenuActionLoading}
               className="p-3 rounded-xl transition-all text-slate-400 hover:text-indigo-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
               title="Novo cardápio"
             >

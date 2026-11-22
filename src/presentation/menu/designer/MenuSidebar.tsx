@@ -29,7 +29,6 @@ interface MenuSidebarProps {
     templates: MenuStyle[];
     products: Product[];
     currentUserId: string;
-    splitCategoryAcrossPages?: boolean;
     applyTemplate: (template: MenuStyle) => void;
     sortOption: SortOption;
     setSortOption: React.Dispatch<React.SetStateAction<SortOption>>;
@@ -58,7 +57,7 @@ interface MenuSidebarProps {
 
 export const MenuSidebar: React.FC<MenuSidebarProps> = ({
     isOpen, onClose, onPdfClick, handleResetDesign,
-    style, setStyle, templates, applyTemplate, onSaveTemplate, sortOption, setSortOption, products, currentUserId, splitCategoryAcrossPages,
+    style, setStyle, templates, applyTemplate, onSaveTemplate, sortOption, setSortOption, products, currentUserId,
     selection, setSelection, selectedFreeText, selectedAddedImage, selectedAddedImageIds,
     updateFreeTextStyle, updateGlobalElementStyle, setPreviewAction, onMovePhotoToBackground, handleAddedImageUpload, isAddingImage, onAddShape, shapePickerRequest, onChangeShape,
     resizeSelectedAddedImages, removeSelectedAddedImages, layerSelectedAddedImages
@@ -150,8 +149,7 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
 
           <section className="space-y-2">
             <TemplatePicker key={currentUserId} userId={currentUserId} current={style} templates={templates}
-              applyTemplate={applyTemplate} products={products} sortOption={sortOption}
-              splitCategoryAcrossPages={splitCategoryAcrossPages} />
+              applyTemplate={applyTemplate} products={products} sortOption={sortOption} />
             {onSaveTemplate && <button type="button" onClick={() => { setSavedTemplate(false); setSavingTemplate(true); }}
               className="rounded-md px-2 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50">Salvar como modelo</button>}
             {savedTemplate && <p role="status" className="text-xs font-medium text-emerald-700">Modelo salvo</p>}

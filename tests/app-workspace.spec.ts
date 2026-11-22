@@ -68,16 +68,17 @@ test('the app signs in, keeps the product editor through history, and stores an 
   const title = product.getByRole('heading');
   await expect(title).toHaveText('Suco natural');
   await page.getByRole('button', { name: 'Publicar', exact: true }).click();
-  const linkCheckbox = page.getByRole('checkbox', { name: /Gerar link virtual/ });
-  const linkSection = linkCheckbox.locator('../..');
+  const linkOptions = page.getByRole('radiogroup', { name: 'Gerar link virtual' });
+  const linkEnabled = linkOptions.getByRole('radio', { name: 'Sim', exact: true });
+  const linkSection = linkOptions.locator('..');
   await expect(linkSection.getByText('Link do cardápio')).toBeVisible();
   const linkActions = await linkSection.getByRole('button').allTextContents();
   await page.getByRole('button', { name: 'Fechar', exact: true }).click();
   await page.getByRole('heading', { name: 'Visual', exact: true }).locator('..')
     .getByRole('button', { name: 'PDF', exact: true }).click();
-  await expect(linkCheckbox).not.toBeChecked();
+  await expect(linkOptions.getByRole('radio', { name: 'Não' })).toBeChecked();
   await expect(linkSection.getByText('Link do cardápio')).toHaveCount(0);
-  await linkCheckbox.check();
+  await linkEnabled.check();
   await expect(linkSection.getByText('QR code', { exact: true })).toBeVisible();
   expect(await linkSection.getByRole('button').allTextContents()).toEqual(linkActions);
   await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
@@ -117,8 +118,8 @@ test('the virtual link uploads a separate PDF when printing and publishing toget
   await page.getByRole('button', { name: 'Publicar', exact: true }).last().click();
   await page.getByRole('combobox', { name: 'Margens', exact: true }).selectOption('10');
   await page.getByRole('spinbutton', { name: 'Sangria mm' }).fill('2');
-  await page.getByRole('button', { name: 'Marcas de corte' }).click();
-  await page.getByRole('button', { name: 'Cinza', exact: true }).click();
+  await page.getByRole('radiogroup', { name: 'Marcas de corte' }).getByRole('radio', { name: 'Sim' }).check();
+  await page.getByRole('radiogroup', { name: 'Cinza', exact: true }).getByRole('radio', { name: 'Sim' }).check();
 
   const upload = page.waitForRequest(request => request.method() === 'POST'
     && request.url().includes('/storage/v1/object/menu-assets/') && request.url().endsWith('.pdf'));
@@ -204,6 +205,35 @@ test('an existing session shows loading until the workspace has loaded', async (
   expect(await page.locator('html').getAttribute('data-workspace-error-flashed')).toBeNull();
 });
 
+test('a cached workspace keeps profile actions and menu switching available during refresh', async ({ page }) => {
+  const { userId } = await openWorkspace(page, ['Menu ativo', 'Reserva']);
+  await expect.poll(() => page.evaluate(id => Boolean(localStorage.getItem(`automenu_workspace_view_v1_${id}`)), userId)).toBe(true);
+  let finishRefresh!: () => void;
+  const refreshGate = new Promise<void>(resolve => { finishRefresh = resolve; });
+  await page.route('**/rest/v1/profiles?*', async route => {
+    await refreshGate;
+    await route.fallback();
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  const profile = page.getByRole('button', { name: 'Meu perfil' });
+  await profile.click();
+  await expect(page.getByRole('button', { name: 'Seleção múltipla de cardápios' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Sair', exact: true })).toBeEnabled();
+  await expect(page.getByTitle('Renomear', { exact: true }).first()).toBeEnabled();
+  await page.getByRole('button', { name: 'Configurações', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Configurações' }).getByRole('button', { name: 'Fechar', exact: true }).click();
+  await profile.click();
+  await page.getByRole('button', { name: 'Reserva', exact: true }).click();
+  const activeMenuName = page.locator('nav span.truncate').first();
+  await expect(activeMenuName).toHaveText('Reserva');
+  const staleResponse = page.waitForResponse(response => response.url().includes('/rest/v1/menu_versions?'));
+  finishRefresh();
+  await staleResponse;
+  await profile.click();
+  await expect(page.getByRole('button', { name: 'Menu ativo', exact: true })).toBeEnabled();
+  await expect(activeMenuName).toHaveText('Reserva');
+});
+
 test('menu selection deletes only the checked menus in a single request and moves off a deleted active menu', async ({ page }) => {
   const { deletionBatches } = await openWorkspace(page, ['Menu ativo', 'Menu intermediário', 'Menu restante']);
   const profile = page.getByRole('button', { name: 'Meu perfil' });
@@ -279,13 +309,31 @@ test('menu rules commit numeric values and are separate from account settings', 
   await minimum.press('Enter');
   await expect(minimum).toHaveValue('23');
   await expect(rules.getByText('Limites máximos', { exact: true })).toBeVisible();
-  const split = rules.getByRole('checkbox', { name: 'Continuar categoria na página seguinte' });
+  const allow = (name: string) => rules.getByRole('radiogroup', { name }).getByRole('radio', { name: 'Sim', exact: true });
+  const split = allow('Continuar categoria na página seguinte');
+  const wordBreak = allow('Permitir quebra de linha na mesma palavra');
+  const increase = rules.getByRole('button', { name: 'Aumentar Mínimo geral' });
+  const decrease = rules.getByRole('button', { name: 'Diminuir Mínimo geral' });
+  await increase.click();
+  await expect(minimum).toHaveValue('24');
+  const stepBox = (await decrease.boundingBox())!;
+  await page.mouse.move(stepBox.x + stepBox.width / 2, stepBox.y + stepBox.height / 2);
+  await page.mouse.down();
+  try {
+    await expect.poll(async () => Number(await minimum.inputValue())).toBeLessThan(23);
+  } finally {
+    await page.mouse.up();
+  }
+  await minimum.fill('23');
+  await minimum.press('Enter');
   await split.check();
-  await rules.getByRole('checkbox', { name: 'Permitir mudar produto de categoria ao arrastar' }).check();
+  await allow('Permitir mudar produto de categoria ao arrastar').check();
+  await wordBreak.check();
   await rules.getByRole('button', { name: 'Aplicar', exact: true }).click();
   await expect(gear).toBeFocused();
   await gear.click();
   await expect(split).toBeChecked();
+  await expect(wordBreak).toBeChecked();
   await expect(minimum).toHaveValue('23');
   await minimum.fill('8');
   await minimum.press('Enter');

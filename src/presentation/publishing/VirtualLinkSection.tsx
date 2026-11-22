@@ -1,5 +1,6 @@
 import React from 'react';
 import { Copy, Download, ExternalLink, Globe2, Loader2, QrCode, Share2 } from 'lucide-react';
+import { BooleanRadio } from '../common/BooleanRadio';
 
 export type LinkAction = 'copy-link' | 'share-link' | 'download-qr' | 'share-qr' | 'open-link';
 
@@ -21,14 +22,8 @@ export const Choice: React.FC<{
   description: string;
   onChange: (checked: boolean) => void;
 }> = ({ checked, icon, title, description, onChange }) => (
-  <label className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer transition-colors ${checked ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
-    <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="mt-1 h-4 w-4 accent-indigo-600" />
-    <span className={checked ? 'text-indigo-600' : 'text-slate-500'}>{icon}</span>
-    <span className="min-w-0">
-      <span className="block text-sm font-bold text-slate-800">{title}</span>
-      <span className="block text-xs text-slate-500 mt-0.5">{description}</span>
-    </span>
-  </label>
+  <BooleanRadio label={title} value={checked} onChange={onChange} description={description} icon={icon}
+    className={checked ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 bg-white'} />
 );
 
 export const ActionButton: React.FC<{

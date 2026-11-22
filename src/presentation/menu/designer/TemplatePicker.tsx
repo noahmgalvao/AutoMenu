@@ -2,11 +2,11 @@ import { CATALOG_VERSION } from '../../../domain/templates/templateCatalog';
 import { INITIAL_STYLE, NO_TEMPLATE_ID } from '../../../domain/menu/defaults';
 import React, { memo, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, ArrowUp, Check, ChevronDown, Grid2X2, Heart, Search, X } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, Grid2X2, Heart, Search, X } from 'lucide-react';
 import type { MenuStyle, Product, SortOption } from '../../../domain/menu/model';
 import { useTemplateFavorites } from './useTemplateFavorites';
 import { getAppliedTemplateId } from '../../../application/templates/templateApplication';
-import { filterTemplates, stepTemplate, swipeDirection, TEMPLATE_TABS, type TemplateTab } from '../../../domain/templates/templateBrowse';
+import { filterTemplates, swipeDirection, TEMPLATE_TABS, type TemplateTab } from '../../../domain/templates/templateBrowse';
 import { TemplatePreviewSurface } from './TemplatePreviewSurface';
 
 interface Props {
@@ -15,7 +15,6 @@ interface Props {
   products: Product[];
   sortOption: SortOption;
   userId: string;
-  splitCategoryAcrossPages?: boolean;
   applyTemplate: (template: MenuStyle) => void;
 }
 
@@ -130,7 +129,7 @@ function TemplateOption({ template, active, favorites, choose, gallery }: {
   </div>;
 }
 
-function Discover({ current, templates, products, sortOption, splitCategoryAcrossPages, applyTemplate, favorites, onClose,
+function Discover({ current, templates, products, sortOption, applyTemplate, favorites, onClose,
 }: Omit<Props, 'userId'> & {
   favorites: Favorites; onClose: () => void;
 }) {
@@ -144,8 +143,6 @@ function Discover({ current, templates, products, sortOption, splitCategoryAcros
   const gesture = useRef<{ x: number; y: number; pointerId: number } | null>(null);
   const wheel = useRef({ at: -Infinity, delta: 0, handled: false });
   const [drag, setDrag] = useState(0);
-  const [direction, setDirection] = useState(0);
-  const [hint, setHint] = useState(results.length > 1);
   const lastTap = useRef<{ at: number; x: number; y: number } | null>(null);
   const [previewPage, setPreviewPage] = useState(0);
   const [heart, setHeart] = useState(0);
@@ -155,7 +152,8 @@ function Discover({ current, templates, products, sortOption, splitCategoryAcros
   const tapTarget = useRef<{ button: HTMLButtonElement; x: number; y: number; pointerId: number } | null>(null);
   const handledTouchAt = useRef(-Infinity);
   const titleId = useId();
-  const focused = results.find((template) => template.id === focusId) || results[0];
+  const focused = templates.find((template) => template.id === focusId)
+    || templates.find((template) => template.scope === 'system' || template.id === NO_TEMPLATE_ID);
   useEffect(() => {
     lastTap.current = null;
     setPreviewPage(0);
@@ -184,11 +182,6 @@ function Discover({ current, templates, products, sortOption, splitCategoryAcros
     };
   }, [onClose]);
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => setHint(false), 2900);
-    return () => window.clearTimeout(timer);
-  }, []);
-
   useEffect(() => { dialog.current?.focus(); }, [gallery]);
 
   useEffect(() => {
@@ -196,18 +189,7 @@ function Discover({ current, templates, products, sortOption, splitCategoryAcros
     items.find((item) => item.dataset.templateOption === focused?.id)?.scrollIntoView({ block: 'nearest' });
   }, [focused?.id, gallery]);
 
-  const step = (delta: number) => {
-    setHint(false);
-    const id = stepTemplate(results, focused?.id, delta);
-    if (id && id !== focused?.id) {
-      setDirection(delta);
-      setFocusId(id);
-    }
-  };
-  const openGallery = () => {
-    setHint(false);
-    setGallery(true);
-  };
+  const turnPage = (delta: number) => setPreviewPage(index => Math.max(0, index + delta));
   const apply = () => {
     if (!focused) return;
     applyTemplate(focused);
@@ -253,9 +235,9 @@ function Discover({ current, templates, products, sortOption, splitCategoryAcros
           event.preventDefault();
           apply();
         }
-        if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
           event.preventDefault();
-          step(event.key === 'ArrowDown' ? 1 : -1);
+          turnPage(event.key === 'ArrowRight' ? 1 : -1);
         }
       }}>
       <h2 id={titleId} className="sr-only">Descobrir modelos</h2>
@@ -274,7 +256,7 @@ function Discover({ current, templates, products, sortOption, splitCategoryAcros
         </header>
         <div ref={list} className="template-gallery-list">
           {results.map(template => <TemplateOption key={template.id} template={template} active={focused?.id === template.id}
-            favorites={favorites} gallery choose={() => { setDirection(0); setFocusId(template.id); setGallery(false); }} />)}
+            favorites={favorites} gallery choose={() => { setFocusId(template.id); setPreviewPage(0); setGallery(false); }} />)}
           {!results.length && <p className="template-gallery-empty">Nenhum modelo encontrado.</p>}
         </div>
       </section> : <>
@@ -286,15 +268,15 @@ function Discover({ current, templates, products, sortOption, splitCategoryAcros
             }
           }}
           onWheel={event => {
-            if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+            if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
             const now = performance.now();
             if (now - wheel.current.at > 220) wheel.current = { at: now, delta: 0, handled: false };
             wheel.current.at = now;
             if (wheel.current.handled) return;
-            wheel.current.delta += event.deltaY * (event.deltaMode ? 30 : 1);
+            wheel.current.delta += event.deltaX * (event.deltaMode ? 30 : 1);
             if (Math.abs(wheel.current.delta) >= 32) {
               wheel.current.handled = true;
-              step(Math.sign(wheel.current.delta));
+              turnPage(Math.sign(wheel.current.delta));
             }
           }}
           onPointerDown={event => {
@@ -306,10 +288,9 @@ function Discover({ current, templates, products, sortOption, splitCategoryAcros
           onPointerMove={event => {
             const start = gesture.current;
             if (!start || event.pointerId !== start.pointerId) return;
-            const dy = event.clientY - start.y;
-            if (Math.abs(dy) < 8 || Math.abs(dy) <= Math.abs(event.clientX - start.x)) return;
-            setHint(false);
-            setDrag(Math.max(-96, Math.min(96, dy * .38)));
+            const dx = event.clientX - start.x;
+            if (Math.abs(dx) < 8 || Math.abs(dx) <= Math.abs(event.clientY - start.y)) return;
+            setDrag(Math.max(-96, Math.min(96, dx * .38)));
           }}
           onPointerCancel={() => { gesture.current = null; setDrag(0); }}
           onPointerUp={event => {
@@ -320,10 +301,9 @@ function Discover({ current, templates, products, sortOption, splitCategoryAcros
             const dx = event.clientX - start.x;
             const dy = event.clientY - start.y;
             const next = swipeDirection(dx, dy);
-            if (next) { lastTap.current = null; step(next); return; }
-            if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+            if (next) {
               lastTap.current = null;
-              setPreviewPage(index => Math.max(0, index + (dx < 0 ? 1 : -1)));
+              turnPage(next);
               return;
             }
             if (Math.hypot(dx, dy) > 12) {
@@ -337,21 +317,15 @@ function Discover({ current, templates, products, sortOption, splitCategoryAcros
               lastTap.current = null;
             } else lastTap.current = tap;
           }}>
-          <div className="template-discover-drag" data-dragging={Boolean(drag)} style={{ transform: `translateY(${drag}px)` }}>
-            <div key={focused.id} className="template-discover-slide" style={{ '--discover-enter': `${direction * 8}vh` } as React.CSSProperties}>
-              <TemplatePreviewSurface current={current} template={focused} products={products}
-                sortOption={sortOption} splitCategoryAcrossPages={splitCategoryAcrossPages} pageIndex={previewPage}
-                onPageChange={setPreviewPage} heart={heart} onHeartEnd={() => setHeart(0)} />
-            </div>
+          <div className="template-discover-drag" data-dragging={Boolean(drag)} style={{ transform: `translateX(${drag}px)` }}>
+            <TemplatePreviewSurface key={focused.id} current={current} template={focused} products={products}
+              sortOption={sortOption} pageIndex={previewPage}
+              onPageChange={setPreviewPage} heart={heart} onHeartEnd={() => setHeart(0)} />
           </div>
         </div> : <p className="template-discover-empty">Nenhum modelo encontrado.</p>}
-        {hint && focused && <div className="template-discover-hint" role="status">
-          <ArrowUp size={26} aria-hidden="true" />
-          <span>Arraste para cima para ver o próximo</span>
-        </div>}
         <div className="template-discover-actions">
           {focused && <FavoriteButton discovery template={focused} favorites={favorites} />}
-          <button type="button" className={`template-discover-all ${focusStyle}`} onClick={openGallery}>
+          <button type="button" className={`template-discover-all ${focusStyle}`} onClick={() => setGallery(true)}>
             <Grid2X2 size={21} aria-hidden="true" />
             Ver todos
           </button>

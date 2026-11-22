@@ -42,7 +42,6 @@ interface TemplatePreviewProps {
   template: MenuStyle;
   products: Product[];
   sortOption: SortOption;
-  splitCategoryAcrossPages?: boolean;
   pageIndex: number;
   onPageChange: (index: number) => void;
   heart: number;
@@ -51,7 +50,7 @@ interface TemplatePreviewProps {
 }
 
 export const TemplatePreviewSurface = memo(function TemplatePreviewSurface({
-  current, template, products, sortOption, splitCategoryAcrossPages, pageIndex, onPageChange, heart, onHeartEnd, thumbnail,
+  current, template, products, sortOption, pageIndex, onPageChange, heart, onHeartEnd, thumbnail,
 }: TemplatePreviewProps) {
   const sample = products.length === 0;
   const content = sample ? sampleProducts : products;
@@ -65,10 +64,10 @@ export const TemplatePreviewSurface = memo(function TemplatePreviewSurface({
     const placements = { ...style.categoryPositions, ...style.categoryPlacements };
     const calculated = calculatePagination(
       content, style, groupedProductsBase, sortedCategoriesBase,
-      Object.keys(placements).length > 0 ? placements : null, { splitCategoryAcrossPages, measuredHeights },
+      Object.keys(placements).length > 0 ? placements : null, { splitCategoryAcrossPages: style.splitCategoryAcrossPages, measuredHeights },
     );
     return finalizeMenuPages(calculated, style, content);
-  }, [content, style, groupedProductsBase, sortedCategoriesBase, splitCategoryAcrossPages, measuredHeights]);
+  }, [content, style, groupedProductsBase, sortedCategoriesBase, measuredHeights]);
   const { widthPx, heightPx } = resolveMenuPageDimensions(style);
   const stage = useRef<HTMLDivElement>(null);
   useResponsivePrices(stage, style);

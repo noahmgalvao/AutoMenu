@@ -14,6 +14,7 @@ interface FontSizeInputProps {
     onEditEnd?: () => void;
     commitOnBlur?: boolean;
     showStepButtons?: boolean;
+    stepSubject?: string;
 }
 
 const toInputValue = (value?: number): string => Number.isFinite(value) ? String(value) : '';
@@ -29,6 +30,7 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
     onEditEnd,
     commitOnBlur = false,
     showStepButtons = false,
+    stepSubject = 'tamanho da fonte',
 }) => {
     const inputRef = useRef<HTMLInputElement>(null);
     const repeatTimer = useRef<number | undefined>(undefined);
@@ -86,7 +88,7 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
     useEffect(() => () => window.clearTimeout(repeatTimer.current), []);
 
     const renderStep = (direction: 1 | -1, Icon: typeof ChevronUp, title: string, side = false) => (
-        <button type="button" aria-label={label ? `${title} ${label}` : title}
+        <button type="button" aria-label={[title, side && stepSubject, label].filter(Boolean).join(' ')}
             className={`grid touch-none place-items-center text-slate-600 hover:bg-indigo-100 focus-visible:bg-indigo-100 ${side
                 ? 'size-6 rounded border border-slate-200 bg-white' : 'h-3.5 w-4 rounded-sm'}`}
             onPointerDown={(event) => {
@@ -111,7 +113,7 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
 
     return (
         <span className="inline-flex shrink-0 items-center gap-0.5">
-        {showStepButtons && renderStep(-1, Minus, 'Diminuir tamanho da fonte', true)}
+        {showStepButtons && renderStep(-1, Minus, 'Diminuir', true)}
         <span className="relative inline-flex">
         <input
             ref={inputRef}
@@ -178,7 +180,7 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
             </span>
         )}
         </span>
-        {showStepButtons && renderStep(1, Plus, 'Aumentar tamanho da fonte', true)}
+        {showStepButtons && renderStep(1, Plus, 'Aumentar', true)}
         </span>
     );
 };

@@ -2235,7 +2235,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 templates={templates}
                 products={displayProducts}
                 currentUserId={currentUserId}
-                splitCategoryAcrossPages={splitCategoryAcrossPages}
                 applyTemplate={applyTemplate}
                 onSaveTemplate={onSaveTemplate}
                 sortOption={sortOption}

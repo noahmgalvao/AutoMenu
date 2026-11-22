@@ -5,6 +5,7 @@ import { getPaperDimensionsMm, getPrintFrameSizeMm, getPrintMarginMm, type PdfPr
 import { getErrorMessage } from '../../../application/errorMessages';
 import type { MenuPageSetup } from '../../../domain/menu/pageModel';
 import { VirtualLinkSection, type VirtualLinkControls } from '../../publishing/VirtualLinkSection';
+import { BooleanRadio } from '../../common/BooleanRadio';
 
 export type PrintCanvasOptions = PdfPrintOptions;
 
@@ -35,19 +36,6 @@ const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, 
     <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">{label}</span>
     {children}
   </label>
-);
-
-const Toggle: React.FC<{ checked: boolean; label: string; onChange: (checked: boolean) => void }> = ({ checked, label, onChange }) => (
-  <button
-    type="button"
-    onClick={() => onChange(!checked)}
-    className={`h-9 rounded-lg border px-3 text-xs font-semibold flex items-center justify-between gap-3 ${checked ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500'}`}
-  >
-    <span>{label}</span>
-    <span className={`h-4 w-7 rounded-full p-0.5 flex ${checked ? 'justify-end bg-indigo-500' : 'justify-start bg-slate-300'}`}>
-      <span className="h-3 w-3 rounded-full bg-white" />
-    </span>
-  </button>
 );
 
 const PreviewPaper: React.FC<{ options: PrintCanvasOptions; page?: PrintPreviewPage }> = ({ options, page }) => {
@@ -430,8 +418,10 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
               <ImageIcon size={14} /> Saida
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              <Toggle checked={options.cropMarks} label="Marcas de corte" onChange={(checked) => update('cropMarks', checked)} />
-              <Toggle checked={options.grayscale} label="Cinza" onChange={(checked) => update('grayscale', checked)} />
+              <BooleanRadio value={options.cropMarks} label="Marcas de corte" className="border-slate-200 bg-white"
+                onChange={checked => update('cropMarks', checked)} />
+              <BooleanRadio value={options.grayscale} label="Cinza" className="border-slate-200 bg-white"
+                onChange={checked => update('grayscale', checked)} />
             </div>
           </section>
 

@@ -22,12 +22,5 @@ export function filterTemplates(templates: MenuStyle[], tab: TemplateTab, query:
   });
 }
 
-export function stepTemplate(templates: MenuStyle[], focused: string | undefined, delta: number) {
-  const count = templates.length;
-  if (!count) return undefined;
-  const index = templates.findIndex((template) => template.id === focused);
-  return templates[index < 0 ? 0 : ((index + delta) % count + count) % count].id;
-}
-
 export const swipeDirection = (dx: number, dy: number) =>
-  Math.abs(dy) > 45 && Math.abs(dy) > Math.abs(dx) * 1.2 ? (dy < 0 ? 1 : -1) : 0;
+  Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.2 ? (dx < 0 ? 1 : -1) : 0;

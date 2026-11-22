@@ -27,27 +27,36 @@ test.beforeEach(async ({page}) => {
 });
 
 test('desktop discovery leaves the editor untouched until Apply and records one undo', async ({ page }) => {
+  await page.goto(`${url}?dense-list`);
   await openDiscovery(page);
   const dialog = page.getByRole('dialog');
   const canvas = dialog.locator('[data-menu-preview-page]');
+  const preview = dialog.getByRole('img', { name: /Prévia de Editorial Essencial/ });
   await expect(canvas).toContainText('Casa São Bento');
-  await expect(dialog.getByText('Arraste para cima para ver o próximo')).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Próximo modelo' })).toHaveCount(0);
   await expect(dialog.getByRole('heading', { name: 'Editorial Essencial' })).toHaveCount(0);
   await expect(canvas.locator('[contenteditable=true],button')).toHaveCount(0);
-  await page.keyboard.press('ArrowUp');
-  await expect(dialog.getByRole('img', { name: /Prévia de Sem modelo/ })).toBeVisible();
+  const firstPaperSize = (await canvas.boundingBox())!;
   await page.keyboard.press('ArrowDown');
-  await expect(dialog.getByRole('img', { name: /Prévia de Editorial Essencial/ })).toBeVisible();
-  await page.keyboard.press('ArrowDown');
-  await expect(dialog.getByRole('img', { name: /Prévia de Grade Suíça/ })).toBeVisible();
+  const box = (await preview.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, 120);
+  await expect(preview).toHaveAccessibleName(/página 1 de [2-9]/);
+  await page.keyboard.press('ArrowRight');
+  await expect(preview).toHaveAccessibleName(/página 2 de/);
+  const secondPaperSize = (await canvas.boundingBox())!;
+  expect(secondPaperSize.width).toBeCloseTo(firstPaperSize.width, 1);
+  expect(secondPaperSize.height).toBeCloseTo(firstPaperSize.height, 1);
+  await page.keyboard.press('ArrowLeft');
+  await expect(preview).toHaveAccessibleName(/página 1 de/);
+  await page.mouse.wheel(120, 0);
+  await expect(preview).toHaveAccessibleName(/página 2 de/);
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
   await expect(page.getByTestId('editor-state')).toHaveAttribute('data-edits','0');
 
   await openDiscovery(page);
-  await page.mouse.move(300, 320);
-  await page.mouse.wheel(0, 120);
+  await dialog.getByRole('button', { name: 'Ver todos' }).click();
+  await dialog.getByRole('button', { name: 'Grade Suíça', exact: true }).press('Enter');
   await expect(dialog.getByRole('img', { name: /Prévia de Grade Suíça/ })).toBeVisible();
   await page.keyboard.press('Enter');
   await expect(dialog).toHaveCount(0);
@@ -100,6 +109,7 @@ for (const viewport of [{width:360,height:720},{width:430,height:932}]) {
   test.describe(`mobile ${viewport.width}`, () => {
     test.use({ viewport, hasTouch: true, isMobile: true });
     test('fullscreen preview swipes, opens the gallery and cancels with browser back', async ({ page, context }) => {
+      await page.goto(`${url}?dense-list`);
       await openDiscovery(page);
       const dialog = page.getByRole('dialog');
       const surface = dialog.getByRole('img',{name:/Prévia de Editorial Essencial/});
@@ -108,22 +118,24 @@ for (const viewport of [{width:360,height:720},{width:430,height:932}]) {
       const cdp = await context.newCDPSession(page);
       const x = Math.round(box!.x + box!.width / 2);
       const y = Math.round(box!.y + box!.height / 2);
-      const swipe = async (delta: number) => {
+      const swipe = async (dx: number, dy: number) => {
         await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
-        await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:y+delta}]});
+        await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x+dx,y:y+dy}]});
         await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
       };
-      await swipe(90);
-      await expect(dialog.getByRole('img', { name: /Prévia de Sem modelo/ })).toBeVisible();
-      await swipe(-90);
-      await expect(surface).toBeVisible();
-      await swipe(-90);
-      await expect(dialog.getByRole('img', { name: /Prévia de Grade Suíça/ })).toBeVisible();
+      await swipe(0, -90);
+      await expect(surface).toHaveAccessibleName(/página 1 de [2-9]/);
+      await swipe(-90, 0);
+      await expect(surface).toHaveAccessibleName(/página 2 de/);
+      await swipe(90, 0);
+      await expect(surface).toHaveAccessibleName(/página 1 de/);
+      await swipe(-90, 0);
+      await expect(surface).toHaveAccessibleName(/página 2 de/);
       await dialog.getByRole('button',{name:'Ver todos'}).tap();
       await expect(dialog.getByRole('button', { name: 'Voltar à prévia' })).toBeVisible();
       await expect(dialog.locator('[data-template-option]')).toHaveCount(51);
       await dialog.getByRole('button', { name: 'Voltar à prévia' }).tap();
-      await expect(dialog.getByRole('img', { name: /Prévia de Grade Suíça/ })).toBeVisible();
+      await expect(surface).toHaveAccessibleName(/página 2 de/);
       await dialog.getByRole('button', { name: 'Ver todos' }).tap();
       const search = dialog.getByRole('textbox', { name: 'Pesquisar modelos' });
       await expect(search).toBeVisible();
