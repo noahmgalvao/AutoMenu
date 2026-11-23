@@ -723,7 +723,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 )}
                 {!handlers.readOnly && primary && product.isFreeText && isSelected && !isBeingDragged && !handlers.editingId
                     && !handlers.multiSelectMode && handlers.rotateCanvasText && (
-                    <CanvasRotationHandle rotation={product.rotation ?? 0}
+                    <CanvasRotationHandle rotation={product.rotation ?? 0} snapRightAngles guideFollowsRotation
                         onRotate={(rotation, commit) => handlers.rotateCanvasText(product.id, rotation, commit)} />
                 )}
                 {product.isFreeText && isSelected && !handlers.isResizingCategoryColumns && (

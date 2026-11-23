@@ -3,7 +3,7 @@ import { triggerLimitFeedback } from '../canvas/textFit';
 import { canMoveImageLayer } from '../../../domain/menu/imageLayers';
 import { MINI_FOOD_INK } from '../../../domain/menu/miniFoods';
 import { HoldStepButton } from '../../common/HoldStepButton';
-import { BooleanRadio } from '../../common/BooleanRadio';
+import { BooleanSwitch } from '../../common/BooleanSwitch';
 import { ColorPicker } from './ColorPicker';
 import { DecorationControls } from './Decorations';
 import { ShapeChoices, ShapePicker, ShapeSettings } from './ShapePicker';
@@ -686,7 +686,7 @@ export const GeneralRulesSection: React.FC<GeneralRulesSectionProps> = ({ style,
         ['allowSameWordBreak', 'Permitir quebra de linha na mesma palavra', false,
           'Ex.: permitir “HAMBU” / “RGUER” em duas linhas. Desativado, o texto reduz até o mínimo.'],
       ] as const).map(([key, label, fallback, description]) => (
-        <BooleanRadio key={key} label={label} value={style[key] ?? fallback} description={description}
+        <BooleanSwitch key={key} label={label} value={style[key] ?? fallback} description={description}
           className="border-slate-200 bg-slate-50"
           onChange={value => setStyle(previous => ({ ...previous, [key]: value, name: 'Custom' }))} />
       ))}

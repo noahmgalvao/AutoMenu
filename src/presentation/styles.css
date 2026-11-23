@@ -66,6 +66,20 @@ body {
   z-index: 1;
 }
 
+.automenu-page-action-rail {
+  --page-action-size: calc(40px * var(--canvas-handle-inverse, 1));
+  right: calc(var(--page-action-offset, 0px) + 8px * var(--canvas-handle-inverse, 1));
+  width: var(--page-action-size);
+  grid-template-rows: repeat(4, var(--page-action-size));
+  gap: calc(4px * var(--canvas-handle-inverse, 1));
+}
+
+@media (pointer: coarse) {
+  .automenu-page-action-rail {
+    --page-action-size: calc(44px * var(--canvas-handle-inverse, 1));
+  }
+}
+
 [data-canvas-action-group="quick"] {
   gap: 0;
   justify-content: flex-end;

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Copy, Download, ExternalLink, Globe2, Loader2, QrCode, Share2 } from 'lucide-react';
-import { BooleanRadio } from '../common/BooleanRadio';
+import { BooleanSwitch } from '../common/BooleanSwitch';
 
 export type LinkAction = 'copy-link' | 'share-link' | 'download-qr' | 'share-qr' | 'open-link';
 
@@ -22,7 +22,7 @@ export const Choice: React.FC<{
   description: string;
   onChange: (checked: boolean) => void;
 }> = ({ checked, icon, title, description, onChange }) => (
-  <BooleanRadio label={title} value={checked} onChange={onChange} description={description} icon={icon}
+  <BooleanSwitch label={title} value={checked} onChange={onChange} description={description} icon={icon}
     className={checked ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 bg-white'} />
 );
 

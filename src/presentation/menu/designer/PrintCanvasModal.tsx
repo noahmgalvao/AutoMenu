@@ -5,7 +5,7 @@ import { getPaperDimensionsMm, getPrintFrameSizeMm, getPrintMarginMm, type PdfPr
 import { getErrorMessage } from '../../../application/errorMessages';
 import type { MenuPageSetup } from '../../../domain/menu/pageModel';
 import { VirtualLinkSection, type VirtualLinkControls } from '../../publishing/VirtualLinkSection';
-import { BooleanRadio } from '../../common/BooleanRadio';
+import { BooleanSwitch } from '../../common/BooleanSwitch';
 
 export type PrintCanvasOptions = PdfPrintOptions;
 
@@ -418,9 +418,9 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
               <ImageIcon size={14} /> Saida
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              <BooleanRadio value={options.cropMarks} label="Marcas de corte" className="border-slate-200 bg-white"
+              <BooleanSwitch value={options.cropMarks} label="Marcas de corte" className="border-slate-200 bg-white"
                 onChange={checked => update('cropMarks', checked)} />
-              <BooleanRadio value={options.grayscale} label="Cinza" className="border-slate-200 bg-white"
+              <BooleanSwitch value={options.grayscale} label="Cinza" className="border-slate-200 bg-white"
                 onChange={checked => update('grayscale', checked)} />
             </div>
           </section>

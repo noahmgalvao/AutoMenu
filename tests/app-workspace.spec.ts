@@ -68,17 +68,17 @@ test('the app signs in, keeps the product editor through history, and stores an 
   const title = product.getByRole('heading');
   await expect(title).toHaveText('Suco natural');
   await page.getByRole('button', { name: 'Publicar', exact: true }).click();
-  const linkOptions = page.getByRole('radiogroup', { name: 'Gerar link virtual' });
-  const linkEnabled = linkOptions.getByRole('radio', { name: 'Sim', exact: true });
-  const linkSection = linkOptions.locator('..');
+  const linkSwitch = page.getByRole('switch', { name: 'Gerar link virtual' });
+  const linkSection = linkSwitch.locator('..');
   await expect(linkSection.getByText('Link do cardápio')).toBeVisible();
   const linkActions = await linkSection.getByRole('button').allTextContents();
   await page.getByRole('button', { name: 'Fechar', exact: true }).click();
   await page.getByRole('heading', { name: 'Visual', exact: true }).locator('..')
     .getByRole('button', { name: 'PDF', exact: true }).click();
-  await expect(linkOptions.getByRole('radio', { name: 'Não' })).toBeChecked();
+  await expect(linkSwitch).not.toBeChecked();
   await expect(linkSection.getByText('Link do cardápio')).toHaveCount(0);
-  await linkEnabled.check();
+  await linkSwitch.click();
+  await expect(linkSwitch).toBeChecked();
   await expect(linkSection.getByText('QR code', { exact: true })).toBeVisible();
   expect(await linkSection.getByRole('button').allTextContents()).toEqual(linkActions);
   await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
@@ -118,8 +118,8 @@ test('the virtual link uploads a separate PDF when printing and publishing toget
   await page.getByRole('button', { name: 'Publicar', exact: true }).last().click();
   await page.getByRole('combobox', { name: 'Margens', exact: true }).selectOption('10');
   await page.getByRole('spinbutton', { name: 'Sangria mm' }).fill('2');
-  await page.getByRole('radiogroup', { name: 'Marcas de corte' }).getByRole('radio', { name: 'Sim' }).check();
-  await page.getByRole('radiogroup', { name: 'Cinza', exact: true }).getByRole('radio', { name: 'Sim' }).check();
+  await page.getByRole('switch', { name: 'Marcas de corte' }).click();
+  await page.getByRole('switch', { name: 'Cinza', exact: true }).click();
 
   const upload = page.waitForRequest(request => request.method() === 'POST'
     && request.url().includes('/storage/v1/object/menu-assets/') && request.url().endsWith('.pdf'));
@@ -309,7 +309,7 @@ test('menu rules commit numeric values and are separate from account settings', 
   await minimum.press('Enter');
   await expect(minimum).toHaveValue('23');
   await expect(rules.getByText('Limites máximos', { exact: true })).toBeVisible();
-  const allow = (name: string) => rules.getByRole('radiogroup', { name }).getByRole('radio', { name: 'Sim', exact: true });
+  const allow = (name: string) => rules.getByRole('switch', { name });
   const split = allow('Continuar categoria na página seguinte');
   const wordBreak = allow('Permitir quebra de linha na mesma palavra');
   const increase = rules.getByRole('button', { name: 'Aumentar Mínimo geral' });
@@ -326,9 +326,9 @@ test('menu rules commit numeric values and are separate from account settings', 
   }
   await minimum.fill('23');
   await minimum.press('Enter');
-  await split.check();
-  await allow('Permitir mudar produto de categoria ao arrastar').check();
-  await wordBreak.check();
+  await split.click();
+  await allow('Permitir mudar produto de categoria ao arrastar').click();
+  await wordBreak.press('Space');
   await rules.getByRole('button', { name: 'Aplicar', exact: true }).click();
   await expect(gear).toBeFocused();
   await gear.click();

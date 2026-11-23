@@ -131,14 +131,14 @@ test('shape rotation snaps to all four right angles, with a guide that releases 
     for (const degrees of [0, 90, 180, 270]) {
         await move(degrees + 4);
         await expect(guide).toHaveAttribute('data-canvas-rotation-guide', String(degrees));
-        await expect(guide).toHaveText(`${degrees}°`);
+        await expect(guide).toBeEmpty();
         await move(degrees + 8);
         await expect(guide).toHaveAttribute('data-canvas-rotation-guide', String(degrees));
         await move(degrees + 16);
         await expect(guide).toHaveCount(0);
     }
     await move(274);
-    await expect(guide).toHaveText('270°');
+    await expect(guide).toHaveAttribute('data-canvas-rotation-guide', '270');
     const snappedSource = await shape.locator('img').getAttribute('src');
     await page.mouse.up();
     await expect(guide).toHaveCount(0);
@@ -168,7 +168,8 @@ test.describe('shape rotation with touch', () => {
         await client.send('Input.dispatchTouchEvent', {
             type: 'touchMove', touchPoints: [{ x: cx + 55 * Math.cos(angle), y: cy + 55 * Math.sin(angle) }],
         });
-        await expect(guide).toHaveText('90°');
+        await expect(guide).toHaveAttribute('data-canvas-rotation-guide', '90');
+        await expect(guide).toBeEmpty();
         await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
         await expect(guide).toHaveCount(0);
     });
@@ -197,13 +198,17 @@ test('free text resizes from its four corners and rotates with the lower handle'
     await expect.poll(size).toBeGreaterThan(originalFont);
 
     const rotation = text.getByRole('button', { name: 'Rotacionar objeto' });
+    const guide = text.locator('[data-canvas-rotation-guide]');
     const before = (await text.boundingBox())!;
     const grip = (await rotation.boundingBox())!;
     await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
     await page.mouse.down();
-    await page.mouse.move(before.x + before.width / 2 + 45, before.y + before.height / 2, { steps: 8 });
+    await page.mouse.move(before.x + before.width / 2 + 45, before.y + before.height / 2 + 3, { steps: 8 });
     await expect(text).toHaveCSS('rotate', '270deg');
+    await expect(guide).toHaveAttribute('data-canvas-rotation-guide', '270');
+    await expect(guide).toBeEmpty();
     await page.mouse.up();
+    await expect(guide).toHaveCount(0);
     await expect(text).toHaveCSS('rotate', '270deg');
     const after = (await text.boundingBox())!;
     expect(after.x + after.width / 2).toBeCloseTo(before.x + before.width / 2, 0);
@@ -301,6 +306,16 @@ test('page actions sit above the next page and operate at the edges of a selecti
     await expect(paper.nth(1).locator('[data-added-image-id]')).toHaveCount(4);
     await after(1).click();
     await expect(paper).toHaveCount(3);
+    await clickPaper(1);
+    const controls = frame(1).locator('[data-page-action-rail] > button');
+    await expect(controls).toHaveCount(4);
+    const positions = () => controls.evaluateAll(buttons => buttons.map(button => {
+        const { x, y } = button.getBoundingClientRect();
+        return { x, y };
+    }));
+    const aligned = await positions();
+    expect(aligned.every(({ x }) => x === aligned[0].x)).toBe(true);
+    expect(aligned.every(({ y }, index) => index === 0 || y > aligned[index - 1].y)).toBe(true);
     await clickPaper(0);
     await clickPaper(1, ['Control']);
     await expect(before(0)).toBeVisible();

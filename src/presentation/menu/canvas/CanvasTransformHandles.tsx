@@ -129,13 +129,14 @@ function snapToRightAngle(degrees: number, previous?: number) {
     return Math.abs(degrees - nearest) <= SNAP_ENTER_DEGREES ? nearest : undefined;
 }
 
-export function CanvasRotationHandle({ rotation, onRotate, snapRightAngles = false }: {
+export function CanvasRotationHandle({ rotation, onRotate, snapRightAngles = false, guideFollowsRotation = false }: {
     rotation: number;
     snapRightAngles?: boolean;
+    guideFollowsRotation?: boolean;
     onRotate: (rotation: number, committed: boolean) => void;
 }) {
     const [guideAngle, setGuideAngle] = React.useState<number>();
-    const vertical = guideAngle === 90 || guideAngle === 270;
+    const vertical = !guideFollowsRotation && (guideAngle === 90 || guideAngle === 270);
     return <>
         {guideAngle !== undefined && (
             <div data-canvas-rotation-guide={guideAngle} data-print-control="true" aria-hidden="true"
@@ -143,8 +144,6 @@ export function CanvasRotationHandle({ rotation, onRotate, snapRightAngles = fal
                 <span className={`absolute border-dashed border-indigo-600 drop-shadow-[0_1px_1px_white] ${vertical
                     ? 'inset-y-[-12%] left-1/2' : 'inset-x-[-12%] top-1/2'}`}
                     style={{ [vertical ? 'borderLeftWidth' : 'borderTopWidth']: 'calc(2px * var(--canvas-handle-inverse, 1))' }} />
-                <span className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-full rounded bg-indigo-700 px-1.5 py-0.5 font-semibold tabular-nums text-white"
-                    style={{ fontSize: 'calc(12px * var(--canvas-handle-inverse, 1))' }}>{guideAngle}°</span>
             </div>
         )}
         <TransformHandle kind="rotation" label="Rotacionar objeto"

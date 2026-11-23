@@ -13,6 +13,7 @@ import type { AddedImage, Product, MenuStyle } from '../../../domain/menu/model'
 import { Crop, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CopyCheck, MoreHorizontal, Plus, Edit3, Trash2 } from 'lucide-react';
 import { Resizable } from 're-resizable';
 import { MenuItem } from './MenuItem';
+import { PageActionRail } from './PageActionRail';
 import { CanvasActionGroup, canvasActionButtonClass } from './CanvasControls';
 import type { PageLayout, CategoryChunkLayout, PageItem } from '../../../domain/menu/menuPagination';
 import { FREE_TEXT_PREFIX } from '../../../domain/menu/flow';
@@ -873,29 +874,13 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                     >
                         <CheckSquare size={18} />
                     </button>
-                    {(['before', 'after'] as const).filter(direction => pageAddControls[direction]).map(direction => {
-                        const before = direction === 'before';
-                        const side = before ? 'left-[-32px] -translate-x-1/2' : 'right-[-32px] translate-x-1/2';
-                        const placement = before ? 'antes' : 'depois';
-                        const Chevron = before ? ChevronLeft : ChevronRight;
-                        const controls = 'absolute z-[100002] -translate-y-1/2 rounded-full border-2 border-white p-2 text-white shadow-lg hover:scale-110';
-                        return <React.Fragment key={direction}>
-                            <button type="button" data-print-control="true" data-drag-ignore="true"
-                                onClick={event => { event.stopPropagation(); onAddPage(pageIndex, direction); }}
-                                className={`${controls} ${side} top-1/2 bg-blue-600 hover:bg-blue-700`}
-                                title={`Adicionar página ${placement}`}>
-                                <Plus size={24} />
-                            </button>
-                            {onMovePage && (before ? pageIndex > 0 : pageIndex < pageCount - 1) && (
-                                <button type="button" data-print-control="true" data-drag-ignore="true"
-                                    onClick={event => { event.stopPropagation(); onMovePage(pageIndex, direction); }}
-                                    className={`${controls} ${side} top-3/4 bg-blue-600 hover:bg-blue-700`}
-                                    title={before ? 'Trocar com a página anterior' : 'Trocar com a próxima página'}>
-                                    <Chevron size={24} />
-                                </button>
-                            )}
-                        </React.Fragment>;
-                    })}
+                    {(pageAddControls.before || pageAddControls.after) && (
+                        <PageActionRail before={pageAddControls.before} after={pageAddControls.after}
+                            onAdd={direction => onAddPage(pageIndex, direction)}
+                            onMoveUp={onMovePage && pageIndex > 0 ? () => onMovePage(pageIndex, 'before') : undefined}
+                            onMoveDown={onMovePage && pageIndex < pageCount - 1 ? () => onMovePage(pageIndex, 'after') : undefined}
+                        />
+                    )}
                     {pageCount > 1 && pageIndex !== 0 && (
                         <button
                             type="button"
