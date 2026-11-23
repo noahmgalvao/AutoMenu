@@ -1,3 +1,4 @@
+import { lockModalScrolling } from '../common/modalScroll';
 
 import React from 'react';
 import { createPortal } from 'react-dom';
@@ -16,7 +17,7 @@ interface InsightsModalProps {
 
 export const InsightsModal: React.FC<InsightsModalProps> = ({ products, categories, grouped, style, onClose }) => {
   return createPortal(
-    <div
+    <div ref={lockModalScrolling}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in"
       onClick={onClose}
     >

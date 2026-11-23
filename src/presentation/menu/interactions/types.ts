@@ -60,7 +60,7 @@ export interface InteractionProps {
     onDeleteProduct?: (productId: string) => void;
     onStyleUpdate?: React.Dispatch<React.SetStateAction<MenuStyle>>;
     onImageEditEnd?: (id: string) => void;
-    onSelectionChange?: (selection: { type: SelectionType, id: string | null }) => void;
+    onSelectionChange?: (selection: { type: SelectionType, id: string | null }, extendSelection?: boolean) => void;
     selection?: { type: SelectionType, id: string | null };
     productsCanChangeCategory?: boolean;
     splitCategoryAcrossPages?: boolean;

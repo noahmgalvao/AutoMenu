@@ -1,3 +1,4 @@
+import { lockModalScrolling } from '../common/modalScroll';
 import React from 'react';
 import { ArrowLeft, Eye, History, Loader2, RotateCcw, X, ZoomIn, ZoomOut } from 'lucide-react';
 import type { MenuVersion } from '../../domain/workspace/model';
@@ -187,7 +188,7 @@ export const RevisionHistoryModal: React.FC<RevisionHistoryModalProps> = ({
 
   if (canvasMode) {
     return (
-      <div className="fixed inset-0 z-[1300] bg-slate-200 flex flex-col">
+      <div ref={lockModalScrolling} className="fixed inset-0 z-[1300] bg-slate-200 flex flex-col">
         <div className="h-16 shrink-0 border-b bg-white px-3 md:px-5 flex items-center justify-between gap-3">
           <button type="button" onClick={() => setCanvasMode(false)} className="h-10 px-3 rounded-xl border border-slate-200 text-sm font-bold flex items-center gap-2"><ArrowLeft size={17} /> Voltar</button>
           <div className="min-w-0 text-center"><div className="text-sm font-bold text-slate-900 truncate">{selectedTitle}</div>{selected && <div className="text-[10px] text-slate-500">{formatRevisionDateTime(selected.createdAt)}</div>}</div>
@@ -203,7 +204,7 @@ export const RevisionHistoryModal: React.FC<RevisionHistoryModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-[1250] bg-slate-950/50 backdrop-blur-sm p-2 md:p-6 flex items-center justify-center">
+    <div ref={lockModalScrolling} className="fixed inset-0 z-[1250] bg-slate-950/50 backdrop-blur-sm p-2 md:p-6 flex items-center justify-center">
       <div className="w-full h-full max-w-5xl max-h-[96vh] md:max-h-[90vh] bg-white rounded-2xl md:rounded-3xl shadow-2xl overflow-hidden flex flex-col">
         <div className="px-4 py-3.5 border-b flex items-center justify-between"><div><h2 className="font-bold flex items-center gap-2"><History size={18} className="text-indigo-600" /> Histórico de revisões</h2><p className="text-xs text-slate-500 mt-0.5">{revisions.length} {revisions.length === 1 ? 'estado salvo' : 'estados salvos'}</p></div><button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400"><X size={18} /></button></div>
         <div className="min-h-0 flex-1 grid md:grid-cols-[310px_minmax(0,1fr)]">

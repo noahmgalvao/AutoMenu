@@ -1,3 +1,4 @@
+import { lockModalScrolling } from '../common/modalScroll';
 import React from 'react';
 import { Check, CircleHelp, CopyPlus, Link2Off, Loader2, X } from 'lucide-react';
 import type { MenuProductSource, MenuProductSync } from '../../domain/workspace/model';
@@ -91,7 +92,7 @@ export const ProductTransferModal: React.FC<ProductTransferModalProps> = ({ open
   };
 
   return (
-    <div className="fixed inset-0 z-[1300] bg-slate-950/45 flex items-center justify-center p-4" onMouseDown={(event) => event.target === event.currentTarget && !loading && onClose()}>
+    <div ref={lockModalScrolling} className="fixed inset-0 z-[1300] bg-slate-950/45 flex items-center justify-center p-4" onMouseDown={(event) => event.target === event.currentTarget && !loading && onClose()}>
       <div className="w-full max-w-md max-h-[calc(100dvh-2rem)] rounded-3xl bg-white shadow-2xl overflow-hidden flex flex-col">
         <div className="p-5 border-b border-slate-100 flex justify-between"><div><h2 className="font-bold flex items-center gap-2"><CopyPlus size={18} className="text-indigo-600" /> Importar produtos</h2><p className="text-xs text-slate-500 mt-1">Copie produtos de outro cardápio.</p></div><button onClick={onClose} className="p-2 text-slate-400"><X size={18} /></button></div>
         <div className="p-5 space-y-3 overflow-y-auto">

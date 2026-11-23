@@ -29,6 +29,11 @@ const App: React.FC = () => {
   const [isCreateMenuOpen, setIsCreateMenuOpen] = useState(false);
   const [isRevisionHistoryOpen, setIsRevisionHistoryOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [pageCount, setPageCount] = useState(0);
+  const [selectedPages, setSelectedPages] = useState<number[]>([]);
+  const handleSelectedPages = useCallback((indexes: number[]) => {
+    setSelectedPages(previous => previous.length === indexes.length && previous.every((id, index) => id === indexes[index]) ? previous : indexes);
+  }, []);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
   const scrollIdleTimer = useRef<number | undefined>(undefined);
@@ -100,7 +105,8 @@ const App: React.FC = () => {
 
   const {
     printRequestId, printRequestMode, publication, isPublishOpen, setIsPublishOpen, isPublishing, publishAction,
-    publishFeedback, hasPublishedChanges, requestPrint, handleLinkAction, handlePublishConfirm, handlePdfAction,
+    publishFeedback, buttonResults, fileExportRef, hasPublishedChanges, requestPrint,
+    preparePdf, prepareJpg, handleLinkAction, handlePublishConfirm, handlePdfAction, handleJpgAction,
     handlePublicationSlugChange, handlePrintComplete, handlePrintError, handlePrintCancel,
   } = useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu, setLoadError, products, style, sortOption });
 
@@ -160,6 +166,7 @@ const App: React.FC = () => {
     publicationMenuSlug: publication?.menuSlug,
     activeAction: publishAction,
     feedback: publishFeedback,
+    buttonResults,
     onLinkAction: action => void handleLinkAction(action),
     onSaveMenuSlug: menuSlug => void handlePublicationSlugChange(menuSlug),
   };
@@ -241,6 +248,12 @@ const App: React.FC = () => {
         onClose={() => setIsPublishOpen(false)}
         onConfirm={(options) => void handlePublishConfirm(options)}
         onPdfAction={handlePdfAction}
+        onJpgAction={handleJpgAction}
+        pageCount={pageCount}
+        selectedPages={selectedPages}
+        preparePdf={preparePdf}
+        prepareJpg={prepareJpg}
+        error={loadError}
       />
 
       <CreateMenuModal
@@ -282,7 +295,7 @@ const App: React.FC = () => {
         </React.Suspense>
       )}
 
-      {loadError && (
+      {loadError && !isPublishOpen && (
         <div className="absolute top-20 right-4 z-40 flex max-w-md items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-lg">
           <span className="min-w-0 flex-1">{loadError}</span>
           <button type="button" onClick={() => setLoadError(null)} className="-mr-1 -mt-1 rounded-lg p-1 text-red-500 hover:bg-red-100 hover:text-red-700" title="Fechar mensagem" aria-label="Fechar mensagem">
@@ -364,7 +377,10 @@ const App: React.FC = () => {
             onPrintComplete={(result) => void handlePrintComplete(result)}
             onPrintError={handlePrintError}
             onPrintCancel={handlePrintCancel}
-            silentPrintOptions={(publication?.pdfOptions || {}) as Partial<PrintCanvasOptions>}
+            silentPrintOptions={publication?.pdfOptions as Partial<PrintCanvasOptions> | undefined}
+            fileExportRef={fileExportRef}
+            onExportablePagesChange={setPageCount}
+            onSelectedPagesChange={handleSelectedPages}
             virtualLinkControls={virtualLinkControls}
             onClose={() => setActivePanel(null)}
             onCanvasScroll={handleCanvasScroll}

@@ -541,6 +541,19 @@ export const captureMenuPagePreview = async (
   return capture.dataUrl;
 };
 
+export async function exportMenuPageToJpg(
+  element: HTMLElement,
+  pageNumber: number,
+  title: string,
+  assetCache: Map<string, string>,
+) {
+  const { dataUrl } = await capturePageAsJpeg(
+    element, pageNumber, { printBackgrounds: true, grayscale: false }, EXPORT_CAPTURE_SCALE, 0.92, assetCache,
+  );
+  const blob = await (await fetch(dataUrl)).blob();
+  return new File([blob], `${sanitizeFileName(title)}-pagina-${pageNumber}.jpg`, { type: 'image/jpeg' });
+}
+
 export const exportMenuPagesToPdf = async ({
   pageElements,
   options,

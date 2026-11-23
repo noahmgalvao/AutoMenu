@@ -84,9 +84,9 @@ export const useSelectionState = (
         [sortedCategories]
     );
 
-    const emitSelection = useCallback((type: SelectionType, id: string | null) => {
+    const emitSelection = useCallback((type: SelectionType, id: string | null, extendSelection = false) => {
         lastEmittedSelectionRef.current = getSelectionKey(type, id);
-        onSelectionChange?.({ type, id });
+        onSelectionChange?.({ type, id }, extendSelection);
     }, [onSelectionChange]);
 
     const getSingleSelectionItem = useCallback((type: SelectionType, id: string | null): SelectionItem | null => {
@@ -227,6 +227,7 @@ export const useSelectionState = (
         setFormattingTarget(current => current && current.type === type && current.id === id ? current : null);
 
         const effectiveCtrlKey = Boolean(options?.ctrlKey || multiSelectMode);
+        const extendSelection = effectiveCtrlKey || Boolean(options?.shiftKey);
 
         if (type === 'page') {
             const pageItem: SelectionItem = { type: 'page', id };
@@ -247,9 +248,10 @@ export const useSelectionState = (
             const activePageItem = nextPageItems[nextPageItems.length - 1] || null;
             setSelectedId(null);
             setSelectedItems(nextPageItems);
-            lastRangeAnchorRef.current = pageItem;
+            lastRangeAnchorRef.current = activePageItem ? pageItem : null;
             setSelectedPageIndex(activePageItem ? parseInt(activePageItem.id) : null);
-            emitSelection(activePageItem?.type || null, activePageItem?.id || null);
+            if (!activePageItem) setMultiSelectMode(false);
+            emitSelection(activePageItem?.type || null, activePageItem?.id || null, extendSelection);
             return;
         }
 
@@ -273,7 +275,7 @@ export const useSelectionState = (
             lastRangeAnchorRef.current = activeItem;
             setSelectedId(activeItem?.id || null);
             setSelectedPageIndex(null);
-            emitSelection(activeItem?.type || null, activeItem?.id || null);
+            emitSelection(activeItem?.type || null, activeItem?.id || null, extendSelection);
             return;
         }
 
@@ -287,7 +289,7 @@ export const useSelectionState = (
             lastRangeAnchorRef.current = nextItem;
             setSelectedId(nextItem.id);
             setSelectedPageIndex(null);
-            emitSelection(nextItem.type, nextItem.id);
+            emitSelection(nextItem.type, nextItem.id, extendSelection);
             return;
         }
 
@@ -305,10 +307,11 @@ export const useSelectionState = (
             const activeItem = nextSelectedItems[nextSelectedItems.length - 1] || null;
 
             setSelectedItems(nextSelectedItems);
-            lastRangeAnchorRef.current = nextItem;
+            lastRangeAnchorRef.current = activeItem ? nextItem : null;
             setSelectedId(activeItem?.id || null);
             setSelectedPageIndex(null);
-            emitSelection(activeItem?.type || null, activeItem?.id || null);
+            if (!activeItem) setMultiSelectMode(false);
+            emitSelection(activeItem?.type || null, activeItem?.id || null, extendSelection);
             return;
         }
 
@@ -331,7 +334,7 @@ export const useSelectionState = (
                     lastRangeAnchorRef.current = nextItem;
                     setSelectedId(id);
                     setSelectedPageIndex(null);
-                    emitSelection(type, id);
+                    emitSelection(type, id, extendSelection);
                     return;
                 }
             }
@@ -353,7 +356,7 @@ export const useSelectionState = (
 
         setSelectedId(id);
         setSelectedPageIndex(null);
-        emitSelection(type, id);
+        emitSelection(type, id, extendSelection);
     }, [
         emitSelection,
         editingId,

@@ -1,3 +1,4 @@
+import { lockModalScrolling } from '../common/modalScroll';
 import { bindCanvasZoomGestures, getZoomAnchor, restoreZoomAnchor, type CanvasPoint } from '../menu/canvas/canvasViewport';
 import { flushSync } from 'react-dom';
 import React, {
@@ -905,7 +906,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
     }, [busy, clearPages, completionPreviewResult, finalizedPreview, onComplete, resetPreview, stopCamera]);
 
     const renderCamera = () => (
-      <div className="fixed inset-0 z-[1200] flex h-[100dvh] flex-col overflow-hidden bg-black text-white">
+      <div ref={lockModalScrolling} className="fixed inset-0 z-[1200] flex h-[100dvh] flex-col overflow-hidden bg-black text-white">
         <video ref={videoRef} autoPlay muted playsInline disablePictureInPicture className="absolute inset-0 h-full w-full object-cover" />
         <div className="absolute inset-0 z-[2] touch-none cursor-crosshair" onPointerUp={(event) => { void focusCameraAtPoint(event); }} aria-label="Toque na imagem para focar" />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/70 via-transparent to-black/80" />
@@ -1176,7 +1177,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
     );
 
     const renderMobileEditor = () => (
-      <div className="fixed inset-0 z-[1200] flex h-[100dvh] flex-col overflow-hidden bg-slate-100 text-slate-900" onPointerDownCapture={() => { document.body.dataset.automenuDeleteContext = 'import-preview'; }}>
+      <div ref={lockModalScrolling} className="fixed inset-0 z-[1200] flex h-[100dvh] flex-col overflow-hidden bg-slate-100 text-slate-900" onPointerDownCapture={() => { document.body.dataset.automenuDeleteContext = 'import-preview'; }}>
         <header className="shrink-0 border-b border-slate-200 bg-slate-100 px-3 pb-3" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
           <div className="mx-auto max-w-xl space-y-3">
             <div className="flex min-h-11 items-center justify-between gap-3">
@@ -1219,7 +1220,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
     );
 
     const renderDesktopEditor = () => (
-      <div className="fixed inset-x-0 bottom-0 top-16 z-[1000] flex flex-col overflow-hidden bg-slate-100 text-slate-900" onPointerDownCapture={() => { document.body.dataset.automenuDeleteContext = 'import-preview'; }}>
+      <div ref={lockModalScrolling} className="fixed inset-x-0 bottom-0 top-16 z-[1000] flex flex-col overflow-hidden bg-slate-100 text-slate-900" onPointerDownCapture={() => { document.body.dataset.automenuDeleteContext = 'import-preview'; }}>
         <button type="button" onClick={close} disabled={busy} className="absolute right-4 top-4 z-50 flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-lg hover:text-slate-900 disabled:opacity-40" style={{ marginTop: 'env(safe-area-inset-top)' }} aria-label="Fechar importação"><X size={23} /></button>
         <main className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 pb-28 pt-16 custom-scrollbar md:px-6 lg:overflow-hidden lg:pb-24" style={{ overscrollBehavior: 'contain' }}>
           <div className="mx-auto grid max-w-[1700px] gap-7 lg:h-full lg:grid-cols-[minmax(300px,1fr)_300px_minmax(360px,1fr)]">

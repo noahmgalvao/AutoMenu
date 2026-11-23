@@ -1,3 +1,4 @@
+import { lockModalScrolling } from '../common/modalScroll';
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, Check, ChevronDown, CopyCheck, Loader2, LogOut, Pencil, Plus, Settings, Trash2, User, X } from 'lucide-react';
@@ -280,7 +281,11 @@ export const ProfileMenu: React.FC<ProfileMenuProps> = ({
           </div>
 
           {menusToDelete.length > 0 && createPortal(
-            <div ref={deleteDialogRef} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4" onPointerDown={(event) => event.stopPropagation()}>
+            <div ref={node => {
+              deleteDialogRef.current = node;
+              const unlock = lockModalScrolling(node);
+              return () => { deleteDialogRef.current = null; unlock?.(); };
+            }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4" onPointerDown={(event) => event.stopPropagation()}>
               <div role="alertdialog" aria-modal="true" aria-labelledby="delete-menu-title" aria-describedby="delete-menu-description" className="w-full max-w-sm rounded-2xl bg-white p-5 text-center shadow-2xl">
                 <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-600">
                   <AlertTriangle size={24} />

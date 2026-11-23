@@ -1,10 +1,12 @@
+import { lockModalScrolling } from '../../common/modalScroll';
 import React from 'react';
-import { AlertTriangle, CheckCircle2, Image as ImageIcon, Loader2, Printer, Scissors, Settings2, X } from 'lucide-react';
-import { getCapturedMenuPageSize, PdfExportError, type PdfDebugEntry, type PdfExportResult } from '../../../infrastructure/browser/pdfExport';
+import { AlertTriangle, Check, CheckCircle2, Image as ImageIcon, Loader2, Printer, Scissors, Settings2, X } from 'lucide-react';
+import { getCapturedMenuPageSize, PdfExportError, type PdfExportResult } from '../../../infrastructure/browser/pdfExport';
 import { getPaperDimensionsMm, getPrintFrameSizeMm, getPrintMarginMm, type PdfPrintOptions } from '../../../domain/publishing/printOptions';
 import { getErrorMessage } from '../../../application/errorMessages';
 import type { MenuPageSetup } from '../../../domain/menu/pageModel';
 import { VirtualLinkSection, type VirtualLinkControls } from '../../publishing/VirtualLinkSection';
+import { useButtonFeedback } from '../../publishing/useButtonFeedback';
 import { BooleanSwitch } from '../../common/BooleanSwitch';
 
 export type PrintCanvasOptions = PdfPrintOptions;
@@ -26,7 +28,7 @@ export interface PrintCanvasModalProps {
   onPageSetupChange: (setup: MenuPageSetup) => void;
   virtualLinkControls?: VirtualLinkControls;
   onClose: () => void;
-  onPrint: (onDebug: (entry: PdfDebugEntry) => void) => Promise<PdfExportResult>;
+  onPrint: () => Promise<PdfExportResult>;
   onComplete?: (result: PdfExportResult) => void;
   onError?: (error: Error) => void;
 }
@@ -198,16 +200,14 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
   onError,
 }) => {
   const [isPrinting, setIsPrinting] = React.useState(false);
-  const [debugEntries, setDebugEntries] = React.useState<PdfDebugEntry[]>([]);
   const [exportError, setExportError] = React.useState<PdfExportError | null>(null);
-  const [exportResult, setExportResult] = React.useState<PdfExportResult | null>(null);
+  const { results, show: showResult } = useButtonFeedback();
+  const downloaded = results.pdf === 'Baixado';
   const [virtualLinkEnabled, setVirtualLinkEnabled] = React.useState(false);
 
   React.useEffect(() => {
     if (!isOpen) return;
-    setDebugEntries([]);
     setExportError(null);
-    setExportResult(null);
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -233,14 +233,10 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
   const handlePrintClick = async () => {
     if (isPrinting) return;
     setIsPrinting(true);
-    setDebugEntries([]);
     setExportError(null);
-    setExportResult(null);
     try {
-      const result = await onPrint((entry) => {
-        setDebugEntries((current) => [...current.slice(-99), entry]);
-      });
-      setExportResult(result);
+      const result = await onPrint();
+      showResult('pdf', 'Baixado');
       onComplete?.(result);
     } catch (error) {
       const normalizedError = error instanceof PdfExportError
@@ -254,17 +250,6 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
           );
       setExportError(normalizedError);
       onError?.(normalizedError);
-      setDebugEntries((current) => [
-        ...current,
-        {
-          timestamp: new Date().toISOString(),
-          level: 'error',
-          stage: normalizedError.stage,
-          code: normalizedError.code,
-          message: normalizedError.message,
-          details: normalizedError.details,
-        },
-      ]);
       console.error('[PDF] Falha ao baixar PDF', normalizedError);
     } finally {
       setIsPrinting(false);
@@ -272,7 +257,7 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4" onMouseDown={onClose}>
+    <div ref={lockModalScrolling} className="fixed inset-0 z-[9999] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4" onMouseDown={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col" onMouseDown={(e) => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
           <div>
@@ -425,33 +410,10 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
             </div>
           </section>
 
-          {(isPrinting || exportError || exportResult || debugEntries.length > 0) && (
-            <section className={`rounded-xl border p-3 ${
-              exportError
-                ? 'border-red-200 bg-red-50'
-                : exportResult
-                  ? 'border-emerald-200 bg-emerald-50'
-                  : 'border-indigo-200 bg-indigo-50'
-            }`}>
-              <div className="flex items-start gap-2">
-                {exportError ? (
-                  <AlertTriangle size={17} className="text-red-600 shrink-0 mt-0.5" />
-                ) : exportResult ? (
-                  <CheckCircle2 size={17} className="text-emerald-600 shrink-0 mt-0.5" />
-                ) : (
-                  <Loader2 size={17} className="text-indigo-600 shrink-0 mt-0.5 animate-spin" />
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-bold text-slate-800">
-                    {exportError
-                      ? 'Não foi possível gerar o PDF. Tente novamente.'
-                      : exportResult
-                        ? 'PDF baixado'
-                        : 'Preparando PDF...'}
-                  </div>
-                </div>
-              </div>
-            </section>
+          {exportError && (
+            <p role="alert" className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">
+              <AlertTriangle size={17} /> Não foi possível gerar o PDF. Tente novamente.
+            </p>
           )}
           {virtualLinkControls && (
             <section className="space-y-2 border-t border-slate-100 pt-4">
@@ -469,9 +431,12 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
           <button onClick={onClose} className="px-4 py-2 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:bg-slate-100">
             Cancelar
           </button>
-          <button onClick={handlePrintClick} disabled={isPrinting} className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 flex items-center gap-2 disabled:opacity-60 disabled:cursor-wait">
-            {isPrinting ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
-            {isPrinting ? 'Gerando PDF...' : exportResult ? 'Baixar novamente' : 'Baixar PDF'}
+          <button onClick={handlePrintClick} disabled={isPrinting} aria-busy={isPrinting}
+            className={`min-w-36 justify-center px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition-colors disabled:opacity-60 disabled:cursor-wait ${
+              downloaded && !isPrinting ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-900 text-white hover:bg-slate-800'
+            }`}>
+            {isPrinting ? <Loader2 size={16} className="animate-spin" /> : downloaded ? <Check size={16} /> : <Printer size={16} />}
+            <span aria-live="polite">{isPrinting ? 'Gerando PDF...' : downloaded ? 'Baixado' : 'Baixar PDF'}</span>
           </button>
         </div>
       </div>

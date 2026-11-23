@@ -183,7 +183,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                 </button>
                 {!selectedAddedImage.shape && <button type="button"
                     onClick={() => onMovePhotoToBackground(selectedAddedImage.id)}
-                    className="mb-2 flex w-full items-center justify-center gap-2 rounded-md border border-slate-200 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 active:bg-indigo-50">
+                    className="mb-2 flex w-full items-center justify-center gap-2 rounded-md border border-slate-200 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
                     <Wallpaper size={15} /> Definir imagem de fundo
                 </button>}
                 {shapeEditor?.shape && shapePickerRequest?.id === shapeEditor.id && <div data-change-shape-picker className="mb-2">

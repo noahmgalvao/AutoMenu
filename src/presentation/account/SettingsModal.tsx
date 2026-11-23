@@ -1,3 +1,4 @@
+import { lockModalScrolling } from '../common/modalScroll';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { KeyRound, Loader2, X } from 'lucide-react';
 import type { Profile, Workspace } from '../../domain/workspace/model';
@@ -129,7 +130,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4" onClick={closeAndSave}>
+    <div ref={lockModalScrolling} className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4" onClick={closeAndSave}>
       <div role="dialog" aria-label="Configurações" data-settings-dialog
         className="flex max-h-[90dvh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
         onClick={event => event.stopPropagation()}

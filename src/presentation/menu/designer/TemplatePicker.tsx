@@ -1,3 +1,4 @@
+import { lockModalScrolling } from '../../common/modalScroll';
 import { CATALOG_VERSION } from '../../../domain/templates/templateCatalog';
 import { INITIAL_STYLE, NO_TEMPLATE_ID } from '../../../domain/menu/defaults';
 import React, { memo, useEffect, useId, useMemo, useRef, useState } from 'react';
@@ -206,12 +207,11 @@ function Discover({ current, templates, products, userId, sortOption, applyTempl
     if (!node) return;
     node.showModal();
     node.focus();
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const unlock = lockModalScrolling(node);
     window.addEventListener('popstate', onClose);
     return () => {
       window.removeEventListener('popstate', onClose);
-      document.body.style.overflow = previousOverflow;
+      unlock?.();
       node.close();
     };
   }, [onClose]);

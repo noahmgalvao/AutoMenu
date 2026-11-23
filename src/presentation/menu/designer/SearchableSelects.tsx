@@ -92,7 +92,7 @@ export function DesignerPicker<T extends SelectOption>({ label, value, options, 
   const renderOption = (option: T) => <div key={option.value} role="presentation" className="flex items-center gap-1">
     <button type="button" role="option" aria-selected={option.value === value.value}
       data-option-value={option.value} disabled={option.disabled}
-      className="block min-w-0 flex-1 truncate rounded px-2 py-2 text-left text-slate-700 hover:bg-slate-50 active:bg-indigo-100 focus:bg-slate-100 disabled:opacity-50 aria-selected:bg-indigo-50 aria-selected:text-indigo-700"
+      className="block min-w-0 flex-1 truncate rounded px-2 py-2 text-left text-slate-700 hover:bg-slate-50 focus:bg-slate-100 disabled:opacity-50 aria-selected:bg-indigo-50 aria-selected:text-indigo-700"
       onClick={() => { choose(option); close(); trigger.current?.focus({ preventScroll: true }); }}>{render(option)}</button>
     {renderAction?.(option)}
   </div>;

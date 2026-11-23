@@ -1,3 +1,4 @@
+import { lockModalScrolling } from '../../common/modalScroll';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Crop, X } from 'lucide-react';
@@ -33,7 +34,8 @@ export function CanvasImageCropDialog({ image, onClose, onApply }: {
   useLayoutEffect(() => {
     const element = dialog.current;
     element?.showModal();
-    return () => element?.close();
+    const unlock = lockModalScrolling(element);
+    return () => { unlock?.(); element?.close(); };
   }, []);
 
   return createPortal(<dialog ref={dialog} aria-label="Cortar imagem" data-editor-popover="true" data-no-browser-selection

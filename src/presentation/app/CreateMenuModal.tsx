@@ -1,3 +1,4 @@
+import { lockModalScrolling } from '../common/modalScroll';
 import React from 'react';
 import { Copy, FilePlus2, Loader2, X } from 'lucide-react';
 import type { Menu } from '../../domain/workspace/model';
@@ -26,7 +27,7 @@ export const CreateMenuModal: React.FC<CreateMenuModalProps> = ({ open, menus, d
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[1200] bg-slate-950/45 backdrop-blur-sm flex items-center justify-center p-4" onMouseDown={(event) => event.target === event.currentTarget && !loading && onClose()}>
+    <div ref={lockModalScrolling} className="fixed inset-0 z-[1200] bg-slate-950/45 backdrop-blur-sm flex items-center justify-center p-4" onMouseDown={(event) => event.target === event.currentTarget && !loading && onClose()}>
       <div className="w-full max-w-lg rounded-3xl bg-white shadow-2xl overflow-hidden">
         <div className="p-5 border-b border-slate-100 flex items-center justify-between">
           <h2 className="font-bold text-slate-900">Novo cardápio</h2>

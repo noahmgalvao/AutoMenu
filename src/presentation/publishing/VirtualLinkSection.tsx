@@ -1,6 +1,7 @@
 import React from 'react';
-import { Copy, Download, ExternalLink, Globe2, Loader2, QrCode, Share2 } from 'lucide-react';
+import { Check, Copy, Download, ExternalLink, Globe2, Loader2, QrCode, Share2 } from 'lucide-react';
 import { BooleanSwitch } from '../common/BooleanSwitch';
+import type { ButtonResult } from './useButtonFeedback';
 
 export type LinkAction = 'copy-link' | 'share-link' | 'download-qr' | 'share-qr' | 'open-link';
 
@@ -11,6 +12,7 @@ export interface VirtualLinkControls {
   publicationMenuSlug?: string | null;
   activeAction?: string | null;
   feedback?: string | null;
+  buttonResults?: Partial<Record<string, ButtonResult>>;
   onLinkAction: (action: LinkAction) => void;
   onSaveMenuSlug: (menuSlug: string) => void;
 }
@@ -32,21 +34,31 @@ export const ActionButton: React.FC<{
   loading?: boolean;
   disabled?: boolean;
   primary?: boolean;
+  result?: ButtonResult;
+  expanded?: boolean;
   onClick: () => void;
-}> = ({ icon, label, loading, disabled, primary, onClick }) => (
+}> = ({ icon, label, loading, disabled, primary, result, expanded, onClick }) => (
   <button
     type="button"
     onClick={onClick}
     disabled={disabled || loading}
-    className={`h-9 min-w-0 rounded-lg px-1 text-[11px] font-bold flex items-center justify-center gap-1 transition-colors disabled:opacity-50 ${primary ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+    aria-expanded={expanded}
+    title={label}
+    className={`h-9 min-w-0 rounded-lg px-1 text-[11px] font-bold flex items-center justify-center gap-1 transition-colors disabled:opacity-50 ${
+      result && !loading ? 'border border-emerald-200 bg-emerald-50 text-emerald-800'
+        : primary ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+          : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+    }`}
   >
-    {loading ? <Loader2 size={15} className="animate-spin" /> : icon}
-    <span className="min-w-0 whitespace-nowrap overflow-hidden text-ellipsis">{label}</span>
+    <span aria-hidden="true" className="grid size-4 shrink-0 place-items-center">
+      {loading ? <Loader2 size={15} className="animate-spin" /> : result ? <Check size={15} /> : icon}
+    </span>
+    <span aria-live="polite" className="min-w-0 truncate">{!loading && result ? result : label}</span>
   </button>
 );
 
 export function VirtualLinkSection({
-  enabled, onChange, loading, hasPublication, publicUrl, publicationMenuSlug, activeAction, onLinkAction, onSaveMenuSlug,
+  enabled, onChange, loading, hasPublication, publicUrl, publicationMenuSlug, activeAction, buttonResults, onLinkAction, onSaveMenuSlug,
 }: VirtualLinkControls & { enabled: boolean; onChange: (enabled: boolean) => void }) {
   const [menuSlug, setMenuSlug] = React.useState(publicationMenuSlug || '');
   const slugInputId = React.useId();
@@ -74,16 +86,16 @@ export function VirtualLinkSection({
         )}
 
         <div className="grid grid-cols-[1fr_1fr_40px] gap-2">
-          <ActionButton icon={<Copy size={15} />} label="Copiar" loading={activeAction === 'copy-link'} disabled={loading || actionBusy} primary onClick={() => onLinkAction('copy-link')} />
-          <ActionButton icon={<Share2 size={15} />} label="Compartilhar" loading={activeAction === 'share-link'} disabled={loading || actionBusy} onClick={() => onLinkAction('share-link')} />
+          <ActionButton icon={<Copy size={15} />} label="Copiar" loading={activeAction === 'copy-link'} result={buttonResults?.['copy-link']} disabled={loading || actionBusy} primary onClick={() => onLinkAction('copy-link')} />
+          <ActionButton icon={<Share2 size={15} />} label="Compartilhar" loading={activeAction === 'share-link'} result={buttonResults?.['share-link']} disabled={loading || actionBusy} onClick={() => onLinkAction('share-link')} />
           <button type="button" onClick={() => onLinkAction('open-link')} disabled={!hasPublication || loading || actionBusy} className="h-10 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 flex items-center justify-center disabled:opacity-40" title="Abrir link em nova guia"><ExternalLink size={16} /></button>
         </div>
 
         <div className="border-t border-slate-200 pt-3">
           <div className="mb-2 flex items-center gap-2 text-xs font-bold text-slate-700"><QrCode size={15} /> QR code</div>
           <div className="grid grid-cols-2 gap-2">
-            <ActionButton icon={<Download size={15} />} label="Baixar QR" loading={activeAction === 'download-qr'} disabled={loading || actionBusy} onClick={() => onLinkAction('download-qr')} />
-            <ActionButton icon={<Share2 size={15} />} label="Compartilhar QR" loading={activeAction === 'share-qr'} disabled={loading || actionBusy} onClick={() => onLinkAction('share-qr')} />
+            <ActionButton icon={<Download size={15} />} label="Baixar QR" loading={activeAction === 'download-qr'} result={buttonResults?.['download-qr']} disabled={loading || actionBusy} onClick={() => onLinkAction('download-qr')} />
+            <ActionButton icon={<Share2 size={15} />} label="Compartilhar QR" loading={activeAction === 'share-qr'} result={buttonResults?.['share-qr']} disabled={loading || actionBusy} onClick={() => onLinkAction('share-qr')} />
           </div>
         </div>
       </div>

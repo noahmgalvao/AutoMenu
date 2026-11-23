@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { useCanvasFileExports } from './useCanvasFileExports';
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { MenuStyle, Product, SortOption } from '../../../domain/menu/model';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
-import type { PdfDebugEntry, PdfExportResult } from '../../../infrastructure/browser/pdfExport';
+import type { PdfExportResult } from '../../../infrastructure/browser/pdfExport';
 import type { PrintCanvasModalProps, PrintCanvasOptions, PrintPreviewPage } from './PrintCanvasModal';
 import { updateCanvasPageSetup } from './updateCanvasPageSetup';
 
@@ -60,7 +61,7 @@ interface CanvasPrintingOptions {
     sortOption: SortOption;
     splitCategoryAcrossPages: boolean;
     currentPrintPageIndex: number | null;
-    printRequestMode: 'download' | 'download-direct' | 'share-direct' | 'publish' | 'publish-silent';
+    printRequestMode: 'download' | 'publish' | 'publish-silent';
     printRequestId: number;
     onPrintComplete?: (result: PdfExportResult) => void;
     onPrintError?: (error: Error) => void;
@@ -266,7 +267,7 @@ export function useCanvasPrinting({
         style,
     ]);
 
-    const executeCanvasPrint = async (onDebug: (entry: PdfDebugEntry) => void) => {
+    const executeCanvasPrint = async () => {
         const pageElements = Array.from(
             containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]') || []
         );
@@ -277,7 +278,6 @@ export function useCanvasPrinting({
             options: printOptions,
             currentPageIndex: currentPrintPageIndex,
             title: style.menuTitle || 'Cardápio',
-            onDebug,
             download: true,
         });
     };
@@ -309,39 +309,15 @@ export function useCanvasPrinting({
         void publishCanvasPdf();
     }, [printRequestId]);
 
-    useEffect(() => {
-        if (printRequestId <= 0 || (printRequestMode !== 'download-direct' && printRequestMode !== 'share-direct')) return;
-        clearCanvasSelection();
-        document.dispatchEvent(new Event('automenu:close-inline-formatting'));
-        void (async () => {
-            const requestedOptions: PrintCanvasOptions = {
-                ...getDefaultPrintOptions(style),
-                ...(silentPrintOptions && Object.keys(silentPrintOptions).length > 0 ? silentPrintOptions : {}),
-                ...(lastCompletedPrintOptions || {}),
-                ...canvasPrintPaperDefaults,
-            };
-            const options: PrintCanvasOptions = requestedOptions.pageMode === 'current'
-                || (requestedOptions.pageMode === 'range' && !requestedOptions.pageRange.trim())
-                ? { ...requestedOptions, pageMode: 'all' }
-                : requestedOptions;
-            const pageElements = Array.from(
-                containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]') || []
-            );
-            const { exportMenuPagesToPdf } = await import('../../../infrastructure/browser/pdfExport');
-            const result = await exportMenuPagesToPdf({
-                pageElements,
-                options,
-                currentPageIndex: null,
-                title: style.menuTitle || 'Cardápio',
-                download: printRequestMode === 'download-direct',
-            });
-            setLastCompletedPrintOptions(options);
-            onPrintComplete?.(result);
-        })().catch((error) => {
-            console.error('[PDF] Falha ao concluir ação direta', error);
-            onPrintError?.(error instanceof Error ? error : new Error(String(error)));
-        });
-    }, [printRequestId]);
+    const directOptions = useMemo(() => {
+        const requested = { ...getDefaultPrintOptions(style), ...silentPrintOptions,
+            ...lastCompletedPrintOptions, ...getCanvasPrintPaperDefaults(style) };
+        if (requested.pageMode === 'current' || (requested.pageMode === 'range' && !requested.pageRange.trim())) {
+            return { ...requested, pageMode: 'all' as const };
+        }
+        return requested;
+    }, [style, silentPrintOptions, lastCompletedPrintOptions]);
+    const fileExports = useCanvasFileExports(containerRef, style, products, sortOption, directOptions, printPageCount);
 
     const printDialog: PrintCanvasModalProps | null = showPrintModal ? {
         isOpen: true,
@@ -367,5 +343,5 @@ export function useCanvasPrinting({
         },
         onError: activePrintMode === 'publish' ? onPrintError : undefined,
     } : null;
-    return { handlePrint, printDialog, onPageCountChange: setPrintPageCount };
+    return { handlePrint, printDialog, fileExports, onPageCountChange: setPrintPageCount };
 }

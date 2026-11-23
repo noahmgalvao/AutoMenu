@@ -1,3 +1,4 @@
+import { lockModalScrolling } from '../common/modalScroll';
 import { getConfiguredCanvasFonts } from '../../domain/menu/fontPropagation';
 import { TextOutlinePicker } from '../menu/designer/TextOutlinePicker';
 import { ColorPicker } from '../menu/designer/ColorPicker';
@@ -230,7 +231,7 @@ export const MobileProductEditorModal: React.FC<MobileProductEditorModalProps> =
 
   return createPortal(
     <MenuFontContext.Provider value={usedFonts}>
-    <div data-no-browser-selection className="fixed inset-0 z-[2147483500] flex flex-col bg-slate-100 md:hidden" onPointerDown={(event) => event.stopPropagation()}>
+    <div ref={lockModalScrolling} data-no-browser-selection className="fixed inset-0 z-[2147483500] flex flex-col bg-slate-100 md:hidden" onPointerDown={(event) => event.stopPropagation()}>
       <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div>
           <h2 className="font-bold text-slate-900">Editar {productIds.length > 1 ? `${productIds.length} produtos` : 'produto'}</h2>

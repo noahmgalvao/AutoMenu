@@ -5,17 +5,17 @@ import type { WorkspaceMenuContent } from '../../application/workspace/workspace
 import { getMenuContentSignature } from '../../application/workspace/state';
 import type { LoadedWorkspaceData, MenuPublication } from '../../domain/workspace/model';
 import type { PdfExportResult } from '../../infrastructure/browser/pdfExport';
-import { copyText, createQrCodeBlob, downloadBlob } from '../../infrastructure/browser/shareFiles';
+import { copyText, createQrCodeBlob, downloadBlob, downloadJpgFiles, shareFiles } from '../../infrastructure/browser/shareFiles';
 import { useAppServices } from '../app/AppServicesProvider';
+import type { CanvasFileExports } from '../menu/designer/useCanvasFileExports';
+import { useButtonFeedback } from './useButtonFeedback';
 import { getExpectedPublicationUrl, getPublicationUrl } from './publicationUrl';
 
-type PrintRequestMode = 'download' | 'download-direct' | 'share-direct' | 'publish' | 'publish-silent';
+type PrintRequestMode = 'download' | 'publish' | 'publish-silent';
 type PublishLinkAction = 'copy-link' | 'share-link' | 'download-qr' | 'share-qr' | 'open-link';
-type PublishAction = PublishLinkAction | 'publish' | 'pdf-options' | 'download-pdf' | 'share-pdf' | 'save-slug' | null;
-type CachedPdfExport = {
-  contentSignature: string;
-  result: PdfExportResult;
-};
+type PublishAction = PublishLinkAction | 'publish' | 'download-pdf' | 'share-pdf' | 'download-jpg' | 'share-jpg' | 'save-slug' | null;
+export type JpgAction = 'download' | 'share';
+export type PublishOptions = { pdf: boolean; jpgPages: number[] | null; virtualLink: boolean };
 
 interface MenuPublishingOptions extends WorkspaceMenuContent {
   session: AuthSession | null;
@@ -35,9 +35,8 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
   const [publishFeedback, setPublishFeedback] = useState<string | null>(null);
   const pendingPublishActionRef = useRef<PublishLinkAction | null>(null);
   const publishFeedbackTimeoutRef = useRef<number | null>(null);
-  const cachedPdfExportRef = useRef<CachedPdfExport | null>(null);
-  const pendingPrintContentSignatureRef = useRef<string | null>(null);
-  const currentContentSignatureRef = useRef('');
+  const { results: buttonResults, show: showButtonResult } = useButtonFeedback();
+  const fileExportRef = useRef<CanvasFileExports>(null);
 
   useEffect(() => {
     const resetPublishingState = () => {
@@ -45,7 +44,6 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
       setPrintRequestMode('download');
       setPublishAction(null);
       pendingPublishActionRef.current = null;
-      pendingPrintContentSignatureRef.current = null;
     };
     window.addEventListener('pageshow', resetPublishingState);
     return () => window.removeEventListener('pageshow', resetPublishingState);
@@ -73,18 +71,7 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
     () => getMenuContentSignature(products, style, sortOption),
     [products, style, sortOption],
   );
-  currentContentSignatureRef.current = contentSignature;
   const hasPublishedChanges = Boolean(publication && publication.contentSignature !== contentSignature);
-
-  useEffect(() => {
-    if (cachedPdfExportRef.current?.contentSignature !== contentSignature) {
-      cachedPdfExportRef.current = null;
-    }
-    if (pendingPrintContentSignatureRef.current
-      && pendingPrintContentSignatureRef.current !== contentSignature) {
-      pendingPrintContentSignatureRef.current = null;
-    }
-  }, [contentSignature]);
 
   useEffect(() => {
     if (!publication) return;
@@ -98,7 +85,6 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
   }, []);
 
   const requestPrint = (mode: PrintRequestMode = 'download') => {
-    pendingPrintContentSignatureRef.current = contentSignature;
     setPrintRequestMode(mode);
     setPrintRequestId((prev) => prev + 1);
   };
@@ -106,7 +92,6 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
   const performPublishedLinkAction = useCallback(async (
     published: MenuPublication,
     action: PublishLinkAction,
-    afterPublish = false,
   ) => {
     const url = getPublicationUrl(published);
     const qrFilename = `qrcode-${published.menuSlug || 'cardapio'}.png`;
@@ -118,7 +103,7 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
 
     if (action === 'copy-link') {
       await copyText(url);
-      showPublishFeedback('Copiado');
+      showButtonResult(action, 'Copiado');
       return;
     }
 
@@ -129,42 +114,27 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
           return;
         } catch (error) {
           if (error instanceof DOMException && error.name === 'AbortError') {
-            if (afterPublish) showPublishFeedback('Link publicado');
-            return;
-          }
-          if (afterPublish && error instanceof DOMException && error.name === 'NotAllowedError') {
-            showPublishFeedback('Publicado. Toque novamente para compartilhar.');
             return;
           }
         }
       }
       await copyText(url);
-      showPublishFeedback('Link copiado');
+      showButtonResult(action, 'Copiado');
       return;
     }
 
     const qrBlob = await createQrCodeBlob(url);
     if (action === 'share-qr') {
       const file = new File([qrBlob], qrFilename, { type: 'image/png' });
-      if (navigator.share && navigator.canShare?.({ files: [file] })) {
-        try {
-          await navigator.share({ title: 'QR code do cardápio', files: [file] });
-          return;
-        } catch (error) {
-          if (error instanceof DOMException && error.name === 'AbortError') {
-            if (afterPublish) showPublishFeedback('Link publicado');
-            return;
-          }
-          if (afterPublish && error instanceof DOMException && error.name === 'NotAllowedError') {
-            showPublishFeedback('Publicado. Toque novamente para compartilhar o QR.');
-            return;
-          }
-        }
+      try {
+        if (await shareFiles('QR code do cardápio', [file])) return;
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === 'NotAllowedError')) throw error;
       }
     }
     downloadBlob(qrBlob, qrFilename);
-    showPublishFeedback('QR code baixado');
-  }, [showPublishFeedback]);
+    showButtonResult(action, 'Baixado');
+  }, [showButtonResult]);
 
   const handleLinkAction = async (action: PublishLinkAction) => {
     setPublishAction(action);
@@ -194,7 +164,53 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
     }
   };
 
-  const handlePublishConfirm = async ({ pdf, virtualLink }: { pdf: boolean; virtualLink: boolean }) => {
+  const getFileExports = () => {
+    if (!fileExportRef.current) throw new Error('O cardápio ainda está carregando.');
+    return fileExportRef.current;
+  };
+
+  const preparePdf = useCallback(() => {
+    if (fileExportRef.current) void Promise.resolve(fileExportRef.current.pdf()).catch(() => undefined);
+  }, []);
+
+  const prepareJpg = useCallback((indexes: readonly number[]) => {
+    if (fileExportRef.current && indexes.length) void Promise.resolve(fileExportRef.current.jpg(indexes)).catch(() => undefined);
+  }, []);
+
+  const exportJpg = async (action: JpgAction, indexes: number[]) => {
+    const prepared = getFileExports().jpg(indexes);
+    const files = prepared instanceof Promise ? await prepared : prepared;
+    const title = files[0].name.replace(/-pagina-\d+\.jpg$/i, '');
+    if (action === 'share') {
+      if (!await shareFiles(title, files)) throw new Error('Este navegador não permite compartilhar arquivos JPG.');
+      return;
+    }
+    await downloadJpgFiles(files, title);
+    showButtonResult('download-jpg', 'Baixado');
+  };
+
+  const handleJpgAction = async (action: JpgAction, indexes: number[]) => {
+    setPublishAction(action === 'download' ? 'download-jpg' : 'share-jpg');
+    setLoadError(null);
+    try {
+      await exportJpg(action, indexes);
+    } catch (error) {
+      setLoadError(error instanceof DOMException && error.name === 'NotAllowedError'
+        ? 'O navegador bloqueou o compartilhamento de arquivos JPG.'
+        : getErrorMessage(error, 'Não foi possível exportar as imagens JPG.'));
+    } finally {
+      setPublishAction(null);
+    }
+  };
+
+  const handlePublishConfirm = async ({ pdf, jpgPages, virtualLink }: PublishOptions) => {
+    if (!pdf && !virtualLink) {
+      if (jpgPages) await handleJpgAction('download', jpgPages);
+      return;
+    }
+    if (jpgPages) void exportJpg('download', jpgPages).catch(error => {
+      setLoadError(getErrorMessage(error, 'Não foi possível baixar as imagens JPG.'));
+    });
     if (!virtualLink) {
       setIsPublishOpen(false);
       requestPrint('download');
@@ -229,58 +245,32 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
     }
   };
 
-  const sharePdfResult = async (result: PdfExportResult, generatedAfterClick: boolean) => {
-    const file = new File([result.blob], result.filename, { type: 'application/pdf' });
-    const webShareNavigator = navigator as unknown as {
-      share?: Navigator['share'];
-      canShare?: Navigator['canShare'];
-    };
-    let canUseFileShare = false;
-    try {
-      canUseFileShare = Boolean(
-        webShareNavigator.share
-        && (!webShareNavigator.canShare || webShareNavigator.canShare({ files: [file] }))
-      );
-    } catch {
-      canUseFileShare = false;
-    }
-
-    if (!canUseFileShare) {
-      downloadBlob(result.blob, result.filename);
-      showPublishFeedback('PDF baixado');
+  const handlePdfAction = async (action: 'options' | 'download' | 'share') => {
+    setLoadError(null);
+    if (action === 'options') {
+      requestPrint('download');
       return;
     }
+    setPublishAction(action === 'download' ? 'download-pdf' : 'share-pdf');
 
     try {
-      await webShareNavigator.share?.({ title: result.filename.replace(/\.pdf$/i, ''), files: [file] });
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return;
-      if (generatedAfterClick && error instanceof DOMException && error.name === 'NotAllowedError') {
-        showPublishFeedback('PDF pronto. Toque novamente para compartilhar.');
-        return;
-      }
-      setLoadError(getErrorMessage(error, 'Não foi possível compartilhar o PDF.'));
-    }
-  };
-
-  const handlePdfAction = async (action: 'options' | 'download' | 'share') => {
-    setPublishAction(action === 'options' ? 'pdf-options' : action === 'download' ? 'download-pdf' : 'share-pdf');
-    setLoadError(null);
-
-    if (action === 'share') {
-      const cachedPdf = cachedPdfExportRef.current;
-      if (cachedPdf?.contentSignature === contentSignature) {
+      const prepared = getFileExports().pdf();
+      const result = prepared instanceof Promise ? await prepared : prepared;
+      if (action === 'share') {
+        const file = new File([result.blob], result.filename, { type: 'application/pdf' });
         try {
-          await sharePdfResult(cachedPdf.result, false);
-        } finally {
-          setPublishAction(null);
+          if (await shareFiles(result.filename.replace(/\.pdf$/i, ''), [file])) return;
+        } catch (error) {
+          if (!(error instanceof DOMException && error.name === 'NotAllowedError')) throw error;
         }
-        return;
       }
+      downloadBlob(result.blob, result.filename);
+      showButtonResult(action === 'download' ? 'download-pdf' : 'share-pdf', 'Baixado');
+    } catch (error) {
+      setLoadError(getErrorMessage(error, 'Não foi possível exportar o PDF.'));
+    } finally {
+      setPublishAction(null);
     }
-
-    requestPrint(action === 'options' ? 'download' : action === 'download' ? 'download-direct' : 'share-direct');
-    if (action === 'options') window.setTimeout(() => setPublishAction(null), 0);
   };
 
   const handlePublicationSlugChange = async (menuSlug: string) => {
@@ -301,41 +291,7 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
   };
 
   const handlePrintComplete = async (result: PdfExportResult) => {
-    const generatedForSignature = pendingPrintContentSignatureRef.current;
-    pendingPrintContentSignatureRef.current = null;
-    const generatedPdfIsCurrent = Boolean(
-      generatedForSignature
-      && generatedForSignature === currentContentSignatureRef.current
-    );
-    const isPublication = printRequestMode === 'publish' || printRequestMode === 'publish-silent';
-    if (!isPublication && generatedPdfIsCurrent && generatedForSignature) {
-      cachedPdfExportRef.current = { contentSignature: generatedForSignature, result };
-    }
-
-    if (printRequestMode === 'download-direct') {
-      setPrintRequestMode('download');
-      setPublishAction(null);
-      showPublishFeedback('PDF baixado');
-      return;
-    }
-
-    if (printRequestMode === 'share-direct') {
-      if (!generatedPdfIsCurrent) {
-        setPrintRequestMode('download');
-        setPublishAction(null);
-        showPublishFeedback('O cardápio mudou. Toque novamente para compartilhar.');
-        return;
-      }
-      try {
-        await sharePdfResult(result, true);
-      } finally {
-        setPrintRequestMode('download');
-        setPublishAction(null);
-      }
-      return;
-    }
-
-    if (!isPublication) return;
+    if (printRequestMode !== 'publish' && printRequestMode !== 'publish-silent') return;
     if (!workspaceData || !session) {
       pendingPublishActionRef.current = null;
       setPublishAction(null);
@@ -369,21 +325,22 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
     pendingPublishActionRef.current = null;
     setIsPublishing(false);
     setPrintRequestMode('download');
-    setPublishAction(null);
     if (!pendingAction) {
+      setPublishAction(null);
       showPublishFeedback('Link publicado');
       return;
     }
 
     try {
-      await performPublishedLinkAction(published, pendingAction, true);
+      await performPublishedLinkAction(published, pendingAction);
     } catch (error) {
       setLoadError(getErrorMessage(error, 'O link foi publicado, mas a ação não foi concluída.'));
+    } finally {
+      setPublishAction(null);
     }
   };
 
   const handlePrintError = (error: unknown) => {
-    pendingPrintContentSignatureRef.current = null;
     if (printRequestMode === 'publish' || printRequestMode === 'publish-silent') {
       setIsPublishing(false);
       pendingPublishActionRef.current = null;
@@ -393,7 +350,6 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
     setLoadError(getErrorMessage(error, 'Falha ao gerar o PDF.'));
   };
   const handlePrintCancel = () => {
-    pendingPrintContentSignatureRef.current = null;
     setIsPublishing(false);
     setPublishAction(null);
     pendingPublishActionRef.current = null;
@@ -402,7 +358,8 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
 
   return {
     printRequestId, printRequestMode, publication, isPublishOpen, setIsPublishOpen, isPublishing, publishAction,
-    publishFeedback, hasPublishedChanges, requestPrint, handleLinkAction, handlePublishConfirm, handlePdfAction,
+    publishFeedback, buttonResults, fileExportRef, hasPublishedChanges, requestPrint,
+    preparePdf, prepareJpg, handleLinkAction, handlePublishConfirm, handlePdfAction, handleJpgAction,
     handlePublicationSlugChange, handlePrintComplete, handlePrintError, handlePrintCancel,
   };
 }

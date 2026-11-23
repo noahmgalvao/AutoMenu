@@ -1,3 +1,4 @@
+import { lockModalScrolling } from '../../common/modalScroll';
 import { setElementFormatting, type FormattingKind } from '../../../domain/menu/itemFormatting';
 import { reindexMenuPages } from '../../../domain/menu/reindexMenuPages';
 import { useMenuPageMeasurements } from './useMenuPageMeasurements';
@@ -73,7 +74,7 @@ interface MenuPreviewProps {
     onStyleUpdate?: React.Dispatch<React.SetStateAction<MenuStyle>>;
     onItemFormattingUpdate?: (kind: FormattingKind, id: string, recipe: (style: MenuStyle) => MenuStyle) => void;
     externalAction?: { type: string, id: number };
-    onSelectionChange?: (selection: { type: 'product' | 'category' | 'freeText' | 'addedImage' | 'page' | 'menuTitle' | 'menuSubtitle' | null, id: string | null }) => void;
+    onSelectionChange?: (selection: { type: 'product' | 'category' | 'freeText' | 'addedImage' | 'page' | 'menuTitle' | 'menuSubtitle' | null, id: string | null }, extendSelection?: boolean) => void;
     onSelectedItemsChange?: (items: SelectionItem[]) => void;
     selection?: { type: 'product' | 'category' | 'freeText' | 'addedImage' | 'page' | 'menuTitle' | 'menuSubtitle' | null, id: string | null };
     undo?: () => void;
@@ -2729,7 +2730,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 document.body
             )}
 
-            {pasteRequest && createPortal(<div data-native-paste role="dialog" aria-label="Colar da área de transferência" className="fixed inset-0 z-[1000] grid place-items-center bg-slate-900/30 p-4">
+            {pasteRequest && createPortal(<div ref={lockModalScrolling} data-native-paste role="dialog" aria-label="Colar da área de transferência" className="fixed inset-0 z-[1000] grid place-items-center bg-slate-900/30 p-4">
                 <div className="w-full max-w-xs space-y-3 rounded-xl bg-white p-4 shadow-xl">
                     <p className="text-sm font-semibold">Cole aqui com Ctrl+V, ⌘V ou a opção Colar do celular.</p>
                     <div contentEditable autoFocus ref={node => node?.focus()} role="textbox" aria-label="Colar imagem ou texto" className="min-h-12 rounded-lg border border-indigo-300 bg-indigo-50 p-2" />
@@ -2743,7 +2744,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     </div>
                 </div>
             </div>, document.body)}
-            {!readOnly && handlers.showAddModal && (createPortal(<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm" onClick={() => handlers.setShowAddModal(null)}> <div className="bg-white p-4 rounded-xl shadow-2xl animate-fade-in" onClick={e => e.stopPropagation()}> <h3 className="text-lg font-bold mb-4">Itens ocultos</h3> <div className="space-y-2 max-h-60 overflow-y-auto"> {products.filter(p => p.category === handlers.showAddModal!.category && !handlers.groupedProducts[handlers.showAddModal!.category]?.find(gp => gp.id === p.id)).map(p => (<button key={p.id} onClick={() => restoreProduct(p.id)} className="w-full p-2 text-left hover:bg-slate-100 rounded flex justify-between items-center"> <span>{p.name}</span> <Plus size={14} /> </button>))} </div> <div className="mt-4 pt-4 border-t"> <button onClick={createNewInModal} className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"> Criar novo item </button> </div> </div> </div>, document.body))}
+            {!readOnly && handlers.showAddModal && (createPortal(<div ref={lockModalScrolling} className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm" onClick={() => handlers.setShowAddModal(null)}> <div className="bg-white p-4 rounded-xl shadow-2xl animate-fade-in" onClick={e => e.stopPropagation()}> <h3 className="text-lg font-bold mb-4">Itens ocultos</h3> <div className="space-y-2 max-h-60 overflow-y-auto"> {products.filter(p => p.category === handlers.showAddModal!.category && !handlers.groupedProducts[handlers.showAddModal!.category]?.find(gp => gp.id === p.id)).map(p => (<button key={p.id} onClick={() => restoreProduct(p.id)} className="w-full p-2 text-left hover:bg-slate-100 rounded flex justify-between items-center"> <span>{p.name}</span> <Plus size={14} /> </button>))} </div> <div className="mt-4 pt-4 border-t"> <button onClick={createNewInModal} className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"> Criar novo item </button> </div> </div> </div>, document.body))}
 
             <div className={`relative isolate flex flex-row items-start w-fit mx-auto ${readOnly ? 'gap-4 p-0 min-h-0' : 'gap-8 px-[52px] pb-20 pt-16 min-h-full'}`}>
                 {pages.map((pageContent, i) => (
@@ -2890,7 +2891,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                         </>
                     ) : (
                     <>
-                    <button onClick={() => { handlers.setMultiSelectMode?.(!handlers.multiSelectMode); setObjectMenu(null); }} className={`w-full px-3 py-2 text-left flex items-center gap-2 ${handlers.multiSelectMode ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-slate-50'}`}><CopyCheck size={15} /> Seleção múltipla</button>
+                    <button type="button" aria-pressed={handlers.multiSelectMode} onClick={() => { handlers.setMultiSelectMode?.(!handlers.multiSelectMode); setObjectMenu(null); }} className={`w-full px-3 py-2 text-left flex items-center gap-2 ${handlers.multiSelectMode ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-slate-50'}`}><CopyCheck size={15} /> Seleção múltipla</button>
                     {contextObjectItem && contextObjectItem.type !== 'addedImage' && (
                         <button type="button" onClick={(event) => {
                             const { type, id } = contextObjectItem;
@@ -2935,7 +2936,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                                 else onStyleUpdate?.(previous => moveImageToMenuBackground(previous, contextImage.id));
                                 handlers.handleSelection(null, null);
                                 setObjectMenu(null);
-                            }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 active:bg-indigo-50">
+                            }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
                                 <Wallpaper size={15} /> Definir imagem de fundo
                             </button>}
                             {!contextImage.shape && <button type="button" onClick={() => openImageCrop(contextImage.id)}
@@ -2987,7 +2988,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             )}
 
             {handlers.showDeletePageConfirm && createPortal(
-                <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-fade-in" onClick={(e) => e.stopPropagation()}>
+                <div ref={lockModalScrolling} className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-fade-in" onClick={(e) => e.stopPropagation()}>
                     <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center border border-slate-200 transform scale-100">
                         <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6 text-red-600">
                             <AlertTriangle size={32} />

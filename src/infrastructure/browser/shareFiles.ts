@@ -10,9 +10,12 @@ export const copyText = async (value: string) => {
   input.style.position = 'fixed';
   input.style.opacity = '0';
   document.body.appendChild(input);
-  input.select();
-  document.execCommand('copy');
-  input.remove();
+  try {
+    input.select();
+    if (!document.execCommand('copy')) throw new Error('Não foi possível copiar o link.');
+  } finally {
+    input.remove();
+  }
 };
 
 export const downloadBlob = (blob: Blob, filename: string) => {
@@ -20,7 +23,9 @@ export const downloadBlob = (blob: Blob, filename: string) => {
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
+  document.body.appendChild(link);
   link.click();
+  link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
 };
 
@@ -41,3 +46,26 @@ export const createQrCodeBlob = (value: string) => {
   });
   return task;
 };
+
+export async function shareFiles(title: string, files: File[]): Promise<boolean> {
+  if (!navigator.share || (navigator.canShare && !navigator.canShare({ files }))) return false;
+  try {
+    await navigator.share({ title, files });
+    return true;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') return true;
+    throw error;
+  }
+}
+
+export async function downloadJpgFiles(files: File[], title: string) {
+  if (files.length === 1) {
+    downloadBlob(files[0], files[0].name);
+    return;
+  }
+  const { zipSync } = await import('fflate');
+  const entries = await Promise.all(files.map(async file => [file.name, new Uint8Array(await file.arrayBuffer())] as const));
+  // JPEGs are already compressed.
+  const archive = zipSync(Object.fromEntries(entries), { level: 0 });
+  downloadBlob(new Blob([archive], { type: 'application/zip' }), `${title}.zip`);
+}

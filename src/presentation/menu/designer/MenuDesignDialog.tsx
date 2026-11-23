@@ -1,3 +1,4 @@
+import { lockModalScrolling } from '../../common/modalScroll';
 import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
@@ -13,7 +14,9 @@ export function MenuDesignDialog({ title, children, footer, close, busy = false 
     const node = dialog.current;
     const trigger = document.activeElement;
     node?.showModal();
+    const unlock = lockModalScrolling(node);
     return () => {
+      unlock?.();
       node?.close();
       if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus({ preventScroll: true });
     };
