@@ -155,6 +155,7 @@ export interface MenuProductSync {
 
 export interface Template {
   catalogMetadata?: TemplateCatalogMetadata;
+  catalogSourceTemplateId?: string;
   id: string;
   workspaceId: string | null;
   scope: TemplateScope;

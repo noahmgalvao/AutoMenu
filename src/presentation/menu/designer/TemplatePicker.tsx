@@ -2,11 +2,12 @@ import { CATALOG_VERSION } from '../../../domain/templates/templateCatalog';
 import { INITIAL_STYLE, NO_TEMPLATE_ID } from '../../../domain/menu/defaults';
 import React, { memo, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, Check, ChevronDown, Grid2X2, Heart, Search, X } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, Globe2, Grid2X2, Heart, Search, X } from 'lucide-react';
+import { getErrorMessage } from '../../../application/errorMessages';
 import type { MenuStyle, Product, SortOption } from '../../../domain/menu/model';
 import { useTemplateFavorites } from './useTemplateFavorites';
 import { getAppliedTemplateId } from '../../../application/templates/templateApplication';
-import { filterTemplates, swipeDirection, TEMPLATE_TABS, type TemplateTab } from '../../../domain/templates/templateBrowse';
+import { filterTemplates, TEMPLATE_TABS, type TemplateTab } from '../../../domain/templates/templateBrowse';
 import { TemplatePreviewSurface } from './TemplatePreviewSurface';
 
 interface Props {
@@ -16,6 +17,7 @@ interface Props {
   sortOption: SortOption;
   userId: string;
   applyTemplate: (template: MenuStyle) => void;
+  onPublishTemplate?: (id: string) => Promise<void>;
 }
 
 const focusStyle = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500';
@@ -48,7 +50,7 @@ const Thumbnail = memo(function Thumbnail({ template }: { template: MenuStyle })
           }} />
         : <div className="h-full w-full">
             <TemplatePreviewSurface current={INITIAL_STYLE} template={template} thumbnail products={[]}
-              sortOption={{ field: 'name', direction: 'asc' }} pageIndex={0} onPageChange={() => undefined}
+              sortOption={{ field: 'name', direction: 'asc' }}
               heart={0} onHeartEnd={() => undefined} />
           </div>)}
     </div>
@@ -89,13 +91,18 @@ function Filters({ query, setQuery, tab, setTab, gallery = false }: {
   </div>;
 }
 
-function TemplateOption({ template, active, favorites, choose, gallery }: {
+function TemplateOption({ template, active, favorites, choose, gallery, onPublishTemplate, published }: {
   template: MenuStyle; active: boolean; favorites: Favorites;
   choose: () => void; gallery?: boolean;
+  onPublishTemplate?: Props['onPublishTemplate']; published?: boolean;
 }) {
   const pendingChoice = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState('');
   useEffect(() => () => clearTimeout(pendingChoice.current), []);
-  return <div data-template-option={template.id} className={gallery ? "template-gallery-tile" : `relative flex min-w-0 rounded-lg border ${active ? 'border-indigo-400 bg-indigo-50' : 'border-transparent hover:bg-slate-50'}`} data-current={active || undefined}>
+  return <div data-template-option={template.id} className={gallery
+    ? `template-gallery-tile ${onPublishTemplate ? 'flex-col' : ''}`
+    : `relative flex min-w-0 rounded-lg border ${active ? 'border-indigo-400 bg-indigo-50' : 'border-transparent hover:bg-slate-50'}`} data-current={active || undefined}>
     <button type="button" aria-label={template.name} aria-current={active || undefined}
       className={`flex min-w-0 flex-1 gap-2 rounded-lg p-2 text-left ${gallery ? 'flex-col' : 'items-center'} ${focusStyle}`}
       onClick={(event) => {
@@ -112,7 +119,7 @@ function TemplateOption({ template, active, favorites, choose, gallery }: {
         }, 280);
       }}>
       <div className={`shrink-0 overflow-hidden rounded-md ${gallery ? 'template-gallery-thumbnail w-full' : 'h-16 w-14'}`}><Thumbnail template={template} /></div>
-      <div className={`min-w-0 ${gallery ? 'pr-9' : ''}`}>
+      <div className={`min-w-0 ${gallery && !onPublishTemplate ? 'pr-9' : ''}`}>
         <div className="truncate text-sm font-semibold">{template.name}</div>
         {(template.templateDescription || template.catalogMetadata?.description) && <div className="template-option-description line-clamp-2 text-xs text-slate-600">
           {template.templateDescription || template.catalogMetadata?.description}
@@ -123,13 +130,32 @@ function TemplateOption({ template, active, favorites, choose, gallery }: {
         </div>}
       </div>
     </button>
-    <div className={gallery ? 'absolute bottom-1 right-1' : 'shrink-0 self-center'}>
-      <FavoriteButton template={template} favorites={favorites} />
+    <div className={gallery ? (onPublishTemplate ? 'border-t border-white/10 px-1' : 'absolute bottom-1 right-1') : 'shrink-0 self-center'}>
+      <div className="flex items-center justify-end">
+        {onPublishTemplate && (published
+          ? <span className="px-1 text-xs font-semibold" role="status">Publicado</span>
+          : <button type="button" disabled={publishing}
+              className={`inline-flex min-h-10 items-center gap-1 rounded-lg px-1.5 text-xs font-semibold disabled:opacity-60 ${focusStyle}`}
+              aria-label={`Publicar para todos: ${template.name}`} title="Publicar para todos"
+              onClick={async () => {
+                setPublishing(true);
+                setPublishError('');
+                try {
+                  await onPublishTemplate(template.id);
+                } catch (error) {
+                  setPublishError(getErrorMessage(error, 'Não foi possível publicar.'));
+                } finally {
+                  setPublishing(false);
+                }
+              }}><Globe2 size={15} />{publishing ? 'Publicando…' : 'Publicar'}</button>)}
+        <FavoriteButton template={template} favorites={favorites} />
+      </div>
+      {publishError && <p role="alert" className="max-w-28 px-1 text-[11px] text-rose-600">{publishError}</p>}
     </div>
   </div>;
 }
 
-function Discover({ current, templates, products, sortOption, applyTemplate, favorites, onClose,
+function Discover({ current, templates, products, sortOption, applyTemplate, onPublishTemplate, favorites, onClose,
 }: Omit<Props, 'userId'> & {
   favorites: Favorites; onClose: () => void;
 }) {
@@ -140,15 +166,12 @@ function Discover({ current, templates, products, sortOption, applyTemplate, fav
   const results = useMemo(() => filterTemplates(templates, tab, query, favorites.ids), [templates, tab, query, favorites.ids]);
   const [focusId, setFocusId] = useState(getAppliedTemplateId(current));
   const [gallery, setGallery] = useState(false);
-  const gesture = useRef<{ x: number; y: number; pointerId: number } | null>(null);
-  const wheel = useRef({ at: -Infinity, delta: 0, handled: false });
-  const [drag, setDrag] = useState(0);
+  const gesture = useRef<{ x: number; y: number; pointerId: number; scrollLeft: number; moved: boolean } | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const savedScroll = useRef(0);
   const lastTap = useRef<{ at: number; x: number; y: number } | null>(null);
-  const [previewPage, setPreviewPage] = useState(0);
   const [heart, setHeart] = useState(0);
   const heartId = useRef(0);
-  const lastLiked = useRef(0);
-  const pointerKind = useRef('');
   const tapTarget = useRef<{ button: HTMLButtonElement; x: number; y: number; pointerId: number } | null>(null);
   const handledTouchAt = useRef(-Infinity);
   const titleId = useId();
@@ -156,13 +179,11 @@ function Discover({ current, templates, products, sortOption, applyTemplate, fav
     || templates.find((template) => template.scope === 'system' || template.id === NO_TEMPLATE_ID);
   useEffect(() => {
     lastTap.current = null;
-    setPreviewPage(0);
     setHeart(0);
   }, [focused?.id]);
   const likePreview = () => {
     if (focused?.id === NO_TEMPLATE_ID) return;
     if (!focused) return;
-    lastLiked.current = performance.now();
     favorites.toggle(focused.id, focused.name, true);
     setHeart(++heartId.current);
   };
@@ -189,7 +210,6 @@ function Discover({ current, templates, products, sortOption, applyTemplate, fav
     items.find((item) => item.dataset.templateOption === focused?.id)?.scrollIntoView({ block: 'nearest' });
   }, [focused?.id, gallery]);
 
-  const turnPage = (delta: number) => setPreviewPage(index => Math.max(0, index + delta));
   const apply = () => {
     if (!focused) return;
     applyTemplate(focused);
@@ -237,7 +257,8 @@ function Discover({ current, templates, products, sortOption, applyTemplate, fav
         }
         if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
           event.preventDefault();
-          turnPage(event.key === 'ArrowRight' ? 1 : -1);
+          const strip = scrollRef.current;
+          if (strip) strip.scrollLeft += strip.clientWidth * (event.key === 'ArrowRight' ? .8 : -.8);
         }
       }}>
       <h2 id={titleId} className="sr-only">Descobrir modelos</h2>
@@ -256,57 +277,40 @@ function Discover({ current, templates, products, sortOption, applyTemplate, fav
         </header>
         <div ref={list} className="template-gallery-list">
           {results.map(template => <TemplateOption key={template.id} template={template} active={focused?.id === template.id}
-            favorites={favorites} gallery choose={() => { setFocusId(template.id); setPreviewPage(0); setGallery(false); }} />)}
+            onPublishTemplate={tab === 'mine' ? onPublishTemplate : undefined}
+            published={tab === 'mine' && templates.some(entry => entry.catalogSourceTemplateId === template.id)}
+            favorites={favorites} gallery choose={() => { savedScroll.current = 0; setFocusId(template.id); setGallery(false); }} />)}
           {!results.length && <p className="template-gallery-empty">Nenhum modelo encontrado.</p>}
         </div>
       </section> : <>
         {focused ? <div className="template-discover-surface" aria-label="Prévia do modelo"
-          onDoubleClick={event => {
-            if (pointerKind.current !== 'touch' && performance.now() - lastLiked.current > 80
-              && !(event.target as HTMLElement).closest('[data-template-preview-controls]')) {
-              likePreview();
-            }
-          }}
-          onWheel={event => {
-            if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
-            const now = performance.now();
-            if (now - wheel.current.at > 220) wheel.current = { at: now, delta: 0, handled: false };
-            wheel.current.at = now;
-            if (wheel.current.handled) return;
-            wheel.current.delta += event.deltaX * (event.deltaMode ? 30 : 1);
-            if (Math.abs(wheel.current.delta) >= 32) {
-              wheel.current.handled = true;
-              turnPage(Math.sign(wheel.current.delta));
-            }
-          }}
           onPointerDown={event => {
-            if (!event.isPrimary || event.button !== 0 || (event.target as HTMLElement).closest('[data-template-preview-controls]')) return;
-            pointerKind.current = event.pointerType;
-            gesture.current = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
-            event.currentTarget.setPointerCapture(event.pointerId);
+            if (!event.isPrimary || event.button !== 0) return;
+            gesture.current = { x: event.clientX, y: event.clientY, pointerId: event.pointerId,
+              scrollLeft: scrollRef.current?.scrollLeft ?? 0, moved: false };
+            if (event.pointerType !== 'touch') event.currentTarget.setPointerCapture(event.pointerId);
           }}
           onPointerMove={event => {
             const start = gesture.current;
             if (!start || event.pointerId !== start.pointerId) return;
             const dx = event.clientX - start.x;
-            if (Math.abs(dx) < 8 || Math.abs(dx) <= Math.abs(event.clientY - start.y)) return;
-            setDrag(Math.max(-96, Math.min(96, dx * .38)));
+            const dy = event.clientY - start.y;
+            if (Math.hypot(dx, dy) > 8) start.moved = true;
+            if (event.pointerType !== 'touch' && start.moved && Math.abs(dx) > Math.abs(dy) && scrollRef.current) {
+              scrollRef.current.scrollLeft = start.scrollLeft - dx;
+            }
           }}
-          onPointerCancel={() => { gesture.current = null; setDrag(0); }}
+          onPointerCancel={() => {
+            gesture.current = null;
+            lastTap.current = null;
+          }}
           onPointerUp={event => {
             const start = gesture.current;
             if (!start || event.pointerId !== start.pointerId) return;
             gesture.current = null;
-            setDrag(0);
             const dx = event.clientX - start.x;
             const dy = event.clientY - start.y;
-            const next = swipeDirection(dx, dy);
-            if (next) {
-              lastTap.current = null;
-              turnPage(next);
-              return;
-            }
-            if (Math.hypot(dx, dy) > 12) {
+            if (start.moved || Math.hypot(dx, dy) > 12) {
               lastTap.current = null;
               return;
             }
@@ -317,15 +321,16 @@ function Discover({ current, templates, products, sortOption, applyTemplate, fav
               lastTap.current = null;
             } else lastTap.current = tap;
           }}>
-          <div className="template-discover-drag" data-dragging={Boolean(drag)} style={{ transform: `translateX(${drag}px)` }}>
-            <TemplatePreviewSurface key={focused.id} current={current} template={focused} products={products}
-              sortOption={sortOption} pageIndex={previewPage}
-              onPageChange={setPreviewPage} heart={heart} onHeartEnd={() => setHeart(0)} />
-          </div>
+          <TemplatePreviewSurface key={focused.id} current={current} template={focused} products={products}
+            sortOption={sortOption} scrollRef={scrollRef} initialScroll={savedScroll.current}
+            heart={heart} onHeartEnd={() => setHeart(0)} />
         </div> : <p className="template-discover-empty">Nenhum modelo encontrado.</p>}
         <div className="template-discover-actions">
           {focused && <FavoriteButton discovery template={focused} favorites={favorites} />}
-          <button type="button" className={`template-discover-all ${focusStyle}`} onClick={() => setGallery(true)}>
+          <button type="button" className={`template-discover-all ${focusStyle}`} onClick={() => {
+            savedScroll.current = scrollRef.current?.scrollLeft ?? 0;
+            setGallery(true);
+          }}>
             <Grid2X2 size={21} aria-hidden="true" />
             Ver todos
           </button>
@@ -345,7 +350,7 @@ function Discover({ current, templates, products, sortOption, applyTemplate, fav
 }
 
 export function TemplatePicker(props: Props) {
-  const { current, templates: library, userId, applyTemplate } = props;
+  const { current, templates: library, userId, applyTemplate, onPublishTemplate } = props;
   const templates = useMemo(() => [...library, {
     ...INITIAL_STYLE, templateDescription: 'Volta à formatação padrão e mantém seu conteúdo.',
   }], [library]);
@@ -411,6 +416,8 @@ export function TemplatePicker(props: Props) {
       <Filters {...{ query, setQuery, tab, setTab }} />
       <div className="max-h-64 space-y-1 overflow-auto overscroll-y-auto">
         {results.map((template) => <TemplateOption key={template.id} template={template} active={currentId === template.id}
+          onPublishTemplate={tab === 'mine' ? onPublishTemplate : undefined}
+          published={tab === 'mine' && templates.some(entry => entry.catalogSourceTemplateId === template.id)}
           favorites={favorites} choose={() => { applyTemplate(template); setPickerOpen(false); trigger.current?.focus(); }} />)}
         {results.length === 0 && <p className="p-3 text-sm text-slate-600">Nenhum modelo encontrado.</p>}
       </div>

@@ -82,6 +82,7 @@ export const mapTemplateRow = (row: any): Template => ({
   scope: row.scope,
   name: row.name,
   catalogMetadata: row.catalog_metadata || undefined,
+  catalogSourceTemplateId: row.catalog_source_template_id || undefined,
   sourceType: row.source_type,
   currentVersionId: row.current_version_id,
   isLocked: row.is_locked,

@@ -48,7 +48,7 @@ const App: React.FC = () => {
     session, isAuthLoading, isAuthSubmitting, authError, loadError, setLoadError, workspaceLoadError, isConfigured,
     workspaceData, products, style, templates, sortOption, setSortOption, isSettingsSaving, isMenuActionLoading,
     setProducts, setStyle, setProductsAndStyle, setTemplates, undo, redo, canUndo, canRedo, handleProductEditChange,
-    handleSignIn, handleSignUp, handleSignOut, handleSaveSettings, handleSaveTemplate, handleRequestPasswordReset, handleUpdatePassword,
+    handleSignIn, handleSignUp, handleSignOut, handleSaveSettings, handleSaveTemplate, onPublishTemplate, handleRequestPasswordReset, handleUpdatePassword,
     handleSelectMenu, performCreateMenu, handleRenameMenu, handleDeleteMenus, forceSaveCurrentMenu,
   } = useWorkspaceEditor({
     showStylePanel: () => setActivePanel('style'),
@@ -348,6 +348,7 @@ const App: React.FC = () => {
             setProductsAndStyle={setProductsAndStyle}
             templates={templates}
             onSaveTemplate={handleSaveTemplate}
+            onPublishTemplate={onPublishTemplate}
             sortOption={sortOption}
             setSortOption={setSortOption}
             undo={undo}

@@ -40,7 +40,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
   const { getInitialSession, subscribeToAuth, sendPasswordReauthentication, signInWithEmail, signOutCurrentUser,
     signUpWithEmail, updatePasswordWithNonce, isConfigured } = auth;
   const { createWorkspaceMenu, deleteWorkspaceMenus, renameWorkspaceMenu, restoreWorkspaceMenus, updateAccountIdentity, saveWorkspaceTemplate,
-    loadWorkspaceData, loadWorkspaceMenuData, saveWorkspaceState } = workspaceGateway;
+    canPublishTemplates, publishWorkspaceTemplate, loadWorkspaceData, loadWorkspaceMenuData, saveWorkspaceState } = workspaceGateway;
   const [session, setSession] = useState<AuthSession | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isWorkspaceLoading, setIsWorkspaceLoading] = useState(false);
@@ -53,6 +53,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
   const [products, setProductsRaw] = useState<Product[]>([]);
   const [style, setStyleRaw] = useState<MenuStyle>(INITIAL_STYLE);
   const [templates, setTemplatesRaw] = useState<MenuStyle[]>(PRESET_TEMPLATES);
+  const [catalogAdminId, setCatalogAdminId] = useState<string>();
   const durableTemplates = useRef(new Map<string, MenuStyle[]>());
   const [sortOption, setSortOption] = useState<SortOption>(DEFAULT_SORT_OPTION);
   const [isSettingsSaving, setIsSettingsSaving] = useState(false);
@@ -351,6 +352,16 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
   }, []);
 
   const authenticatedUserId = session?.user.id || null;
+
+  useEffect(() => {
+    if (!authenticatedUserId) return;
+    let cancelled = false;
+    setCatalogAdminId(undefined);
+    void canPublishTemplates().then(allowed => {
+      if (!cancelled && allowed) setCatalogAdminId(authenticatedUserId);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [authenticatedUserId, session?.user.email, canPublishTemplates]);
 
   useEffect(() => {
     if (!authenticatedUserId) {
@@ -724,17 +735,29 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     }
   };
 
-  const handleSaveTemplate = async (name: string, description: string, id: string) => {
-    if (!session || !workspaceData) throw new Error('Cardápio indisponível.');
-    const workspaceId = workspaceData.workspace.id;
-    const template = createWorkspaceTemplate(style, workspaceData.menu.name, name, description, id);
-    const saved = await saveWorkspaceTemplate({ workspaceId, userId: session.user.id, template });
-    if (menuHistoryScope.current !== `${session.user.id}:${workspaceId}`) return;
+  const rememberTemplate = (workspaceId: string, userId: string, saved: MenuStyle) => {
+    if (menuHistoryScope.current !== `${userId}:${workspaceId}`) return;
     durableTemplates.current.set(workspaceId, mergeDurableTemplates(durableTemplates.current.get(workspaceId) || [], [saved]));
     setTemplatesRaw(current => mergeDurableTemplates(current, [saved]));
     for (const cached of Object.values(menuCacheRef.current)) {
       if (cached.workspace.id === workspaceId) cached.templates = mergeDurableTemplates(cached.templates, [saved]);
     }
+  };
+
+  const handlePublishTemplate = async (templateId: string) => {
+    if (!session || !workspaceData || catalogAdminId !== session.user.id) throw new Error('Publicação indisponível.');
+    const workspaceId = workspaceData.workspace.id;
+    const published = await publishWorkspaceTemplate({ workspaceId, templateId });
+    rememberTemplate(workspaceId, session.user.id, published);
+  };
+
+  const handleSaveTemplate = async (name: string, description: string, id: string, publish = false) => {
+    if (!session || !workspaceData) throw new Error('Cardápio indisponível.');
+    const workspaceId = workspaceData.workspace.id;
+    const template = createWorkspaceTemplate(style, workspaceData.menu.name, name, description, id);
+    const saved = await saveWorkspaceTemplate({ workspaceId, userId: session.user.id, template });
+    rememberTemplate(workspaceId, session.user.id, saved);
+    if (publish) await handlePublishTemplate(saved.id);
   };
 
   const handleRequestPasswordReset = async () => {
@@ -996,6 +1019,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     workspaceData, products, style, templates, sortOption, setSortOption, isSettingsSaving, isMenuActionLoading,
     setProducts, setStyle, setProductsAndStyle, setTemplates, undo, redo, canUndo: canUndo && !isMenuActionLoading, canRedo: canRedo && !isMenuActionLoading, handleProductEditChange,
     handleSignIn, handleSignUp, handleSignOut, handleSaveSettings, handleSaveTemplate, handleRequestPasswordReset, handleUpdatePassword,
+    onPublishTemplate: authenticatedUserId && catalogAdminId === authenticatedUserId ? handlePublishTemplate : undefined,
     handleSelectMenu, performCreateMenu, handleRenameMenu, handleDeleteMenus, forceSaveCurrentMenu,
   };
 }

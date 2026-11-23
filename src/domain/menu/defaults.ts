@@ -70,7 +70,27 @@ export const INITIAL_PRODUCTS: Product[] = [
     price: 15,
     category: 'Pizzas',
     image: ''
-  }
+  },
+  { id: '6', category: 'Hamburgueres', name: 'Smash Cheddar', description: 'Dois discos finos de carne, cheddar e cebola tostada.', price: 19 },
+  { id: '7', category: 'Hamburgueres', name: 'Bacon BBQ', description: 'Hambúrguer grelhado, bacon crocante e molho barbecue.', price: 24 },
+  { id: '8', category: 'Hamburgueres', name: 'Frango Crocante', description: 'Frango empanado, alface e maionese de ervas.', price: 21 },
+  { id: '9', category: 'Hamburgueres', name: 'Burger de Grão-de-Bico', description: 'Hambúrguer vegetal, rúcula e molho de limão.', price: 22 },
+  { id: '10', category: 'Acompanhamentos', name: 'Batata Rústica', description: 'Batatas assadas com alecrim e sal grosso.', price: 12 },
+  { id: '11', category: 'Acompanhamentos', name: 'Anéis de Cebola', description: 'Cebola empanada com molho barbecue.', price: 14 },
+  { id: '12', category: 'Acompanhamentos', name: 'Mandioca Frita', description: 'Mandioca dourada com manteiga de ervas.', price: 13 },
+  { id: '13', category: 'Acompanhamentos', name: 'Palitos de Queijo', description: 'Muçarela empanada com molho de tomate da casa.', price: 17 },
+  { id: '14', category: 'Saladas', name: 'Salada Caprese', description: 'Tomate fresco, muçarela de búfala e manjericão.', price: 16 },
+  { id: '15', category: 'Saladas', name: 'Salada Tropical', description: 'Folhas, manga, cenoura e vinagrete de laranja.', price: 17 },
+  { id: '16', category: 'Saladas', name: 'Salada de Quinoa', description: 'Quinoa, pepino, tomate, hortelã e limão.', price: 19 },
+  { id: '17', category: 'Saladas', name: 'Salada Mediterrânea', description: 'Folhas, azeitonas, tomate, cebola roxa e queijo branco.', price: 20 },
+  { id: '18', category: 'Sobremesas', name: 'Pudim de Leite', description: 'Pudim cremoso com calda de caramelo.', price: 11 },
+  { id: '19', category: 'Sobremesas', name: 'Brownie com Sorvete', description: 'Brownie de chocolate morno e sorvete de baunilha.', price: 15 },
+  { id: '20', category: 'Sobremesas', name: 'Mousse de Maracujá', description: 'Mousse gelada com calda de maracujá.', price: 12 },
+  { id: '21', category: 'Sobremesas', name: 'Cheesecake de Frutas Vermelhas', description: 'Cheesecake cremoso com geleia de frutas vermelhas.', price: 17 },
+  { id: '22', category: 'Pizzas', name: 'Pizza Calabresa', description: 'Calabresa fatiada, cebola, muçarela e orégano.', price: 23 },
+  { id: '23', category: 'Pizzas', name: 'Pizza Quatro Queijos', description: 'Muçarela, provolone, gorgonzola e parmesão.', price: 27 },
+  { id: '24', category: 'Pizzas', name: 'Pizza de Frango', description: 'Frango desfiado, requeijão cremoso e muçarela.', price: 25 },
+  { id: '25', category: 'Pizzas', name: 'Pizza de Cogumelos', description: 'Cogumelos salteados, muçarela e tomilho.', price: 28 },
 ];
 
 export { PRESET_TEMPLATES } from '../templates/templateCatalog';

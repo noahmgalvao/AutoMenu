@@ -216,6 +216,7 @@ export interface MenuStyle {
   freeTextBackgrounds?: Record<string, { x: number; y: number; width: number; pageIndex: number }>;
   markers?: Partial<Record<'category' | 'product', MenuMarker>>;
   catalogMetadata?: TemplateCatalogMetadata;
+  catalogSourceTemplateId?: string;
   appliedTemplateId?: string | null;
   templateDescription?: string;
   appliedTemplateVersionId?: string | null;

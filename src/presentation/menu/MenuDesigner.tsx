@@ -67,7 +67,8 @@ interface MenuDesignerProps {
     workspaceId: string;
     currentUserId: string;
     currentMenuId?: string;
-    onSaveTemplate?: (name: string, description: string, id: string) => Promise<void>;
+    onSaveTemplate?: (name: string, description: string, id: string, publish: boolean) => Promise<void>;
+    onPublishTemplate?: (id: string) => Promise<void>;
     splitCategoryAcrossPages?: boolean;
     productsCanChangeCategory?: boolean;
 }
@@ -151,7 +152,7 @@ const formatLayoutIssueBreakdown = (categories: number, products: number, freeTe
     return `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`;
 };
 
-const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, onProductEditChange, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions, virtualLinkControls, onClose, onOpenVisual, onCanvasScroll, workspaceId, currentUserId, currentMenuId, onSaveTemplate, splitCategoryAcrossPages: legacySplit = false, productsCanChangeCategory: legacyDrag = false }) => {
+const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, onProductEditChange, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions, virtualLinkControls, onClose, onOpenVisual, onCanvasScroll, workspaceId, currentUserId, currentMenuId, onSaveTemplate, onPublishTemplate, splitCategoryAcrossPages: legacySplit = false, productsCanChangeCategory: legacyDrag = false }) => {
     const { assets: { uploadFileAsset }, workspace: { loadTemplateVersion } } = useAppServices();
     const splitCategoryAcrossPages = style.splitCategoryAcrossPages ?? legacySplit;
     const productsCanChangeCategory = style.productsCanChangeCategory ?? legacyDrag;
@@ -2237,6 +2238,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 currentUserId={currentUserId}
                 applyTemplate={applyTemplate}
                 onSaveTemplate={onSaveTemplate}
+                onPublishTemplate={onPublishTemplate}
                 sortOption={sortOption}
                 setSortOption={setSortOption}
                 selection={selection}

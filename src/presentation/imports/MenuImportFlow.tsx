@@ -1176,19 +1176,23 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
     );
 
     const renderMobileEditor = () => (
-      <div className="fixed inset-x-0 bottom-0 top-16 z-[1000] flex flex-col overflow-hidden bg-slate-100 text-slate-900" onPointerDownCapture={() => { document.body.dataset.automenuDeleteContext = 'import-preview'; }}>
-        <main className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-3 pb-28 pt-4 custom-scrollbar" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))', overscrollBehavior: 'contain' }}>
-          <div className="mx-auto max-w-xl space-y-4">
-            <header className="flex min-h-11 items-center justify-between gap-3">
+      <div className="fixed inset-0 z-[1200] flex h-[100dvh] flex-col overflow-hidden bg-slate-100 text-slate-900" onPointerDownCapture={() => { document.body.dataset.automenuDeleteContext = 'import-preview'; }}>
+        <header className="shrink-0 border-b border-slate-200 bg-slate-100 px-3 pb-3" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
+          <div className="mx-auto max-w-xl space-y-3">
+            <div className="flex min-h-11 items-center justify-between gap-3">
               <h1 className="text-lg font-bold text-slate-900">Importar Cardápio</h1>
               <button type="button" onClick={close} disabled={busy} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm disabled:opacity-40" aria-label="Fechar importação"><X size={22} /></button>
-            </header>
+            </div>
 
             <div className="grid grid-cols-2 rounded-xl bg-slate-200/80 p-1" role="tablist" aria-label="Etapa de revisão da importação">
               <button type="button" role="tab" aria-selected={mobileViewTab === 'original'} onClick={() => setMobileViewTab('original')} className={`min-h-10 rounded-lg px-2 text-xs font-bold transition-all ${mobileViewTab === 'original' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500'}`}>Imagem Original</button>
               <button type="button" role="tab" aria-selected={mobileViewTab === 'preview'} onClick={() => setMobileViewTab('preview')} className={`min-h-10 rounded-lg px-2 text-xs font-bold transition-all ${mobileViewTab === 'preview' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500'}`}>Preview do Resultado</button>
             </div>
+          </div>
+        </header>
 
+        <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 custom-scrollbar">
+          <div className="mx-auto max-w-xl space-y-4">
             {mobileViewTab === 'original' ? (
               <>
                 <section className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
@@ -1205,7 +1209,7 @@ export const MenuImportFlow = forwardRef<MenuImportFlowHandle, MenuImportFlowPro
             {previewStale && previewResult && mobileViewTab === 'original' && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-800">Atualize a prévia para incluir as últimas alterações.</div>}
           </div>
         </main>
-        <footer className="absolute inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-3 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+        <footer className="shrink-0 border-t border-slate-200 bg-white px-3 py-3" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
           <div className="mx-auto flex w-full max-w-xl gap-2">
             <button type="button" onClick={close} disabled={busy} className="flex h-12 flex-1 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm disabled:opacity-40">Cancelar</button>
             <button type="button" onClick={complete} disabled={!previewResult || !finalizedPreview || busy} className="flex h-12 flex-[2] items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 text-sm font-bold text-white shadow-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40"><Check size={19} />Concluir Importação</button>

@@ -211,6 +211,8 @@ export const mergeTemplates = (workspaceTemplates: MenuStyle[], systemTemplates:
   return [
     ...workspaceTemplates,
     ...resolvedSystemTemplates.filter((template) => !workspaceIds.has(template.id)),
+    ...systemTemplates.filter(template => template.scope === 'system' && template.catalogSourceTemplateId
+      && !PRESET_TEMPLATE_IDS.has(template.id) && !workspaceIds.has(template.id)),
   ];
 };
 

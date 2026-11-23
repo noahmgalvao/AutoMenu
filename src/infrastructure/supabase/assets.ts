@@ -63,9 +63,11 @@ export const resolveAssetUrl = async (asset: Asset) => {
   return data.signedUrl;
 };
 
-export const resolveAssetMap = async (assets: Asset[]) => {
+type AssetLocation = Pick<Asset, 'id' | 'bucket' | 'path' | 'sourceUrl'>;
+
+export const resolveAssetMap = async (assets: AssetLocation[]) => {
   const resolved = new Map<string, string>();
-  const assetsByBucket = new Map<string, Asset[]>();
+  const assetsByBucket = new Map<string, AssetLocation[]>();
 
   assets.forEach((asset) => {
     if (asset.sourceUrl) {
@@ -170,7 +172,16 @@ export const resolveAssetMapForIds = async (workspaceId: string, assetIds: strin
     throw error;
   }
 
-  return resolveAssetMap((data || []).map(mapAssetRow));
+  const workspaceAssets = (data || []).map(mapAssetRow);
+  const found = new Set(workspaceAssets.map(asset => asset.id));
+  const missing = uniqueAssetIds.filter(id => !found.has(id));
+  if (!missing.length) return resolveAssetMap(workspaceAssets);
+
+  // Catalog backgrounds are explicitly shared, and may belong to a different workspace.
+  const shared = await supabase.from('catalog_template_backgrounds').select('asset_id,bucket,path,source_url').in('asset_id', missing);
+  return resolveAssetMap([...workspaceAssets, ...(shared.data || []).map(row => ({
+    id: row.asset_id, bucket: row.bucket, path: row.path, sourceUrl: row.source_url,
+  }))]);
 };
 
 export const listAssetsForWorkspace = async (workspaceId: string) => {

@@ -18,7 +18,8 @@ export const loadTemplatesForWorkspace = async (workspaceId: string) => {
   }
 
   const templateRows = [...(systemError ? [] : (systemRows || [])), ...(workspaceRows || [])]
-    .filter((row) => row.scope !== 'system' || (PRESET_TEMPLATE_IDS.has(row.id) && row.catalog_active !== false))
+    .filter(row => row.scope !== 'system' || (PRESET_TEMPLATE_IDS.has(row.id) && row.catalog_active !== false)
+      || (row.catalog_active === true && row.catalog_source_template_id))
     .map(mapTemplateRow);
   const versionIds = templateRows.map((template) => template.currentVersionId).filter(Boolean);
 
@@ -50,6 +51,7 @@ export const loadTemplatesForWorkspace = async (workspaceId: string) => {
           name: template.name,
           scope: template.scope,
           catalogMetadata: template.catalogMetadata,
+          catalogSourceTemplateId: template.catalogSourceTemplateId,
           sourceType: template.sourceType,
           templateVersionId: version?.id || null,
           isLocked: template.isLocked,
@@ -68,8 +70,9 @@ export const loadTemplatesForWorkspace = async (workspaceId: string) => {
 export const syncWorkspaceTemplates = async (workspaceId: string, userId: string, templates: MenuStyle[]) => {
   const supabase = getSupabaseClient();
   const workspaceTemplates = assignTemplateMetadata(templates).filter((template) => template.scope === 'workspace');
+  const systemTemplates = templates.filter(template => template.scope === 'system');
 
-  if (!workspaceTemplates.length) return mergeTemplates([], []);
+  if (!workspaceTemplates.length) return mergeTemplates([], systemTemplates);
   const { data: existing, error: lookupError } = await supabase.from('templates')
     .select('id,current_version_id').eq('workspace_id', workspaceId);
   if (lookupError) throw lookupError;
@@ -131,7 +134,7 @@ export const syncWorkspaceTemplates = async (workspaceId: string, userId: string
 
   // Autosave can be based on an older menu snapshot. Absence in that snapshot is not a deletion.
   const normalizedById = new Map(normalizedTemplates.map((template) => [template.id, template]));
-  return mergeTemplates(workspaceTemplates.map((template) => normalizedById.get(template.id) || template), []);
+  return mergeTemplates(workspaceTemplates.map((template) => normalizedById.get(template.id) || template), systemTemplates);
 };
 
 export async function saveWorkspaceTemplate({ workspaceId, userId, template }: {
@@ -156,4 +159,22 @@ export async function loadTemplateVersion({ workspaceId, versionId }: { workspac
   const version = mapTemplateVersionRow(data);
   const urls = await resolveWorkspaceAssetMap(workspaceId, collectTemplateAssetIds([version]));
   return hydrateStyleAssets({ ...version.styleState, id: version.templateId, templateVersionId: version.id }, urls);
+}
+
+export async function canPublishTemplates() {
+  const { data } = await getSupabaseClient().rpc('is_template_catalog_admin');
+  return data === true;
+}
+
+export async function publishWorkspaceTemplate({ workspaceId, templateId }: { workspaceId: string; templateId: string }) {
+  const { data, error } = await getSupabaseClient().rpc('publish_workspace_template', { source_id: templateId });
+  if (error) throw error;
+  const template = mapTemplateRow(data);
+  const style = withStyleDefaults({
+    ...data.style_state, id: template.id, name: template.name, scope: template.scope,
+    catalogSourceTemplateId: template.catalogSourceTemplateId, sourceType: template.sourceType,
+    templateVersionId: template.currentVersionId, isLocked: template.isLocked,
+  });
+  const urls = await resolveWorkspaceAssetMap(workspaceId, style.backgroundAssetId ? [style.backgroundAssetId] : []);
+  return hydrateStyleAssets(style, urls);
 }

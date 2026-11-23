@@ -3,7 +3,7 @@ import { getPaginationHeightKey, type PageLayout } from '../../../domain/menu/me
 import { livePhotoScaleVariable } from './photoSizing';
 
 export function useMenuPageMeasurements(rootRef: RefObject<HTMLElement | null>, pages: PageLayout[], columnCount: number,
-    setMeasuredHeights: Dispatch<SetStateAction<ReadonlyMap<string, number>>>, visiblePage?: number) {
+    setMeasuredHeights: Dispatch<SetStateAction<ReadonlyMap<string, number>>>, layoutVersion?: number | boolean) {
     useLayoutEffect(() => {
         const root = rootRef.current;
         if (!root) return;
@@ -60,5 +60,5 @@ export function useMenuPageMeasurements(rootRef: RefObject<HTMLElement | null>, 
             observer.disconnect();
             cancelAnimationFrame(frame);
         };
-    }, [rootRef, pages, columnCount, visiblePage, setMeasuredHeights]);
+    }, [rootRef, pages, columnCount, layoutVersion, setMeasuredHeights]);
 }

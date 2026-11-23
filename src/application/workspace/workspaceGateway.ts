@@ -48,6 +48,8 @@ export interface WorkspaceGateway {
   updateAccountIdentity(input: { userId: string; workspaceId: string; fullName: string; workspaceName: string }):
     Promise<{ fullName: string; workspaceName: string }>;
   saveWorkspaceTemplate(input: { workspaceId: string; userId: string; template: MenuStyle }): Promise<MenuStyle>;
+  canPublishTemplates(): Promise<boolean>;
+  publishWorkspaceTemplate(input: { workspaceId: string; templateId: string }): Promise<MenuStyle>;
   loadTemplateVersion(input: { workspaceId: string; versionId: string }): Promise<MenuStyle | null>;
   listMenuRevisions(menuId: string): Promise<MenuVersion[]>;
   loadMenuRevisionState(input: { workspaceId: string; versionId: string }): Promise<WorkspaceMenuContent>;

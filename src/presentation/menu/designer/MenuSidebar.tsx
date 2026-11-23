@@ -19,7 +19,8 @@ import { resolveFontSizeLimits, resolveMinimumFontSize } from '../../../domain/m
 interface MenuSidebarProps {
     isOpen: boolean;
     onClose?: () => void;
-    onSaveTemplate?: (name: string, description: string, id: string) => Promise<void>;
+    onSaveTemplate?: (name: string, description: string, id: string, publish: boolean) => Promise<void>;
+    onPublishTemplate?: (id: string) => Promise<void>;
     onPdfClick?: () => void;
     handleResetDesign: () => void;
     
@@ -57,7 +58,7 @@ interface MenuSidebarProps {
 
 export const MenuSidebar: React.FC<MenuSidebarProps> = ({
     isOpen, onClose, onPdfClick, handleResetDesign,
-    style, setStyle, templates, applyTemplate, onSaveTemplate, sortOption, setSortOption, products, currentUserId,
+    style, setStyle, templates, applyTemplate, onSaveTemplate, onPublishTemplate, sortOption, setSortOption, products, currentUserId,
     selection, setSelection, selectedFreeText, selectedAddedImage, selectedAddedImageIds,
     updateFreeTextStyle, updateGlobalElementStyle, setPreviewAction, onMovePhotoToBackground, handleAddedImageUpload, isAddingImage, onAddShape, shapePickerRequest, onChangeShape,
     resizeSelectedAddedImages, removeSelectedAddedImages, layerSelectedAddedImages
@@ -149,7 +150,7 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
 
           <section className="space-y-2">
             <TemplatePicker key={currentUserId} userId={currentUserId} current={style} templates={templates}
-              applyTemplate={applyTemplate} products={products} sortOption={sortOption} />
+              applyTemplate={applyTemplate} products={products} sortOption={sortOption} onPublishTemplate={onPublishTemplate} />
             {onSaveTemplate && <button type="button" onClick={() => { setSavedTemplate(false); setSavingTemplate(true); }}
               className="rounded-md px-2 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50">Salvar como modelo</button>}
             {savedTemplate && <p role="status" className="text-xs font-medium text-emerald-700">Modelo salvo</p>}
@@ -206,18 +207,19 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
             </button>
           </div>
 
-        {rules && <MenuDesignDialog title="Regras gerais" close={() => setRules(null)}>
+        {rules && <MenuDesignDialog title="Regras gerais" close={() => setRules(null)} footer={
+            <footer className="flex shrink-0 justify-end gap-2 border-t border-slate-200 bg-white px-5 py-3">
+              <button type="button" onClick={() => setRules(null)} className={designDialogButton + ' border border-slate-200'}>Cancelar</button>
+              <button type="button" onClick={() => { if (rules !== style) setStyle(rules); setRules(null); }}
+                className={designDialogButton + ' bg-indigo-700 text-white'}>Aplicar</button>
+            </footer>
+        }>
             <div className="p-5">
               <GeneralRulesSection style={rules} setStyle={update => setRules(current =>
                 current && (typeof update === 'function' ? update(current) : update))} />
-              <footer className="mt-4 flex justify-end gap-2">
-                <button type="button" onClick={() => setRules(null)} className={designDialogButton + ' border border-slate-200'}>Cancelar</button>
-                <button type="button" onClick={() => { if (rules !== style) setStyle(rules); setRules(null); }}
-                  className={designDialogButton + ' bg-indigo-700 text-white'}>Aplicar</button>
-              </footer>
             </div>
         </MenuDesignDialog>}
-        {savingTemplate && onSaveTemplate && <SaveTemplateDialog close={() => setSavingTemplate(false)}
+        {savingTemplate && onSaveTemplate && <SaveTemplateDialog close={() => setSavingTemplate(false)} canPublish={Boolean(onPublishTemplate)}
           save={async (...values) => { await onSaveTemplate(...values); setSavingTemplate(false); setSavedTemplate(true); }} />}
         </div>
       </div>

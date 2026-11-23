@@ -21,6 +21,3 @@ export function filterTemplates(templates: MenuStyle[], tab: TemplateTab, query:
     return words.every((word) => index.includes(word));
   });
 }
-
-export const swipeDirection = (dx: number, dy: number) =>
-  Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.2 ? (dx < 0 ? 1 : -1) : 0;

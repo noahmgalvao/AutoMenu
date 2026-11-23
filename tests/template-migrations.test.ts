@@ -125,3 +125,71 @@ test('archiving a menu hides its public link until the menu is restored', async 
     await db.close();
   }
 });
+
+test('only the verified catalog admin can publish a private model, once, without exposing its contents', async () => {
+  const db = new PGlite();
+  try {
+    await db.exec(`
+      create role authenticated; create role anon;
+      create schema auth; create schema storage;
+      create table auth.users(id uuid primary key, email text, email_confirmed_at timestamptz);
+      create function auth.uid() returns uuid language sql stable as
+        $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+      grant usage on schema auth, storage to authenticated;
+      insert into auth.users values
+        ('${user}', 'noahmgalvao@gmail.com', now()), ('${other}', 'other@example.test', now());
+      create table public.templates (
+        id text primary key default gen_random_uuid()::text, workspace_id text, scope text,
+        name text, source_type text, current_version_id text, is_locked boolean, catalog_active boolean
+      );
+      create table public.template_versions (
+        id text primary key default gen_random_uuid()::text, template_id text references public.templates(id),
+        version_number int, style_state jsonb, preview_asset_id text
+      );
+      create table public.assets (id text primary key, workspace_id text, asset_type text, bucket text, path text, source_url text);
+      create table storage.objects (bucket_id text, name text);
+      alter table storage.objects enable row level security;
+      grant select on storage.objects to authenticated;
+      create function public.is_workspace_member(workspace text) returns boolean language sql stable as
+        $$ select workspace = 'mine' and auth.uid() = '${user}'::uuid $$;
+      insert into public.templates values
+        ('original', 'mine', 'workspace', 'Casa', 'user', 'version', false, false),
+        ('other-model', 'theirs', 'workspace', 'Outro', 'user', null, false, false);
+      insert into public.assets values
+        ('bg', 'mine', 'menu_background', 'menu-assets', 'mine/menu_background/bg.png', null);
+      insert into storage.objects values
+        ('menu-assets', 'mine/menu_background/bg.png'), ('menu-assets', 'mine/menu_background/private.png');
+      insert into public.template_versions values ('version', 'original', 1,
+        '{"fontFamily":"Inter","menuTitle":"Confidencial","sourceAssetId":"secret","addedImages":[{}],
+          "backgroundAssetId":"bg","textContrastFills":{"freeText:note":"#000000","productName":"#ffffff"}}', 'bg');
+    `);
+    await db.exec(await readFile('supabase/migrations/20261123190000_publish_workspace_templates.sql', 'utf8'));
+    await db.exec(`set role authenticated; set request.jwt.claim.sub = '${other}';`);
+    assert.deepEqual((await db.query('select public.is_template_catalog_admin() as allowed')).rows, [{ allowed: false }]);
+    await assert.rejects(db.query("select public.publish_workspace_template('original')"), /Somente administradores/);
+    assert.equal((await db.query('select * from storage.objects')).rows.length, 0);
+    await db.exec(`reset role; update auth.users set email_confirmed_at = null where id = '${user}';
+      set role authenticated; set request.jwt.claim.sub = '${user}';`);
+    await assert.rejects(db.query("select public.publish_workspace_template('original')"), /Somente administradores/);
+    await db.exec(`reset role; update auth.users set email_confirmed_at = now() where id = '${user}'; set role authenticated;`);
+    await assert.rejects(db.query("select public.publish_workspace_template('other-model')"), /Modelo indisponível/);
+    const publish = () => db.query<{ model: Record<string, unknown> }>("select public.publish_workspace_template('original') as model");
+    const result = (await publish()).rows[0].model;
+    assert.deepEqual((await publish()).rows[0].model, result);
+    assert.equal(result.scope, 'system');
+    assert.equal(result.catalog_active, true);
+    assert.equal(result.catalog_source_template_id, 'original');
+    assert.deepEqual(result.style_state, {
+      fontFamily: 'Inter', menuTitle: '', menuSubtitle: '', hiddenProductIds: [], backgroundAssetId: 'bg',
+      textContrastFills: { productName: '#ffffff' },
+    });
+    await db.exec(`set request.jwt.claim.sub = '${other}';`);
+    assert.deepEqual((await db.query('select name from storage.objects')).rows, [{ name: 'mine/menu_background/bg.png' }]);
+    await db.exec('reset role; set role anon;');
+    await assert.rejects(db.query("select public.publish_workspace_template('original')"), /permission denied/);
+    await db.exec('reset role;');
+    assert.deepEqual((await db.query("select scope from public.templates where id = 'original'")).rows, [{ scope: 'workspace' }]);
+  } finally {
+    await db.close();
+  }
+});
