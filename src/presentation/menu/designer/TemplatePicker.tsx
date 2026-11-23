@@ -7,7 +7,7 @@ import { getErrorMessage } from '../../../application/errorMessages';
 import type { MenuStyle, Product, SortOption } from '../../../domain/menu/model';
 import { useTemplateFavorites } from './useTemplateFavorites';
 import { getAppliedTemplateId } from '../../../application/templates/templateApplication';
-import { filterTemplates, TEMPLATE_TABS, type TemplateTab } from '../../../domain/templates/templateBrowse';
+import { filterTemplates, swipeDirection, TEMPLATE_TABS, type TemplateTab } from '../../../domain/templates/templateBrowse';
 import { TemplatePreviewSurface } from './TemplatePreviewSurface';
 
 interface Props {
@@ -50,7 +50,7 @@ const Thumbnail = memo(function Thumbnail({ template }: { template: MenuStyle })
           }} />
         : <div className="h-full w-full">
             <TemplatePreviewSurface current={INITIAL_STYLE} template={template} thumbnail products={[]}
-              sortOption={{ field: 'name', direction: 'asc' }}
+              sortOption={{ field: 'name', direction: 'asc' }} pageIndex={0} onPageChange={() => undefined}
               heart={0} onHeartEnd={() => undefined} />
           </div>)}
     </div>
@@ -166,12 +166,15 @@ function Discover({ current, templates, products, sortOption, applyTemplate, onP
   const results = useMemo(() => filterTemplates(templates, tab, query, favorites.ids), [templates, tab, query, favorites.ids]);
   const [focusId, setFocusId] = useState(getAppliedTemplateId(current));
   const [gallery, setGallery] = useState(false);
-  const gesture = useRef<{ x: number; y: number; pointerId: number; scrollLeft: number; moved: boolean } | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const savedScroll = useRef(0);
+  const gesture = useRef<{ x: number; y: number; pointerId: number } | null>(null);
+  const wheel = useRef({ at: -Infinity, delta: 0, handled: false });
+  const [drag, setDrag] = useState(0);
   const lastTap = useRef<{ at: number; x: number; y: number } | null>(null);
+  const [previewPage, setPreviewPage] = useState(0);
   const [heart, setHeart] = useState(0);
   const heartId = useRef(0);
+  const lastLiked = useRef(0);
+  const pointerKind = useRef('');
   const tapTarget = useRef<{ button: HTMLButtonElement; x: number; y: number; pointerId: number } | null>(null);
   const handledTouchAt = useRef(-Infinity);
   const titleId = useId();
@@ -179,11 +182,13 @@ function Discover({ current, templates, products, sortOption, applyTemplate, onP
     || templates.find((template) => template.scope === 'system' || template.id === NO_TEMPLATE_ID);
   useEffect(() => {
     lastTap.current = null;
+    setPreviewPage(0);
     setHeart(0);
   }, [focused?.id]);
   const likePreview = () => {
     if (focused?.id === NO_TEMPLATE_ID) return;
     if (!focused) return;
+    lastLiked.current = performance.now();
     favorites.toggle(focused.id, focused.name, true);
     setHeart(++heartId.current);
   };
@@ -210,6 +215,7 @@ function Discover({ current, templates, products, sortOption, applyTemplate, onP
     items.find((item) => item.dataset.templateOption === focused?.id)?.scrollIntoView({ block: 'nearest' });
   }, [focused?.id, gallery]);
 
+  const turnPage = (delta: number) => setPreviewPage(index => Math.max(0, index + delta));
   const apply = () => {
     if (!focused) return;
     applyTemplate(focused);
@@ -257,8 +263,7 @@ function Discover({ current, templates, products, sortOption, applyTemplate, onP
         }
         if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
           event.preventDefault();
-          const strip = scrollRef.current;
-          if (strip) strip.scrollLeft += strip.clientWidth * (event.key === 'ArrowRight' ? .8 : -.8);
+          turnPage(event.key === 'ArrowRight' ? 1 : -1);
         }
       }}>
       <h2 id={titleId} className="sr-only">Descobrir modelos</h2>
@@ -279,38 +284,57 @@ function Discover({ current, templates, products, sortOption, applyTemplate, onP
           {results.map(template => <TemplateOption key={template.id} template={template} active={focused?.id === template.id}
             onPublishTemplate={tab === 'mine' ? onPublishTemplate : undefined}
             published={tab === 'mine' && templates.some(entry => entry.catalogSourceTemplateId === template.id)}
-            favorites={favorites} gallery choose={() => { savedScroll.current = 0; setFocusId(template.id); setGallery(false); }} />)}
+            favorites={favorites} gallery choose={() => { setFocusId(template.id); setPreviewPage(0); setGallery(false); }} />)}
           {!results.length && <p className="template-gallery-empty">Nenhum modelo encontrado.</p>}
         </div>
       </section> : <>
         {focused ? <div className="template-discover-surface" aria-label="Prévia do modelo"
+          onDoubleClick={event => {
+            if (pointerKind.current !== 'touch' && performance.now() - lastLiked.current > 80
+              && !(event.target as HTMLElement).closest('[data-template-preview-controls]')) {
+              likePreview();
+            }
+          }}
+          onWheel={event => {
+            if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
+            const now = performance.now();
+            if (now - wheel.current.at > 220) wheel.current = { at: now, delta: 0, handled: false };
+            wheel.current.at = now;
+            if (wheel.current.handled) return;
+            wheel.current.delta += event.deltaX * (event.deltaMode ? 30 : 1);
+            if (Math.abs(wheel.current.delta) >= 32) {
+              wheel.current.handled = true;
+              turnPage(Math.sign(wheel.current.delta));
+            }
+          }}
           onPointerDown={event => {
-            if (!event.isPrimary || event.button !== 0) return;
-            gesture.current = { x: event.clientX, y: event.clientY, pointerId: event.pointerId,
-              scrollLeft: scrollRef.current?.scrollLeft ?? 0, moved: false };
-            if (event.pointerType !== 'touch') event.currentTarget.setPointerCapture(event.pointerId);
+            if (!event.isPrimary || event.button !== 0 || (event.target as HTMLElement).closest('[data-template-preview-controls]')) return;
+            pointerKind.current = event.pointerType;
+            gesture.current = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+            event.currentTarget.setPointerCapture(event.pointerId);
           }}
           onPointerMove={event => {
             const start = gesture.current;
             if (!start || event.pointerId !== start.pointerId) return;
             const dx = event.clientX - start.x;
-            const dy = event.clientY - start.y;
-            if (Math.hypot(dx, dy) > 8) start.moved = true;
-            if (event.pointerType !== 'touch' && start.moved && Math.abs(dx) > Math.abs(dy) && scrollRef.current) {
-              scrollRef.current.scrollLeft = start.scrollLeft - dx;
-            }
+            if (Math.abs(dx) < 8 || Math.abs(dx) <= Math.abs(event.clientY - start.y)) return;
+            setDrag(Math.max(-96, Math.min(96, dx * .38)));
           }}
-          onPointerCancel={() => {
-            gesture.current = null;
-            lastTap.current = null;
-          }}
+          onPointerCancel={() => { gesture.current = null; setDrag(0); }}
           onPointerUp={event => {
             const start = gesture.current;
             if (!start || event.pointerId !== start.pointerId) return;
             gesture.current = null;
+            setDrag(0);
             const dx = event.clientX - start.x;
             const dy = event.clientY - start.y;
-            if (start.moved || Math.hypot(dx, dy) > 12) {
+            const next = swipeDirection(dx, dy);
+            if (next) {
+              lastTap.current = null;
+              turnPage(next);
+              return;
+            }
+            if (Math.hypot(dx, dy) > 12) {
               lastTap.current = null;
               return;
             }
@@ -321,16 +345,15 @@ function Discover({ current, templates, products, sortOption, applyTemplate, onP
               lastTap.current = null;
             } else lastTap.current = tap;
           }}>
-          <TemplatePreviewSurface key={focused.id} current={current} template={focused} products={products}
-            sortOption={sortOption} scrollRef={scrollRef} initialScroll={savedScroll.current}
-            heart={heart} onHeartEnd={() => setHeart(0)} />
+          <div className="template-discover-drag" data-dragging={Boolean(drag)} style={{ transform: `translateX(${drag}px)` }}>
+            <TemplatePreviewSurface key={focused.id} current={current} template={focused} products={products}
+              sortOption={sortOption} pageIndex={previewPage}
+              onPageChange={setPreviewPage} heart={heart} onHeartEnd={() => setHeart(0)} />
+          </div>
         </div> : <p className="template-discover-empty">Nenhum modelo encontrado.</p>}
         <div className="template-discover-actions">
           {focused && <FavoriteButton discovery template={focused} favorites={favorites} />}
-          <button type="button" className={`template-discover-all ${focusStyle}`} onClick={() => {
-            savedScroll.current = scrollRef.current?.scrollLeft ?? 0;
-            setGallery(true);
-          }}>
+          <button type="button" className={`template-discover-all ${focusStyle}`} onClick={() => setGallery(true)}>
             <Grid2X2 size={21} aria-hidden="true" />
             Ver todos
           </button>

@@ -1,8 +1,8 @@
 import { useMenuPageMeasurements } from '../canvas/useMenuPageMeasurements';
 import { Heart } from 'lucide-react';
-import { memo, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
-import type { MenuStyle, Product, SortOption } from '../../../domain/menu/model';
+import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { INITIAL_PRODUCTS, NO_TEMPLATE_ID } from '../../../domain/menu/defaults';
+import type { MenuStyle, Product, SortOption } from '../../../domain/menu/model';
 import { useMenuData } from '../interactions/useMenuData';
 import { applyTemplateToCurrentStyle } from '../../../application/templates/templateApplication';
 import { calculatePagination, finalizeMenuPages } from '../../../domain/menu/menuPagination';
@@ -43,15 +43,15 @@ interface TemplatePreviewProps {
   template: MenuStyle;
   products: Product[];
   sortOption: SortOption;
-  scrollRef?: RefObject<HTMLDivElement | null>;
-  initialScroll?: number;
+  pageIndex: number;
+  onPageChange: (index: number) => void;
   heart: number;
   onHeartEnd: () => void;
   thumbnail?: boolean;
 }
 
 export const TemplatePreviewSurface = memo(function TemplatePreviewSurface({
-  current, template, products, sortOption, scrollRef, initialScroll = 0, heart, onHeartEnd, thumbnail,
+  current, template, products, sortOption, pageIndex, onPageChange, heart, onHeartEnd, thumbnail,
 }: TemplatePreviewProps) {
   const sample = products.length === 0;
   const content = sample ? (template.id === NO_TEMPLATE_ID ? INITIAL_PRODUCTS : sampleProducts) : products;
@@ -70,18 +70,15 @@ export const TemplatePreviewSurface = memo(function TemplatePreviewSurface({
     return finalizeMenuPages(calculated, style, content);
   }, [content, style, groupedProductsBase, sortedCategoriesBase, measuredHeights]);
   const { widthPx, heightPx } = resolveMenuPageDimensions(style);
-  const localStage = useRef<HTMLDivElement>(null);
-  const stage = scrollRef ?? localStage;
+  const stage = useRef<HTMLDivElement>(null);
   useResponsivePrices(stage, style);
   const [scale, setScale] = useState(0);
-  const restoredScroll = useRef(false);
-  useMenuPageMeasurements(stage, pages, style.columnCount, setMeasuredHeights, scale > 0);
+  const lastPage = Math.max(0, pages.length - 1);
+  const visibleIndex = Math.min(pageIndex, lastPage);
+  useMenuPageMeasurements(stage, pages, style.columnCount, setMeasuredHeights, scale > 0 ? visibleIndex : undefined);
   useLayoutEffect(() => {
-    if (scale > 0 && stage.current && !restoredScroll.current) {
-      stage.current.scrollLeft = initialScroll;
-      restoredScroll.current = true;
-    }
-  }, [scale, stage, initialScroll]);
+    if (pageIndex !== visibleIndex) onPageChange(visibleIndex);
+  }, [onPageChange, pageIndex, visibleIndex]);
   const fonts = useMemo(() => [style.fontFamily, ...Object.values(style.elementStyles)
     .flatMap((element) => element?.fontFamily ? [element.fontFamily] : [])], [style]);
   const readOnlyHandlers = useMemo(() => ({
@@ -96,28 +93,29 @@ export const TemplatePreviewSurface = memo(function TemplatePreviewSurface({
     observer.observe(element);
     update();
     return () => observer.disconnect();
-  }, [stage, widthPx, heightPx]);
+  }, [widthPx, heightPx]);
 
   return (
     <div className="template-immersive-preview">
       <DynamicFontLoader fonts={fonts} />
-      <div ref={stage} className={`template-preview-stage ${thumbnail ? 'overflow-hidden' : 'overflow-x-auto'}`}
-        data-template-pages={!thumbnail || undefined} role={thumbnail ? undefined : 'region'} aria-label={thumbnail ? undefined : `Prévia de ${template.name}`}>
-        {scale > 0 && <div className="template-preview-strip">
-          {(thumbnail ? pages.slice(0, 1) : pages).map((page, index) => (
-            <div key={index} className="shrink-0 overflow-hidden" style={{ width: widthPx * scale, height: heightPx * scale }}
-              role={thumbnail ? undefined : 'img'} aria-label={thumbnail ? undefined : `Prévia de ${template.name}, página ${index + 1} de ${pages.length}`}>
-              <div inert style={{ width: widthPx, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
-                <MenuPage pageIndex={index} page={page} style={style} products={content}
-                  handlers={readOnlyHandlers} pageCount={pages.length} needsOverlay={!!style.sourceImage && !style.design}
-                  onAddPage={() => undefined} onDeletePage={() => undefined} onSetPageNumbersVisible={() => undefined} readOnly />
-              </div>
-            </div>
-          ))}
+      <div ref={stage} className="relative grid min-h-0 flex-1 place-items-center overflow-hidden" role="img" aria-label={`Prévia de ${template.name}, página ${visibleIndex + 1} de ${pages.length}`}>
+        {scale > 0 && <div inert style={{ width: widthPx * scale, height: heightPx * scale }}>
+          <div style={{ width: widthPx, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
+            <MenuPage pageIndex={visibleIndex} page={pages[visibleIndex]} style={style} products={content}
+              handlers={readOnlyHandlers} pageCount={pages.length} needsOverlay={!!style.sourceImage && !style.design}
+              onAddPage={() => undefined} onDeletePage={() => undefined} onSetPageNumbersVisible={() => undefined} readOnly />
+          </div>
         </div>}
+        {heart > 0 && <div key={heart} data-discover-like-heart className="template-discover-like-heart"
+          aria-hidden="true" onAnimationEnd={onHeartEnd}><Heart fill="currentColor" /></div>}
       </div>
-      {heart > 0 && <div key={heart} data-discover-like-heart className="template-discover-like-heart"
-        aria-hidden="true" onAnimationEnd={onHeartEnd}><Heart fill="currentColor" /></div>}
+      {!thumbnail && pages.length > 1 && <nav aria-label="Páginas da prévia" className="template-discover-pages" data-template-preview-controls>
+        <button type="button" className="rounded-md p-2 hover:bg-white/15 disabled:opacity-40" disabled={visibleIndex === 0}
+          onClick={() => onPageChange(visibleIndex - 1)} aria-label="Página anterior">←</button>
+        <span>Página {visibleIndex + 1} / {pages.length}</span>
+        <button type="button" className="rounded-md p-2 hover:bg-white/15 disabled:opacity-40" disabled={visibleIndex === pages.length - 1}
+          onClick={() => onPageChange(visibleIndex + 1)} aria-label="Próxima página">→</button>
+      </nav>}
     </div>
   );
 });

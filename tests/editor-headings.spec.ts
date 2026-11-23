@@ -306,16 +306,6 @@ test('page actions sit above the next page and operate at the edges of a selecti
     await expect(paper.nth(1).locator('[data-added-image-id]')).toHaveCount(4);
     await after(1).click();
     await expect(paper).toHaveCount(3);
-    await clickPaper(1);
-    const controls = frame(1).locator('[data-page-action-rail] > button');
-    await expect(controls).toHaveCount(4);
-    const positions = () => controls.evaluateAll(buttons => buttons.map(button => {
-        const { x, y } = button.getBoundingClientRect();
-        return { x, y };
-    }));
-    const aligned = await positions();
-    expect(aligned.every(({ x }) => x === aligned[0].x)).toBe(true);
-    expect(aligned.every(({ y }, index) => index === 0 || y > aligned[index - 1].y)).toBe(true);
     await clickPaper(0);
     await clickPaper(1, ['Control']);
     await expect(before(0)).toBeVisible();

@@ -13,8 +13,7 @@ import type { AddedImage, Product, MenuStyle } from '../../../domain/menu/model'
 import { Crop, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CopyCheck, MoreHorizontal, Plus, Edit3, Trash2 } from 'lucide-react';
 import { Resizable } from 're-resizable';
 import { MenuItem } from './MenuItem';
-import { PageActionRail } from './PageActionRail';
-import { CanvasActionGroup, canvasActionButtonClass } from './CanvasControls';
+import { CanvasActionGroup, CanvasFlowActions, canvasActionButtonClass } from './CanvasControls';
 import type { PageLayout, CategoryChunkLayout, PageItem } from '../../../domain/menu/menuPagination';
 import { FREE_TEXT_PREFIX } from '../../../domain/menu/flow';
 import { selectionLayerClasses } from './selectionLayers';
@@ -249,7 +248,8 @@ export const MenuPage: React.FC<MenuPageProps> = ({
             || (activeSelectedItem?.type === 'category' && activeSelectedItem.id === chunk.category);
         const isCategoryDragged = isCategoryTarget && handlers.isCanvasObjectDragging?.('category', chunk.category);
         const categoryAddControls = handlers.getSelectionAddControls?.('category', chunk.category) || { top: true, bottom: true };
-        const categoryFlowDirections = handlers.getFlowControlDirections?.('category', chunk.category) || { before: 'top', after: 'bottom' };
+        const categoryFlowDirections: { before: FlowDirection; after: FlowDirection } =
+            handlers.getFlowControlDirections?.('category', chunk.category) || { before: 'top', after: 'bottom' };
         const categoryAddFlow = isCategorySelected
             ? handlers.getAddControlDirections?.('category', chunk.category) || categoryFlowDirections
             : categoryFlowDirections;
@@ -265,25 +265,28 @@ export const MenuPage: React.FC<MenuPageProps> = ({
             && categoryPosition?.columnIndex === chunk.columnIndex
             ? categoryPosition.y
             : undefined;
-        const renderCategoryMoveButton = (direction: FlowDirection, enabled: boolean) => {
-            if (!enabled) return null;
-            return (
-                <CanvasActionGroup direction={direction} kind="move">
-                    <button type="button" className={canvasActionButtonClass}
-                        onClick={(event) => handlers.handleGlobalMove?.(event, 'category', chunk.category, chunk.category, getCategoryMoveDirection(direction))}
-                        title={`Mover ${getDirectionLabel(direction)}`}>
-                        <CategoryMoveIcon direction={direction} />
-                    </button>
-                </CanvasActionGroup>
-            );
-        };
-        const renderCategoryAddButton = (position: 'before' | 'after', direction: FlowDirection) => (
-            <CanvasActionGroup direction={direction} kind="add">
-                <button type="button" className={`${canvasActionButtonClass} before:!border-indigo-600 before:!bg-indigo-600 !text-white hover:before:!bg-indigo-700`}
-                    onClick={event => handlers.handleAddClick?.(event, chunk.category, true, position)}
-                    title={`Adicionar categoria ${getDirectionLabel(direction)}`}><Plus size={20} /></button>
-            </CanvasActionGroup>
+        const renderCategoryMoveButton = (direction: FlowDirection) => (
+            <button type="button" className={canvasActionButtonClass}
+                onClick={(event) => handlers.handleGlobalMove?.(event, 'category', chunk.category, chunk.category, getCategoryMoveDirection(direction))}
+                title={`Mover ${getDirectionLabel(direction)}`}>
+                <CategoryMoveIcon direction={direction} />
+            </button>
         );
+        const renderCategoryAddButton = (position: 'before' | 'after', direction: FlowDirection) => (
+            <button type="button" className={`${canvasActionButtonClass} before:!border-indigo-600 before:!bg-indigo-600 !text-white hover:before:!bg-indigo-700`}
+                onClick={event => handlers.handleAddClick?.(event, chunk.category, true, position)}
+                title={`Adicionar categoria ${getDirectionLabel(direction)}`}><Plus size={20} /></button>
+        );
+        const canMoveBefore = flowIndex > 0;
+        const canMoveAfter = flowIndex >= 0 && flowIndex < handlers.sortedCategories.length - 1;
+        const moveDirections: (FlowDirection | false)[] = renderedColumnCount > 1
+            ? [
+                canMoveBefore && categoryFlowDirections.before === 'top' && 'top',
+                canMoveAfter && categoryFlowDirections.after === 'bottom' && 'bottom',
+                chunk.columnIndex > 0 && 'left',
+                chunk.columnIndex < renderedColumnCount - 1 && 'right',
+            ]
+            : [canMoveBefore && categoryFlowDirections.before, canMoveAfter && categoryFlowDirections.after];
 
         return (
             <PositionedCategoryChunk
@@ -331,29 +334,17 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 )}
                 {isCategorySelected && isCategoryControlAnchor && !isCategoryDragged && !handlers.isResizingCategoryColumns && !handlers.editingId && !handlers.multiSelectMode && (
                     <>
-                        {categoryAddControls.top && renderCategoryAddButton('before', categoryAddBeforeDirection)}
-                        {categoryAddControls.bottom && renderCategoryAddButton('after', categoryAddAfterDirection)}
-                        {renderedColumnCount > 1 ? (
-                            <>
-                                {renderCategoryMoveButton('top', flowIndex > 0 && categoryFlowDirections.before === 'top')}
-                                {renderCategoryMoveButton(
-                                    'bottom',
-                                    flowIndex >= 0
-                                        && flowIndex < handlers.sortedCategories.length - 1
-                                        && categoryFlowDirections.after === 'bottom'
-                                )}
-                                {renderCategoryMoveButton('left', chunk.columnIndex > 0)}
-                                {renderCategoryMoveButton('right', chunk.columnIndex < renderedColumnCount - 1)}
-                            </>
-                        ) : (
-                            <>
-                                {renderCategoryMoveButton(categoryFlowDirections.before, flowIndex > 0)}
-                                {renderCategoryMoveButton(
-                                    categoryFlowDirections.after,
-                                    flowIndex >= 0 && flowIndex < handlers.sortedCategories.length - 1
-                                )}
-                            </>
-                        )}
+                        <CanvasFlowActions
+                            before={categoryAddControls.top && renderCategoryAddButton('before', categoryAddBeforeDirection)}
+                            up={moveDirections.includes('top') && renderCategoryMoveButton('top')}
+                            down={moveDirections.includes('bottom') && renderCategoryMoveButton('bottom')}
+                            after={categoryAddControls.bottom && renderCategoryAddButton('after', categoryAddAfterDirection)}
+                        />
+                        {moveDirections.map((direction, index) => (direction === 'left' || direction === 'right') && (
+                            <CanvasActionGroup direction={direction} kind="move" key={index}>
+                                {renderCategoryMoveButton(direction)}
+                            </CanvasActionGroup>
+                        ))}
                     </>
                 )}
                 <div data-pagination-chunk-content className={isFreeTextTarget ? undefined : 'flex flex-col'}>
@@ -874,13 +865,29 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                     >
                         <CheckSquare size={18} />
                     </button>
-                    {(pageAddControls.before || pageAddControls.after) && (
-                        <PageActionRail before={pageAddControls.before} after={pageAddControls.after}
-                            onAdd={direction => onAddPage(pageIndex, direction)}
-                            onMoveUp={onMovePage && pageIndex > 0 ? () => onMovePage(pageIndex, 'before') : undefined}
-                            onMoveDown={onMovePage && pageIndex < pageCount - 1 ? () => onMovePage(pageIndex, 'after') : undefined}
-                        />
-                    )}
+                    {(['before', 'after'] as const).filter(direction => pageAddControls[direction]).map(direction => {
+                        const before = direction === 'before';
+                        const side = before ? 'left-[-32px] -translate-x-1/2' : 'right-[-32px] translate-x-1/2';
+                        const placement = before ? 'antes' : 'depois';
+                        const Chevron = before ? ChevronLeft : ChevronRight;
+                        const controls = 'absolute z-[100002] -translate-y-1/2 rounded-full border-2 border-white p-2 text-white shadow-lg hover:scale-110';
+                        return <React.Fragment key={direction}>
+                            <button type="button" data-print-control="true" data-drag-ignore="true"
+                                onClick={event => { event.stopPropagation(); onAddPage(pageIndex, direction); }}
+                                className={`${controls} ${side} top-1/2 bg-blue-600 hover:bg-blue-700`}
+                                title={`Adicionar página ${placement}`}>
+                                <Plus size={24} />
+                            </button>
+                            {onMovePage && (before ? pageIndex > 0 : pageIndex < pageCount - 1) && (
+                                <button type="button" data-print-control="true" data-drag-ignore="true"
+                                    onClick={event => { event.stopPropagation(); onMovePage(pageIndex, direction); }}
+                                    className={`${controls} ${side} top-3/4 bg-blue-600 hover:bg-blue-700`}
+                                    title={before ? 'Trocar com a página anterior' : 'Trocar com a próxima página'}>
+                                    <Chevron size={24} />
+                                </button>
+                            )}
+                        </React.Fragment>;
+                    })}
                     {pageCount > 1 && pageIndex !== 0 && (
                         <button
                             type="button"

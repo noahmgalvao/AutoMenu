@@ -134,7 +134,7 @@ for (const touch of [false, true]) {
       await shortcutsFor(first).getByTitle('Seleção múltipla').click();
       await second.getByRole('heading').click();
       await expect(shortcutsFor(second).getByTitle('Seleção múltipla')).toHaveAttribute('aria-pressed', 'true');
-      await expect(page.locator('[data-canvas-action-group="add"], [data-canvas-action-group="move"], [data-column-resize-handle]')).toHaveCount(0);
+      await expect(page.locator('[data-canvas-action-group="flow"], [data-canvas-action-group="move"], [data-column-resize-handle]')).toHaveCount(0);
 
       const start = (await first.boundingBox())!;
       const destination = (await between.boundingBox())!;
@@ -399,7 +399,7 @@ test('a category stays in the available gap between positioned categories after 
   await expect(page.locator('[data-menu-print-page="true"]')).toHaveCount(1);
 });
 
-test('quick controls touch, grid insertion stays lateral and resizing starts at the column divider', async ({ page }) => {
+test('quick controls touch and resize handles stay on grid column dividers', async ({ page }) => {
   await page.goto('/tests/fixtures/template-editor.html?photos=cards&cols=2&lanes=2');
   const product = page.locator('#product-container-1');
   await product.getByRole('heading').click();
@@ -452,6 +452,18 @@ test('quick controls touch, grid insertion stays lateral and resizing starts at 
   await page.mouse.up();
 });
 
+const flowColumnIsReachable = (item: Element, expectedButtons: number) => {
+  const buttons = Array.from(item.querySelectorAll<HTMLButtonElement>(':scope > [data-canvas-action-group="flow"] button'));
+  const rects = buttons.map(button => button.getBoundingClientRect());
+  return rects.length === expectedButtons && rects.every((rect, index) => {
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    return Math.abs(rect.left - rects[0].left) < 1
+      && (index === 0 || rect.top >= rects[index - 1].bottom - 1)
+      && document.elementFromPoint(centerX, centerY)?.closest('button') === buttons[index];
+  });
+};
+
 for (const { width, height, touch, buttonSize } of [
   { width: 1280, height: 900, touch: false, buttonSize: 28 },
   { width: 320, height: 720, touch: true, buttonSize: 36 },
@@ -470,20 +482,31 @@ for (const { width, height, touch, buttonSize } of [
       await expect.poll(() => product.evaluate(item => {
         const box = item.getBoundingClientRect();
         const bar = document.getElementById(item.querySelector('[data-canvas-action-anchor="quick"]')!.getAttribute('aria-controls')!)!.getBoundingClientRect();
-        const edges = [...item.querySelectorAll<HTMLElement>('[data-canvas-action-group="add"], [data-canvas-action-group="move"]')];
-        return bar.bottom <= box.top + 1 && box.top - bar.bottom <= 6 && Math.abs(bar.right - box.right) < 1
-          && edges.length >= 3 && edges.every(control => {
-            const rect = control.getBoundingClientRect();
-            const edge = control.dataset.canvasActionDirection === 'top' ? box.top : box.bottom;
-            return Math.abs(rect.top + rect.height / 2 - edge) <= rect.height / 2 + 4
-              && document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)?.closest('button') === control.firstElementChild;
-          });
+        return bar.bottom <= box.top + 1 && box.top - bar.bottom <= 6 && Math.abs(bar.right - box.right) < 1;
       })).toBe(true);
+      const rail = product.locator(':scope > [data-canvas-action-group="flow"]');
+      const count = await rail.getByRole('button').count();
+      expect(count).toBeGreaterThanOrEqual(3);
+      await expect.poll(() => product.evaluate(flowColumnIsReachable, count)).toBe(true);
+      if (!touch) {
+        const beforeHover = await rail.boundingBox();
+        await rail.getByTitle('Mover abaixo').hover();
+        await expect.poll(() => rail.boundingBox()).toEqual(beforeHover);
+      }
       const down = product.getByTitle('Mover abaixo');
       const before = (await product.boundingBox())!.y;
       if (touch) await down.tap();
       else await down.click();
       await expect.poll(async () => (await product.boundingBox())!.y).toBeGreaterThan(before + 1);
+    });
+
+    test('category insertion and vertical moves share one reachable column', async ({ page }) => {
+      await page.goto('/tests/fixtures/template-editor.html?editable&cols=1');
+      const category = page.locator('[data-category-chunk="Principais"]');
+      const title = category.locator('[data-category-id="Principais"]');
+      if (touch) await title.tap();
+      else await title.click();
+      await expect.poll(() => category.evaluate(flowColumnIsReachable, 4)).toBe(true);
     });
 
     test('buttons remain compact and reachable for every column combination', async ({ page }) => {
@@ -513,9 +536,14 @@ for (const { width, height, touch, buttonSize } of [
                 && toolbar.bottom <= item.top + 1 && item.top - toolbar.bottom <= 36;
             })).toBe(true);
 
+            const flowButtons = product.locator(':scope > [data-canvas-action-group="flow"] button');
+            await expect(flowButtons.first()).toBeVisible();
+            const flowCount = await flowButtons.count();
+            await expect.poll(() => product.evaluate(flowColumnIsReachable, flowCount)).toBe(true);
+
             await expect.poll(() => product.evaluate(element => {
               const item = element.getBoundingClientRect();
-              const controls = [...element.querySelectorAll<HTMLElement>('[data-canvas-action-group="add"], [data-canvas-action-group="move"]')];
+              const controls = [...element.querySelectorAll<HTMLElement>('[data-canvas-action-group="move"]')];
               return controls.flatMap(control => {
                 if (getComputedStyle(control).visibility === 'hidden') return [];
                 const rect = control.getBoundingClientRect();

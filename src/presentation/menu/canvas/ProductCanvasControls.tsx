@@ -5,7 +5,7 @@ import type { Product, MenuStyle } from '../../../domain/menu/model';
 import React from 'react';
 import { resolveMinimumFontSize, resolveFontSizeLimits } from '../../../domain/menu/styleRules';
 import type { MoveDirection } from '../interactions/types';
-import { canvasActionButtonClass, CanvasActionGroup } from './CanvasControls';
+import { canvasActionButtonClass, CanvasActionGroup, CanvasFlowActions } from './CanvasControls';
 import { selectionLayerClasses } from './selectionLayers';
 
 const DirectionIcon = ({ direction, size, className }: { direction: FlowDirection; size: number; className?: string }) => {
@@ -174,13 +174,11 @@ export const ProductControls = ({
         </button>
     );
     const renderAdd = (position: 'before' | 'after', direction: FlowDirection) => (
-        <CanvasActionGroup direction={direction} kind="add">
-            <button type="button" className={`${canvasActionButtonClass} before:!border-indigo-600 !text-white ${limitReached ? 'before:!bg-red-500 animate-shake' : 'before:!bg-indigo-600 hover:before:!bg-indigo-700'}`}
-                onClick={event => handlers.handleAddClick?.(event, catName, type === 'category', position, id)}
-                title={`${type === 'category' ? 'Adicionar categoria' : 'Adicionar item'} ${getDirectionLabel(direction)}`}>
-                <Plus size={20} />
-            </button>
-        </CanvasActionGroup>
+        <button type="button" className={`${canvasActionButtonClass} before:!border-indigo-600 !text-white ${limitReached ? 'before:!bg-red-500 animate-shake' : 'before:!bg-indigo-600 hover:before:!bg-indigo-700'}`}
+            onClick={event => handlers.handleAddClick?.(event, catName, type === 'category', position, id)}
+            title={`${type === 'category' ? 'Adicionar categoria' : 'Adicionar item'} ${getDirectionLabel(direction)}`}>
+            <Plus size={20} />
+        </button>
     );
     const moves: { direction: MoveDirection; edge: FlowDirection; enabled?: boolean }[] = showGridMoveControls
         ? [
@@ -194,15 +192,21 @@ export const ProductControls = ({
             { direction: 'down', edge: flow.after, enabled: canMoveDown },
         ];
     const enabledMoves = moves.filter(move => move.enabled);
+    const up = enabledMoves.find(move => move.edge === 'top');
+    const down = enabledMoves.find(move => move.edge === 'bottom');
+    const showFlowActions = isActive && !handlers.editingId && !handlers.multiSelectMode;
+    const showInsertion = !isFreeText && showAddControls;
 
     return (
         <>
             {outline}
-            {isActive && !isFreeText && showAddControls && !handlers.editingId && !handlers.multiSelectMode && (
-                <>
-                    {showTopAddControl && renderAdd('before', addFlow.before)}
-                    {showBottomAddControl && renderAdd('after', addFlow.after)}
-                </>
+            {showFlowActions && !isFreeText && (
+                <CanvasFlowActions
+                    before={showInsertion && showTopAddControl && renderAdd('before', addFlow.before)}
+                    up={up && renderMove(up.direction, up.edge)}
+                    down={down && renderMove(down.direction, down.edge)}
+                    after={showInsertion && showBottomAddControl && renderAdd('after', addFlow.after)}
+                />
             )}
             {!handlers.editingId && (!isSelected || isActive) && (
                 <CanvasActionGroup direction="top" kind="quick" hoverOnly={!isActive}>
@@ -228,7 +232,7 @@ export const ProductControls = ({
                     </button>
                 </CanvasActionGroup>
             )}
-            {isActive && !handlers.editingId && !handlers.multiSelectMode && enabledMoves.map(({ direction, edge }) => (
+            {showFlowActions && enabledMoves.filter(move => isFreeText || move.edge === 'left' || move.edge === 'right').map(({ direction, edge }) => (
                 <CanvasActionGroup key={direction} direction={edge} kind="move">
                     {renderMove(direction, edge)}
                 </CanvasActionGroup>

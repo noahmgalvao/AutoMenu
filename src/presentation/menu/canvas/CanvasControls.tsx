@@ -3,7 +3,7 @@ import React, { useLayoutEffect, useRef, useState } from 'react';
 import type { FlowDirection } from './flowControls';
 import { getCanvasViewportBounds, observeAnchorScroll } from './canvasViewport';
 
-type ControlKind = 'quick' | 'add' | 'move' | 'resize';
+type ControlKind = 'quick' | 'flow' | 'move' | 'resize';
 type Box = Record<'left' | 'right' | 'top' | 'bottom', number>;
 type Control = {
     node: HTMLDivElement;
@@ -16,7 +16,7 @@ type Control = {
 
 const margin = 4;
 const edgeOffset = 10;
-const priority: Record<ControlKind, number> = { add: 0, move: 1, quick: 2, resize: 3 };
+const priority: Record<ControlKind, number> = { move: 0, quick: 1, resize: 2, flow: 3 };
 const pageControlObservers = new WeakMap<HTMLElement, ReturnType<typeof observeControls>>();
 
 export const canvasActionButtonClass = 'automenu-canvas-action relative grid shrink-0 place-items-center text-slate-600 before:pointer-events-none before:absolute before:rounded-full before:border before:border-slate-200 before:bg-white before:shadow-sm hover:before:border-indigo-300 hover:before:bg-indigo-50 hover:text-indigo-700 focus-visible:outline-none focus-visible:before:outline-2 focus-visible:before:outline-indigo-600';
@@ -68,13 +68,27 @@ function placeControls(
     const handles = Array.from(page.querySelectorAll('[data-canvas-transform-handle]'), handle => handle.getBoundingClientRect());
     for (const { node, anchor, direction, kind, hoverOnly } of active) {
         const target = anchor.getBoundingClientRect();
-        const bounds = canvas || pageBounds;
+        const flow = kind === 'flow';
+        const viewport = canvas || pageBounds;
+        const bounds = flow ? {
+            ...viewport,
+            left: Math.max(viewport.left, pageRect.left - 24),
+            right: Math.min(viewport.right, pageRect.right + 24),
+        } : viewport;
         if (target.bottom < bounds.top || target.top > bounds.bottom || target.right < bounds.left || target.left > bounds.right) {
             node.style.visibility = 'hidden';
             continue;
         }
-        node.style.visibility = 'visible';
-        node.style.maxWidth = `${Math.max(0, bounds.right - bounds.left)}px`;
+        if (node.style.visibility !== 'visible') node.style.visibility = 'visible';
+        const maxWidth = `${Math.max(0, bounds.right - bounds.left)}px`;
+        if (node.style.maxWidth !== maxWidth) node.style.maxWidth = maxWidth;
+        if (flow) {
+            const size = matchMedia('(pointer: coarse)').matches ? 44 : 28;
+            const slot = `${clamp(Math.floor((bounds.bottom - bounds.top - 3 * margin) / 4), 24, size)}px`;
+            if (node.style.getPropertyValue('--canvas-flow-button-size') !== slot) {
+                node.style.setProperty('--canvas-flow-button-size', slot);
+            }
+        }
         const width = node.offsetWidth;
         const height = node.offsetHeight;
         const centerX = (target.left + target.right) / 2;
@@ -85,7 +99,11 @@ function placeControls(
         let x = centerX - width / 2;
         let y = centerY - height / 2;
 
-        if (kind === 'quick') {
+        if (flow) {
+            const right = target.right - width / 2 + margin;
+            const left = target.left - width / 2 - margin;
+            x = right + width <= bounds.right || left < bounds.left ? right : left;
+        } else if (kind === 'quick') {
             x = target.right - width;
             y = target.top - height - margin;
         } else if (kind === 'resize') {
@@ -114,28 +132,18 @@ function placeControls(
             const center = edge + (leading ? -edgeOffset : edgeOffset);
             if (side) x = center - width / 2;
             else y = center - height / 2;
-            const paired = active.some(control => control.anchor === anchor && control.direction === direction
-                && control.kind === (kind === 'add' ? 'move' : 'add'));
-            if (paired) {
-                const sign = kind === 'add' ? 1 : -1;
-                if (side) y += sign * (height + margin) / 2;
-                else x += sign * (width + margin) / 2;
-            }
             if (direction === 'top') {
                 const shortcuts = active.find(control => control.kind === 'quick' && !control.hoverOnly
                     && (control.anchor === anchor || anchor.contains(control.anchor)));
                 if (shortcuts) {
-                    const lastSlot = Math.min(target.right, bounds.right) - shortcuts.node.offsetWidth - width - margin;
-                    const firstSlot = paired ? lastSlot - width - margin : lastSlot;
-                    if (firstSlot >= Math.max(target.left, bounds.left)) {
-                        x = kind === 'move' ? firstSlot : lastSlot;
-                    }
+                    const slot = Math.min(target.right, bounds.right) - shortcuts.node.offsetWidth - width - margin;
+                    if (slot >= Math.max(target.left, bounds.left)) x = slot;
                 }
             }
         }
 
         // Resolve collisions along the same edge first. A narrow target can borrow the space immediately beside it.
-        const directional = kind === 'add' || kind === 'move';
+        const directional = kind === 'move';
         const edgeLeft = side && directional && !leading ? edge - width / 2 : bounds.left;
         const edgeRight = side && directional && leading ? edge + width / 2 : bounds.right;
         const edgeTop = !side && directional && !leading ? edge - height / 2 : bounds.top;
@@ -147,7 +155,7 @@ function placeControls(
         const maximumTop = Math.max(bounds.bottom - height, edgeTop);
         const preferredLeft = kind === 'resize' ? x : clamp(x, minimumLeft, maximumLeft);
         const preferredTop = clamp(y, minimumTop, maximumTop);
-        const slidesHorizontally = !side || kind === 'quick';
+        const slidesHorizontally = flow || !side || kind === 'quick';
         const minLeft = Math.max(minimumLeft, slidesHorizontally ? Math.min(preferredLeft, target.left - width) - width / 2
             : preferredLeft - (leading ? edgeOffset : 0));
         const maxLeft = Math.min(maximumLeft, slidesHorizontally ? Math.max(preferredLeft, target.right) + width / 2
@@ -165,7 +173,9 @@ function placeControls(
             });
         }
         const xs = kind === 'resize' ? [preferredLeft] : [
-            preferredLeft, ...occupied.flatMap(box => [box.left - width, box.right]),
+            preferredLeft,
+            ...(flow ? [target.left - width / 2 - margin, target.right - width / 2 + margin] : []),
+            ...occupied.flatMap(box => [box.left - width, box.right]),
         ].map(value => clamp(value, minLeft, maxLeft));
         const ys = [preferredTop, ...occupied.flatMap(box => [box.top - height, box.bottom])]
             .map(value => clamp(value, minTop, maxTop));
@@ -198,12 +208,16 @@ function placeControls(
         const inPaper = left >= pageRect.left && left + width <= pageRect.right
             && top >= pageRect.top && top + height <= pageRect.bottom;
         const inOverlay = node.parentElement?.hasAttribute('data-canvas-shortcuts');
-        node.style.position = inPaper || inOverlay ? 'absolute' : 'fixed';
+        const position = inPaper || inOverlay ? 'absolute' : 'fixed';
+        if (node.style.position !== position) node.style.position = position;
         const parent = inPaper || inOverlay ? (node.offsetParent as HTMLElement | null) || anchor : zoomLayer;
         const parentRect = parent?.getBoundingClientRect();
-        node.style.left = `${(left - (parentRect?.left ?? 0)) / scale - (parent?.clientLeft ?? 0)}px`;
-        node.style.top = `${(top - (parentRect?.top ?? 0)) / scale - (parent?.clientTop ?? 0)}px`;
-        node.style.transform = `scale(${1 / scale})`;
+        const leftStyle = `${(Math.round(left) - (parentRect?.left ?? 0)) / scale - (parent?.clientLeft ?? 0)}px`;
+        const topStyle = `${(Math.round(top) - (parentRect?.top ?? 0)) / scale - (parent?.clientTop ?? 0)}px`;
+        const transform = `scale(${1 / scale})`;
+        if (node.style.left !== leftStyle) node.style.left = leftStyle;
+        if (node.style.top !== topStyle) node.style.top = topStyle;
+        if (node.style.transform !== transform) node.style.transform = transform;
     }
 }
 
@@ -330,4 +344,17 @@ export function CanvasActionGroup({ direction, kind, anchorId, anchorSelector, h
         <span hidden ref={marker} aria-controls={groupId} data-canvas-action-anchor={kind} />
         {overlay ? createPortal(group, overlay) : group}
     </>;
+}
+
+export function CanvasFlowActions({ before, up, down, after }: {
+    before?: React.ReactNode;
+    up?: React.ReactNode;
+    down?: React.ReactNode;
+    after?: React.ReactNode;
+}) {
+    const slots = [before, up, down, after];
+    if (!slots.some(Boolean)) return null;
+    return <CanvasActionGroup kind="flow" direction="right">
+        {slots.map((action, index) => action && <div key={index} style={{ gridRow: index + 1 }}>{action}</div>)}
+    </CanvasActionGroup>;
 }
