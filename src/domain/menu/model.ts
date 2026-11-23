@@ -2,6 +2,7 @@ import type { BoundingBox, ExtractedImage } from '../imports/model';
 import type { TemplateDesign, TemplateCatalogMetadata, TemplateScope, TemplateSourceType } from '../templates/model';
 import type { MiniFoodKind } from './miniFoods';
 import type { HeadingPages } from './menuHeadings';
+import type { ItemFormattingOverrides } from './itemFormatting';
 import type { MenuPageSetup } from './pageModel';
 
 export interface TextOutline {
@@ -313,6 +314,7 @@ export interface MenuStyle {
   showPageNumbers?: boolean;
   margins?: MenuMargins;
   contentSpacing?: MenuContentSpacing;
+  itemFormattingOverrides?: ItemFormattingOverrides;
   elementColorOverrides?: Partial<Record<'menuTitle' | 'menuSubtitle' | 'pageNumber' | 'category' | 'productName' | 'productPrice' | 'productDescription', boolean>>;
   elementStyles: {
     menuTitle?: ElementStyle;

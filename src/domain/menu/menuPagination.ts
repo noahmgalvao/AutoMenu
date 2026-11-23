@@ -1,3 +1,4 @@
+import { getItemFormattingStyle } from './itemFormatting';
 import { headingIsOnPage, headingMeasurementKey } from './menuHeadings';
 import { categoryName } from './categoryName';
 import type { Product, MenuStyle } from './model';
@@ -239,6 +240,7 @@ export const calculateItemHeight = (
     availableWidth: number = getCategoryColumnWidth(style),
     categoryColumnCountOverride?: number
 ): number => {
+    if (!product.isFreeText) style = getItemFormattingStyle(style, 'product', product.id);
     const spacing = resolveMenuContentSpacing(style);
     const fontSize = product.isFreeText
         ? clampFontSize(style, 'freeText', product.styles?.fontSize || style.elementStyles?.productName?.fontSize, 18)
@@ -409,8 +411,6 @@ const createPageItemHeightCalculator = (
     categoryColumnIndex?: number,
     measuredHeights?: PaginationOptions['measuredHeights'],
 ) => {
-    const categoryStyle = style.elementStyles?.category || {};
-    const categoryFontSize = clampFontSize(style, 'category', categoryStyle.fontSize, 24);
     const spacing = resolveMenuContentSpacing(style);
     const productColumnCount = style.columnCount || 1;
     const categoryColumnCount = categoryColumnCountOverride || style.categoryColumnCount || 1;
@@ -420,6 +420,8 @@ const createPageItemHeightCalculator = (
         const measured = measuredHeights?.get(getPaginationHeightKey(getPaginationItemKey(item), categoryColumnWidth));
         if (measured !== undefined) return measured;
         if (item.type === 'category-header') {
+            const categoryStyle = getItemFormattingStyle(style, 'category', item.data).elementStyles.category || {};
+            const categoryFontSize = clampFontSize(style, 'category', categoryStyle.fontSize, 24);
             const editButtonReserve = categoryColumnCount > 1 ? 32 : 52;
             const dividerReserve = categoryStyle.textAlign === 'center' ? 64 : 32;
             const categoryImage = style.showCategoryImages !== false ? style.categoryImages?.[item.data] : undefined;

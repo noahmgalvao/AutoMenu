@@ -1,3 +1,4 @@
+import { setElementFormatting, type FormattingKind } from '../../../domain/menu/itemFormatting';
 import { reindexMenuPages } from '../../../domain/menu/reindexMenuPages';
 import { useMenuPageMeasurements } from './useMenuPageMeasurements';
 import { captureCanvasObjectScale } from './canvasObjectScale';
@@ -70,6 +71,7 @@ interface MenuPreviewProps {
     onAddCategory?: (nearCategory: string, position: 'before' | 'after') => void;
     onDeleteProduct?: (productId: string) => void;
     onStyleUpdate?: React.Dispatch<React.SetStateAction<MenuStyle>>;
+    onItemFormattingUpdate?: (kind: FormattingKind, id: string, recipe: (style: MenuStyle) => MenuStyle) => void;
     externalAction?: { type: string, id: number };
     onSelectionChange?: (selection: { type: 'product' | 'category' | 'freeText' | 'addedImage' | 'page' | 'menuTitle' | 'menuSubtitle' | null, id: string | null }) => void;
     onSelectedItemsChange?: (items: SelectionItem[]) => void;
@@ -951,6 +953,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     (handlers as any).getFlowControlDirections = getFlowControlDirections;
     (handlers as any).getAddControlDirections = (type: 'category' | 'product' | 'freeText', id: string) => getFlowControlDirections(type, id, true);
 
+    (handlers as any).updateItemFormatting = props.onItemFormattingUpdate;
     (handlers as any).handleInlineStyleChange = (target: any, newStyle: ElementStyle) => {
         const nextFontSize = Number(newStyle.fontSize);
         if (target.type === 'freeText') {
@@ -989,23 +992,12 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                             target.field === 'description' ? 'productDescription' :
                                 'productName';
 
-        onStyleUpdate?.(prev => {
-            const previousStyle = prev.elementStyles[elementType] || {};
-            const colorChanged = newStyle.color !== previousStyle.color;
-            const fontSizeReduced = target.type !== 'pageNumber'
-                && Number(newStyle.fontSize) > 0
-                && Number(previousStyle.fontSize) > 0
-                && Number(newStyle.fontSize) < Number(previousStyle.fontSize);
-            return {
-                ...prev,
-                elementStyles: { ...prev.elementStyles, [elementType]: newStyle },
-                elementColorOverrides: colorChanged
-                    ? { ...(prev.elementColorOverrides || {}), [elementType]: true }
-                    : prev.elementColorOverrides,
-                pageBreaks: fontSizeReduced ? [] : prev.pageBreaks,
-                name: 'Custom',
-            };
-        });
+        const { onItemFormattingUpdate } = props;
+        if (onItemFormattingUpdate && (target.type === 'category' || target.type === 'product')) {
+            onItemFormattingUpdate(target.type, target.id, previous => setElementFormatting(previous, elementType, newStyle));
+        } else {
+            onStyleUpdate?.(previous => setElementFormatting(previous, elementType, newStyle));
+        }
         return true;
     };
 

@@ -1,3 +1,4 @@
+import type { FormattingKind, FormattingScope } from '../../../domain/menu/itemFormatting';
 import { MenuDesignDialog, SaveTemplateDialog, designDialogButton } from './MenuDesignDialog';
 import { DesignerTapButton } from '../../common/DesignerTapButton';
 import { preventBrowserContextMenu } from '../../common/noBrowserSelection';
@@ -37,6 +38,9 @@ interface MenuSidebarProps {
     // Selection Props
     selection: { type: 'product' | 'category' | 'freeText' | 'addedImage' | 'page' | 'menuTitle' | 'menuSubtitle' | null, id: string | null };
     setSelection: (selection: { type: 'product' | 'category' | 'freeText' | 'addedImage' | 'page' | 'menuTitle' | 'menuSubtitle' | null, id: string | null }) => void;
+    formattingScope: { value: FormattingScope; group?: number; change: (scope: FormattingScope) => void } | null;
+    itemStyle: (kind: FormattingKind) => MenuStyle;
+    setSidebarFormatting: (kind: FormattingKind, update: React.SetStateAction<MenuStyle>) => void;
     selectedFreeText: Product | null;
     selectedAddedImage: AddedImage | null;
     selectedAddedImageIds: string[];
@@ -60,6 +64,7 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
     isOpen, onClose, onPdfClick, handleResetDesign,
     style, setStyle, templates, applyTemplate, onSaveTemplate, onPublishTemplate, sortOption, setSortOption, products, currentUserId,
     selection, setSelection, selectedFreeText, selectedAddedImage, selectedAddedImageIds,
+    formattingScope, itemStyle, setSidebarFormatting,
     updateFreeTextStyle, updateGlobalElementStyle, setPreviewAction, onMovePhotoToBackground, handleAddedImageUpload, isAddingImage, onAddShape, shapePickerRequest, onChangeShape,
     resizeSelectedAddedImages, removeSelectedAddedImages, layerSelectedAddedImages
 }) => {
@@ -126,6 +131,9 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
             selectedFreeText={selectedFreeText}
             selectedAddedImage={selectedAddedImage}
             selectedAddedImageIds={selectedAddedImageIds}
+            formattingScope={formattingScope}
+            itemStyle={itemStyle}
+            setSidebarFormatting={setSidebarFormatting}
             safeStyles={safeStyles}
             fontSizeLimits={fontSizeLimits}
             minimumFontSize={minimumFontSize}

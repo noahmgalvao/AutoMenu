@@ -1156,3 +1156,31 @@ test('inline prices center in the space after the name and accept left alignment
     return Math.abs(price.x - bounds.x);
   }).toBeLessThan(2);
 });
+
+
+test('the sidebar isolates a formatting selection, resumes group editing and offers one representative per format', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?neutral&editable');
+  const scope = page.locator('select[aria-label^="Editando:"]');
+  const section = page.locator('[data-designer-scroll-container]').getByText('Títulos das categorias', { exact: true }).locator('..');
+  const underline = section.getByRole('button', { name: 'Sublinhado' });
+  const editCategory = (name: string) => page.locator(`#text-${name}`).click();
+
+  await editCategory('Entradas');
+  await scope.selectOption({ label: 'Somente seleção' });
+  await expect(scope).toHaveAccessibleName('Editando: Seleção');
+  await underline.click();
+  await expect(page.locator('#text-Entradas')).toHaveCSS('text-decoration-line', 'underline');
+  await expect(page.locator('#text-Principais')).toHaveCSS('text-decoration-line', 'none');
+
+  await editCategory('Principais');
+  await expect(scope).toHaveAccessibleName('Editando: Categorias - 1');
+  await editCategory('Entradas');
+  await expect(scope).toHaveAccessibleName('Editando: Categorias - 2');
+  await page.getByRole('button', { name: 'Abrir dicas do cardápio' }).click();
+  const choices = page.getByRole('combobox', { name: 'Categorias', exact: true });
+  await expect(choices.locator('option')).toHaveText(['Principais', 'Entradas']);
+  await choices.selectOption('Entradas');
+  await page.getByRole('button', { name: 'Padronizar categorias' }).click();
+  await expect(page.locator('#text-Principais')).toHaveCSS('text-decoration-line', 'underline');
+  await expect(scope).toHaveAccessibleName('Editando: Categorias');
+});

@@ -1,3 +1,4 @@
+import { getItemFormattingStyle, setItemDivider } from '../../../domain/menu/itemFormatting';
 import { Edit3, CopyCheck, MoreHorizontal, Trash2 } from 'lucide-react';
 import { CanvasActionGroup, canvasActionButtonClass } from './CanvasControls';
 import { CanvasScaleHandles, CanvasRotationHandle } from './CanvasTransformHandles';
@@ -82,7 +83,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
     item,
     idx,
     pageIndex = 0,
-    style,
+    style: menuStyle,
     priceDecimalPlaces,
     handlers,
     products,
@@ -91,6 +92,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
     categoryColumnCount: renderedCategoryColumnCount,
     backgroundText,
 }) => {
+    const style = menuStyle;
     const formattingTarget = handlers.formattingTarget;
     const canStartEditingAtClick = (event: React.MouseEvent, type: 'product' | 'category' | 'freeText', id: string) =>
         !handlers.readOnly && !handlers.multiSelectMode && !event.shiftKey && !event.ctrlKey && !event.metaKey
@@ -110,7 +112,6 @@ export const MenuItem: React.FC<MenuItemProps> = ({
     const minimumFontSize = resolveMinimumFontSize(style);
     const allowSameWordBreak = style.allowSameWordBreak === true;
     const contentSpacing = resolveMenuContentSpacing(style);
-    const hasProductFill = Boolean(getSurfaceFill(style, 'product') && getSurfaceFill(style, 'product') !== 'transparent');
     const replacePriceOnNextInputRef = React.useRef(new Set<string>());
     const editedPricesRef = React.useRef(new Set<string>());
     const [imageMenuProductId, setImageMenuProductId] = React.useState<string | null>(null);
@@ -223,7 +224,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         }
     };
 
-    const renderFormattingToolbar = (type: 'product' | 'category' | 'freeText' | 'menuTitle' | 'menuSubtitle', id: string, value: ElementStyle) => {
+    const renderFormattingToolbar = (type: 'product' | 'category' | 'freeText' | 'menuTitle' | 'menuSubtitle', id: string, value: ElementStyle, style = menuStyle) => {
         if (formattingTarget?.type !== type || formattingTarget.id !== id) return null;
         const fontKey: FontSizeLimitKey = type !== 'product' ? type : formattingTarget.field === 'price' ? 'productPrice'
             : formattingTarget.field === 'description' ? 'productDescription' : 'productName';
@@ -232,19 +233,19 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             type === 'category' ? 'category' : type === 'freeText' ? 'freeText' :
             formattingTarget.field === 'price' ? 'price' : 'product';
         const border = scope === 'freeText' ? style.freeTextBorders?.[id] : style.borders?.[scope];
-        const dividerLabel = type === 'product' ? 'Linha do produto' : 'Linha da categoria';
-        const divider = type === 'category' || type === 'product' ? {
+        const kind = type === 'category' || type === 'product' ? type : null;
+        const updateDecoration = kind && handlers.updateItemFormatting
+            ? (recipe: (previous: MenuStyle) => MenuStyle) => handlers.updateItemFormatting(kind, id, recipe)
+            : handlers.updateStyle;
+        const dividerLabel = kind === 'product' ? 'Linha do produto' : 'Linha da categoria';
+        const divider = kind ? {
             label: dividerLabel,
             picker: <CategoryDividerPicker compact label={dividerLabel}
-                value={type === 'category' ? resolveCategoryDivider(style, id) : resolveProductDivider(style, id)}
-                color={type === 'category' ? style.primaryColor : style.textColor}
-                onChange={(preset) => handlers.updateStyle?.((previous: MenuStyle) => ({
-                    ...previous,
-                    ...(type === 'category'
-                        ? { categoryDividerStyles: { ...previous.categoryDividerStyles, [id]: preset } }
-                        : { productDividerStyle: preset }),
-                    name: 'Custom',
-                }))}
+                value={kind === 'category' ? resolveCategoryDivider(style, id) : resolveProductDivider(style, id)}
+                color={kind === 'category' ? style.primaryColor : style.textColor}
+                onChange={preset => updateDecoration?.((previous: MenuStyle) => kind === 'product' && !handlers.updateItemFormatting
+                    ? { ...previous, productDividerStyle: preset, name: 'Custom' }
+                    : setItemDivider(previous, kind, id, preset))}
             />,
         } : undefined;
         return <InlineStyleToolbar
@@ -262,8 +263,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     handlers.setFormattingTarget?.(null);
                 }}
                 borderOffset={border?.offset}
-                decoration={handlers.updateStyle ? (formatButtons, onGroupBorderPanelChange) => (
-                    <DecorationControls key={scope} style={style} setStyle={handlers.updateStyle} id={id} scope={scope} targetElementId={formattingTarget.elementId} divider={divider}
+                decoration={updateDecoration ? (formatButtons, onGroupBorderPanelChange) => (
+                    <DecorationControls key={scope} style={style} setStyle={updateDecoration} id={id} scope={scope} targetElementId={formattingTarget.elementId} divider={divider}
                         onGroupBorderPanelChange={type === 'category' ? onGroupBorderPanelChange : undefined}>
                         {formatButtons}
                     </DecorationControls>
@@ -281,7 +282,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const backgroundColor = style.textContrastFills?.[key];
         return backgroundColor ? { backgroundColor, opacity: 1 } : undefined;
     };
-    const renderProductPrice = (product: Product, isEditable: boolean, badgeClass = '') => {
+    const renderProductPrice = (style: MenuStyle, product: Product, isEditable: boolean, badgeClass = '') => {
         if (style.showPrices === false) return null;
         const priceStyle = style.elementStyles?.productPrice || {};
         const baseSize = clampFontSize(style, 'productPrice', priceStyle.fontSize, 18);
@@ -349,7 +350,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             type={type} updateStyle={handlers.updateStyle}
             alignment={(type === 'product' ? style.productPhotoAlignments?.[id] ?? style.productPhotoAlignmentDefault : style.categoryImages?.[id]?.alignment ?? style.categoryPhotoAlignmentDefault) || 'left'} />
     );
-    const renderProductPhoto = (product: Product, limit: number, maxWidth: string, inRow = false) => {
+    const renderProductPhoto = (style: MenuStyle, product: Product, limit: number, maxWidth: string, inRow = false) => {
         const isEditable = !handlers.readOnly && handlers.isReadyToEdit?.('product', product.id);
         const loading = handlers.photoIsLoading?.('product', product.id);
         if (!style.showImages || (!product.image && !loading && !(isEditable && imageMenuProductId === product.id))) return null;
@@ -544,6 +545,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
     }
 
     if (item.type === 'category-header') {
+        const style = getItemFormattingStyle(menuStyle, 'category', item.data);
         const isSelected = handlers.isSelected?.('category', item.data) ?? handlers.selectedId === item.data;
         const catStyle = style.elementStyles?.category || {};
         const isEditable = !handlers.readOnly && handlers.isReadyToEdit?.('category', item.data);
@@ -579,7 +581,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 onClick={(e) => handleItemClick(e, 'category', item.data)}
                 onDoubleClick={(e) => e.stopPropagation()}
             >
-                {renderFormattingToolbar('category', item.data, catStyle)}
+                {renderFormattingToolbar('category', item.data, catStyle, style)}
             {!handlers.readOnly && <ProductControls type="category" catName={item.data} canMoveUp={false} canMoveDown={false} canMoveLeft={false} canMoveRight={false} handlers={handlers} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showSelectionOutline={false} showAddControls={false} showGridMoveControls={false}/>}
                 <div data-template-category data-menu-border-surface="category" data-custom-border={getBorderOverride(style, 'category')} style={{ background: getSurfaceFill(style, 'category'), borderRadius: style.borders?.category?.radius }} className={`relative flex w-full max-w-full min-w-0 items-center gap-1 ${getSurfaceFill(style, 'category') || getBorderOverride(style, 'category') ? 'py-1' : ''} ${compactControls ? 'px-1' : 'px-2'} ${categoryAlign === 'center' ? 'justify-center' : categoryAlign === 'right' ? 'justify-end' : 'justify-start'}`}>
                     <BorderDecoration style={style} scope="category" />
@@ -637,6 +639,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
 
     if (item.type === 'product-item') {
         const product = item.data as Product;
+        const style = product.isFreeText ? menuStyle : getItemFormattingStyle(menuStyle, 'product', product.id);
         const productSelectionType = product.isFreeText ? 'freeText' : 'product';
         const isSelected = backgroundText?.selected ?? (handlers.isSelected?.(productSelectionType, product.id) ?? handlers.selectedId === product.id);
         const primary = !backgroundText || backgroundText.primary;
@@ -650,6 +653,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         
         const isBeingDragged = handlers.isCanvasObjectDragging?.(productSelectionType, product.id);
         const rotation = handlers.liveTextRotation?.id === product.id ? handlers.liveTextRotation.rotation : product.rotation;
+        const fill = getSurfaceFill(style, 'product');
+        const hasProductFill = Boolean(fill && fill !== 'transparent');
         const nameStyle = product.isFreeText && product.styles ? product.styles : (style.elementStyles?.productName || {});
         const priceStyle = style.elementStyles?.productPrice || {};
         const descStyle = style.elementStyles?.productDescription || {};
@@ -732,7 +737,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 {primary && (product.isFreeText
                     ? renderFormattingToolbar('freeText', product.id, product.styles || {})
                     : renderFormattingToolbar('product', product.id,
-                        formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle))}
+                        formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle, style))}
                 {!handlers.readOnly && (primary || isSelected) && <ProductControls type="product" id={product.id} catName={item.category} canMoveUp={!backgroundText && canMoveUp} canMoveDown={!backgroundText && canMoveDown} canMoveLeft={false} canMoveRight={false} isFreeText={product.isFreeText} handlers={handlers} outlineOnly={!primary} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} showGridMoveControls={productColumnCount > 1}/>}
                 
                 <div>
@@ -785,7 +790,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 ) : (
                 <div data-product-flow data-photo-flow={stackImage ? 'stack' : photoAlignment}
                     className={`flow-root min-w-0 ${isNameCentered ? 'text-center' : isNameRight ? 'text-right' : 'text-left'}`}>
-                    {renderProductPhoto(product, imageSizePx, stackImage ? '100%' : '42%')}
+                    {renderProductPhoto(style, product, imageSizePx, stackImage ? '100%' : '42%')}
                          <div
                             data-product-text-row="true"
                             data-product-leader={showProductDivider || undefined}
@@ -830,7 +835,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             {showProductDivider && (
                                 <CanvasTextDivider preset={productDividerPreset} color={style.textColor} titleEdge="left" product />
                             )}
-                            {renderProductPrice(product, Boolean(isEditable))}
+                            {renderProductPrice(style, product, Boolean(isEditable))}
                         </div>
                         <AutoFitText
                             as="p"
@@ -887,8 +892,6 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const productColumnCount = style.columnCount || 1;
         const categoryColumnCount = style.categoryColumnCount || 1;
         const isCardLayout = usesProductCards(style);
-        const cardRadius = getProductCardCornerRadii(style, style.borders?.product?.radius ?? getProductCardRadius(style));
-        const cardBackgroundColor = style.cardBackgroundColor || '#ffffff';
         const compactControls = categoryColumnCount > 1 || productColumnCount > 1;
         const cardImageHeight = getProductCardImageLimit(style);
         const productGridGap = categoryColumnCount > 1
@@ -912,6 +915,11 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 }}
             >
                 {(item.data as Product[]).map((product, productColumnIndex) => {
+                     const style = getItemFormattingStyle(menuStyle, 'product', product.id);
+                     const fill = getSurfaceFill(style, 'product');
+                     const hasProductFill = Boolean(fill && fill !== 'transparent');
+                     const cardRadius = getProductCardCornerRadii(style, style.borders?.product?.radius ?? getProductCardRadius(style));
+                     const cardBackgroundColor = style.cardBackgroundColor || '#ffffff';
                      const isSelected = handlers.isSelected?.('product', product.id) ?? handlers.selectedId === product.id;
                      const photoAlignment = style.productPhotoAlignments?.[product.id] ?? style.productPhotoAlignmentDefault;
                      const sidePhoto = photoAlignment === 'left' || photoAlignment === 'right';
@@ -969,7 +977,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                         onResizeStart={handlers.startCategoryColumnResize} />
                                 )}
                                 {renderFormattingToolbar('product', product.id,
-                                    formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle)}
+                                    formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle, style)}
                             {!handlers.readOnly && <ProductControls type="product" id={product.id} catName={item.category} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={canMoveLeft} canMoveRight={canMoveRight} isFreeText={product.isFreeText} handlers={handlers} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} showGridMoveControls={productColumnCount > 1}/>}
                                 
                                 <div
@@ -985,7 +993,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                     <div data-product-card-content data-product-flow data-photo-flow={photoAlignment ?? 'template'}
                                         className={`h-full min-w-0 ${sidePhoto ? 'flow-root' : 'flex flex-col'} ${isCardLayout || hasProductFill || getBorderOverride(style, 'product') ? 'p-1.5' : ''}`}
                                         style={{ borderRadius: 'inherit', '--automenu-background-photo-space': `calc(36px * var(${livePhotoScaleVariable('product')}, ${style.imageScale || 1}))` } as React.CSSProperties}>
-                                        {renderProductPhoto(product, cardImageHeight, sidePhoto ? '42%' : '100%', true)}
+                                        {renderProductPhoto(style, product, cardImageHeight, sidePhoto ? '42%' : '100%', true)}
                                         <div data-template-content className={`${isCardLayout ? (categoryColumnCount > 1 || productColumnCount > 2 ? 'p-1.5' : productColumnCount > 1 ? 'p-2' : 'p-4') : 'py-2'} ${sidePhoto ? 'block' : 'flex flex-col flex-grow'} min-w-0 ${textAlignClass}`}>
                                             <div
                                                 data-product-text-row="true"
@@ -1029,7 +1037,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                 {showProductDivider && (
                                                     <CanvasTextDivider preset={productDividerPreset} color={style.textColor} titleEdge="left" product />
                                                 )}
-                                                {renderProductPrice(product, Boolean(isEditable), isCardLayout
+                                                {renderProductPrice(style, product, Boolean(isEditable), isCardLayout
                                                     ? `rounded-full bg-white/90 border border-black/5 shadow-sm ${compactControls ? 'px-1.5 py-0.5' : 'px-2.5 py-1'}`
                                                     : undefined)}
                                             </div>

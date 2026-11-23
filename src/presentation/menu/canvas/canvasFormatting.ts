@@ -1,3 +1,4 @@
+import { getItemFormattingStyle } from '../../../domain/menu/itemFormatting';
 import { applyCanvasShapeParameters, getCanvasShapeParameters, type CanvasShapeParameters } from '../../../domain/menu/canvasShapes';
 import type { CategoryDividerStyle, ElementStyle, MenuBorder, MenuMarker, MenuStyle, Product } from '../../../domain/menu/model';
 import { getBorderConfiguration, getMarker, getSurfaceFill, withSurfaceFill } from '../designer/Decorations';
@@ -34,6 +35,7 @@ export function captureCanvasFormat(source: FormatObject, style: MenuStyle, prod
         } : null;
     }
 
+    if (type === 'category' || type === 'product') style = getItemFormattingStyle(style, type, id);
     const product = products.find(item => item.id === id);
     const borderScope = type === 'menuTitle' || type === 'menuSubtitle' ? 'header' : type;
     const fill = getSurfaceFill(style, borderScope, id);

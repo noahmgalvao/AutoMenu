@@ -1,3 +1,4 @@
+import { formattingLabels, getFormattingGroups, getFormattingItems, getItemFormattingStyle, setElementFormatting, standardizeItemFormatting, updateItemFormatting, type FormattingKind, type FormattingScope } from '../../domain/menu/itemFormatting';
 import { MenuFontContext } from './designer/SearchableSelects';
 import { hasMenuContentMutation } from './canvas/menuContentMutations';
 import { applyContrastTip, scanBackgroundTextOverlap, scanTextContrast, type ContrastTip, type OverlapTip } from './canvas/canvasTextTips';
@@ -227,9 +228,18 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     }, [tipsOpen]);
 
     // State for selection context (What element is user clicking?)
-    const [selection, setSelection] = useState<{ type: 'product' | 'category' | 'freeText' | 'addedImage' | 'page' | 'menuTitle' | 'menuSubtitle' | null, id: string | null }>({ type: null, id: null });
+    const [selection, setSelection] = useState<{ type: 'product' | 'category' | 'freeText' | 'addedImage' | 'page' | 'menuTitle' | 'menuSubtitle' | null, id: string | null, formattingScope?: FormattingScope }>({ type: null, id: null });
     const [selectedAddedImageIds, setSelectedAddedImageIds] = useState<string[]>([]);
+    const [selectedFormattingItems, setSelectedFormattingItems] = useState<SelectionItem[]>([]);
+    const [standardization, setStandardization] = useState<Partial<Record<FormattingKind, string>>>({});
+    const changeSelection = useCallback((next: typeof selection) => {
+        setSelection(previous => previous.type === next.type && previous.id === next.id ? previous : next);
+    }, []);
     const handleCanvasSelectedItems = useCallback((items: SelectionItem[]) => {
+        const targeted = items.filter(item => item.type === 'category' || item.type === 'product');
+        setSelectedFormattingItems(previous => previous.length === targeted.length
+            && previous.every((item, index) => item.type === targeted[index].type && item.id === targeted[index].id)
+            ? previous : targeted);
         const ids = items.filter(item => item.type === 'addedImage').map(item => item.id);
         setSelectedAddedImageIds(previous => previous.length === ids.length && previous.every((id, index) => id === ids[index])
             ? previous
@@ -246,7 +256,40 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     scaleRef.current = scale;
 
     const displayProducts = products;
-    const realCategoryIds = new Set(products.filter(product => !product.isFreeText).map(product => product.category));
+    const formattingItems = React.useMemo(() => getFormattingItems(products), [products]);
+    const formattingGroups = React.useMemo(() => ({
+        category: getFormattingGroups(style, 'category', formattingItems.category),
+        product: getFormattingGroups(style, 'product', formattingItems.product),
+    }), [style.itemFormattingOverrides, style.categoryDividerStyles, style.productDividerStyles,
+        style.elementStyles, style.categoryDividerStyle, style.productDividerStyle, style.borders, style.fills, style.markers,
+        style.cardBackgroundColor, style.cardBackgroundColorOverride, style.design, style.fontFamily, style.primaryColor, style.textColor, formattingItems]);
+    const formattingKind = selection.type === 'category' || selection.type === 'product' ? selection.type : null;
+    const activeGroups = formattingKind ? formattingGroups[formattingKind] : [];
+    const activeGroup = activeGroups.findIndex(group => group.includes(selection.id ?? ''));
+    const defaultScope: FormattingScope = activeGroups.length > 1 && activeGroup >= 0 ? 'group' : 'all';
+    const activeScope = selection.formattingScope === 'group' ? defaultScope : selection.formattingScope ?? defaultScope;
+    const itemStyle = (kind: FormattingKind) => {
+        const id = kind === formattingKind ? selection.id : formattingGroups[kind][0]?.[0];
+        return id ? getItemFormattingStyle(style, kind, id) : style;
+    };
+    const updateScopedFormatting = (kind: FormattingKind, id: string, recipe: (value: MenuStyle) => MenuStyle) => {
+        const isActive = kind === formattingKind && selection.id === id;
+        const scope = isActive ? activeScope : kind === formattingKind && formattingGroups[kind].length > 1 ? 'group' : 'all';
+        const selectedIds = selectedFormattingItems.filter(item => item.type === kind).map(item => item.id);
+        setStyle(previous => updateItemFormatting(previous, kind, id, formattingItems[kind], scope,
+            selectedIds.includes(id) ? selectedIds : [id], recipe));
+    };
+    const setSidebarFormatting = (kind: FormattingKind, update: React.SetStateAction<MenuStyle>) => {
+        const id = kind === formattingKind ? selection.id : formattingGroups[kind][0]?.[0];
+        if (!id) return setStyle(update);
+        updateScopedFormatting(kind, id, previous => typeof update === 'function' ? update(previous) : update);
+    };
+    const kindsWithDifferences = (['category', 'product'] as const).filter(kind => formattingGroups[kind].length > 1);
+    const standardizationSource = (kind: FormattingKind) => {
+        const representatives = formattingGroups[kind].map(group => group[0]);
+        return representatives.find(id => id === standardization[kind]) ?? representatives[0];
+    };
+    const realCategoryIds = new Set(formattingItems.category);
     const positionedCategoryIds = Object.keys(style.categoryPositions || {}).filter(category => realCategoryIds.has(category));
     const positionedCategorySignature = positionedCategoryIds.slice().sort().join('\u0000');
     const visibleFontTips = fontTips.filter(tip => !dismissedTips.has(`font:${tip.scope}`));
@@ -265,7 +308,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const configuredCanvasFonts = React.useMemo(() => getConfiguredCanvasFonts(style, products), [style, products]);
     const showMixedFontTip = configuredCanvasFonts.length > 1 && !dismissedTips.has('mixed-fonts');
     const hasVisibleTips = visibleFontTips.length > 0 || showMixedFontTip || showOverlapTip || showOffCanvasTip
-        || showPositionedCategoryTip || Boolean(visibleSplitCategorySwap) || contrastTips.length > 0 || backgroundOverlapTips.length > 0;
+        || showPositionedCategoryTip || Boolean(visibleSplitCategorySwap) || contrastTips.length > 0 || backgroundOverlapTips.length > 0 || kindsWithDifferences.length > 0;
 
     useEffect(() => {
         const root = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas]');
@@ -733,7 +776,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         const historical = workspaceId && versionId && versionId !== currentTemplate?.templateVersionId
             ? await loadTemplateVersion({ workspaceId, versionId }).catch(() => null) : null;
         setStyle(current => getAppliedTemplateId(current) !== id || current.appliedTemplateVersionId !== versionId
-            ? current : applyTemplateToCurrentStyle(current, historical || currentTemplate || INITIAL_STYLE));
+            ? current : applyTemplateToCurrentStyle({ ...current, itemFormattingOverrides: undefined }, historical || currentTemplate || INITIAL_STYLE));
     };
 
     const handleProductUpdate = (id: string, field: keyof Product, value: any, priceEnteredWithDecimals?: boolean) => {
@@ -800,6 +843,11 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 categoryPlacements,
                 categoryPositions,
                 categoryDividerStyles,
+                itemFormattingOverrides: prev.itemFormattingOverrides?.category ? {
+                    ...prev.itemFormattingOverrides,
+                    category: Object.fromEntries(Object.entries(prev.itemFormattingOverrides.category)
+                        .map(([key, value]) => [key === oldName ? newName : key, value])),
+                } : prev.itemFormattingOverrides,
                 categoryImages: Object.fromEntries(Object.entries(prev.categoryImages || {}).map(([key, image]) => [key === oldName ? newName : key, image])),
                 name: 'Custom',
             };
@@ -1400,22 +1448,11 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     };
 
     const updateGlobalElementStyle = (elementType: keyof MenuStyle['elementStyles'], newStyle: ElementStyle) => {
-        setStyle(prev => {
-            const previousStyle = prev.elementStyles[elementType] || {};
-            const colorChanged = newStyle.color !== previousStyle.color;
-            const fontSizeReduced = Number(newStyle.fontSize) > 0
-                && Number(previousStyle.fontSize) > 0
-                && Number(newStyle.fontSize) < Number(previousStyle.fontSize);
-            return {
-                ...prev,
-                elementStyles: { ...prev.elementStyles, [elementType]: newStyle },
-                elementColorOverrides: colorChanged
-                    ? { ...(prev.elementColorOverrides || {}), [elementType]: true }
-                    : prev.elementColorOverrides,
-                pageBreaks: fontSizeReduced ? [] : prev.pageBreaks,
-                name: 'Custom'
-            };
-        });
+        if (elementType === 'category' || elementType === 'productName' || elementType === 'productPrice' || elementType === 'productDescription') {
+            setSidebarFormatting(elementType === 'category' ? 'category' : 'product', previous => setElementFormatting(previous, elementType, newStyle));
+        } else {
+            setStyle(previous => setElementFormatting(previous, elementType, newStyle));
+        }
         return true;
     };
 
@@ -1775,6 +1812,10 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         let nextProducts = products;
         let nextStyle = style;
         const appliedFontScopes = new Set<WordFitScope>();
+        for (const kind of kindsWithDifferences) {
+            const source = standardizationSource(kind);
+            if (source) nextStyle = standardizeItemFormatting(nextStyle, kind, source);
+        }
 
         if (showMixedFontTip) {
             nextStyle = applyFontToMenuStyle(nextStyle, style.fontFamily);
@@ -1958,6 +1999,31 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                 </div>
 
                                 <div className="max-h-[min(60vh,32rem)] space-y-4 overflow-y-auto p-4">
+                                    {kindsWithDifferences.length > 0 && <section className="space-y-2">
+                                        <h3 className="text-xs font-semibold text-slate-800">Sugestão para manter todos no padrão</h3>
+                                        {kindsWithDifferences.map(kind => (
+                                            <div key={kind} className="flex items-end gap-2 rounded-xl bg-indigo-50 p-3 text-xs">
+                                                <label className="min-w-0 flex-1 space-y-1 font-semibold text-slate-700">
+                                                    {formattingLabels[kind]}
+                                                    <select className="w-full rounded-lg border border-indigo-200 bg-white p-1.5"
+                                                        value={standardizationSource(kind)}
+                                                        onChange={event => setStandardization({ ...standardization, [kind]: event.target.value })}>
+                                                        {formattingGroups[kind].map(([id]) => <option key={id} value={id}>
+                                                            {kind === 'category' ? categoryName(id) : products.find(product => product.id === id)?.name || 'Produto sem nome'}
+                                                        </option>)}
+                                                    </select>
+                                                </label>
+                                                <button type="button" className="rounded-lg bg-indigo-700 px-2.5 py-1.5 font-semibold text-white"
+                                                    aria-label={`Padronizar ${formattingLabels[kind].toLowerCase()}`}
+                                                    onClick={() => {
+                                                        const source = standardizationSource(kind);
+                                                        if (source) setStyle(previous => standardizeItemFormatting(previous, kind, source));
+                                                    }}>
+                                                    Padronizar
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </section>}
                                     {backgroundOverlapTips.length > 0 && <section>
                                         <h3 className="mb-2 text-xs font-semibold text-slate-800">Textos sobrepostos no plano de fundo</h3>
                                         <div className="space-y-2">
@@ -2204,7 +2270,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                     onStyleUpdate={setStyle}
                                     externalAction={previewAction}
                                     selection={selection}
-                                    onSelectionChange={setSelection}
+                                    onSelectionChange={changeSelection}
+                                    onItemFormattingUpdate={updateScopedFormatting}
                                     onSelectedItemsChange={handleCanvasSelectedItems}
                                     undo={undo}
                                     redo={redo}
@@ -2242,7 +2309,14 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 sortOption={sortOption}
                 setSortOption={setSortOption}
                 selection={selection}
-                setSelection={setSelection}
+                setSelection={changeSelection}
+                formattingScope={formattingKind && {
+                    value: activeScope,
+                    group: activeGroup >= 0 && activeGroups.length > 1 ? activeGroup + 1 : undefined,
+                    change: value => setSelection(previous => ({ ...previous, formattingScope: value })),
+                }}
+                itemStyle={itemStyle}
+                setSidebarFormatting={setSidebarFormatting}
                 selectedFreeText={selectedFreeText}
                 selectedAddedImage={selectedAddedImage}
                 selectedAddedImageIds={selectedAddedImageIds}

@@ -36,10 +36,12 @@ test('desktop discovery leaves the editor untouched until Apply and records one 
   await expect(dialog.getByRole('heading', { name: 'Editorial Essencial' })).toHaveCount(0);
   await expect(canvas.locator('[contenteditable=true],button')).toHaveCount(0);
   const firstPaperSize = (await canvas.boundingBox())!;
-  await page.keyboard.press('ArrowDown');
   const box = (await preview.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.wheel(0, 120);
+  await expect(preview).toHaveCount(0);
+  await expect(dialog.getByRole('img', { name: /Prévia de .*página 1/ })).toBeVisible();
+  await page.keyboard.press('ArrowUp');
   await expect(preview).toHaveAccessibleName(/página 1 de [2-9]/);
   await page.keyboard.press('ArrowRight');
   await expect(preview).toHaveAccessibleName(/página 2 de/);
@@ -90,6 +92,28 @@ test('discovery opens on Todos every time and keeps personal templates in their 
   await expect(personal).toHaveCount(0);
 });
 
+test('the swipe hint counts each visit once and stops after five visits with a vertical gesture', async ({ page }) => {
+  const dialog = page.getByRole('dialog', { name: 'Descobrir modelos' });
+  const surface = dialog.getByLabel('Prévia do modelo', { exact: true });
+  const hint = dialog.getByText('Deslize para cima para descobrir mais modelos');
+  await openDiscovery(page);
+  await expect(hint).toBeVisible();
+  await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
+
+  for (let visit = 0; visit < 5; visit++) {
+    await openDiscovery(page);
+    await expect(hint).toBeVisible();
+    await surface.dispatchEvent('wheel', { deltaY: 120 });
+    await expect(hint).toHaveCount(0);
+    await surface.dispatchEvent('wheel', { deltaX: 120 });
+    await surface.dispatchEvent('wheel', { deltaY: 120 });
+    await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  }
+  await page.reload();
+  await openDiscovery(page);
+  await expect(hint).toHaveCount(0);
+});
+
 test('quick search finds imported templates and favorites survive refresh', async ({ page }) => {
   await page.getByRole('button',{name:'Editorial Essencial',exact:true}).click();
   await page.getByRole('button',{name:'Meus modelos',exact:true}).click();
@@ -123,7 +147,11 @@ for (const viewport of [{width:360,height:720},{width:430,height:932}]) {
         await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x+dx,y:y+dy}]});
         await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
       };
+      await expect(dialog.getByText('Deslize para cima para descobrir mais modelos')).toBeVisible();
       await swipe(0, -90);
+      await expect(surface).toHaveCount(0);
+      await expect(dialog.getByText('Deslize para cima para descobrir mais modelos')).toHaveCount(0);
+      await swipe(0, 90);
       await expect(surface).toHaveAccessibleName(/página 1 de [2-9]/);
       await swipe(-90, 0);
       await expect(surface).toHaveAccessibleName(/página 2 de/);

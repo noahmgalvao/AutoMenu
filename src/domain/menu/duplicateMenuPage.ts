@@ -86,6 +86,10 @@ export function duplicateMenuPage(page: PageLayout, pageIndex: number, products:
         categoryPlacements: shiftRecord(style.categoryPlacements),
         categoryImages: extend(style.categoryImages, categoryMap),
         categoryDividerStyles: extend(style.categoryDividerStyles, categoryMap),
+        itemFormattingOverrides: style.itemFormattingOverrides && {
+            category: extend(style.itemFormattingOverrides.category, categoryMap),
+            product: extend(style.itemFormattingOverrides.product, productCopies),
+        },
         productDividerStyles: extend(style.productDividerStyles, productCopies),
         productImageFlips: extend(style.productImageFlips, productCopies),
         productPhotoCrops: extend(style.productPhotoCrops, productCopies),

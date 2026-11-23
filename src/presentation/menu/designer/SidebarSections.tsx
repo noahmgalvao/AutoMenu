@@ -1,3 +1,4 @@
+import type { FormattingKind, FormattingScope } from '../../../domain/menu/itemFormatting';
 import { FontSizeInput } from './FontSizeInput';
 import { triggerLimitFeedback } from '../canvas/textFit';
 import { canMoveImageLayer } from '../../../domain/menu/imageLayers';
@@ -20,10 +21,11 @@ import { PriceFormatSettings } from './PriceFormatSettings';
 import { updateCanvasPageSetup } from './updateCanvasPageSetup';
 import { DesignerOptionSelect, FontSelect, MiniFoodTextureSelect, TextureSelect } from './SearchableSelects';
 import { resolveCategoryDivider, resolveProductDivider } from '../canvas/categoryDividers';
+import { setItemDivider } from '../../../domain/menu/itemFormatting';
 import { CategoryDividerPicker } from './CategoryDividerPicker';
 import { getProductCardRadius, PRODUCT_CARD_SHAPES, PRODUCT_IMAGE_FRAMES } from '../canvas/templateStyles';
 import { 
-  Type, ImagePlus, Loader2, Minus, Plus,
+  Type, ImagePlus, Loader2, Minus, Plus, ChevronDown,
   Layout, List, Maximize, Palette, ArrowUpAZ, SortAsc, SortDesc, BringToFront, SendToBack,
   Wallpaper, ImageIcon, Eye, EyeOff, FileCog, RectangleHorizontal, RectangleVertical
 } from 'lucide-react';
@@ -31,6 +33,9 @@ import {
 // --- ELEMENTS SECTION ---
 interface ElementsSectionProps {
   selection: { type: 'product' | 'category' | 'freeText' | 'addedImage' | 'page' | 'menuTitle' | 'menuSubtitle' | null, id: string | null };
+  formattingScope: { value: FormattingScope; group?: number; change: (scope: FormattingScope) => void } | null;
+  itemStyle: (kind: FormattingKind) => MenuStyle;
+  setSidebarFormatting: (kind: FormattingKind, update: React.SetStateAction<MenuStyle>) => void;
   selectedFreeText: Product | null;
   selectedAddedImage: AddedImage | null;
   shapePickerRequest: { id: string } | null;
@@ -61,6 +66,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
   selectedAddedImage,
   selectedAddedImageIds,
   safeStyles,
+  formattingScope, itemStyle, setSidebarFormatting,
   fontSizeLimits,
   minimumFontSize,
   fontFamily,
@@ -101,16 +107,30 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
     selection.type === 'page' ? 'Página' :
     'Produtos';
 
+  const categoryStyle = itemStyle('category');
+  const productStyle = itemStyle('product');
+  const groupLabel = `${editingLabel} - ${formattingScope?.group}`;
+  const scopeLabel = formattingScope?.value === 'selection' ? 'Seleção' : formattingScope?.value === 'group' ? groupLabel : editingLabel;
+
   return (
     <section className="space-y-3">
         <div className="flex justify-between items-center">
         <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
             <Type size={14} /> Elementos
         </h3>
-        {selection.type && (
-                <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
-                    Editando: {editingLabel}
-                </span>
+        {formattingScope ? (
+            <label className="relative flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-1 text-[10px] font-bold text-indigo-700 focus-within:ring-2 focus-within:ring-indigo-500">
+                <span aria-hidden="true">Editando: {scopeLabel}</span>
+                <ChevronDown size={12} aria-hidden="true" />
+                <select aria-label={`Editando: ${scopeLabel}`} className="absolute inset-0 size-full cursor-pointer opacity-0"
+                    value={formattingScope.value} onChange={event => formattingScope.change(event.target.value as FormattingScope)}>
+                    {formattingScope.group && <option value="group">{groupLabel}</option>}
+                    <option value="all">{selection.type === 'category' ? 'Todas as categorias' : 'Todos os produtos'}</option>
+                    <option value="selection">Somente seleção</option>
+                </select>
+            </label>
+        ) : selection.type && (
+            <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-700">Editando: {editingLabel}</span>
         )}
         </div>
 
@@ -230,15 +250,15 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                 <>
                     <StyleControls 
                         label="Títulos das categorias"
-                        value={safeStyles.category}
+                        value={categoryStyle.elementStyles.category || safeStyles.category}
                         onChange={(s) => updateGlobalElementStyle('category', s)}
                         maxFontSize={fontSizeLimits.category}
                         minFontSize={minimumFontSize}
                         fallbackFontFamily={fontFamily}
                     />
                     <DecorationControls
-                        style={style}
-                        setStyle={setStyle}
+                        style={categoryStyle}
+                        setStyle={update => setSidebarFormatting('category', update)}
                         scope="category"
                         sidebar
                         targetElementId={selection.id ? `text-${selection.id}` : undefined}
@@ -246,13 +266,9 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                             label: 'Linha da categoria',
                             picker: <CategoryDividerPicker
                                 inlineOptions
-                                value={resolveCategoryDivider(style, selection.id)}
+                                value={resolveCategoryDivider(categoryStyle, selection.id)}
                                 color={style.primaryColor}
-                                onChange={(preset) => setStyle((previous) => ({
-                                    ...previous,
-                                    categoryDividerStyles: { ...(previous.categoryDividerStyles || {}), [selection.id!]: preset },
-                                    name: 'Custom',
-                                }))}
+                                onChange={preset => setSidebarFormatting('category', previous => setItemDivider(previous, 'category', selection.id!, preset))}
                             />,
                         } : undefined}
                     />
@@ -263,7 +279,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                     <>
                     {safeStyles.productName && <StyleControls 
                         label="Nomes dos produtos"
-                        value={safeStyles.productName}
+                        value={productStyle.elementStyles.productName || safeStyles.productName}
                         onChange={(s) => updateGlobalElementStyle('productName', s)}
                     maxFontSize={fontSizeLimits.productName}
                     minFontSize={minimumFontSize}
@@ -274,7 +290,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                         header={<PriceFormatSettings style={style} setStyle={setStyle}>
                             <span className="text-xs font-bold uppercase text-slate-500">Preços dos produtos</span>
                         </PriceFormatSettings>}
-                        value={safeStyles.productPrice}
+                        value={productStyle.elementStyles.productPrice || safeStyles.productPrice}
                         onChange={(s) => updateGlobalElementStyle('productPrice', s)}
                     maxFontSize={fontSizeLimits.productPrice}
                     minFontSize={minimumFontSize}
@@ -282,15 +298,15 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                     />}
                     {safeStyles.productDescription && <StyleControls 
                         label="Descrições dos produtos"
-                        value={safeStyles.productDescription}
+                        value={productStyle.elementStyles.productDescription || safeStyles.productDescription}
                         onChange={(s) => updateGlobalElementStyle('productDescription', s)}
                     maxFontSize={fontSizeLimits.productDescription}
                     minFontSize={minimumFontSize}
                     fallbackFontFamily={fontFamily}
                     />}
                     <DecorationControls
-                        style={style}
-                        setStyle={setStyle}
+                        style={productStyle}
+                        setStyle={update => setSidebarFormatting('product', update)}
                         scope="product"
                         sidebar
                         targetElementId={selection.id ? `product-container-${selection.id}` : undefined}
@@ -299,13 +315,9 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                             picker: <CategoryDividerPicker
                                 inlineOptions
                                 label="Linha do produto"
-                                value={resolveProductDivider(style, selection.id)}
+                                value={resolveProductDivider(productStyle, selection.id)}
                                 color={style.textColor}
-                                onChange={(preset) => setStyle((previous) => ({
-                                    ...previous,
-                                    productDividerStyle: preset,
-                                    name: 'Custom',
-                                }))}
+                                onChange={preset => setSidebarFormatting('product', previous => setItemDivider(previous, 'product', selection.id!, preset))}
                             />,
                         } : undefined}
                         borderTargets={selection.id ? [

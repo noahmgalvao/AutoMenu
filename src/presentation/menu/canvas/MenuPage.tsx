@@ -1,3 +1,4 @@
+import { getItemFormattingStyle } from '../../../domain/menu/itemFormatting';
 import { canvasShapeUrl as decorationUrl } from '../../../domain/menu/canvasShapes';
 import { CanvasRotationHandle, CanvasScaleHandles } from './CanvasTransformHandles';
 import { getTextOutlineStyle } from './textOutlineStyle';
@@ -277,6 +278,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 onClick={event => handlers.handleAddClick?.(event, chunk.category, true, position)}
                 title={`Adicionar categoria ${getDirectionLabel(direction)}`}><Plus size={20} /></button>
         );
+        const categoryFormat = getItemFormattingStyle(renderedStyle, 'category', chunk.category);
         const canMoveBefore = flowIndex > 0;
         const canMoveAfter = flowIndex >= 0 && flowIndex < handlers.sortedCategories.length - 1;
         const moveDirections: (FlowDirection | false)[] = renderedColumnCount > 1
@@ -301,7 +303,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 pageIndex={pageIndex}
                 layoutKey={`${flowIndex}:${categoryColumnWidths.join(',')}`}
                 data-chunk-id={chunk.chunkId}
-                style={isFreeTextTarget ? undefined : { borderRadius: renderedStyle.borders?.categoryGroup?.radius }}
+                style={isFreeTextTarget ? undefined : { borderRadius: categoryFormat.borders?.categoryGroup?.radius }}
                 data-category-chunk={chunk.category}
                 data-active-canvas-drag={isCategoryDragged || undefined}
                 data-menu-border-surface={isFreeTextTarget ? undefined : 'categoryGroup'}
@@ -312,14 +314,14 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 data-drag-column-index={isDragTarget ? chunk.columnIndex : undefined}
                 data-drag-flow-index={isDragTarget ? flowIndex : undefined}
                 onDragOver={(e) => handlers.handleDragOverItem?.(e, chunk.category, 'category')}
-                className={`relative rounded-xl ${!isFreeTextTarget && ((renderedStyle.fills?.categoryGroup && renderedStyle.fills.categoryGroup !== 'transparent')
-                    || renderedStyle.borders?.categoryGroup?.sides.length) ? 'p-1.5' : ''} ${isCategoryDragged || handlers.isScalingCanvasObject || Number.isFinite(desiredPageY) ? 'transition-none' : 'transition-all duration-200'} pointer-events-none ${isCategorySelected || isCategoryDragged ? `ring-2 ring-indigo-500 bg-indigo-50/10 ${selectionLayerClasses.outline}` : ''}`}
+                className={`relative rounded-xl ${!isFreeTextTarget && ((categoryFormat.fills?.categoryGroup && categoryFormat.fills.categoryGroup !== 'transparent')
+                    || categoryFormat.borders?.categoryGroup?.sides.length) ? 'p-1.5' : ''} ${isCategoryDragged || handlers.isScalingCanvasObject || Number.isFinite(desiredPageY) ? 'transition-none' : 'transition-all duration-200'} pointer-events-none ${isCategorySelected || isCategoryDragged ? `ring-2 ring-indigo-500 bg-indigo-50/10 ${selectionLayerClasses.outline}` : ''}`}
             >
                 {!isFreeTextTarget && <>
-                    {renderedStyle.fills?.categoryGroup && <div data-category-group-paint aria-hidden="true"
+                    {categoryFormat.fills?.categoryGroup && <div data-category-group-paint aria-hidden="true"
                         className="pointer-events-none absolute inset-0 rounded-[inherit]"
-                        style={{ zIndex: getContentLayer(style) * 10, background: renderedStyle.fills.categoryGroup }} />}
-                    <BorderDecoration style={renderedStyle} scope="categoryGroup" />
+                        style={{ zIndex: getContentLayer(style) * 10, background: categoryFormat.fills.categoryGroup }} />}
+                    <BorderDecoration style={categoryFormat} scope="categoryGroup" />
                 </>}
                 {!readOnly && isCategorySelected && isCategoryControlAnchor && !isCategoryDragged && !handlers.editingId
                     && !handlers.multiSelectMode && handlers.startCanvasScale && (

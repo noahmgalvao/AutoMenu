@@ -94,8 +94,11 @@ export function useResponsivePrices(rootRef: RefObject<HTMLElement | null>, styl
                 return metric;
             }).filter(metric => metric !== null);
 
-            // Compare against the configured size on each pass so a wider column can restore it.
-            const sharedSize = metrics.reduce((size, metric) => Math.min(size, metric.fit ?? Infinity), Infinity);
+            // Prices with the same configured size continue to fit together.
+            const fittedSizes = new Map<number, number>();
+            for (const { base, fit } of metrics) {
+                if (fit !== null) fittedSizes.set(base, Math.min(fit, fittedSizes.get(base) ?? base));
+            }
             for (const { row, price, base, minimum, fit, measurePrice } of metrics) {
                 const wrapped = fit === null;
                 row.toggleAttribute('data-price-wrap', wrapped);
@@ -105,7 +108,7 @@ export function useResponsivePrices(rootRef: RefObject<HTMLElement | null>, styl
                 slot?.style.setProperty('--automenu-price-right', `${right}px`);
                 const wrappedSize = wrapped ? largestPriceSize(row.clientWidth + left + right, minimum, base, measurePrice) : base;
                 price.toggleAttribute('data-price-stacked', wrappedSize === null);
-                const size = fit === null ? wrappedSize ?? minimum : sharedSize;
+                const size = fit === null ? wrappedSize ?? minimum : fittedSizes.get(base) ?? base;
                 const fitted = size < base ? `${size}px` : '';
                 if (price.style.getPropertyValue('--automenu-fitted-price-size') !== fitted) {
                     price.style.setProperty('--automenu-fitted-price-size', fitted);
@@ -138,5 +141,5 @@ export function useResponsivePrices(rootRef: RefObject<HTMLElement | null>, styl
             cancelAnimationFrame(frame);
         };
     }, [rootRef]);
-    useLayoutEffect(() => refresh.current?.(), [textMetrics]);
+    useLayoutEffect(() => refresh.current?.(), [textMetrics, style.itemFormattingOverrides]);
 }
