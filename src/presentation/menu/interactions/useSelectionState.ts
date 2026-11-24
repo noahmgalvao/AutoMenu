@@ -127,40 +127,32 @@ export const useSelectionState = (
         }));
     }, []);
 
-    const getSelectionAddControls = useCallback((type: SelectionType, id: string | null) => {
-        if (!type || !id || selectedItems.length <= 1) return { top: true, bottom: true };
-        if (!selectedItems.some((item) => item.type === type && item.id === id)) return { top: false, bottom: false };
+    const selectionEndpoints = useMemo(() => {
+        if (selectedItems.length <= 1) return null;
+        const lastSelected = selectedItems.find(item => item.id === selectedId) ?? selectedItems[selectedItems.length - 1];
+        const selectedKeys = new Set(selectedItems.map(item => getSelectionKey(item.type, item.id)));
+        const order = selectedItems.every(item => item.type === 'category')
+            ? selectableItems.filter(item => item.type === 'category')
+            : selectableItems;
+        const firstIndex = order.findIndex(item => selectedKeys.has(getSelectionKey(item.type, item.id)));
+        const range = order.slice(firstIndex, firstIndex + selectedItems.length);
+        const continuous = firstIndex >= 0 && range.length === selectedItems.length
+            && range.every(item => selectedKeys.has(getSelectionKey(item.type, item.id)));
 
-        const selectedCategoryIds = new Set(
-            selectedItems
-                .filter((item) => item.type === 'category')
-                .map((item) => item.id)
-        );
+        return continuous
+            ? { first: range[0], last: range[range.length - 1] }
+            : { first: lastSelected, last: lastSelected };
+    }, [selectableItems, selectedId, selectedItems]);
 
-        if (selectedCategoryIds.size > 0) {
-            if (type !== 'category' || !selectedCategoryIds.has(id)) return { top: false, bottom: false };
-
-            const categoryIndex = visibleCategories.indexOf(id);
-            if (categoryIndex === -1) return { top: true, bottom: true };
-
-            return {
-                top: !selectedCategoryIds.has(visibleCategories[categoryIndex - 1]),
-                bottom: !selectedCategoryIds.has(visibleCategories[categoryIndex + 1]),
-            };
-        }
-
-        const selectedKeys = new Set(selectedItems.map((item) => getSelectionKey(item.type, item.id)));
-        const itemIndex = selectableItems.findIndex((item) => item.type === type && item.id === id);
-        if (itemIndex === -1) return { top: true, bottom: true };
-
-        const previous = selectableItems[itemIndex - 1];
-        const next = selectableItems[itemIndex + 1];
-
+    const getSelectionControlEdges = useCallback((type: SelectionType, id: string | null) => {
+        if (!selectionEndpoints) return { top: true, bottom: true };
+        const key = getSelectionKey(type, id);
+        const { first, last } = selectionEndpoints;
         return {
-            top: !previous || !selectedKeys.has(getSelectionKey(previous.type, previous.id)),
-            bottom: !next || !selectedKeys.has(getSelectionKey(next.type, next.id)),
+            top: key === getSelectionKey(first.type, first.id),
+            bottom: key === getSelectionKey(last.type, last.id),
         };
-    }, [selectableItems, selectedItems, visibleCategories]);
+    }, [selectionEndpoints]);
 
     const getPageAddControls = useCallback((pageIndex: number) => {
         const selectedPageIndexes = selectedItems
@@ -611,7 +603,7 @@ export const useSelectionState = (
         clearMultiSelectionTo,
         replaceSelectedItems,
         isSelected,
-        getSelectionAddControls,
+        getSelectionControlEdges,
         getPageAddControls,
         handleBlur,
         handleKeyDown,

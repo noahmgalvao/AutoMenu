@@ -94,11 +94,12 @@ function TransformHandle({ label, className, start, children, kind }: {
     </button>;
 }
 
-export function CanvasScaleHandles({ target, start }: {
+export function CanvasScaleHandles({ target, start, edges = { top: true, bottom: true } }: {
+    edges?: { top: boolean; bottom: boolean };
     target: CanvasScaleTarget;
     start: (event: React.PointerEvent<HTMLButtonElement>, target: CanvasScaleTarget, direction: -1 | 1) => Gesture | undefined;
 }) {
-    return ([-1, 1] as const).map(direction => (
+    return ([-1, 1] as const).filter(direction => direction === -1 ? edges.top : edges.bottom).map(direction => (
         <TransformHandle key={direction} kind="scale"
             label={direction === -1 ? 'Redimensionar pelo topo' : 'Redimensionar pela base'}
             className={`cursor-ns-resize ${direction === -1

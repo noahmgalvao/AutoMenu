@@ -103,7 +103,7 @@ export const useMenuInteractions = (input: InteractionProps) => {
         clearMultiSelectionTo: selectionState.clearMultiSelectionTo,
         replaceSelectedItems: selectionState.replaceSelectedItems,
         isSelected: selectionState.isSelected,
-        getSelectionAddControls: selectionState.getSelectionAddControls,
+        getSelectionControlEdges: selectionState.getSelectionControlEdges,
         getPageAddControls: selectionState.getPageAddControls,
         handleBlur: selectionState.handleBlur,
         handleKeyDown: selectionState.handleKeyDown,

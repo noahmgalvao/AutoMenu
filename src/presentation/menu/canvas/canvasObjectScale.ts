@@ -1,5 +1,6 @@
 import type { FontSizeLimitKey, MenuStyle, Product } from '../../../domain/menu/model';
 import { clampFontSize, clampPhotoScale, MIN_PHOTO_SCALE, MAX_PHOTO_SCALE, resolveMinimumFontSize, resolveFontSizeLimits } from '../../../domain/menu/styleRules';
+import type { SelectionItem } from '../interactions/types';
 import type { CanvasScaleTarget } from './CanvasTransformHandles';
 
 type PhotoScaleField = 'imageScale' | 'categoryImageScale';
@@ -12,20 +13,24 @@ const defaultSize: Record<FontSizeLimitKey, number> = {
     menuTitle: 48, menuSubtitle: 18, category: 24, productName: 18, productDescription: 14, productPrice: 18, freeText: 18,
 };
 
-export function captureCanvasObjectScale(style: MenuStyle, target: CanvasScaleTarget, products: Product[], width: number, onLimit?: () => void) {
+export function captureCanvasObjectScale(style: MenuStyle, target: CanvasScaleTarget, products: Product[], width: number, onLimit?: () => void,
+    selection: readonly SelectionItem[] = [target],
+) {
+    const categories = new Set(selection.filter(item => item.type === 'category').map(item => item.id));
+    const productIds = new Set(selection.filter(item => item.type === 'product' || item.type === 'freeText').map(item => item.id));
     const selected = products.filter(product => !style.hiddenProductIds.includes(product.id)
-        && (target.type === 'category' ? product.category === target.id : product.id === target.id));
+        && (categories.has(product.category) || productIds.has(product.id)));
     const regular = selected.filter(product => !product.isFreeText);
     const freeTexts = selected.filter(product => product.isFreeText);
     const fields: Exclude<FontSizeLimitKey, 'freeText'>[] = [];
     const photos: PhotoScaleField[] = [];
 
     if (target.headingFields) fields.push(...target.headingFields);
-    if (target.type === 'category') {
+    if (categories.size) {
         fields.push('category');
-        if (style.showCategoryImages !== false && style.categoryImages?.[target.id]?.url) photos.push('categoryImageScale');
+        if (style.showCategoryImages !== false && [...categories].some(id => style.categoryImages?.[id]?.url)) photos.push('categoryImageScale');
     }
-    if (regular.length && (target.type === 'category' || target.type === 'product')) {
+    if (regular.length) {
         fields.push('productName');
         if (regular.some(product => product.description?.trim())) fields.push('productDescription');
         if (style.showPrices !== false) fields.push('productPrice');

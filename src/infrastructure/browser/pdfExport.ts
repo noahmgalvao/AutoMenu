@@ -359,6 +359,8 @@ const capturePageAsJpeg = async (
   assetCache: Map<string, string>,
   onDebug?: PdfDebugReporter
 ) => {
+  // Give pending input and layout a turn before each capture.
+  await new Promise<void>(resolve => window.setTimeout(resolve, 0));
   const pageSize = getPageElementSizePx(source);
   emitDebug(onDebug, 'info', 'capture', 'PDF_CAPTURE_START', `Capturando página ${pageNumber}.`, {
     scale: captureScale,
@@ -603,6 +605,7 @@ export const exportMenuPagesToPdf = async ({
   }
 
   emitDebug(onDebug, 'info', 'validate', 'PDF_VALIDATE_START', 'Validando arquivo gerado.');
+  await new Promise<void>(resolve => window.setTimeout(resolve, 0));
   let blob: Blob;
   try {
     blob = pdf.output('blob');

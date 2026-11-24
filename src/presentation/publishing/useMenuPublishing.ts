@@ -13,9 +13,17 @@ import { getExpectedPublicationUrl, getPublicationUrl } from './publicationUrl';
 
 type PrintRequestMode = 'download' | 'publish' | 'publish-silent';
 type PublishLinkAction = 'copy-link' | 'share-link' | 'download-qr' | 'share-qr' | 'open-link';
-type PublishAction = PublishLinkAction | 'publish' | 'download-pdf' | 'share-pdf' | 'download-jpg' | 'share-jpg' | 'save-slug' | null;
+export type PublishAction = PublishLinkAction | 'publish' | 'download-pdf' | 'share-pdf' | 'download-jpg' | 'share-jpg' | 'save-slug';
 export type JpgAction = 'download' | 'share';
 export type PublishOptions = { pdf: boolean; jpgPages: number[] | null; virtualLink: boolean };
+
+interface PublicationJob {
+  menuId: string;
+  requestId?: number;
+  promise: Promise<MenuPublication>;
+  resolve: (publication: MenuPublication) => void;
+  reject: (error: unknown) => void;
+}
 
 interface MenuPublishingOptions extends WorkspaceMenuContent {
   session: AuthSession | null;
@@ -26,28 +34,18 @@ interface MenuPublishingOptions extends WorkspaceMenuContent {
 
 export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu, setLoadError, products, style, sortOption }: MenuPublishingOptions) {
   const { publications: { getMenuPublication, publishWorkspaceMenu, updatePublicationMenuSlug, updatePortablePublicationMenuSlug } } = useAppServices();
-  const [printRequestId, setPrintRequestId] = useState(0);
-  const [printRequestMode, setPrintRequestMode] = useState<PrintRequestMode>('download');
+  const [{ id: printRequestId, mode: printRequestMode }, setPrintRequest] = useState<{ id: number; mode: PrintRequestMode }>({ id: 0, mode: 'download' });
+  const lastPrintRequestId = useRef(0);
   const [publication, setPublication] = useState<MenuPublication | null>(null);
   const [isPublishOpen, setIsPublishOpen] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
-  const [publishAction, setPublishAction] = useState<PublishAction>(null);
+  const [busyActions, setBusyActions] = useState<ReadonlySet<PublishAction>>(() => new Set());
+  const actionsInProgress = useRef(new Set<PublishAction>());
   const [publishFeedback, setPublishFeedback] = useState<string | null>(null);
-  const pendingPublishActionRef = useRef<PublishLinkAction | null>(null);
+  const publicationJob = useRef<PublicationJob | null>(null);
   const publishFeedbackTimeoutRef = useRef<number | null>(null);
   const { results: buttonResults, show: showButtonResult } = useButtonFeedback();
   const fileExportRef = useRef<CanvasFileExports>(null);
-
-  useEffect(() => {
-    const resetPublishingState = () => {
-      setIsPublishing(false);
-      setPrintRequestMode('download');
-      setPublishAction(null);
-      pendingPublishActionRef.current = null;
-    };
-    window.addEventListener('pageshow', resetPublishingState);
-    return () => window.removeEventListener('pageshow', resetPublishingState);
-  }, []);
 
   useEffect(() => () => {
     if (publishFeedbackTimeoutRef.current) window.clearTimeout(publishFeedbackTimeoutRef.current);
@@ -85,8 +83,66 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
   }, []);
 
   const requestPrint = (mode: PrintRequestMode = 'download') => {
-    setPrintRequestMode(mode);
-    setPrintRequestId((prev) => prev + 1);
+    const id = ++lastPrintRequestId.current;
+    setPrintRequest({ id, mode });
+    return id;
+  };
+
+  const runAction = async (action: PublishAction, run: () => Promise<void>, fallback: string) => {
+    const actions = actionsInProgress.current;
+    if (actions.has(action)) return;
+    actions.add(action);
+    setBusyActions(new Set(actions));
+    setLoadError(null);
+    try {
+      await run();
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) setLoadError(getErrorMessage(error, fallback));
+    } finally {
+      actions.delete(action);
+      setBusyActions(new Set(actions));
+    }
+  };
+
+  const clearPublicationJob = useCallback((job: PublicationJob) => {
+    if (publicationJob.current !== job) return false;
+    publicationJob.current = null;
+    setIsPublishing(false);
+    return true;
+  }, []);
+
+  const cancelPublication = useCallback((job: PublicationJob) => {
+    if (clearPublicationJob(job)) job.reject(new DOMException('Publicação cancelada.', 'AbortError'));
+  }, [clearPublicationJob]);
+
+  const menuId = workspaceData?.menu.id;
+  useEffect(() => () => {
+    const job = publicationJob.current;
+    if (job && job.menuId === menuId) cancelPublication(job);
+  }, [cancelPublication, menuId]);
+
+  const getOrStartPublication = (pdfOptions = false) => {
+    const pending = publicationJob.current;
+    if (pending && pending.menuId === menuId) return pending.promise;
+    if (!menuId || !session) return Promise.reject(new Error('O cardápio ainda está carregando.'));
+
+    let resolve!: PublicationJob['resolve'];
+    let reject!: PublicationJob['reject'];
+    const promise = new Promise<MenuPublication>((onResolve, onReject) => {
+      resolve = onResolve;
+      reject = onReject;
+    });
+    const job: PublicationJob = { menuId, promise, resolve, reject };
+    publicationJob.current = job;
+    setIsPublishing(true);
+    void forceSaveCurrentMenu()
+      .then(() => {
+        if (publicationJob.current === job) job.requestId = requestPrint(pdfOptions ? 'publish' : 'publish-silent');
+      })
+      .catch(error => {
+        if (clearPublicationJob(job)) job.reject(error);
+      });
+    return promise;
   };
 
   const performPublishedLinkAction = useCallback(async (
@@ -136,33 +192,10 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
     showButtonResult(action, 'Baixado');
   }, [showButtonResult]);
 
-  const handleLinkAction = async (action: PublishLinkAction) => {
-    setPublishAction(action);
-    setLoadError(null);
-
-    if (publication) {
-      try {
-        await performPublishedLinkAction(publication, action);
-      } catch (error) {
-        setLoadError(getErrorMessage(error, 'Não foi possível concluir a ação.'));
-      } finally {
-        setPublishAction(null);
-      }
-      return;
-    }
-
-    pendingPublishActionRef.current = action;
-    setIsPublishing(true);
-    try {
-      await forceSaveCurrentMenu();
-      requestPrint('publish-silent');
-    } catch (error) {
-      pendingPublishActionRef.current = null;
-      setPublishAction(null);
-      setIsPublishing(false);
-      setLoadError(getErrorMessage(error, 'Falha ao preparar a publicação.'));
-    }
-  };
+  const handleLinkAction = (action: PublishLinkAction) => runAction(action, async () => {
+    const published = publication ?? await getOrStartPublication();
+    await performPublishedLinkAction(published, action);
+  }, 'Não foi possível concluir a ação.');
 
   const getFileExports = () => {
     if (!fileExportRef.current) throw new Error('O cardápio ainda está carregando.');
@@ -182,41 +215,39 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
     const files = prepared instanceof Promise ? await prepared : prepared;
     const title = files[0].name.replace(/-pagina-\d+\.jpg$/i, '');
     if (action === 'share') {
-      if (!await shareFiles(title, files)) throw new Error('Este navegador não permite compartilhar arquivos JPG.');
+      try {
+        if (!await shareFiles(title, files)) throw new Error('Este navegador não permite compartilhar arquivos JPG.');
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'NotAllowedError') {
+          setLoadError('O navegador bloqueou o compartilhamento de arquivos JPG.');
+          return;
+        }
+        throw error;
+      }
       return;
     }
     await downloadJpgFiles(files, title);
     showButtonResult('download-jpg', 'Baixado');
   };
 
-  const handleJpgAction = async (action: JpgAction, indexes: number[]) => {
-    setPublishAction(action === 'download' ? 'download-jpg' : 'share-jpg');
-    setLoadError(null);
-    try {
-      await exportJpg(action, indexes);
-    } catch (error) {
-      setLoadError(error instanceof DOMException && error.name === 'NotAllowedError'
-        ? 'O navegador bloqueou o compartilhamento de arquivos JPG.'
-        : getErrorMessage(error, 'Não foi possível exportar as imagens JPG.'));
-    } finally {
-      setPublishAction(null);
-    }
-  };
+  const handleJpgAction = (action: JpgAction, indexes: number[]) => runAction(
+    action === 'download' ? 'download-jpg' : 'share-jpg',
+    () => exportJpg(action, indexes),
+    'Não foi possível exportar as imagens JPG.',
+  );
 
   const handlePublishConfirm = async ({ pdf, jpgPages, virtualLink }: PublishOptions) => {
     if (!pdf && !virtualLink) {
       if (jpgPages) await handleJpgAction('download', jpgPages);
       return;
     }
-    if (jpgPages) void exportJpg('download', jpgPages).catch(error => {
-      setLoadError(getErrorMessage(error, 'Não foi possível baixar as imagens JPG.'));
-    });
+    if (jpgPages) void handleJpgAction('download', jpgPages);
     if (!virtualLink) {
       setIsPublishOpen(false);
       requestPrint('download');
       return;
     }
-    if (!workspaceData) return;
+    if (!workspaceData || publicationJob.current || actionsInProgress.current.has('save-slug')) return;
 
     const publishingStartedAt = Date.now();
     const canonicalUrl = publication
@@ -231,18 +262,10 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
     if (publication?.updatedAt) loadingUrl.searchParams.set('previousPublication', publication.updatedAt);
     window.open(loadingUrl.toString(), '_blank', 'noopener,noreferrer');
 
-    pendingPublishActionRef.current = null;
-    setPublishAction('publish');
-    setIsPublishing(true);
-    setLoadError(null);
-    try {
-      await forceSaveCurrentMenu();
-      requestPrint(pdf ? 'publish' : 'publish-silent');
-    } catch (error) {
-      setPublishAction(null);
-      setIsPublishing(false);
-      setLoadError(getErrorMessage(error, 'Falha ao preparar a publicação.'));
-    }
+    await runAction('publish', async () => {
+      await getOrStartPublication(pdf);
+      showPublishFeedback('Link publicado');
+    }, 'Falha ao publicar cardápio.');
   };
 
   const handlePdfAction = async (action: 'options' | 'download' | 'share') => {
@@ -251,9 +274,7 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
       requestPrint('download');
       return;
     }
-    setPublishAction(action === 'download' ? 'download-pdf' : 'share-pdf');
-
-    try {
+    await runAction(action === 'download' ? 'download-pdf' : 'share-pdf', async () => {
       const prepared = getFileExports().pdf();
       const result = prepared instanceof Promise ? await prepared : prepared;
       if (action === 'share') {
@@ -266,41 +287,25 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
       }
       downloadBlob(result.blob, result.filename);
       showButtonResult(action === 'download' ? 'download-pdf' : 'share-pdf', 'Baixado');
-    } catch (error) {
-      setLoadError(getErrorMessage(error, 'Não foi possível exportar o PDF.'));
-    } finally {
-      setPublishAction(null);
-    }
+    }, 'Não foi possível exportar o PDF.');
   };
 
   const handlePublicationSlugChange = async (menuSlug: string) => {
-    if (!publication || menuSlug.trim() === publication.menuSlug) return;
-    setPublishAction('save-slug');
-    setLoadError(null);
-    try {
+    if (!publication || publicationJob.current || menuSlug.trim() === publication.menuSlug) return;
+    await runAction('save-slug', async () => {
       const updated = publication.portableSnapshotUrl
         ? updatePortablePublicationMenuSlug(publication, menuSlug)
         : await updatePublicationMenuSlug({ publicationId: publication.id, menuSlug });
       setPublication(updated);
       showPublishFeedback('Endereço atualizado');
-    } catch (error) {
-      setLoadError(getErrorMessage(error, 'Não foi possível atualizar o endereço.'));
-    } finally {
-      setPublishAction(null);
-    }
+    }, 'Não foi possível atualizar o endereço.');
   };
 
-  const handlePrintComplete = async (result: PdfExportResult) => {
-    if (printRequestMode !== 'publish' && printRequestMode !== 'publish-silent') return;
-    if (!workspaceData || !session) {
-      pendingPublishActionRef.current = null;
-      setPublishAction(null);
-      setIsPublishing(false);
-      return;
-    }
-    let published: MenuPublication;
+  const handlePrintComplete = async (result: PdfExportResult, requestId: number) => {
+    const job = publicationJob.current;
+    if (!job || job.requestId !== requestId || job.menuId !== workspaceData?.menu.id || !session) return;
     try {
-      published = await publishWorkspaceMenu({
+      const published = await publishWorkspaceMenu({
         workspace: workspaceData.workspace,
         menu: workspaceData.menu,
         userId: session.user.id,
@@ -311,53 +316,26 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
         pdfFilename: result.filename,
         pdfOptions: {},
       });
+      if (!clearPublicationJob(job)) return;
       setPublication(published);
+      job.resolve(published);
     } catch (error) {
-      setLoadError(getErrorMessage(error, 'Falha ao publicar cardápio.'));
-      pendingPublishActionRef.current = null;
-      setPublishAction(null);
-      setIsPublishing(false);
-      setPrintRequestMode('download');
-      return;
-    }
-
-    const pendingAction = pendingPublishActionRef.current;
-    pendingPublishActionRef.current = null;
-    setIsPublishing(false);
-    setPrintRequestMode('download');
-    if (!pendingAction) {
-      setPublishAction(null);
-      showPublishFeedback('Link publicado');
-      return;
-    }
-
-    try {
-      await performPublishedLinkAction(published, pendingAction);
-    } catch (error) {
-      setLoadError(getErrorMessage(error, 'O link foi publicado, mas a ação não foi concluída.'));
-    } finally {
-      setPublishAction(null);
+      if (clearPublicationJob(job)) job.reject(error);
     }
   };
 
-  const handlePrintError = (error: unknown) => {
-    if (printRequestMode === 'publish' || printRequestMode === 'publish-silent') {
-      setIsPublishing(false);
-      pendingPublishActionRef.current = null;
-    }
-    setPublishAction(null);
-    setPrintRequestMode('download');
-    setLoadError(getErrorMessage(error, 'Falha ao gerar o PDF.'));
+  const handlePrintError = (error: unknown, requestId: number) => {
+    const job = publicationJob.current;
+    if (job?.requestId === requestId && clearPublicationJob(job)) job.reject(error);
   };
-  const handlePrintCancel = () => {
-    setIsPublishing(false);
-    setPublishAction(null);
-    pendingPublishActionRef.current = null;
-    setPrintRequestMode('download');
+
+  const handlePrintCancel = (requestId: number) => {
+    const job = publicationJob.current;
+    if (job?.requestId === requestId) cancelPublication(job);
   };
 
   return {
-    printRequestId, printRequestMode, publication, isPublishOpen, setIsPublishOpen, isPublishing, publishAction,
+    printRequestId, printRequestMode, publication, isPublishOpen, setIsPublishOpen, isPublishing, busyActions,
     publishFeedback, buttonResults, fileExportRef, hasPublishedChanges, requestPrint,
     preparePdf, prepareJpg, handleLinkAction, handlePublishConfirm, handlePdfAction, handleJpgAction,
     handlePublicationSlugChange, handlePrintComplete, handlePrintError, handlePrintCancel,

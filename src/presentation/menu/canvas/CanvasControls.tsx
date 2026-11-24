@@ -11,6 +11,7 @@ type Control = {
     direction: FlowDirection;
     kind: ControlKind;
     hoverOnly: boolean;
+    grouped: boolean;
     lastHovered?: number;
     lastOffset?: { x: number; y: number };
 };
@@ -73,10 +74,10 @@ function placeControls(
 
     const handles = Array.from(page.querySelectorAll('[data-canvas-transform-handle]'), handle => handle.getBoundingClientRect());
     const visible = canvas || pageBounds;
-    const entries = active.map(control => ({ control, target: control.anchor.getBoundingClientRect() }));
     const rails = new Map<HTMLElement, ReturnType<typeof controlRail>>();
-    for (const { control, target } of entries) {
-        const { node, anchor, direction, kind, hoverOnly, lastOffset } = control;
+    for (const control of active) {
+        const { node, anchor, direction, kind, hoverOnly, lastOffset, grouped } = control;
+        const target = anchor.getBoundingClientRect();
         const { left, right, top, bottom } = visible;
         if (target.bottom < top || target.top > bottom || target.right < left || target.left > right) {
             node.style.visibility = 'hidden';
@@ -93,15 +94,16 @@ function placeControls(
         let y = centerY - height / 2;
 
         if (kind === 'flow' || (kind === 'insert' && direction === 'left')) {
-            const rail = rails.get(anchor) ?? controlRail(target, visible, railSides.get(anchor));
-            rails.set(anchor, rail);
+            const railAnchor = grouped ? anchor.closest<HTMLElement>('[data-drag-column-container="category"]') ?? anchor : anchor;
+            const rail = rails.get(railAnchor) ?? controlRail(railAnchor === anchor ? target : railAnchor.getBoundingClientRect(), visible, railSides.get(railAnchor));
+            rails.set(railAnchor, rail);
             const { edge, side } = rail;
-            railSides.set(anchor, side);
+            railSides.set(railAnchor, side);
             // Leave separate columns for move and insert even when the page edges are outside the viewport.
             const outerX = edge - width / 2 - side * 8;
             const moveX = Math.max(left, Math.min(right - width, outerX));
             x = kind === 'flow' ? moveX : moveX + side * (width + margin);
-            if (kind === 'insert' && !entries.some(entry => entry.control.anchor === anchor && entry.control.kind === 'flow')) {
+            if (kind === 'insert' && !grouped && !active.some(entry => entry.anchor === anchor && entry.kind === 'flow')) {
                 x = outerX;
             }
         } else if (kind === 'insert') {
@@ -138,6 +140,12 @@ function placeControls(
             const divider = { ...visible, left: x, right: x + width };
             const alongDivider = placeCanvasControl(x, y, width, height, divider, occupied, false, lastOffset);
             if (occupied.every(box => !controlBoxesOverlap(box, alongDivider))) boundary = divider;
+        }
+        if (kind === 'insert' && grouped) {
+            const lane = Math.max(boundary.left, Math.min(boundary.right - width, x));
+            const aligned = { ...boundary, left: lane, right: lane + width };
+            const onRail = placeCanvasControl(x, y, width, height, aligned, occupied, true, lastOffset);
+            if (occupied.every(box => !controlBoxesOverlap(box, onRail))) boundary = aligned;
         }
         const placement = placeCanvasControl(x, y, width, height, boundary, occupied, kind === 'quick', lastOffset);
         if (hoverOnly && (Math.abs(placement.top - y) > height || Math.abs(placement.left - x) > width / 2)) {
@@ -250,12 +258,13 @@ function observeControls(frame: HTMLElement, page: HTMLElement) {
     };
 }
 
-export function CanvasActionGroup({ direction, kind, anchorId, anchorSelector, hoverOnly = false, className = '', children, ...props }: React.HTMLAttributes<HTMLDivElement> & {
+export function CanvasActionGroup({ direction, kind, anchorId, anchorSelector, hoverOnly = false, grouped = false, className = '', children, ...props }: React.HTMLAttributes<HTMLDivElement> & {
     direction: FlowDirection;
     kind: ControlKind;
     anchorId?: string;
     anchorSelector?: string;
     hoverOnly?: boolean;
+    grouped?: boolean;
 }) {
     const ref = useRef<HTMLDivElement>(null);
     const marker = useRef<HTMLSpanElement>(null);
@@ -281,8 +290,8 @@ export function CanvasActionGroup({ direction, kind, anchorId, anchorSelector, h
             coordinator = observeControls(frame, page);
             pageControlObservers.set(frame, coordinator);
         }
-        return coordinator.add({ node, anchor, direction, kind, hoverOnly });
-    }, [anchorId, anchorSelector, direction, hoverOnly, kind, overlay]);
+        return coordinator.add({ node, anchor, direction, kind, hoverOnly, grouped });
+    }, [anchorId, anchorSelector, direction, grouped, hoverOnly, kind, overlay]);
     const group = (
         <div {...props} id={props.id || groupId} ref={ref} data-canvas-action-group={kind} data-canvas-action-direction={direction} data-selected-control={hoverOnly ? undefined : 'true'}
             data-drag-ignore="true" data-print-control="true"
@@ -299,24 +308,25 @@ export function CanvasActionGroup({ direction, kind, anchorId, anchorSelector, h
     </>;
 }
 
-export function CanvasFlowActions({ before, up, down, after, aroundCategory = false }: {
+export function CanvasFlowActions({ before, up, down, after, aroundCategory = false, grouped = false }: {
     before?: React.ReactNode;
     aroundCategory?: boolean;
+    grouped?: boolean;
     up?: React.ReactNode;
     down?: React.ReactNode;
     after?: React.ReactNode;
 }) {
     return <>
-        {(up || down) && <CanvasActionGroup kind="flow" direction="left">
+        {(up || down) && <CanvasActionGroup kind="flow" direction="left" grouped={grouped} data-single-flow-slot={grouped && !(up && down) || undefined}>
             {up && <div style={{ gridRow: 1 }}>{up}</div>}
-            {down && <div style={{ gridRow: 2 }}>{down}</div>}
+            {down && <div style={{ gridRow: grouped && !up ? 1 : 2 }}>{down}</div>}
         </CanvasActionGroup>}
         {aroundCategory ? <>
-            {before && <CanvasActionGroup kind="insert" direction="top">{before}</CanvasActionGroup>}
-            {after && <CanvasActionGroup kind="insert" direction="bottom">{after}</CanvasActionGroup>}
-        </> : (before || after) && <CanvasActionGroup kind="insert" direction="left">
+            {before && <CanvasActionGroup kind="insert" direction="top" grouped={grouped}>{before}</CanvasActionGroup>}
+            {after && <CanvasActionGroup kind="insert" direction="bottom" grouped={grouped}>{after}</CanvasActionGroup>}
+        </> : (before || after) && <CanvasActionGroup kind="insert" direction="left" grouped={grouped} data-single-flow-slot={grouped && !(before && after) || undefined}>
             {before && <div style={{ gridRow: 1 }}>{before}</div>}
-            {after && <div style={{ gridRow: 2 }}>{after}</div>}
+            {after && <div style={{ gridRow: grouped && !before ? 1 : 2 }}>{after}</div>}
         </CanvasActionGroup>}
     </>;
 }

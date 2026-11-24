@@ -40,13 +40,13 @@ const DEFAULT_PREFERENCES = { pdf: true, jpg: false, virtualLink: true };
 
 export const PublishModal: React.FC<PublishModalProps> = ({
   open,
-  loading = false,
+  publishingLink = false,
   preferenceKey,
   hasPendingChanges = false,
   hasPublication = false,
   publicUrl,
   publicationMenuSlug,
-  activeAction,
+  busyActions,
   buttonResults,
   feedback,
   pageCount,
@@ -61,7 +61,7 @@ export const PublishModal: React.FC<PublishModalProps> = ({
   onPdfAction,
   onSaveMenuSlug,
 }) => {
-  const [preferences, setPreferences] = React.useState(DEFAULT_PREFERENCES);
+  const [preferences, setPreferences] = React.useState(() => loadUserPreferences(preferenceKey, DEFAULT_PREFERENCES));
   const [pageChoice, setPageChoice] = React.useState<ImagePages | null>(null);
   const [pdfOptionsOpened, setPdfOptionsOpened] = React.useState(false);
   const [pagesOpen, setPagesOpen] = React.useState(false);
@@ -80,15 +80,15 @@ export const PublishModal: React.FC<PublishModalProps> = ({
   }, [open, preferenceKey]);
 
   React.useEffect(() => {
-    if (!open || !pdf || !pageCount || pdfOptionsOpened) return;
+    if (!open || !pdf || !pageCount || pdfOptionsOpened || publishingLink) return;
     const timer = window.setTimeout(preparePdf, 900);
     return () => window.clearTimeout(timer);
-  }, [open, pdf, pageCount, preparePdf, pdfOptionsOpened]);
+  }, [open, pdf, pageCount, preparePdf, pdfOptionsOpened, publishingLink]);
   React.useEffect(() => {
-    if (!open || !jpg || !indexes.length) return;
-    const timer = window.setTimeout(() => prepareJpg(indexes), 120);
+    if (!open || !jpg || !indexes.length || pdfOptionsOpened || publishingLink) return;
+    const timer = window.setTimeout(() => prepareJpg(indexes), 900);
     return () => window.clearTimeout(timer);
-  }, [open, jpg, indexes, prepareJpg]);
+  }, [open, jpg, indexes, prepareJpg, pdfOptionsOpened, publishingLink]);
 
   const updatePreferences = (next: typeof DEFAULT_PREFERENCES) => {
     setPreferences(next);
@@ -96,19 +96,20 @@ export const PublishModal: React.FC<PublishModalProps> = ({
   };
 
   if (!open) return null;
-  const canConfirm = (pdf || jpg || virtualLink) && (!jpg || indexes.length > 0) && !loading;
+  const canConfirm = (pdf || jpg || virtualLink) && (!jpg || indexes.length > 0);
   const pageLabel = imagePages.mode === 'all' ? (pagesOpen ? 'Todas as páginas' : 'Todas') : imagePages.mode === 'selection' ? 'Seleção'
     : indexes.length === 1 ? `Página ${indexes[0] + 1}` : `${indexes.length} páginas`;
-  const actionBusy = Boolean(activeAction);
+  const confirming = (virtualLink && publishingLink) || (!pdf && !virtualLink && jpg && busyActions.has('download-jpg'));
+  const canPublish = canConfirm && !confirming && !(virtualLink && busyActions.has('save-slug'));
 
   return (
-    <div ref={lockModalScrolling} className="fixed inset-0 z-[1200] bg-slate-950/45 backdrop-blur-sm flex items-center justify-center p-3 md:p-4" onMouseDown={(event) => event.target === event.currentTarget && !loading && onClose()}>
+    <div ref={lockModalScrolling} className="fixed inset-0 z-[1200] bg-slate-950/45 backdrop-blur-sm flex items-center justify-center p-3 md:p-4" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <div role="dialog" aria-modal="true" aria-label="Publicar" className="w-full max-w-lg max-h-[calc(100dvh-1.5rem)] rounded-3xl bg-white shadow-2xl border border-white/70 overflow-hidden flex flex-col">
         <div className="p-5 border-b border-slate-100 flex items-center justify-between shrink-0">
           <div>
             <h2 className="font-bold text-slate-900 flex items-center gap-2"><Send size={18} className="text-indigo-600" /> Publicar</h2>
           </div>
-          <button onClick={onClose} disabled={loading} aria-label="Fechar publicação" className="p-2 rounded-xl text-slate-400 hover:bg-slate-100 disabled:opacity-40"><X size={18} /></button>
+          <button onClick={onClose} aria-label="Fechar publicação" className="p-2 rounded-xl text-slate-400 hover:bg-slate-100"><X size={18} /></button>
         </div>
 
         <div className="min-h-0 overflow-y-auto p-5 space-y-4 custom-scrollbar">
@@ -129,9 +130,9 @@ export const PublishModal: React.FC<PublishModalProps> = ({
             <Choice checked={pdf} onChange={(checked) => updatePreferences({ ...preferences, pdf: checked })} icon={<FileText size={20} />} title="Gerar PDF"  />
             {pdf && (
               <div className="grid grid-cols-3 gap-2 pl-1" role="group" aria-label="Ações de PDF">
-                <ActionButton icon={<Settings2 size={15} />} label="Opções" blocked={loading || actionBusy} onClick={() => { setPdfOptionsOpened(true); onPdfAction('options'); }} />
-                <ActionButton icon={<Download size={15} />} label="Baixar" loading={activeAction === 'download-pdf'} result={buttonResults?.['download-pdf']} blocked={loading || actionBusy} primary onClick={() => onPdfAction('download')} />
-                <ActionButton icon={<Share2 size={15} />} label="Compartilhar" loading={activeAction === 'share-pdf'} result={buttonResults?.['share-pdf']} blocked={loading || actionBusy} onClick={() => onPdfAction('share')} />
+                <ActionButton icon={<Settings2 size={15} />} label="Opções" onClick={() => { setPdfOptionsOpened(true); onPdfAction('options'); }} />
+                <ActionButton icon={<Download size={15} />} label="Baixar" loading={busyActions.has('download-pdf')} result={buttonResults?.['download-pdf']} primary onClick={() => onPdfAction('download')} />
+                <ActionButton icon={<Share2 size={15} />} label="Compartilhar" loading={busyActions.has('share-pdf')} result={buttonResults?.['share-pdf']} onClick={() => onPdfAction('share')} />
               </div>
             )}
           </div>
@@ -142,24 +143,24 @@ export const PublishModal: React.FC<PublishModalProps> = ({
             {jpg && <>
               <div className="grid grid-cols-3 gap-2 pl-1" role="group" aria-label="Ações de JPG">
                 <ActionButton icon={<DisclosureChevron open={pagesOpen} size={15} />} label={pageLabel} expanded={pagesOpen}
-                  disabled={!pageCount} blocked={loading || actionBusy} onClick={() => setPagesOpen(open => !open)} />
+                  disabled={!pageCount} onClick={() => setPagesOpen(open => !open)} />
                 <ActionButton icon={<Download size={15} />} label="Baixar" primary result={buttonResults?.['download-jpg']}
-                  loading={activeAction === 'download-jpg'} disabled={!indexes.length} blocked={loading || actionBusy}
+                  loading={busyActions.has('download-jpg')} disabled={!indexes.length}
                   onClick={() => onJpgAction('download', indexes)} />
-                <ActionButton icon={<Share2 size={15} />} label="Compartilhar" loading={activeAction === 'share-jpg'}
-                  disabled={!indexes.length} blocked={loading || actionBusy} onClick={() => onJpgAction('share', indexes)} />
+                <ActionButton icon={<Share2 size={15} />} label="Compartilhar" loading={busyActions.has('share-jpg')}
+                  disabled={!indexes.length} onClick={() => onJpgAction('share', indexes)} />
               </div>
               {pagesOpen && (
                 <div role="group" aria-label="Páginas do JPG" className="max-h-48 space-y-1 overflow-y-auto rounded-xl border border-slate-200 p-2">
                   {([{ mode: 'all', label: 'Todas as páginas' }, { mode: 'selection', label: 'Seleção' }] as const).map(({ mode, label }) => (
                     <PageOption key={mode} label={label} checked={imagePages.mode === mode}
-                      disabled={actionBusy || (mode === 'selection' && !hasSelection)}
+                      disabled={mode === 'selection' && !hasSelection}
                       onClick={() => { setPageChoice({ mode }); setPagesOpen(false); }} />
                   ))}
                   {Array.from({ length: pageCount }, (_, index) => (
                     <PageOption key={index} label={`Página ${index + 1}`}
                       checked={imagePages.mode === 'pages' && indexes.includes(index)}
-                      disabled={actionBusy} onClick={() => setPageChoice(toggleImagePage(imagePages, index))} />
+                      onClick={() => setPageChoice(toggleImagePage(imagePages, index))} />
                   ))}
                 </div>
               )}
@@ -169,11 +170,11 @@ export const PublishModal: React.FC<PublishModalProps> = ({
           <VirtualLinkSection
             enabled={virtualLink}
             onChange={checked => updatePreferences({ ...preferences, virtualLink: checked })}
-            loading={loading}
+            publishingLink={publishingLink}
             hasPublication={hasPublication}
             publicUrl={publicUrl}
             publicationMenuSlug={publicationMenuSlug}
-            activeAction={activeAction}
+            busyActions={busyActions}
             buttonResults={buttonResults}
             onLinkAction={onLinkAction}
             onSaveMenuSlug={onSaveMenuSlug}
@@ -183,9 +184,9 @@ export const PublishModal: React.FC<PublishModalProps> = ({
         </div>
 
         <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-between gap-2 shrink-0">
-          <button onClick={onClose} disabled={loading} className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-600 disabled:opacity-50">Fechar</button>
-          <button onClick={() => onConfirm({ pdf, jpgPages: jpg ? indexes : null, virtualLink })} disabled={!canConfirm || actionBusy} data-unavailable={!canConfirm && !loading || undefined} className="relative px-7 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 data-[unavailable]:opacity-50 flex items-center gap-2">
-            {activeAction === 'publish' && <Loader2 size={15} className="absolute left-2 animate-spin" />} Publicar
+          <button onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-600">Fechar</button>
+          <button onClick={() => onConfirm({ pdf, jpgPages: jpg ? indexes : null, virtualLink })} disabled={!canPublish} aria-busy={confirming || undefined} data-unavailable={!canConfirm || undefined} className="relative px-7 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 data-[unavailable]:opacity-50 flex items-center gap-2">
+            {confirming && <Loader2 size={15} className="absolute left-2 animate-spin" />} Publicar
           </button>
         </div>
       </div>

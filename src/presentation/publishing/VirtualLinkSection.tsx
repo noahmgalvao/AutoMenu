@@ -1,16 +1,17 @@
 import React from 'react';
 import { Check, Copy, Download, ExternalLink, Globe2, Loader2, QrCode, Share2 } from 'lucide-react';
 import { BooleanSwitch } from '../common/BooleanSwitch';
+import type { PublishAction } from './useMenuPublishing';
 import type { ButtonResult } from './useButtonFeedback';
 
 export type LinkAction = 'copy-link' | 'share-link' | 'download-qr' | 'share-qr' | 'open-link';
 
 export interface VirtualLinkControls {
-  loading?: boolean;
+  publishingLink?: boolean;
   hasPublication?: boolean;
   publicUrl?: string | null;
   publicationMenuSlug?: string | null;
-  activeAction?: string | null;
+  busyActions: ReadonlySet<PublishAction>;
   feedback?: string | null;
   buttonResults?: Partial<Record<string, ButtonResult>>;
   onLinkAction: (action: LinkAction) => void;
@@ -33,16 +34,15 @@ export const ActionButton: React.FC<{
   label: string;
   loading?: boolean;
   disabled?: boolean;
-  blocked?: boolean;
   primary?: boolean;
   result?: ButtonResult;
   expanded?: boolean;
   onClick: () => void;
-}> = ({ icon, label, loading, disabled, blocked, primary, result, expanded, onClick }) => (
+}> = ({ icon, label, loading, disabled, primary, result, expanded, onClick }) => (
   <button
     type="button"
     onClick={onClick}
-    disabled={disabled || blocked || loading}
+    disabled={disabled || loading}
     aria-busy={loading || undefined}
     aria-expanded={expanded}
     title={label}
@@ -60,13 +60,13 @@ export const ActionButton: React.FC<{
 );
 
 export function VirtualLinkSection({
-  enabled, onChange, loading, hasPublication, publicUrl, publicationMenuSlug, activeAction, buttonResults, onLinkAction, onSaveMenuSlug,
+  enabled, onChange, publishingLink, hasPublication, publicUrl, publicationMenuSlug, busyActions, buttonResults, onLinkAction, onSaveMenuSlug,
 }: VirtualLinkControls & { enabled: boolean; onChange: (enabled: boolean) => void }) {
   const [menuSlug, setMenuSlug] = React.useState(publicationMenuSlug || '');
   const slugInputId = React.useId();
   React.useEffect(() => setMenuSlug(publicationMenuSlug || ''), [publicationMenuSlug]);
-  const actionBusy = Boolean(activeAction);
   const slugChanged = Boolean(publicationMenuSlug && menuSlug.trim() && menuSlug.trim() !== publicationMenuSlug);
+  const canSaveSlug = slugChanged && !publishingLink && !busyActions.has('save-slug');
   return (
   <div className="space-y-2">
     <Choice checked={enabled} onChange={onChange} icon={<Globe2 size={20} />} title="Gerar link virtual" />
@@ -81,23 +81,23 @@ export function VirtualLinkSection({
           <div>
             <label htmlFor={slugInputId} className="text-[11px] font-bold text-slate-600">Final do link</label>
             <div className="mt-1 flex gap-2">
-              <input id={slugInputId} value={menuSlug} onChange={(event) => setMenuSlug(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && slugChanged && onSaveMenuSlug(menuSlug)} className="min-w-0 flex-1 h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm" />
-              <button type="button" onClick={() => onSaveMenuSlug(menuSlug)} disabled={!slugChanged || loading || actionBusy} className="h-10 px-3 rounded-xl bg-slate-900 text-white text-xs font-bold data-[unavailable]:opacity-40" data-unavailable={!slugChanged || undefined}>{activeAction === 'save-slug' ? <Loader2 size={14} className="animate-spin" /> : 'Salvar'}</button>
+              <input id={slugInputId} value={menuSlug} onChange={(event) => setMenuSlug(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && canSaveSlug && onSaveMenuSlug(menuSlug)} className="min-w-0 flex-1 h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm" />
+              <button type="button" onClick={() => onSaveMenuSlug(menuSlug)} disabled={!canSaveSlug} className="h-10 px-3 rounded-xl bg-slate-900 text-white text-xs font-bold data-[unavailable]:opacity-40" data-unavailable={!slugChanged || undefined}>{busyActions.has('save-slug') ? <Loader2 size={14} className="animate-spin" /> : 'Salvar'}</button>
             </div>
           </div>
         )}
 
         <div className="grid grid-cols-[1fr_1fr_40px] gap-2">
-          <ActionButton icon={<Copy size={15} />} label="Copiar" loading={activeAction === 'copy-link'} result={buttonResults?.['copy-link']} blocked={loading || actionBusy} primary onClick={() => onLinkAction('copy-link')} />
-          <ActionButton icon={<Share2 size={15} />} label="Compartilhar" loading={activeAction === 'share-link'} result={buttonResults?.['share-link']} blocked={loading || actionBusy} onClick={() => onLinkAction('share-link')} />
-          <button type="button" onClick={() => onLinkAction('open-link')} disabled={!hasPublication || loading || actionBusy} className="h-10 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 flex items-center justify-center data-[unavailable]:opacity-40" data-unavailable={!hasPublication || undefined} title="Abrir link em nova guia"><ExternalLink size={16} /></button>
+          <ActionButton icon={<Copy size={15} />} label="Copiar" loading={busyActions.has('copy-link')} result={buttonResults?.['copy-link']} primary onClick={() => onLinkAction('copy-link')} />
+          <ActionButton icon={<Share2 size={15} />} label="Compartilhar" loading={busyActions.has('share-link')} result={buttonResults?.['share-link']} onClick={() => onLinkAction('share-link')} />
+          <button type="button" onClick={() => onLinkAction('open-link')} disabled={!hasPublication || busyActions.has('open-link')} className="h-10 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 flex items-center justify-center data-[unavailable]:opacity-40" data-unavailable={!hasPublication || undefined} title="Abrir link em nova guia"><ExternalLink size={16} /></button>
         </div>
 
         <div className="border-t border-slate-200 pt-3">
           <div className="mb-2 flex items-center gap-2 text-xs font-bold text-slate-700"><QrCode size={15} /> QR code</div>
           <div className="grid grid-cols-2 gap-2">
-            <ActionButton icon={<Download size={15} />} label="Baixar QR" loading={activeAction === 'download-qr'} result={buttonResults?.['download-qr']} blocked={loading || actionBusy} onClick={() => onLinkAction('download-qr')} />
-            <ActionButton icon={<Share2 size={15} />} label="Compartilhar QR" loading={activeAction === 'share-qr'} result={buttonResults?.['share-qr']} blocked={loading || actionBusy} onClick={() => onLinkAction('share-qr')} />
+            <ActionButton icon={<Download size={15} />} label="Baixar QR" loading={busyActions.has('download-qr')} result={buttonResults?.['download-qr']} onClick={() => onLinkAction('download-qr')} />
+            <ActionButton icon={<Share2 size={15} />} label="Compartilhar QR" loading={busyActions.has('share-qr')} result={buttonResults?.['share-qr']} onClick={() => onLinkAction('share-qr')} />
           </div>
         </div>
       </div>

@@ -248,7 +248,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
         const isCategoryControlAnchor = (handlers.selectedItems?.length || 0) <= 1
             || (activeSelectedItem?.type === 'category' && activeSelectedItem.id === chunk.category);
         const isCategoryDragged = isCategoryTarget && handlers.isCanvasObjectDragging?.('category', chunk.category);
-        const categoryAddControls = handlers.getSelectionAddControls?.('category', chunk.category) || { top: true, bottom: true };
+        const categoryControlEdges = handlers.getSelectionControlEdges?.('category', chunk.category) || { top: true, bottom: true };
         const categoryFlowDirections: { before: FlowDirection; after: FlowDirection } =
             handlers.getFlowControlDirections?.('category', chunk.category) || { before: 'top', after: 'bottom' };
         const categoryAddFlow = isCategorySelected
@@ -323,9 +323,9 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         style={{ zIndex: getContentLayer(style) * 10, background: categoryFormat.fills.categoryGroup }} />}
                     <BorderDecoration style={categoryFormat} scope="categoryGroup" />
                 </>}
-                {!readOnly && isCategorySelected && isCategoryControlAnchor && !isCategoryDragged && !handlers.editingId
-                    && !handlers.multiSelectMode && handlers.startCanvasScale && (
-                    <CanvasScaleHandles target={{ type: 'category', id: chunk.category }} start={handlers.startCanvasScale} />
+                {!readOnly && isCategorySelected && !isCategoryDragged && !handlers.editingId
+                    && handlers.startCanvasScale && (
+                    <CanvasScaleHandles edges={categoryControlEdges} target={{ type: 'category', id: chunk.category }} start={handlers.startCanvasScale} />
                 )}
                 {isCategorySelected && isCategoryControlAnchor && !isCategoryDragged && !handlers.editingId && !handlers.multiSelectMode && (
                     <ColumnResizeHandles
@@ -336,13 +336,13 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 )}
                 {isCategorySelected && !isCategoryDragged && !handlers.isResizingCategoryColumns && !handlers.editingId && (
                     <>
-                        <CanvasFlowActions aroundCategory
-                            before={categoryAddControls.top && renderCategoryAddButton('before', categoryAddBeforeDirection)}
-                            up={isCategoryControlAnchor && moveDirections.includes('top') && renderCategoryMoveButton('top')}
-                            down={isCategoryControlAnchor && moveDirections.includes('bottom') && renderCategoryMoveButton('bottom')}
-                            after={categoryAddControls.bottom && renderCategoryAddButton('after', categoryAddAfterDirection)}
+                        <CanvasFlowActions aroundCategory grouped={(handlers.selectedItems?.length || 0) > 1}
+                            before={categoryControlEdges.top && renderCategoryAddButton('before', categoryAddBeforeDirection)}
+                            up={categoryControlEdges.top && moveDirections.includes('top') && renderCategoryMoveButton('top')}
+                            down={categoryControlEdges.bottom && moveDirections.includes('bottom') && renderCategoryMoveButton('bottom')}
+                            after={categoryControlEdges.bottom && renderCategoryAddButton('after', categoryAddAfterDirection)}
                         />
-                        {isCategoryControlAnchor && moveDirections.map((direction, index) => (direction === 'left' || direction === 'right') && (
+                        {moveDirections.map((direction, index) => ((direction === 'left' && categoryControlEdges.top) || (direction === 'right' && categoryControlEdges.bottom)) && (
                             <CanvasActionGroup direction={direction} kind="move" key={index}>
                                 {renderCategoryMoveButton(direction)}
                             </CanvasActionGroup>

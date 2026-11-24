@@ -27,6 +27,19 @@ test('free text keeps following the mouse after swapping with another text', asy
 test.describe('touch dragging', () => {
   test.use({ hasTouch: true });
 
+  test('tapping the same more options trigger twice closes its menu', async ({ page }) => {
+    await page.goto('/tests/fixtures/template-editor.html?photos=list&no-photos');
+    const product = page.locator('#product-container-1');
+    const trigger = shortcutsFor(product).getByTitle('Mais opções');
+    const menu = page.locator('[data-canvas-object-menu]');
+
+    await product.getByRole('heading').tap();
+    await trigger.tap();
+    await expect(menu).toBeVisible();
+    await trigger.tap();
+    await expect(menu).toHaveCount(0);
+  });
+
   test('free text keeps the same gesture across a swap', async ({ page }) => {
     const source = page.locator('#product-container-text-a');
     const target = page.locator('#product-container-text-b');
@@ -134,7 +147,10 @@ for (const touch of [false, true]) {
       await shortcutsFor(first).getByTitle('Seleção múltipla').click();
       await second.getByRole('heading').click();
       await expect(shortcutsFor(second).getByTitle('Seleção múltipla')).toHaveAttribute('aria-pressed', 'true');
-      await expect(canvasActionsFor(first, 'insert').getByRole('button').first()).toBeVisible();
+      await expect(canvasActionsFor(first, 'insert')).toHaveCount(0);
+      await expect(first.locator('[data-canvas-transform-handle="scale"]')).toHaveCount(0);
+      await expect(canvasActionsFor(second, 'insert').getByRole('button')).toHaveCount(2);
+      await expect(second.locator('[data-canvas-transform-handle="scale"]')).toHaveCount(2);
       await expect(canvasActionsFor(second, 'flow').getByRole('button').first()).toBeVisible();
       await expect(page.locator('[data-column-resize-handle]')).toHaveCount(0);
 

@@ -521,8 +521,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 {heroImage && <img src={heroImage} data-template-hero-image alt="" draggable={false} onError={event => { event.currentTarget.hidden = true; }} />}
                 {hasTitle && renderHeading('menuTitle', titleStyle)}
                 {showSubtitle && renderHeading('menuSubtitle', subStyle)}
-                {selected && !showSubtitleDraft && !handlers.multiSelectMode && handlers.startCanvasScale && (
-                    <CanvasScaleHandles target={{ ...activeTarget, headingFields: [
+                {selected && !showSubtitleDraft && handlers.startCanvasScale && (
+                    <CanvasScaleHandles edges={handlers.getSelectionControlEdges?.(activeTarget.type, activeTarget.id)} target={{ ...activeTarget, headingFields: [
                         ...(hasTitle ? ['menuTitle' as const] : []),
                         ...(hasSubtitle ? ['menuSubtitle' as const] : []),
                     ] }} start={handlers.startCanvasScale} />
@@ -674,7 +674,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const customMarginTop = Number.isFinite(rawCustomMarginTop)
             ? Math.max(0, Math.min(pageHeight, rawCustomMarginTop))
             : 0;
-        const productAddControls = handlers.getSelectionAddControls?.(productSelectionType, product.id) || { top: true, bottom: true };
+        const productControlEdges = handlers.getSelectionControlEdges?.(productSelectionType, product.id) || { top: true, bottom: true };
         const layer = product.isFreeText ? getFreeTextLayer(style, product.id) : getContentLayer(style);
         return (
                 <div 
@@ -723,8 +723,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     />
                 )}
                 {!handlers.readOnly && primary && !product.isFreeText && isSelected && !isBeingDragged && !handlers.editingId
-                    && !handlers.multiSelectMode && handlers.startCanvasScale && (
-                    <CanvasScaleHandles target={{ type: productSelectionType, id: product.id }} start={handlers.startCanvasScale} />
+                    && handlers.startCanvasScale && (
+                    <CanvasScaleHandles edges={productControlEdges} target={{ type: productSelectionType, id: product.id }} start={handlers.startCanvasScale} />
                 )}
                 {!handlers.readOnly && primary && product.isFreeText && isSelected && !isBeingDragged && !handlers.editingId
                     && !handlers.multiSelectMode && handlers.rotateCanvasText && (
@@ -738,7 +738,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                     ? renderFormattingToolbar('freeText', product.id, product.styles || {})
                     : renderFormattingToolbar('product', product.id,
                         formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle, style))}
-                {!handlers.readOnly && (primary || isSelected) && <ProductControls type="product" id={product.id} catName={item.category} canMoveUp={!backgroundText && canMoveUp} canMoveDown={!backgroundText && canMoveDown} canMoveLeft={false} canMoveRight={false} isFreeText={product.isFreeText} handlers={handlers} outlineOnly={!primary} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} showGridMoveControls={productColumnCount > 1}/>}
+                {!handlers.readOnly && (primary || isSelected) && <ProductControls type="product" id={product.id} catName={item.category} canMoveUp={!backgroundText && canMoveUp} canMoveDown={!backgroundText && canMoveDown} canMoveLeft={false} canMoveRight={false} isFreeText={product.isFreeText} handlers={handlers} outlineOnly={!primary} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showTopControl={productControlEdges.top} showBottomControl={productControlEdges.bottom} showGridMoveControls={productColumnCount > 1}/>}
                 
                 <div>
                 {product.isFreeText ? (
@@ -945,7 +945,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                      const canMoveRight = hasMovableSiblings && renderedProductColumnIndex < productColumnCount - 1 && productColumnIndex + 1 < item.data.length;
                      const isBeingDragged = handlers.isCanvasObjectDragging?.('product', product.id);
                      const isEditable = !handlers.readOnly && handlers.isReadyToEdit?.('product', product.id);
-                     const productAddControls = handlers.getSelectionAddControls?.('product', product.id) || { top: true, bottom: true };
+                     const productControlEdges = handlers.getSelectionControlEdges?.('product', product.id) || { top: true, bottom: true };
                      return (
                             <div 
                                 key={product.id}
@@ -969,8 +969,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             >
                                 <BorderDecoration style={style} scope="product" />
                                 {!handlers.readOnly && isSelected && !isBeingDragged && !handlers.editingId
-                                    && !handlers.multiSelectMode && handlers.startCanvasScale && (
-                                    <CanvasScaleHandles target={{ type: 'product', id: product.id }} start={handlers.startCanvasScale} />
+                                    && handlers.startCanvasScale && (
+                                    <CanvasScaleHandles edges={productControlEdges} target={{ type: 'product', id: product.id }} start={handlers.startCanvasScale} />
                                 )}
                                 {isSelected && handlers.selectedId === product.id && !handlers.editingId && !handlers.multiSelectMode && (
                                     <ColumnResizeHandles columnIndex={columnIndex} columnCount={categoryColumnCount}
@@ -978,7 +978,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 )}
                                 {renderFormattingToolbar('product', product.id,
                                     formattingTarget?.field === 'price' ? priceStyle : formattingTarget?.field === 'description' ? descStyle : nameStyle, style)}
-                            {!handlers.readOnly && <ProductControls type="product" id={product.id} catName={item.category} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={canMoveLeft} canMoveRight={canMoveRight} isFreeText={product.isFreeText} handlers={handlers} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showTopAddControl={productAddControls.top} showBottomAddControl={productAddControls.bottom} showGridMoveControls={productColumnCount > 1}/>}
+                            {!handlers.readOnly && <ProductControls type="product" id={product.id} catName={item.category} canMoveUp={canMoveUp} canMoveDown={canMoveDown} canMoveLeft={canMoveLeft} canMoveRight={canMoveRight} isFreeText={product.isFreeText} handlers={handlers} isDragging={isBeingDragged || handlers.isResizingCategoryColumns} showTopControl={productControlEdges.top} showBottomControl={productControlEdges.bottom} showGridMoveControls={productColumnCount > 1}/>}
                                 
                                 <div
                                     data-template-card

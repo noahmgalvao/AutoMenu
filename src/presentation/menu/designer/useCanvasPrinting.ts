@@ -53,9 +53,9 @@ interface CanvasPrintingOptions {
     currentPrintPageIndex: number | null;
     printRequestMode: 'download' | 'publish' | 'publish-silent';
     printRequestId: number;
-    onPrintComplete?: (result: PdfExportResult) => void;
-    onPrintError?: (error: Error) => void;
-    onPrintCancel?: () => void;
+    onPrintComplete?: (result: PdfExportResult, requestId: number) => void;
+    onPrintError?: (error: Error, requestId: number) => void;
+    onPrintCancel?: (requestId: number) => void;
     silentPrintOptions?: Partial<PrintCanvasOptions>;
     clearCanvasSelection: () => void;
 }
@@ -67,7 +67,7 @@ export function useCanvasPrinting({
     const [showPrintModal, setShowPrintModal] = useState(false);
     const [printSettings, setPrintOptions] = useState<PrintCanvasOptions>(() => getDefaultPrintOptions(style));
     const [lastCompletedPrintOptions, setLastCompletedPrintOptions] = useState<PrintCanvasOptions | null>(null);
-    const [activePrintMode, setActivePrintMode] = useState<'download' | 'publish'>('download');
+    const [publicationPrintRequest, setPublicationPrintRequest] = useState<number | null>(null);
     const [printPageCount, setPrintPageCount] = useState(0);
     const [printPreviewPages, setPrintPreviewPages] = useState<PrintPreviewPage[]>([]);
     const [selectedPrintPage, setSelectedPrintPage] = useState<number | null>(null);
@@ -104,8 +104,8 @@ export function useCanvasPrinting({
         };
     }, []);
 
-    const handlePrint = (mode: 'download' | 'publish' = 'download') => {
-        setActivePrintMode(mode);
+    const handlePrint = (publicationRequest: number | null = null) => {
+        setPublicationPrintRequest(publicationRequest);
         setSelectedPrintPage(currentPrintPageIndex);
         clearCanvasSelection();
         document.dispatchEvent(new Event('automenu:close-inline-formatting'));
@@ -116,7 +116,7 @@ export function useCanvasPrinting({
 
     useEffect(() => {
         if (printRequestId <= 0) return;
-        if (printRequestMode === 'download' || printRequestMode === 'publish') handlePrint(printRequestMode);
+        if (printRequestMode !== 'publish-silent') handlePrint(printRequestMode === 'publish' ? printRequestId : null);
     }, [printRequestId]);
 
     useLayoutEffect(() => {
@@ -143,7 +143,7 @@ export function useCanvasPrinting({
         });
     };
 
-    const publishCanvasPdf = async () => {
+    const publishCanvasPdf = async (requestId: number) => {
         try {
             const pageElements = Array.from(
                 containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]') || []
@@ -156,10 +156,10 @@ export function useCanvasPrinting({
                 title: style.menuTitle || 'Cardápio',
                 download: false,
             });
-            onPrintComplete?.(result);
+            onPrintComplete?.(result, requestId);
         } catch (error) {
             console.error('[Publicação] Falha ao gerar PDF para o link virtual', error);
-            onPrintError?.(error instanceof Error ? error : new Error(String(error)));
+            onPrintError?.(error instanceof Error ? error : new Error(String(error)), requestId);
         }
     };
 
@@ -167,7 +167,7 @@ export function useCanvasPrinting({
         if (printRequestId <= 0 || printRequestMode !== 'publish-silent') return;
         clearCanvasSelection();
         document.dispatchEvent(new Event('automenu:close-inline-formatting'));
-        void publishCanvasPdf();
+        void publishCanvasPdf(printRequestId);
     }, [printRequestId]);
 
     const directOptions = useMemo(() => {
@@ -191,17 +191,16 @@ export function useCanvasPrinting({
         onPageSetupChange: setup => updateCanvasPageSetup(setStyle, setup, products),
         onClose() {
             setShowPrintModal(false);
-            if (activePrintMode === 'publish') onPrintCancel?.();
+            if (publicationPrintRequest !== null) onPrintCancel?.(publicationPrintRequest);
         },
         onPrint: executeCanvasPrint,
         onComplete() {
             setLastCompletedPrintOptions(printOptions);
-            if (activePrintMode === 'publish') {
+            if (publicationPrintRequest !== null) {
                 setShowPrintModal(false);
-                void publishCanvasPdf();
+                void publishCanvasPdf(publicationPrintRequest);
             }
         },
-        onError: activePrintMode === 'publish' ? onPrintError : undefined,
     } : null;
     return { handlePrint, printDialog, fileExports, onPageCountChange: setPrintPageCount };
 }

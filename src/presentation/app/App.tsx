@@ -105,7 +105,7 @@ const App: React.FC = () => {
   };
 
   const {
-    printRequestId, printRequestMode, publication, isPublishOpen, setIsPublishOpen, isPublishing, publishAction,
+    printRequestId, printRequestMode, publication, isPublishOpen, setIsPublishOpen, isPublishing, busyActions,
     publishFeedback, buttonResults, fileExportRef, hasPublishedChanges, requestPrint,
     preparePdf, prepareJpg, handleLinkAction, handlePublishConfirm, handlePdfAction, handleJpgAction,
     handlePublicationSlugChange, handlePrintComplete, handlePrintError, handlePrintCancel,
@@ -161,11 +161,11 @@ const App: React.FC = () => {
   }
 
   const virtualLinkControls: VirtualLinkControls = {
-    loading: isPublishing,
+    publishingLink: isPublishing,
     hasPublication: Boolean(publication),
     publicUrl: publication ? getPublicationUrl(publication) : null,
     publicationMenuSlug: publication?.menuSlug,
-    activeAction: publishAction,
+    busyActions,
     feedback: publishFeedback,
     buttonResults,
     onLinkAction: action => void handleLinkAction(action),
@@ -223,7 +223,6 @@ const App: React.FC = () => {
             <button
               type="button"
               onClick={() => setIsPublishOpen(true)}
-              disabled={isPublishing}
               className={`h-10 px-3 sm:px-4 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors disabled:opacity-60 ${publication && hasPublishedChanges
                 ? 'border border-amber-400 bg-amber-50 text-amber-800 shadow-sm shadow-amber-100 hover:bg-amber-100'
                 : publication
@@ -391,7 +390,7 @@ const App: React.FC = () => {
             onOpenVisual={() => setActivePanel('style')}
             printRequestId={printRequestId}
             printRequestMode={printRequestMode}
-            onPrintComplete={(result) => void handlePrintComplete(result)}
+            onPrintComplete={handlePrintComplete}
             onPrintError={handlePrintError}
             onPrintCancel={handlePrintCancel}
             silentPrintOptions={publication?.pdfOptions as Partial<PrintCanvasOptions> | undefined}

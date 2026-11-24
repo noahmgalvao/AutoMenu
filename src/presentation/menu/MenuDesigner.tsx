@@ -62,9 +62,9 @@ interface MenuDesignerProps {
     isProductDesignerOpen?: boolean;
     printRequestId?: number;
     printRequestMode?: 'download' | 'publish' | 'publish-silent';
-    onPrintComplete?: (result: PdfExportResult) => void;
-    onPrintError?: (error: Error) => void;
-    onPrintCancel?: () => void;
+    onPrintComplete?: (result: PdfExportResult, requestId: number) => void;
+    onPrintError?: (error: Error, requestId: number) => void;
+    onPrintCancel?: (requestId: number) => void;
     silentPrintOptions?: Partial<PrintCanvasOptions>;
     onClose?: () => void;
     onOpenVisual?: () => void;
@@ -2299,7 +2299,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             <MenuSidebar
                 isOpen={isOpen || false}
                 onClose={onClose}
-                onPdfClick={() => handlePrint('download')}
+                onPdfClick={() => handlePrint()}
                 handleResetDesign={handleResetDesign}
                 style={style}
                 setStyle={setStyle}

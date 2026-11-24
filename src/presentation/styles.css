@@ -81,6 +81,10 @@ body {
   pointer-events: none;
 }
 
+[data-canvas-action-group][data-single-flow-slot] {
+  grid-template-rows: var(--canvas-flow-button-size);
+}
+
 :is([data-canvas-action-group="flow"], [data-canvas-action-group="insert"][data-canvas-action-direction="left"]) .automenu-canvas-action {
   width: var(--canvas-flow-button-size);
   height: var(--canvas-flow-button-size);
@@ -116,13 +120,16 @@ body {
   [data-canvas-action-group]:not([data-canvas-action-group="page"]),
   [data-canvas-transform-handle],
   [data-free-text-resize-handle],
-  .automenu-image-resize-handle
+  .automenu-image-resize-handle,
+  [data-photo-corner],
+  [data-photo-gesture] > .photo-overlay-slot
 ),
-body:has([data-canvas-zooming]) :is([data-inline-format-toolbar], [data-canvas-object-menu]) {
+body:has([data-canvas-zooming]) :is([data-inline-format-toolbar], [data-canvas-object-menu], [data-product-image-surface][data-editor-popover]) {
   visibility: hidden !important;
 }
 
-[data-canvas-selection-dragging] [data-canvas-action-group] {
+[data-canvas-selection-dragging] [data-canvas-action-group],
+[data-automenu-editor-canvas]:has([data-canvas-object-dragging]) [data-canvas-action-group="resize"] {
   visibility: hidden !important;
 }
 

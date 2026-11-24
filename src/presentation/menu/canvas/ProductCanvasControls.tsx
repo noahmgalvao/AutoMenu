@@ -124,15 +124,15 @@ interface ProductControlsProps {
     showSelectionOutline?: boolean;
     outlineOnly?: boolean;
     showAddControls?: boolean;
-    showTopAddControl?: boolean;
-    showBottomAddControl?: boolean;
+    showTopControl?: boolean;
+    showBottomControl?: boolean;
     showGridMoveControls?: boolean;
 }
 
 export const ProductControls = ({
     type, id, catName, canMoveUp, canMoveDown, canMoveLeft, canMoveRight, isFreeText, handlers,
-    isDragging, showSelectionOutline = true, outlineOnly = false, showAddControls = true, showTopAddControl = true,
-    showBottomAddControl = true, showGridMoveControls,
+    isDragging, showSelectionOutline = true, outlineOnly = false, showAddControls = true, showTopControl = true,
+    showBottomControl = true, showGridMoveControls,
 }: ProductControlsProps) => {
     const selectionType = type === 'category' ? 'category' : isFreeText ? 'freeText' : 'product';
     const selectionId = id || catName;
@@ -191,10 +191,10 @@ export const ProductControls = ({
             { direction: 'up', edge: flow.before, enabled: canMoveUp },
             { direction: 'down', edge: flow.after, enabled: canMoveDown },
         ];
-    const enabledMoves = moves.filter(move => move.enabled);
+    const enabledMoves = moves.filter(move => move.enabled
+        && (move.direction === 'up' || move.direction === 'left' ? showTopControl : showBottomControl));
     const up = enabledMoves.find(move => move.edge === 'top');
     const down = enabledMoves.find(move => move.edge === 'bottom');
-    const showFlowActions = isActive && !handlers.editingId;
     const showBoundaryActions = isSelected && !handlers.editingId;
     const showInsertion = !isFreeText && showAddControls;
 
@@ -202,11 +202,11 @@ export const ProductControls = ({
         <>
             {outline}
             {showBoundaryActions && !isFreeText && (
-                <CanvasFlowActions
-                    before={showInsertion && showTopAddControl && renderAdd('before', addFlow.before)}
-                    up={showFlowActions && up && renderMove(up.direction, up.edge)}
-                    down={showFlowActions && down && renderMove(down.direction, down.edge)}
-                    after={showInsertion && showBottomAddControl && renderAdd('after', addFlow.after)}
+                <CanvasFlowActions grouped={(handlers.selectedItems?.length || 0) > 1}
+                    before={showInsertion && showTopControl && renderAdd('before', addFlow.before)}
+                    up={up && renderMove(up.direction, up.edge)}
+                    down={down && renderMove(down.direction, down.edge)}
+                    after={showInsertion && showBottomControl && renderAdd('after', addFlow.after)}
                 />
             )}
             {!handlers.editingId && (!isSelected || isActive) && (
@@ -233,7 +233,7 @@ export const ProductControls = ({
                     </button>
                 </CanvasActionGroup>
             )}
-            {showFlowActions && enabledMoves.filter(move => isFreeText || move.edge === 'left' || move.edge === 'right').map(({ direction, edge }) => (
+            {showBoundaryActions && enabledMoves.filter(move => isFreeText || move.edge === 'left' || move.edge === 'right').map(({ direction, edge }) => (
                 <CanvasActionGroup key={direction} direction={edge} kind="move">
                     {renderMove(direction, edge)}
                 </CanvasActionGroup>

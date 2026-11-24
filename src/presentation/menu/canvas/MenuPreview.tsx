@@ -642,7 +642,9 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
             const rect = menu.getBoundingClientRect();
             const item = objectMenu.item;
-            const buttons = item && objectMenu.anchored ? Array.from(previewRootRef.current?.querySelectorAll<HTMLElement>(
+            const root = previewRootRef.current;
+            const buttonScope = root?.closest('[data-automenu-editor-canvas]') ?? root;
+            const buttons = item && objectMenu.anchored ? Array.from(buttonScope?.querySelectorAll<HTMLElement>(
                 `[data-object-menu-type="${item.type}"][data-object-menu-id="${CSS.escape(item.id)}"]`
             ) || []).filter(button => button.getBoundingClientRect().width && getComputedStyle(button).visibility === 'visible') : [];
             const button = buttons.find(button => Number(button.closest<HTMLElement>('[data-shortcut-page]')?.dataset.shortcutPage) === objectMenu.pageIndex) || buttons[0];
@@ -679,6 +681,13 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                     const top = below >= above ? bounds.bottom + gap : bounds.top - gap - height;
                     nextPosition = { left: clampX(x), top: clampY(top, height), maxHeight: height };
                 }
+            }
+            if (anchor && nextPosition.left < anchor.right && nextPosition.left + rect.width > anchor.left
+                && nextPosition.top < anchor.bottom && nextPosition.top + nextPosition.maxHeight > anchor.top) {
+                const above = anchor.top - gap - edge;
+                const below = viewportBottom - anchor.bottom - gap;
+                const height = Math.min(nextPosition.maxHeight, Math.max(above, below));
+                nextPosition = { ...nextPosition, top: below >= above ? anchor.bottom + gap : anchor.top - gap - height, maxHeight: height };
             }
             setObjectMenuPosition((current) => (
                 current?.left === nextPosition.left && current?.top === nextPosition.top && current?.maxHeight === nextPosition.maxHeight
@@ -730,9 +739,10 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         const startY = event.clientY;
         const gestureHeight = Math.max(44, frame.offsetHeight);
         const handle = event.currentTarget;
+        const selection = handlers.selectedItems.length > 1 ? handlers.selectedItems : undefined;
         const scaleObject = captureCanvasObjectScale(style, target, products, frame.offsetWidth, () => {
             if (!handle.classList.contains('automenu-limit-feedback')) triggerLimitFeedback(handle);
-        });
+        }, selection);
         let next: ReturnType<typeof scaleObject>;
         return {
             preview: (point: PointerEvent) => {
@@ -1332,7 +1342,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
       const startedOnObjectMenuButton = Boolean(target?.closest('[data-open-object-menu="true"]'));
       touchStartedOnObjectMenuButtonRef.current = startedOnObjectMenuButton;
       suppressTouchObjectMenuUntilRef.current = startedOnObjectMenuButton ? 0 : Date.now() + 1400;
-      setObjectMenu(null);
+      if (!startedOnObjectMenuButton) setObjectMenu(null);
     }
         const pageElement = target?.closest<HTMLElement>('[data-menu-print-page="true"][data-page-index]');
         if (pageElement) {
@@ -2659,6 +2669,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         <div
             ref={previewRootRef}
             data-menu-preview-canvas
+            data-canvas-object-dragging={Boolean(handlers.draggedItem || handlers.draggedImageId) || undefined}
             style={{ '--canvas-handle-inverse': Math.min(4, 1 / Math.max(.1, props.scale || 1)) } as React.CSSProperties}
             inert={readOnly ? true : undefined}
             aria-label={readOnly ? 'Pré-visualização do cardápio, somente leitura' : undefined}
