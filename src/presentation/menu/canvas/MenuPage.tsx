@@ -334,15 +334,15 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         onResizeStart={handlers.startCategoryColumnResize}
                     />
                 )}
-                {isCategorySelected && isCategoryControlAnchor && !isCategoryDragged && !handlers.isResizingCategoryColumns && !handlers.editingId && !handlers.multiSelectMode && (
+                {isCategorySelected && !isCategoryDragged && !handlers.isResizingCategoryColumns && !handlers.editingId && (
                     <>
                         <CanvasFlowActions
                             before={categoryAddControls.top && renderCategoryAddButton('before', categoryAddBeforeDirection)}
-                            up={moveDirections.includes('top') && renderCategoryMoveButton('top')}
-                            down={moveDirections.includes('bottom') && renderCategoryMoveButton('bottom')}
+                            up={isCategoryControlAnchor && moveDirections.includes('top') && renderCategoryMoveButton('top')}
+                            down={isCategoryControlAnchor && moveDirections.includes('bottom') && renderCategoryMoveButton('bottom')}
                             after={categoryAddControls.bottom && renderCategoryAddButton('after', categoryAddAfterDirection)}
                         />
-                        {moveDirections.map((direction, index) => (direction === 'left' || direction === 'right') && (
+                        {isCategoryControlAnchor && moveDirections.map((direction, index) => (direction === 'left' || direction === 'right') && (
                             <CanvasActionGroup direction={direction} kind="move" key={index}>
                                 {renderCategoryMoveButton(direction)}
                             </CanvasActionGroup>
@@ -860,48 +860,36 @@ export const MenuPage: React.FC<MenuPageProps> = ({
             )}
             {isPageSelected && (
                 <>
-                    <button
-                        onClick={(e) => { e.stopPropagation(); handlers.setMultiSelectMode?.(!handlers.multiSelectMode); }}
-                        className={`md:hidden absolute top-[-16px] right-8 z-30 p-2 rounded-full shadow-lg hover:scale-110 transition-all border-2 border-white ${handlers.multiSelectMode ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600'}`}
-                        title="Seleção múltipla"
-                    >
-                        <CheckSquare size={18} />
-                    </button>
+                    <CanvasActionGroup kind="page" direction="top" className="md:hidden" anchorSelector="[data-menu-page-frame]">
+                        <button type="button" aria-pressed={Boolean(handlers.multiSelectMode)}
+                            onClick={() => handlers.setMultiSelectMode?.(!handlers.multiSelectMode)}
+                            className={`${canvasActionButtonClass} ${handlers.multiSelectMode ? 'before:!bg-indigo-100 !text-indigo-700' : ''}`}
+                            title="Seleção múltipla"><CheckSquare size={18} /></button>
+                    </CanvasActionGroup>
                     {(['before', 'after'] as const).filter(direction => pageAddControls[direction]).map(direction => {
                         const before = direction === 'before';
-                        const side = before ? 'left-[-32px] -translate-x-1/2' : 'right-[-32px] translate-x-1/2';
                         const placement = before ? 'antes' : 'depois';
                         const Chevron = before ? ChevronLeft : ChevronRight;
-                        const controls = 'absolute z-[100002] -translate-y-1/2 rounded-full border-2 border-white p-2 text-white shadow-lg hover:scale-110';
-                        return <React.Fragment key={direction}>
-                            <button type="button" data-print-control="true" data-drag-ignore="true"
-                                onClick={event => { event.stopPropagation(); onAddPage(pageIndex, direction); }}
-                                className={`${controls} ${side} top-1/2 bg-blue-600 hover:bg-blue-700`}
-                                title={`Adicionar página ${placement}`}>
-                                <Plus size={24} />
-                            </button>
+                        return <CanvasActionGroup key={direction} kind="page" direction={before ? 'left' : 'right'}
+                            className="flex-col" anchorSelector="[data-menu-page-frame]">
+                            <button type="button" onClick={() => onAddPage(pageIndex, direction)}
+                                className={`${canvasActionButtonClass} before:!border-indigo-600 before:!bg-indigo-600 !text-white`}
+                                title={`Adicionar página ${placement}`}><Plus size={20} /></button>
                             {onMovePage && (before ? pageIndex > 0 : pageIndex < pageCount - 1) && (
-                                <button type="button" data-print-control="true" data-drag-ignore="true"
-                                    onClick={event => { event.stopPropagation(); onMovePage(pageIndex, direction); }}
-                                    className={`${controls} ${side} top-3/4 bg-blue-600 hover:bg-blue-700`}
+                                <button type="button" onClick={() => onMovePage(pageIndex, direction)} className={canvasActionButtonClass}
                                     title={before ? 'Trocar com a página anterior' : 'Trocar com a próxima página'}>
-                                    <Chevron size={24} />
+                                    <Chevron size={19} />
                                 </button>
                             )}
-                        </React.Fragment>;
+                        </CanvasActionGroup>;
                     })}
                     {pageCount > 1 && pageIndex !== 0 && (
-                        <button
-                            type="button"
-                            data-drag-ignore="true"
-                            onPointerDown={(event) => event.stopPropagation()}
-                            onClick={(e) => { e.stopPropagation(); onDeletePage(pageIndex); }}
-                            className="pointer-events-auto absolute bottom-[-58px] left-1/2 z-[100001] flex h-12 w-12 -translate-x-1/2 items-center justify-center rounded-full border-2 border-white bg-red-600 text-white shadow-lg transition-all hover:scale-110 hover:bg-red-700"
-                            title="Excluir página"
-                            aria-label="Excluir página"
-                        >
-                            <Trash2 size={20} className="pointer-events-none" />
-                        </button>
+                        <CanvasActionGroup kind="page" direction="bottom" anchorSelector="[data-menu-page-frame]">
+                            <button type="button" onClick={() => onDeletePage(pageIndex)}
+                                className={`${canvasActionButtonClass} !text-red-600`} title="Excluir página" aria-label="Excluir página">
+                                <Trash2 size={20} />
+                            </button>
+                        </CanvasActionGroup>
                     )}
                 </>
             )}

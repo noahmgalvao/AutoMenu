@@ -1,7 +1,8 @@
+import { DisclosureChevron } from '../common/DisclosureChevron';
 import { lockModalScrolling } from '../common/modalScroll';
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, Check, ChevronDown, CopyCheck, Loader2, LogOut, Pencil, Plus, Settings, Trash2, User, X } from 'lucide-react';
+import { AlertTriangle, Check, CopyCheck, Loader2, LogOut, Pencil, Plus, Settings, Trash2, User, X } from 'lucide-react';
 import type { Menu, Profile, Workspace } from '../../domain/workspace/model';
 
 interface ProfileMenuProps {
@@ -128,7 +129,7 @@ export const ProfileMenu: React.FC<ProfileMenuProps> = ({
       >
         <User size={16} />
         <span className="hidden sm:inline">Meu perfil</span>
-        <ChevronDown size={14} className={isOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+        <DisclosureChevron open={isOpen} />
       </button>
 
       {isOpen && (

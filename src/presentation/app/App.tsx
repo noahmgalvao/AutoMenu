@@ -35,15 +35,23 @@ const App: React.FC = () => {
     setSelectedPages(previous => previous.length === indexes.length && previous.every((id, index) => id === indexes[index]) ? previous : indexes);
   }, []);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [menuNameEdit, setMenuNameEdit] = useState<{ id: string; name: string } | null>(null);
+  const scrollDistance = useRef(0);
   const [isScrolling, setIsScrolling] = useState(false);
   const scrollIdleTimer = useRef<number | undefined>(undefined);
   const restoreNavigation = useCallback(() => {
     window.clearTimeout(scrollIdleTimer.current);
     scrollIdleTimer.current = undefined;
+    scrollDistance.current = 0;
     setIsScrolling(false);
   }, []);
-  const handleCanvasScroll = useCallback(() => {
-    setIsScrolling(true);
+  const handleCanvasScroll = useCallback((verticalDelta: number) => {
+    if (verticalDelta < 0) {
+      restoreNavigation();
+      return;
+    }
+    scrollDistance.current += verticalDelta;
+    if (scrollDistance.current >= 48) setIsScrolling(true);
     window.clearTimeout(scrollIdleTimer.current);
     scrollIdleTimer.current = window.setTimeout(restoreNavigation, 500);
   }, [restoreNavigation]);
@@ -185,8 +193,8 @@ const App: React.FC = () => {
               <button
                 onClick={() => void handleCreateMenu()}
                 disabled={isMenuActionLoading}
-                className="md:hidden p-3 rounded-xl transition-all text-slate-400 hover:text-indigo-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Novo cardÃ¡pio"
+                className="md:hidden grid size-10 shrink-0 place-items-center rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                title="Novo cardápio"
               >
                 {isMenuActionLoading ? <Loader2 size={24} className="animate-spin" /> : <Plus size={24} />}
               </button>
@@ -196,7 +204,23 @@ const App: React.FC = () => {
                 AutoMenu AI
               </div>
               <div className="text-xs text-slate-500 flex items-center gap-1 min-w-0">
-                <span className="truncate">{workspaceData.menu.name}</span>
+                {menuNameEdit?.id === workspaceData.menu.id ? (
+                  <input autoFocus aria-label="Nome do cardápio" value={menuNameEdit.name} maxLength={120}
+                    className="w-full min-w-0 rounded-md border border-indigo-300 px-1.5 py-1 text-sm text-slate-800"
+                    onFocus={event => event.currentTarget.select()}
+                    onChange={event => setMenuNameEdit({ id: workspaceData.menu.id, name: event.target.value })}
+                    onBlur={() => {
+                      setMenuNameEdit(null);
+                      if (menuNameEdit.name.trim()) void handleRenameMenu(menuNameEdit.id, menuNameEdit.name);
+                    }}
+                    onKeyDown={event => {
+                      if (event.key === 'Enter') event.currentTarget.blur();
+                      if (event.key === 'Escape') { event.stopPropagation(); setMenuNameEdit(null); }
+                    }} />
+                ) : <button type="button" title="Renomear cardápio" data-menu-name className="min-w-0 truncate text-left hover:text-indigo-700"
+                  onClick={() => setMenuNameEdit({ id: workspaceData.menu.id, name: workspaceData.menu.name })}>
+                  {workspaceData.menu.name}
+                </button>}
               </div>
             </div>
           </div>
@@ -310,7 +334,7 @@ const App: React.FC = () => {
             <button
               onClick={() => void handleCreateMenu()}
               disabled={isMenuActionLoading}
-              className="p-3 rounded-xl transition-all text-slate-400 hover:text-indigo-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="grid size-11 place-items-center rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
               title="Novo cardápio"
             >
               {isMenuActionLoading ? <Loader2 size={24} className="animate-spin" /> : <Plus size={24} />}

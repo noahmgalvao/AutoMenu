@@ -140,7 +140,7 @@ export const ProductControls = ({
     const isSelected = handlers.isSelected?.(selectionType, selectionId) ?? handlers.selectedId === selectionId;
     const isActive = isSelected && ((handlers.selectedItems?.length || 0) <= 1 || handlers.selectedId === selectionId);
     const flow = handlers.getFlowControlDirections?.(selectionType, selectionId) || { before: 'top', after: 'bottom' };
-    const addFlow = isActive && showAddControls ? handlers.getAddControlDirections?.(selectionType, selectionId) || flow : flow;
+    const addFlow = isSelected && showAddControls ? handlers.getAddControlDirections?.(selectionType, selectionId) || flow : flow;
     const [limitReached, setLimitReached] = React.useState(false);
 
     React.useEffect(() => {
@@ -194,17 +194,18 @@ export const ProductControls = ({
     const enabledMoves = moves.filter(move => move.enabled);
     const up = enabledMoves.find(move => move.edge === 'top');
     const down = enabledMoves.find(move => move.edge === 'bottom');
-    const showFlowActions = isActive && !handlers.editingId && !handlers.multiSelectMode;
+    const showFlowActions = isActive && !handlers.editingId;
+    const showBoundaryActions = isSelected && !handlers.editingId;
     const showInsertion = !isFreeText && showAddControls;
 
     return (
         <>
             {outline}
-            {showFlowActions && !isFreeText && (
+            {showBoundaryActions && !isFreeText && (
                 <CanvasFlowActions
                     before={showInsertion && showTopAddControl && renderAdd('before', addFlow.before)}
-                    up={up && renderMove(up.direction, up.edge)}
-                    down={down && renderMove(down.direction, down.edge)}
+                    up={showFlowActions && up && renderMove(up.direction, up.edge)}
+                    down={showFlowActions && down && renderMove(down.direction, down.edge)}
                     after={showInsertion && showBottomAddControl && renderAdd('after', addFlow.after)}
                 />
             )}

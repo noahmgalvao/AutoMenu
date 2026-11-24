@@ -1,9 +1,10 @@
+import { DisclosureChevron } from '../../common/DisclosureChevron';
 import { lockModalScrolling } from '../../common/modalScroll';
 import { CATALOG_VERSION } from '../../../domain/templates/templateCatalog';
 import { INITIAL_STYLE, NO_TEMPLATE_ID } from '../../../domain/menu/defaults';
 import React, { memo, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, ArrowUp, Check, ChevronDown, Globe2, Grid2X2, Heart, Search, X } from 'lucide-react';
+import { ArrowLeft, ArrowUp, Check, Globe2, Grid2X2, Heart, Search, X } from 'lucide-react';
 import { getErrorMessage } from '../../../application/errorMessages';
 import type { MenuStyle, Product, SortOption } from '../../../domain/menu/model';
 import { useTemplateFavorites } from './useTemplateFavorites';
@@ -482,7 +483,7 @@ export function TemplatePicker(props: Props) {
       className={`flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold ${focusStyle}`}>
       {selectedTemplate && <div className="my-1 h-20 w-16 shrink-0 overflow-hidden rounded-md"><Thumbnail template={selectedTemplate} /></div>}
       <span className="min-w-0 flex-1 truncate text-left">{selectedTemplate?.name || 'Escolher modelo'}</span>
-      <ChevronDown size={16} className="shrink-0" />
+      <DisclosureChevron open={pickerOpen} size={16} />
     </button>
     {pickerOpen && <div id={panel} className="space-y-2 rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
       <Filters {...{ query, setQuery, tab, setTab }} />

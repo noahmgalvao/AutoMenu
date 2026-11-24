@@ -803,10 +803,8 @@ for (const layout of ['photos=list&lanes=2', 'photos=cards&cols=3']) {
     });
     const resize = (width: number) => row.evaluate((element, width) => { element.style.width = `${width}px`; }, width);
     await resize(widths.tight);
-    await expect.poll(() => price.evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBeLessThan(28);
-    await expect(row).not.toHaveAttribute('data-price-wrap', '');
-    const reduced = await price.evaluate(element => getComputedStyle(element).fontSize);
-    for (const other of await prices.all()) await expect(other).toHaveCSS('font-size', reduced);
+    await expect(row).toHaveAttribute('data-price-wrap', '');
+    for (const other of await prices.all()) await expect(other).toHaveCSS('font-size', '28px');
 
     await resize(widths.wrapped);
     await expect(row).toHaveAttribute('data-price-wrap', '');
@@ -857,7 +855,7 @@ test('prices stay inside narrow cards with three product and three category colu
   await page.goto('/tests/fixtures/template-editor.html?photos=cards&cols=3&lanes=3&price-flow');
   const price = page.locator('#product-container-1 [data-template-price]');
   await expect(price).toHaveAttribute('data-price-stacked', '');
-  await expect(price).toHaveCSS('font-size', '15px');
+  await expect(price).toHaveCSS('font-size', '28px');
   await expect.poll(() => price.evaluate(element => {
     const price = element.getBoundingClientRect();
     const row = element.parentElement!.getBoundingClientRect();

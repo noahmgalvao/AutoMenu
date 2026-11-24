@@ -1,5 +1,5 @@
 import { expect, test, type Locator } from '@playwright/test';
-import { shortcutsFor } from './fixtures/canvas-shortcuts';
+import { canvasActionsFor, shortcutsFor } from './fixtures/canvas-shortcuts';
 import { PRESET_TEMPLATES } from '../src/domain/templates/templateCatalog';
 import { getPaginationBottomInset } from '../src/domain/menu/menuPagination';
 import { resolveMenuPageDimensions } from '../src/domain/menu/pageSetup';
@@ -291,15 +291,15 @@ test('page actions sit above the next page and operate at the edges of a selecti
     const frame = (index: number) => paper.nth(index).locator('..');
     const clickPaper = (index: number, modifiers: ('Control' | 'Shift')[] = []) =>
         paper.nth(index).click({ position: { x: 10, y: 165 }, modifiers });
-    const after = (index: number) => frame(index).getByTitle('Adicionar página depois');
-    const before = (index: number) => frame(index).getByTitle('Adicionar página antes');
+    const after = (index: number) => canvasActionsFor(frame(index), 'page').getByTitle('Adicionar página depois');
+    const before = (index: number) => canvasActionsFor(frame(index), 'page').getByTitle('Adicionar página antes');
     await clickPaper(0);
     await after(0).scrollIntoViewIfNeeded();
     expect(await after(0).evaluate(button => {
         const box = button.getBoundingClientRect();
         return button.contains(document.elementFromPoint(box.right - 5, box.top + box.height / 2));
     })).toBe(true);
-    await frame(0).getByTitle('Trocar com a próxima página').click();
+    await canvasActionsFor(frame(0), 'page').getByTitle('Trocar com a próxima página').click();
     await expect(paper).toHaveCount(2);
     await expect(paper.nth(0)).toHaveAttribute('data-blank-page-id', 'layers-page');
     await expect(paper.nth(1).getByText('Burrata da casa', { exact: true })).toBeVisible();
@@ -312,7 +312,7 @@ test('page actions sit above the next page and operate at the edges of a selecti
     await expect(after(0)).toHaveCount(0);
     await expect(before(1)).toHaveCount(0);
     await expect(after(1)).toBeVisible();
-    await frame(1).getByTitle('Trocar com a próxima página').click();
+    await canvasActionsFor(frame(1), 'page').getByTitle('Trocar com a próxima página').click();
     await expect(paper.nth(1)).toHaveAttribute('data-blank-page-id', 'layers-page');
     await expect(paper.nth(2).getByText('Burrata da casa', { exact: true })).toBeVisible();
     await expect(before(1)).toBeVisible();
@@ -327,7 +327,7 @@ test('swapping separated pages keeps the intervening page in its original slot',
     await page.goto(fixture + '?batch-layers&editable');
     const paper = page.locator('[data-menu-print-page]');
     const frame = (index: number) => paper.nth(index).locator('..');
-    const addAfter = (index: number) => frame(index).getByTitle('Adicionar página depois').click();
+    const addAfter = (index: number) => canvasActionsFor(frame(index), 'page').getByTitle('Adicionar página depois').click();
     await paper.first().click({ position: { x: 10, y: 165 } });
     await addAfter(0);
     await addAfter(1);
@@ -337,7 +337,7 @@ test('swapping separated pages keeps the intervening page in its original slot',
         expect.poll(() => paper.evaluateAll(pages => pages.map(node => node.getAttribute('data-blank-page-id')))).toEqual(expected);
     await paper.nth(0).click({ position: { x: 10, y: 165 } });
     await paper.nth(2).click({ position: { x: 10, y: 165 }, modifiers: ['Control'] });
-    await frame(2).getByTitle('Trocar com a próxima página').click();
+    await canvasActionsFor(frame(2), 'page').getByTitle('Trocar com a próxima página').click();
     await expectOrder([ids[3], ids[1], ids[0], ids[2]]);
     await expect(paper.nth(1)).not.toHaveClass(/ring-blue-500/);
     await expect(paper.nth(2)).toHaveClass(/ring-blue-500/);
@@ -345,7 +345,7 @@ test('swapping separated pages keeps the intervening page in its original slot',
 
     await paper.nth(1).click({ position: { x: 10, y: 165 } });
     await paper.nth(3).click({ position: { x: 10, y: 165 }, modifiers: ['Control'] });
-    await frame(1).getByTitle('Trocar com a página anterior').click();
+    await canvasActionsFor(frame(1), 'page').getByTitle('Trocar com a página anterior').click();
     await expectOrder([ids[1], ids[2], ids[0], ids[3]]);
     await expect(paper.nth(0)).toHaveClass(/ring-blue-500/);
     await expect(paper.nth(1)).toHaveClass(/ring-blue-500/);

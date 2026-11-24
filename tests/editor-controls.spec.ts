@@ -1,3 +1,4 @@
+import { canvasActionsFor } from './fixtures/canvas-shortcuts';
 import { expect, test, type Locator } from '@playwright/test';
 
 const fixture = '/tests/fixtures/template-editor.html';
@@ -100,7 +101,7 @@ test('manual arrow and drag sorting shows a custom status and selecting Nome res
   await expect(picker.locator('option[value=custom]')).toHaveCount(0);
   expect(await ids()).toEqual(['1', '2', '3']);
   await first.click();
-  await first.getByTitle('Mover abaixo').click();
+  await canvasActionsFor(first, 'flow').getByTitle('Mover abaixo').click();
   await expect(picker).toHaveValue('custom');
   await expect(picker.locator('option[value=custom]')).toBeDisabled();
   expect(await ids()).toEqual(['2', '1', '3']);

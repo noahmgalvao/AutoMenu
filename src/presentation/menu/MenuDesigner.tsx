@@ -68,7 +68,7 @@ interface MenuDesignerProps {
     silentPrintOptions?: Partial<PrintCanvasOptions>;
     onClose?: () => void;
     onOpenVisual?: () => void;
-    onCanvasScroll?: () => void;
+    onCanvasScroll?: (verticalDelta: number) => void;
     workspaceId: string;
     currentUserId: string;
     currentMenuId?: string;
@@ -709,7 +709,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     }, [zoomAt]);
 
     const { handlePrint, printDialog, fileExports, onPageCountChange } = useCanvasPrinting({
-        containerRef, products, style, setStyle, sortOption, splitCategoryAcrossPages, currentPrintPageIndex,
+        containerRef, products, style, setStyle, sortOption, currentPrintPageIndex,
         printRequestId, printRequestMode, onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions,
         clearCanvasSelection: () => setSelection({ type: null, id: null }),
     });
@@ -723,8 +723,9 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const handleScroll = (event: React.UIEvent<HTMLDivElement>) => {
         const { scrollLeft: left, scrollTop: top } = event.currentTarget;
         if (left === canvasScrollPosition.current.left && top === canvasScrollPosition.current.top) return;
+        const verticalDelta = top - canvasScrollPosition.current.top;
         canvasScrollPosition.current = { left, top };
-        onCanvasScroll?.();
+        if (verticalDelta) onCanvasScroll?.(verticalDelta);
     };
 
     const handleCanvasPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -2214,6 +2215,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                     <button data-canvas-history-control onClick={redo} disabled={!canRedo} className={`p-2 bg-white rounded-full shadow-lg hover:bg-slate-50 text-slate-700 transition-all ${!canRedo ? 'text-slate-300 cursor-not-allowed' : ''}`} title="Refazer"> <Redo size={16} /> </button>
                 </div>
 
+                <div data-canvas-control-overlay className="pointer-events-none absolute inset-0 z-[71]" />
                 <div
                     ref={canvasZoomRef}
                     data-automenu-editor-canvas="true"

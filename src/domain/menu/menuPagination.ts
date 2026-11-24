@@ -316,11 +316,8 @@ export const calculateItemHeight = (
             ? Math.max(36, formattedPriceLength * priceSize * 0.58) + spacing.productNameToPrice
             : 0;
         const editButtonReserve = compactLayout ? 0 : 48;
-        const longestNameWordWidth = Math.max(
-            0,
-            ...product.name.split(/\s+/).filter(Boolean).map((word) => word.length * nameCharWidth),
-        );
-        const wrapsPrice = showPrice && longestNameWordWidth + priceColumnReserve + editButtonReserve > textWidth;
+        const nameWidth = product.name.length * nameCharWidth;
+        const wrapsPrice = showPrice && nameWidth + priceColumnReserve + editButtonReserve > textWidth;
         const nameLines = getSafeLineCount(
             product.name,
             Math.max(48, textWidth - editButtonReserve - (wrapsPrice ? 0 : priceColumnReserve)),

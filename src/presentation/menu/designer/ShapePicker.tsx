@@ -1,5 +1,6 @@
+import { DisclosureChevron } from '../../common/DisclosureChevron';
 import React, { useState } from 'react';
-import { ChevronDown, Shapes, Utensils } from 'lucide-react';
+import { Shapes, Utensils } from 'lucide-react';
 import type { CanvasShape, CanvasShapeKind } from '../../../domain/menu/model';
 import { canvasShapeKinds, canvasShapeUrl, createCanvasShape, getCanvasShapeDimensions, getCanvasShapeParameters, type CanvasShapeParameters } from '../../../domain/menu/canvasShapes';
 import { isMiniFoodKind } from '../../../domain/menu/miniFoods';
@@ -31,7 +32,7 @@ export function ShapeChoices({ selected, choose }: { selected: CanvasShapeKind; 
     <button type="button" aria-expanded={miniFoods} onClick={() => setMiniFoods(!miniFoods)}
       className={`flex min-h-9 w-full items-center gap-2 rounded-lg border px-2 text-xs font-semibold ${miniFood ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}>
       <Utensils size={15} aria-hidden="true" /> Mini comidas
-      <ChevronDown size={15} aria-hidden="true" className={`ml-auto ${miniFoods ? 'rotate-180' : ''}`} />
+      <DisclosureChevron open={miniFoods} size={15} className="ml-auto" />
     </button>
     {miniFoods && <MiniFoodChoices selected={miniFood ? selected : undefined} choose={kind => {
       choose(kind);

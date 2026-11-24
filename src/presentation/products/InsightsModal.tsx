@@ -4,7 +4,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import type { MenuStyle, Product } from '../../domain/menu/model';
 import { BarChart as BarChartIcon, X } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, Rectangle, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { formatMenuPrice } from '../../domain/menu/price';
 
 interface InsightsModalProps {
@@ -18,7 +18,8 @@ interface InsightsModalProps {
 export const InsightsModal: React.FC<InsightsModalProps> = ({ products, categories, grouped, style, onClose }) => {
   return createPortal(
     <div ref={lockModalScrolling}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in"
+      role="dialog" aria-modal="true" aria-label="Análises do cardápio"
+      className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in"
       onClick={onClose}
     >
       <div
@@ -53,8 +54,8 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({ products, categori
               <BarChart data={categories.map(c => ({ name: c, count: grouped[c]?.length || 0 }))}>
                 <XAxis dataKey="name" fontSize={10} tickLine={false} axisLine={false} />
                 <YAxis fontSize={10} tickLine={false} axisLine={false} allowDecimals={false}/>
-                <Tooltip cursor={{fill: '#f1f5f9'}} contentStyle={{borderRadius: 8, border:'none', boxShadow:'0 4px 12px rgba(0,0,0,0.1)'}} />
-                <Bar dataKey="count" name="Contagem" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                <Tooltip cursor={false} contentStyle={{borderRadius: 8, border:'none', boxShadow:'0 4px 12px rgba(0,0,0,0.1)'}} />
+                <Bar dataKey="count" name="Contagem" fill="#6366f1" radius={[4, 4, 0, 0]} activeBar={<Rectangle stroke="#312e81" strokeWidth={2} />} />
               </BarChart>
             </ResponsiveContainer>
           </div>

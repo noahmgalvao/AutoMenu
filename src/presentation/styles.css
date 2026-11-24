@@ -71,22 +71,24 @@ body {
   justify-content: flex-end;
 }
 
-[data-canvas-action-group="flow"] {
+[data-canvas-action-group="flow"],
+[data-canvas-action-group="insert"] {
   --canvas-flow-button-size: 28px;
   display: grid;
   width: var(--canvas-flow-button-size);
-  grid-template-rows: repeat(4, var(--canvas-flow-button-size));
+  grid-template-rows: repeat(2, var(--canvas-flow-button-size));
   gap: 4px;
   pointer-events: none;
 }
 
-[data-canvas-action-group="flow"] .automenu-canvas-action {
+:is([data-canvas-action-group="flow"], [data-canvas-action-group="insert"]) .automenu-canvas-action {
   width: var(--canvas-flow-button-size);
   height: var(--canvas-flow-button-size);
   pointer-events: auto;
 }
 
-[data-canvas-selection-dragging] [data-canvas-action-group] {
+[data-canvas-selection-dragging] [data-canvas-action-group],
+:has(> [data-automenu-editor-canvas] [data-canvas-selection-dragging], > [data-canvas-selection-dragging]) > [data-canvas-control-overlay] {
   visibility: hidden !important;
 }
 
@@ -98,6 +100,8 @@ body {
 }
 
 @media (pointer: coarse) {
+  :is([data-canvas-action-group="flow"], [data-canvas-action-group="insert"]) { --canvas-flow-button-size: 44px; }
+
   .automenu-canvas-action {
     width: 44px;
     height: 44px;
@@ -275,12 +279,13 @@ body {
 }
 
 
-[data-no-browser-selection], [data-no-browser-selection] *, [data-settings-dialog] button {
+body, body * {
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
-[data-no-browser-selection] :is(input, textarea, [contenteditable="true"]) {
+:is(input, textarea, [contenteditable]:not([contenteditable="false"])),
+[contenteditable]:not([contenteditable="false"]) :where(*) {
   user-select: text;
   -webkit-user-select: text;
   -webkit-touch-callout: default;

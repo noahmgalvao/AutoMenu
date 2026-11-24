@@ -1,5 +1,6 @@
+import { resolvePdfPageIndexes } from '../../../domain/publishing/printOptions';
 import { useCanvasFileExports } from './useCanvasFileExports';
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState, type RefObject } from 'react';
 import type { MenuStyle, Product, SortOption } from '../../../domain/menu/model';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 import type { PdfExportResult } from '../../../infrastructure/browser/pdfExport';
@@ -43,23 +44,12 @@ const getDefaultPrintOptions = (style: MenuStyle): PrintCanvasOptions => ({
     ...getCanvasPrintPaperDefaults(style),
 });
 
-interface PrintPreviewCacheEntry {
-    revision: number;
-    printBackgrounds: boolean;
-    pageCount: number;
-    pages: Map<number, PrintPreviewPage>;
-    assetCache: Map<string, string>;
-    queue: Promise<void> | null;
-    listeners: Set<(pages: PrintPreviewPage[]) => void>;
-}
-
 interface CanvasPrintingOptions {
     containerRef: RefObject<HTMLDivElement | null>;
     products: Product[];
     style: MenuStyle;
     setStyle: React.Dispatch<React.SetStateAction<MenuStyle>>;
     sortOption: SortOption;
-    splitCategoryAcrossPages: boolean;
     currentPrintPageIndex: number | null;
     printRequestMode: 'download' | 'publish' | 'publish-silent';
     printRequestId: number;
@@ -71,7 +61,7 @@ interface CanvasPrintingOptions {
 }
 
 export function useCanvasPrinting({
-    containerRef, products, style, setStyle, sortOption, splitCategoryAcrossPages, currentPrintPageIndex,
+    containerRef, products, style, setStyle, sortOption, currentPrintPageIndex,
     printRequestMode, printRequestId, onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions, clearCanvasSelection,
 }: CanvasPrintingOptions) {
     const [showPrintModal, setShowPrintModal] = useState(false);
@@ -80,10 +70,7 @@ export function useCanvasPrinting({
     const [activePrintMode, setActivePrintMode] = useState<'download' | 'publish'>('download');
     const [printPageCount, setPrintPageCount] = useState(0);
     const [printPreviewPages, setPrintPreviewPages] = useState<PrintPreviewPage[]>([]);
-    const [isPrintPreviewLoading, setIsPrintPreviewLoading] = useState(false);
-    const [printPreviewError, setPrintPreviewError] = useState<string | null>(null);
-    const printPreviewRevisionRef = useRef(0);
-    const printPreviewCachesRef = useRef<Map<string, PrintPreviewCacheEntry>>(new Map());
+    const [selectedPrintPage, setSelectedPrintPage] = useState<number | null>(null);
     const canvasPrintPaperDefaults = getCanvasPrintPaperDefaults(style);
     const printOptions: PrintCanvasOptions = {
         ...printSettings,
@@ -96,77 +83,6 @@ export function useCanvasPrinting({
             setPrintOptions(current => ({ ...current, pageMode: 'all' }));
         }
     }, [printPageCount, printSettings.pageMode]);
-
-    const ensurePrintPreviewPages = useCallback(async ({
-        printBackgrounds,
-        pageIndexes,
-        onProgress,
-    }: {
-        printBackgrounds: boolean;
-        pageIndexes?: number[];
-        onProgress?: (pages: PrintPreviewPage[]) => void;
-    }) => {
-        const revision = printPreviewRevisionRef.current;
-        const pageElements = Array.from(
-            containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]') || []
-        );
-        const requestedIndexes = (pageIndexes || pageElements.map((_, index) => index))
-            .filter((index) => index >= 0 && index < pageElements.length);
-        const cacheKey = `${revision}:${printBackgrounds ? 'backgrounds' : 'plain'}:${pageElements.length}`;
-        let cache = printPreviewCachesRef.current.get(cacheKey);
-
-        if (!cache) {
-            cache = {
-                revision,
-                printBackgrounds,
-                pageCount: pageElements.length,
-                pages: new Map(),
-                assetCache: new Map(),
-                queue: null,
-                listeners: new Set(),
-            };
-            printPreviewCachesRef.current.set(cacheKey, cache);
-        }
-
-        const getCachedPages = () => Array.from(cache!.pages.values())
-            .sort((left, right) => left.pageNumber - right.pageNumber);
-        if (onProgress) {
-            cache.listeners.add(onProgress);
-            onProgress(getCachedPages());
-        }
-
-        const previousQueue = cache.queue || Promise.resolve();
-        const nextQueue = previousQueue
-            .catch(() => undefined)
-            .then(async () => {
-                const { captureMenuPagePreview } = await import('../../../infrastructure/browser/pdfExport');
-                for (const index of requestedIndexes) {
-                    if (printPreviewRevisionRef.current !== revision) return;
-                    if (cache!.pages.has(index)) continue;
-
-                    const dataUrl = await captureMenuPagePreview(
-                        pageElements[index],
-                        index + 1,
-                        printBackgrounds,
-                        cache!.assetCache,
-                    );
-                    if (printPreviewRevisionRef.current !== revision) return;
-
-                    cache!.pages.set(index, { pageNumber: index + 1, dataUrl });
-                    const pages = getCachedPages();
-                    cache!.listeners.forEach((listener) => listener(pages));
-                }
-            });
-        cache.queue = nextQueue;
-
-        try {
-            await nextQueue;
-            return getCachedPages();
-        } finally {
-            if (cache.queue === nextQueue) cache.queue = null;
-            if (onProgress) cache.listeners.delete(onProgress);
-        }
-    }, []);
 
     useEffect(() => {
         const warmModules = () => {
@@ -188,18 +104,13 @@ export function useCanvasPrinting({
         };
     }, []);
 
-    useEffect(() => {
-        printPreviewRevisionRef.current += 1;
-        printPreviewCachesRef.current.clear();
-    }, [products, sortOption, splitCategoryAcrossPages, style]);
-
     const handlePrint = (mode: 'download' | 'publish' = 'download') => {
         setActivePrintMode(mode);
+        setSelectedPrintPage(currentPrintPageIndex);
         clearCanvasSelection();
         document.dispatchEvent(new Event('automenu:close-inline-formatting'));
         const pageCount = containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]').length || 0;
         setPrintPageCount(pageCount);
-        setPrintPreviewError(null);
         setShowPrintModal(true);
     };
 
@@ -208,64 +119,14 @@ export function useCanvasPrinting({
         if (printRequestMode === 'download' || printRequestMode === 'publish') handlePrint(printRequestMode);
     }, [printRequestId]);
 
-    useEffect(() => {
-        if (!showPrintModal) return;
-
-        let cancelled = false;
-
-        setIsPrintPreviewLoading(true);
-        setPrintPreviewError(null);
-
-        const generatePreviews = async () => {
-            const pageCount = containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]').length || 0;
-            const { resolvePdfPageIndexes } = await import('../../../domain/publishing/printOptions');
-            const selectedIndexes = resolvePdfPageIndexes(printOptions, pageCount, currentPrintPageIndex);
-            const pageIndexes = Array.from(selectedIndexes).sort((left, right) => left - right);
-            if (pageIndexes.length === 0) {
-                setPrintPreviewError('Nenhuma página válida está selecionada para o preview.');
-                setPrintPreviewPages([]);
-                return;
-            }
-
-            const selectedPageNumbers = new Set(pageIndexes.map((index) => index + 1));
-            const generatedPages = await ensurePrintPreviewPages({
-                printBackgrounds: printOptions.printBackgrounds,
-                pageIndexes,
-                onProgress: (pages) => {
-                    if (!cancelled) {
-                        setPrintPreviewPages(pages.filter((page) => selectedPageNumbers.has(page.pageNumber)));
-                    }
-                },
-            });
-            if (!cancelled) {
-                setPrintPreviewPages(generatedPages.filter((page) => selectedPageNumbers.has(page.pageNumber)));
-            }
-        };
-
-        void generatePreviews()
-            .catch((error) => {
-                console.warn('[PDF Preview] Falha ao gerar preview', error);
-                if (!cancelled) {
-                    setPrintPreviewError('Não foi possível gerar a visualização. Tente novamente.');
-                }
-            })
-            .finally(() => {
-                if (!cancelled) setIsPrintPreviewLoading(false);
-            });
-
-        return () => {
-            cancelled = true;
-        };
-    }, [
-        currentPrintPageIndex,
-        ensurePrintPreviewPages,
-        printOptions.pageMode,
-        printOptions.pageRange,
-        printOptions.printBackgrounds,
-        printPageCount,
-        showPrintModal,
-        style,
-    ]);
+    useLayoutEffect(() => {
+        if (!showPrintModal) { setPrintPreviewPages([]); return; }
+        const pages = containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]');
+        if (!pages) return;
+        const indexes = resolvePdfPageIndexes(printOptions, pages.length, selectedPrintPage);
+        setPrintPreviewPages(Array.from(pages).flatMap((element, index) => indexes.has(index)
+            ? [{ pageNumber: index + 1, element, width: element.offsetWidth, height: element.offsetHeight }] : []));
+    }, [containerRef, showPrintModal, printPageCount, selectedPrintPage, printOptions.pageMode, printOptions.pageRange, style, products]);
 
     const executeCanvasPrint = async () => {
         const pageElements = Array.from(
@@ -276,7 +137,7 @@ export function useCanvasPrinting({
         return exportMenuPagesToPdf({
             pageElements,
             options: printOptions,
-            currentPageIndex: currentPrintPageIndex,
+            currentPageIndex: selectedPrintPage,
             title: style.menuTitle || 'Cardápio',
             download: true,
         });
@@ -322,11 +183,10 @@ export function useCanvasPrinting({
     const printDialog: PrintCanvasModalProps | null = showPrintModal ? {
         isOpen: true,
         options: printOptions,
-        currentPageIndex: currentPrintPageIndex,
+        currentPageIndex: selectedPrintPage,
         totalPages: printPageCount,
         previewPages: printPreviewPages,
-        previewLoading: isPrintPreviewLoading,
-        previewError: printPreviewError,
+
         onChange: setPrintOptions,
         onPageSetupChange: setup => updateCanvasPageSetup(setStyle, setup, products),
         onClose() {

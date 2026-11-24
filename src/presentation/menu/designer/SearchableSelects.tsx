@@ -1,6 +1,7 @@
+import { DisclosureChevron } from '../../common/DisclosureChevron';
 import { miniFoodIconUrl } from '../../../domain/menu/miniFoods';
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { ChevronDown, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 import {
   FONTS,
   getMiniFoodTextureKind,
@@ -126,7 +127,7 @@ export function DesignerPicker<T extends SelectOption>({ label, value, options, 
       className={`flex ${compact ? 'min-h-8' : 'min-h-9'} w-full min-w-0 items-center justify-between gap-1 rounded border border-slate-200 bg-white px-2 text-left text-xs text-slate-700 outline-indigo-500`}
       onClick={() => open ? close() : setOpen(true)}>
       <span className="block min-w-0 flex-1 truncate">{render(value)}</span>
-      <ChevronDown aria-hidden="true" size={14} className="shrink-0" />
+      <DisclosureChevron open={open} />
     </button>
     {open && <div className="absolute z-[80] w-full min-w-32 rounded-lg border border-slate-200 bg-white text-xs shadow-lg"
       style={{ marginTop: gap ?? 4 }}>

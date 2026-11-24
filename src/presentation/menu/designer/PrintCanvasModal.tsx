@@ -1,7 +1,8 @@
 import { lockModalScrolling } from '../../common/modalScroll';
 import React from 'react';
+import { preparePrintPageContent } from '../../../infrastructure/browser/printPageContent';
 import { AlertTriangle, Check, CheckCircle2, Image as ImageIcon, Loader2, Printer, Scissors, Settings2, X } from 'lucide-react';
-import { getCapturedMenuPageSize, PdfExportError, type PdfExportResult } from '../../../infrastructure/browser/pdfExport';
+import type { PdfExportResult } from '../../../infrastructure/browser/pdfExport';
 import { getPaperDimensionsMm, getPrintFrameSizeMm, getPrintMarginMm, type PdfPrintOptions } from '../../../domain/publishing/printOptions';
 import { getErrorMessage } from '../../../application/errorMessages';
 import type { MenuPageSetup } from '../../../domain/menu/pageModel';
@@ -13,7 +14,9 @@ export type PrintCanvasOptions = PdfPrintOptions;
 
 export type PrintPreviewPage = {
   pageNumber: number;
-  dataUrl: string;
+  element: HTMLElement;
+  width: number;
+  height: number;
 };
 
 export interface PrintCanvasModalProps {
@@ -22,8 +25,6 @@ export interface PrintCanvasModalProps {
   currentPageIndex: number | null;
   totalPages: number;
   previewPages: PrintPreviewPage[];
-  previewLoading: boolean;
-  previewError: string | null;
   onChange: React.Dispatch<React.SetStateAction<PrintCanvasOptions>>;
   onPageSetupChange: (setup: MenuPageSetup) => void;
   virtualLinkControls?: VirtualLinkControls;
@@ -40,16 +41,46 @@ const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, 
   </label>
 );
 
+function LivePrintPreview({ page, width, height, options }: {
+  page: PrintPreviewPage; width: number; height: number; options: PrintCanvasOptions;
+}) {
+  const frame = React.useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = React.useState(typeof IntersectionObserver === 'undefined');
+  React.useEffect(() => {
+    if (visible || !frame.current) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) setVisible(true);
+    }, { root: frame.current.closest('[data-pdf-preview-strip]'), rootMargin: '0px 120px' });
+    observer.observe(frame.current);
+    return () => observer.disconnect();
+  }, [visible]);
+
+  const { element } = page;
+  React.useLayoutEffect(() => {
+    const host = frame.current;
+    if (!visible || !host) return;
+    const clone = element.cloneNode(true) as HTMLElement;
+    preparePrintPageContent(clone, options.printBackgrounds);
+    clone.removeAttribute('id');
+    clone.removeAttribute('data-menu-print-page');
+    clone.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'));
+    clone.querySelectorAll<HTMLElement>('[data-canvas-selection-outline]').forEach(node => node.remove());
+    clone.inert = true;
+    host.replaceChildren(clone);
+    return () => clone.remove();
+  }, [visible, element, options.printBackgrounds]);
+
+  return <div role="img" aria-label={`Preview da página ${page.pageNumber}`} className="absolute inset-0 overflow-hidden">
+    <div ref={frame} className="pointer-events-none absolute left-0 top-0 origin-top-left"
+      style={{ width: page.width, height: page.height, transform: `scale(${width / Math.max(page.width, 1)}, ${height / Math.max(page.height, 1)})`,
+        filter: options.grayscale ? 'grayscale(1)' : undefined }} />
+  </div>;
+}
+
 const PreviewPaper: React.FC<{ options: PrintCanvasOptions; page?: PrintPreviewPage }> = ({ options, page }) => {
-  const [fallbackAspectRatio, setFallbackAspectRatio] = React.useState<number | null>(null);
-  React.useEffect(() => setFallbackAspectRatio(null), [page?.dataUrl]);
   const paper = getPaperDimensionsMm(options);
   const margin = getPrintMarginMm(options);
-  const capturedSize = page ? getCapturedMenuPageSize(page.dataUrl) : null;
-  const fallbackSize = fallbackAspectRatio
-    ? { width: 1123 * fallbackAspectRatio, height: 1123 }
-    : undefined;
-  const frame = getPrintFrameSizeMm(options, paper, margin, capturedSize || fallbackSize);
+  const frame = getPrintFrameSizeMm(options, paper, margin, page);
   const bleed = Math.max(0, Math.min(10, options.bleedMm || 0));
   const maxWidth = 270;
   const maxHeight = 310;
@@ -88,7 +119,7 @@ const PreviewPaper: React.FC<{ options: PrintCanvasOptions; page?: PrintPreviewP
   );
 
   return (
-    <div className="shrink-0">
+    <div className="shrink-0 snap-start">
       <div
         className="relative bg-white border border-slate-300 overflow-hidden"
         style={{ width: previewWidth, height: previewHeight }}
@@ -103,18 +134,7 @@ const PreviewPaper: React.FC<{ options: PrintCanvasOptions; page?: PrintPreviewP
           }}
         >
           {page ? (
-            <img
-              src={page.dataUrl}
-              alt={`Preview da página ${page.pageNumber}`}
-              className="w-full h-full"
-              style={{
-                filter: options.grayscale ? 'grayscale(1)' : 'none',
-              }}
-              onLoad={(event) => {
-                if (capturedSize || !event.currentTarget.naturalHeight) return;
-                setFallbackAspectRatio(event.currentTarget.naturalWidth / event.currentTarget.naturalHeight);
-              }}
-            />
+            <LivePrintPreview page={page} width={renderWidth} height={renderHeight} options={options} />
           ) : (
             <div className="w-full h-full animate-pulse bg-gradient-to-br from-slate-100 to-slate-200" />
           )}
@@ -138,50 +158,23 @@ const PreviewPaper: React.FC<{ options: PrintCanvasOptions; page?: PrintPreviewP
   );
 };
 
-const PrintOptionsPreview: React.FC<{
-  options: PrintCanvasOptions;
-  totalPages: number;
-  currentPageIndex: number | null;
-  previewPages: PrintPreviewPage[];
-  previewLoading: boolean;
-  previewError: string | null;
-}> = ({ options, totalPages, currentPageIndex, previewPages, previewLoading, previewError }) => {
+function PrintOptionsPreview({ options, previewPages }: { options: PrintCanvasOptions; previewPages: PrintPreviewPage[] }) {
   const paper = getPaperDimensionsMm(options);
-
-  return (
-    <section>
-      <div className="flex items-center gap-2 text-xs font-bold text-slate-700 mb-3">
-        <ImageIcon size={14} /> Preview real do PDF
-      </div>
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
-        {previewError ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 flex gap-2">
-            <AlertTriangle size={15} className="shrink-0 mt-0.5" />
-            <span>{getErrorMessage(previewError, 'Não foi possível gerar a visualização. Tente novamente.')}</span>
-          </div>
-        ) : (
-          <div className="overflow-x-auto pb-2">
-            <div className="flex gap-4 min-w-max items-start">
-              {previewLoading && previewPages.length === 0 ? (
-                <PreviewPaper options={options} />
-              ) : (
-                previewPages.map((page) => <PreviewPaper key={page.pageNumber} options={options} page={page} />)
-              )}
-            </div>
-          </div>
-        )}
-        <div className="text-[10px] text-slate-400">
-          Área do papel: {paper.width.toFixed(1)} x {paper.height.toFixed(1)} mm. O conteúdo cortado no preview também será cortado no PDF.
-          {previewLoading && (
-            <span className="ml-2 inline-flex items-center gap-1 text-indigo-600">
-              <Loader2 size={11} className="animate-spin" /> Atualizando miniaturas
-            </span>
-          )}
+  return <section>
+    <div className="mb-3 flex items-center gap-2 text-xs font-bold text-slate-700">
+      <ImageIcon size={14} /> Preview real do PDF
+    </div>
+    <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+      {previewPages.length ? (
+        <div data-pdf-preview-strip aria-label="Páginas da prévia" tabIndex={0}
+          className="flex snap-x snap-proximity items-start gap-3 overflow-x-auto pb-2">
+          {previewPages.map(page => <PreviewPaper key={page.pageNumber} options={options} page={page} />)}
         </div>
-      </div>
-    </section>
-  );
-};
+      ) : <p className="text-xs text-slate-500">Nenhuma página válida selecionada.</p>}
+      <p className="text-[10px] text-slate-500">Área do papel: {paper.width.toFixed(1)} × {paper.height.toFixed(1)} mm.</p>
+    </div>
+  </section>;
+}
 
 export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
   isOpen,
@@ -189,8 +182,6 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
   currentPageIndex,
   totalPages,
   previewPages,
-  previewLoading,
-  previewError,
   onChange,
   onPageSetupChange,
   virtualLinkControls,
@@ -200,7 +191,7 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
   onError,
 }) => {
   const [isPrinting, setIsPrinting] = React.useState(false);
-  const [exportError, setExportError] = React.useState<PdfExportError | null>(null);
+  const [exportError, setExportError] = React.useState<string | null>(null);
   const { results, show: showResult } = useButtonFeedback();
   const downloaded = results.pdf === 'Baixado';
   const [virtualLinkEnabled, setVirtualLinkEnabled] = React.useState(false);
@@ -239,25 +230,16 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
       showResult('pdf', 'Baixado');
       onComplete?.(result);
     } catch (error) {
-      const normalizedError = error instanceof PdfExportError
-        ? error
-        : new PdfExportError(
-            'PDF_UNKNOWN_ERROR',
-            'complete',
-            'Ocorreu um erro inesperado ao gerar o PDF.',
-            { reason: error instanceof Error ? error.message : String(error) },
-            error
-          );
-      setExportError(normalizedError);
-      onError?.(normalizedError);
-      console.error('[PDF] Falha ao baixar PDF', normalizedError);
+      const message = getErrorMessage(error, 'Não foi possível gerar o PDF.');
+      setExportError(message);
+      onError?.(error instanceof Error ? error : new Error(message));
     } finally {
       setIsPrinting(false);
     }
   };
 
   return (
-    <div ref={lockModalScrolling} className="fixed inset-0 z-[9999] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4" onMouseDown={onClose}>
+    <div ref={lockModalScrolling} data-pdf-options className="fixed inset-0 z-[9999] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4" onMouseDown={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col" onMouseDown={(e) => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
           <div>
@@ -391,11 +373,7 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
 
           <PrintOptionsPreview
             options={options}
-            totalPages={totalPages}
-            currentPageIndex={currentPageIndex}
             previewPages={previewPages}
-            previewLoading={previewLoading}
-            previewError={previewError}
           />
 
           <section>
@@ -412,7 +390,7 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
 
           {exportError && (
             <p role="alert" className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">
-              <AlertTriangle size={17} /> Não foi possível gerar o PDF. Tente novamente.
+              <AlertTriangle size={17} /> {exportError}
             </p>
           )}
           {virtualLinkControls && (

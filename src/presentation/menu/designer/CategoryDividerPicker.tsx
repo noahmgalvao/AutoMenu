@@ -1,5 +1,6 @@
+import { DisclosureChevron } from '../../common/DisclosureChevron';
 import React, { useState } from 'react';
-import { ChevronDown, Minus } from 'lucide-react';
+import { Minus } from 'lucide-react';
 import type { CategoryDividerStyle } from '../../../domain/menu/model';
 import { CATEGORY_DIVIDER_PRESETS, getCategoryDividerStyle } from '../canvas/categoryDividers';
 import { DesignerOptionSelect } from './SearchableSelects';
@@ -41,7 +42,7 @@ export const CategoryDividerPicker: React.FC<CategoryDividerPickerProps> = ({ va
         <Minus size={14} className="shrink-0 text-slate-500" />
         <span className="flex h-4 min-w-0 flex-1 items-center">{renderPreview(selected.value)}</span>
         <span className="text-[11px] font-semibold">{selected.label}</span>
-        <ChevronDown size={14} className={`shrink-0 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <DisclosureChevron open={isOpen} className="text-slate-400" />
       </button>
       </>}
       {(inlineOptions || isOpen) && (

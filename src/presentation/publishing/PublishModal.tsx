@@ -1,8 +1,8 @@
+import { DisclosureChevron } from '../common/DisclosureChevron';
 import React from 'react';
 import {
   AlertCircle,
   Check,
-  ChevronDown,
   Image as ImageIcon,
   Download,
   FileText,
@@ -63,6 +63,7 @@ export const PublishModal: React.FC<PublishModalProps> = ({
 }) => {
   const [preferences, setPreferences] = React.useState(DEFAULT_PREFERENCES);
   const [pageChoice, setPageChoice] = React.useState<ImagePages | null>(null);
+  const [pdfOptionsOpened, setPdfOptionsOpened] = React.useState(false);
   const [pagesOpen, setPagesOpen] = React.useState(false);
   const { pdf, jpg, virtualLink } = preferences;
   const hasSelection = selectedPages.some(index => index >= 0 && index < pageCount);
@@ -75,13 +76,14 @@ export const PublishModal: React.FC<PublishModalProps> = ({
     setPreferences(loadUserPreferences(preferenceKey, DEFAULT_PREFERENCES));
     setPageChoice(null);
     setPagesOpen(false);
+    setPdfOptionsOpened(false);
   }, [open, preferenceKey]);
 
   React.useEffect(() => {
-    if (!open || !pdf || !pageCount) return;
-    const timer = window.setTimeout(preparePdf, 200);
+    if (!open || !pdf || !pageCount || pdfOptionsOpened) return;
+    const timer = window.setTimeout(preparePdf, 900);
     return () => window.clearTimeout(timer);
-  }, [open, pdf, pageCount, preparePdf]);
+  }, [open, pdf, pageCount, preparePdf, pdfOptionsOpened]);
   React.useEffect(() => {
     if (!open || !jpg || !indexes.length) return;
     const timer = window.setTimeout(() => prepareJpg(indexes), 120);
@@ -95,7 +97,7 @@ export const PublishModal: React.FC<PublishModalProps> = ({
 
   if (!open) return null;
   const canConfirm = (pdf || jpg || virtualLink) && (!jpg || indexes.length > 0) && !loading;
-  const pageLabel = imagePages.mode === 'all' ? 'Todas as páginas' : imagePages.mode === 'selection' ? 'Seleção'
+  const pageLabel = imagePages.mode === 'all' ? (pagesOpen ? 'Todas as páginas' : 'Todas') : imagePages.mode === 'selection' ? 'Seleção'
     : indexes.length === 1 ? `Página ${indexes[0] + 1}` : `${indexes.length} páginas`;
   const actionBusy = Boolean(activeAction);
 
@@ -105,7 +107,6 @@ export const PublishModal: React.FC<PublishModalProps> = ({
         <div className="p-5 border-b border-slate-100 flex items-center justify-between shrink-0">
           <div>
             <h2 className="font-bold text-slate-900 flex items-center gap-2"><Send size={18} className="text-indigo-600" /> Publicar</h2>
-            <p className="text-xs text-slate-500 mt-1">Exporte o cardápio ou atualize o link virtual.</p>
           </div>
           <button onClick={onClose} disabled={loading} aria-label="Fechar publicação" className="p-2 rounded-xl text-slate-400 hover:bg-slate-100 disabled:opacity-40"><X size={18} /></button>
         </div>
@@ -125,28 +126,28 @@ export const PublishModal: React.FC<PublishModalProps> = ({
           )}
 
           <div className="space-y-2">
-            <Choice checked={pdf} onChange={(checked) => updatePreferences({ ...preferences, pdf: checked })} icon={<FileText size={20} />} title="Gerar PDF" description="Baixe ou compartilhe o PDF com suas opções de impressão." />
+            <Choice checked={pdf} onChange={(checked) => updatePreferences({ ...preferences, pdf: checked })} icon={<FileText size={20} />} title="Gerar PDF"  />
             {pdf && (
               <div className="grid grid-cols-3 gap-2 pl-1" role="group" aria-label="Ações de PDF">
-                <ActionButton icon={<Settings2 size={15} />} label="Opções" disabled={loading || actionBusy} onClick={() => onPdfAction('options')} />
-                <ActionButton icon={<Download size={15} />} label="Baixar" loading={activeAction === 'download-pdf'} result={buttonResults?.['download-pdf']} disabled={loading || actionBusy} primary onClick={() => onPdfAction('download')} />
-                <ActionButton icon={<Share2 size={15} />} label="Compartilhar" loading={activeAction === 'share-pdf'} result={buttonResults?.['share-pdf']} disabled={loading || actionBusy} onClick={() => onPdfAction('share')} />
+                <ActionButton icon={<Settings2 size={15} />} label="Opções" blocked={loading || actionBusy} onClick={() => { setPdfOptionsOpened(true); onPdfAction('options'); }} />
+                <ActionButton icon={<Download size={15} />} label="Baixar" loading={activeAction === 'download-pdf'} result={buttonResults?.['download-pdf']} blocked={loading || actionBusy} primary onClick={() => onPdfAction('download')} />
+                <ActionButton icon={<Share2 size={15} />} label="Compartilhar" loading={activeAction === 'share-pdf'} result={buttonResults?.['share-pdf']} blocked={loading || actionBusy} onClick={() => onPdfAction('share')} />
               </div>
             )}
           </div>
 
           <div className="space-y-2">
             <Choice checked={jpg} onChange={checked => updatePreferences({ ...preferences, jpg: checked })}
-              icon={<ImageIcon size={20} />} title="Gerar JPG" description="Baixe ou compartilhe as páginas do cardápio como imagens." />
+              icon={<ImageIcon size={20} />} title="Gerar JPG"  />
             {jpg && <>
               <div className="grid grid-cols-3 gap-2 pl-1" role="group" aria-label="Ações de JPG">
-                <ActionButton icon={<ChevronDown size={15} />} label={pageLabel} expanded={pagesOpen}
-                  disabled={!pageCount || loading || actionBusy} onClick={() => setPagesOpen(open => !open)} />
+                <ActionButton icon={<DisclosureChevron open={pagesOpen} size={15} />} label={pageLabel} expanded={pagesOpen}
+                  disabled={!pageCount} blocked={loading || actionBusy} onClick={() => setPagesOpen(open => !open)} />
                 <ActionButton icon={<Download size={15} />} label="Baixar" primary result={buttonResults?.['download-jpg']}
-                  loading={activeAction === 'download-jpg'} disabled={!indexes.length || loading || actionBusy}
+                  loading={activeAction === 'download-jpg'} disabled={!indexes.length} blocked={loading || actionBusy}
                   onClick={() => onJpgAction('download', indexes)} />
                 <ActionButton icon={<Share2 size={15} />} label="Compartilhar" loading={activeAction === 'share-jpg'}
-                  disabled={!indexes.length || loading || actionBusy} onClick={() => onJpgAction('share', indexes)} />
+                  disabled={!indexes.length} blocked={loading || actionBusy} onClick={() => onJpgAction('share', indexes)} />
               </div>
               {pagesOpen && (
                 <div role="group" aria-label="Páginas do JPG" className="max-h-48 space-y-1 overflow-y-auto rounded-xl border border-slate-200 p-2">
@@ -183,8 +184,8 @@ export const PublishModal: React.FC<PublishModalProps> = ({
 
         <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-between gap-2 shrink-0">
           <button onClick={onClose} disabled={loading} className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-600 disabled:opacity-50">Fechar</button>
-          <button onClick={() => onConfirm({ pdf, jpgPages: jpg ? indexes : null, virtualLink })} disabled={!canConfirm || actionBusy} className="px-5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
-            {activeAction === 'publish' && <Loader2 size={15} className="animate-spin" />} Publicar
+          <button onClick={() => onConfirm({ pdf, jpgPages: jpg ? indexes : null, virtualLink })} disabled={!canConfirm || actionBusy} data-unavailable={!canConfirm && !loading || undefined} className="relative px-7 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 data-[unavailable]:opacity-50 flex items-center gap-2">
+            {activeAction === 'publish' && <Loader2 size={15} className="absolute left-2 animate-spin" />} Publicar
           </button>
         </div>
       </div>

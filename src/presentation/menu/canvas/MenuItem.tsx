@@ -289,7 +289,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const currency = getMenuPriceSymbol(style);
         const alignment = priceStyle.textAlign || 'right';
         return <div data-product-price-slot data-price-alignment={alignment}>
-        <div data-template-price data-price-base-size={baseSize} data-price-minimum-size={minimumFontSize}
+        <div data-template-price data-price-base-size={baseSize}
             data-menu-border-surface="price" data-price-alignment={priceStyle.textAlign} data-custom-border={getBorderOverride(style, 'price')}
             className={`relative flex min-w-0 items-center gap-1 whitespace-nowrap ${badgeClass}`}
             style={{
@@ -298,7 +298,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 color: `var(--automenu-preview-text, ${priceStyle.color || style.textColor})`,
                 ...getTextOutlineStyle(priceStyle.textOutline),
                 fontFamily: templateFontStack(style, priceStyle.fontFamily),
-                fontSize: `var(--automenu-fitted-price-size, ${baseSize}px)`,
+                fontSize: baseSize,
                 fontWeight: priceStyle.fontWeight,
                 fontStyle: priceStyle.italic ? 'italic' : 'normal',
                 textDecoration: priceStyle.underline ? 'underline' : 'none',

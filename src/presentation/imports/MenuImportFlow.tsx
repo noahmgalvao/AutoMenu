@@ -295,7 +295,7 @@ const ImportedItemsEditor: React.FC<{
 
   return (
     <div
-      className="h-full min-h-0 overflow-y-auto overflow-x-hidden rounded-2xl border border-slate-200 bg-slate-50 p-4 custom-scrollbar"
+      data-product-designer-scroll-container="true" className="h-full min-h-0 overflow-y-auto overflow-x-hidden rounded-2xl border border-slate-200 bg-slate-50 p-4 custom-scrollbar"
       onPointerDownCapture={() => { document.body.dataset.automenuDeleteContext = 'import-preview'; }}
     >
       {categories.length > 0 ? (
@@ -309,6 +309,7 @@ const ImportedItemsEditor: React.FC<{
           collapsedCategories={logic.collapsedCategories}
           toggleCollapse={logic.toggleCollapse}
           editModeId={logic.editModeId}
+          savedEditIds={logic.savedEditIds}
           menuOpenId={logic.menuOpenId}
           setMenuOpenId={logic.setMenuOpenId}
           formData={logic.formData}

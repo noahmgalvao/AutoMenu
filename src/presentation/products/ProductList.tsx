@@ -1,10 +1,11 @@
+import { DisclosureChevron } from '../common/DisclosureChevron';
 import { hasPhotosForType, type PhotoType } from '../menu/canvas/photoSizing';
 import { categoryName } from '../../domain/menu/categoryName';
 
 import React from 'react';
 import type { CategoryDividerStyle, Product, MenuStyle } from '../../domain/menu/model';
 import { 
-  GripVertical, MoreVertical, ChevronUp, ChevronDown, 
+  CopyCheck, GripVertical, MoreVertical,
   Plus, Edit3, Trash2, Eye, EyeOff, ImagePlus, Loader2, X
 } from 'lucide-react';
 import { EditForm } from './EditForm';
@@ -72,12 +73,13 @@ interface ProductListProps {
   collapsedCategories: Set<string>;
   toggleCollapse: (cat: string) => void;
   editModeId: string | null;
+  savedEditIds: ReadonlySet<string>;
   editTogether?: boolean;
   menuOpenId: string | null;
   setMenuOpenId: (id: string | null) => void;
   formData: Partial<Product>;
   setFormData: React.Dispatch<React.SetStateAction<Partial<Product>>>;
-  newItemDraft: { categoryId: string, type: 'product' | 'category' } | null;
+  newItemDraft: { categoryId: string, type: 'product' | 'category'; position?: 'first' | 'last' | { after: string } } | null;
   existingEdits: Record<string, Partial<Product>>;
   pendingDivider?: CategoryDividerStyle;
   updateExistingEdit: (id: string, update: React.SetStateAction<Partial<Product>>) => void;
@@ -85,11 +87,11 @@ interface ProductListProps {
   
   // Actions
   startEdit: (id: string) => void;
-  saveEdit: () => void;
+  saveEdit: (id?: string) => void;
   cancelEdit: (id: string) => void;
   remove: (id: string, type: 'product' | 'category') => void;
   handleToggleVisibility: (id: string, visible: boolean) => void;
-  initiateAdd: (categoryId: string, type: 'product' | 'category') => void;
+  initiateAdd: (categoryId: string, type: 'product' | 'category', position?: 'first' | 'last' | { after: string }) => void;
   onCategoryImageClick: (category: string) => void;
   onRemoveCategoryImage: (category: string) => void;
   onProductImageClick: (id: string) => void;
@@ -107,7 +109,7 @@ export const ProductList: React.FC<ProductListProps> = ({
   handlers,
   collapsedCategories,
   toggleCollapse,
-  editModeId,
+  editModeId, savedEditIds,
   editTogether = false,
   menuOpenId,
   setMenuOpenId,
@@ -133,6 +135,7 @@ export const ProductList: React.FC<ProductListProps> = ({
 }) => {
   const [shakingCategory, setShakingCategory] = React.useState<string | null>(null);
   const categoryOptionsPointerDownRef = React.useRef<{ category: string; startedAt: number } | null>(null);
+  const draggingCategory = handlers.draggedItem?.type === 'category';
   const editAllItems = editTogether && Boolean(editModeId && !newItemDraft);
   const priceDecimalPlaces = React.useMemo(() => {
     const effectivePrices = products.map(product => ({ ...product, ...existingEdits[product.id] }));
@@ -168,6 +171,16 @@ export const ProductList: React.FC<ProductListProps> = ({
     </>;
   };
 
+  const renderProductDraft = () => <EditForm type="product" style={style} priceFormat={priceFormat} setStyle={setStyle}
+    formData={formData} setFormData={setFormData} saveEdit={() => saveEdit()} cancelEdit={() => cancelEdit('DRAFT')} autoFocus />;
+  const multiSelectAction = <button type="button" aria-pressed={Boolean(handlers.multiSelectMode)}
+    onPointerDown={event => event.stopPropagation()}
+    onClick={event => {
+      event.stopPropagation();
+      handlers.setMultiSelectMode(!handlers.multiSelectMode);
+      setMenuOpenId(null);
+    }} className="flex items-center gap-2 px-4 py-2 text-left text-xs hover:bg-slate-50"><CopyCheck size={14} /> Seleção múltipla</button>;
+
   return (
     <div
       className={`w-full min-w-0 overflow-x-hidden ${handlers.multiSelectMode ? 'select-none' : ''}`}
@@ -183,7 +196,7 @@ export const ProductList: React.FC<ProductListProps> = ({
     >
       {categories.map((cat, catIndex) => {
         const isCollapsed = collapsedCategories.has(cat);
-        const isEditing = editAllItems || editModeId === cat;
+        const isEditing = !savedEditIds.has(cat) && (editAllItems || editModeId === cat);
         const isSelected = handlers.isSelected?.('category', cat) ?? handlers.selectedId === cat;
         const isBeingDragged = handlers.draggedItem?.type === 'category' && handlers.draggedItem?.id === cat;
         
@@ -211,7 +224,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                 className="p-1 hover:bg-slate-200 rounded text-slate-400 transition-colors"
                 onPointerDown={e => e.stopPropagation()}
               >
-                {isCollapsed ? <ChevronDown size={16}/> : <ChevronUp size={16}/>}
+                <DisclosureChevron open={!isCollapsed} size={16} />
               </button>
               
               <div className="flex-1 relative min-w-0">
@@ -229,7 +242,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                     autoFocus={editModeId === cat}
                     formData={{ name: categoryName(cat), ...existingEdits[cat] }}
                     setFormData={update => updateExistingEdit(cat, update)}
-                    saveEdit={saveEdit} 
+                    saveEdit={() => saveEdit(cat)}
                     cancelEdit={() => cancelEdit(cat)}
                   />
                 ) : (
@@ -303,8 +316,9 @@ export const ProductList: React.FC<ProductListProps> = ({
                       </button>
                       {menuOpenId === cat && (
                         <>
-                          <div data-product-designer-options-menu="true" className="absolute right-0 top-8 z-50 bg-white shadow-xl border border-slate-100 rounded-lg py-1 w-32 animate-in fade-in zoom-in-95 flex flex-col">
-                            <button onPointerDown={(e) => e.stopPropagation()} onClick={() => startEdit(cat)} className="px-4 py-2 text-xs text-left hover:bg-slate-50 flex items-center gap-2"> <Edit3 size={14}/> Editar </button>
+                          <div data-product-designer-options-menu="true" className="absolute right-0 top-8 z-50 bg-white shadow-xl border border-slate-100 rounded-lg py-1 w-44 animate-in fade-in zoom-in-95 flex flex-col">
+                            <button data-product-designer-edit-trigger onPointerDown={(e) => e.stopPropagation()} onClick={() => startEdit(cat)} className="px-4 py-2 text-xs text-left hover:bg-slate-50 flex items-center gap-2"> <Edit3 size={14}/> Editar </button>
+                            {multiSelectAction}
                             {imageOptions(cat, 'category', Boolean(style.categoryImages?.[cat]?.url))}
                             {!isPristineCategory && (
                               <button 
@@ -332,20 +346,19 @@ export const ProductList: React.FC<ProductListProps> = ({
                   </div>
                 )}
               </div>
-              {!isEditing && (
-                <button 
-                  onClick={(e) => { e.stopPropagation(); initiateAdd(cat, 'category'); }}
-                  className="flex-shrink-0 p-1.5 bg-indigo-100 text-indigo-600 rounded-full hover:bg-indigo-200 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-all"
-                  title="Adicionar categoria abaixo"
-                  onPointerDown={e => e.stopPropagation()}
-                >
-                  <Plus size={14} />
-                </button>
-              )}
+              {!isEditing && !draggingCategory && <ListActions
+                addLabel="Adicionar categoria abaixo" editLabel="Editar categoria"
+                add={() => initiateAdd(cat, 'category')} edit={() => startEdit(cat)} />}
             </div>
 
-            {/* Products List */}
-            <div className={`space-y-2 pl-8 border-l-2 border-slate-100 ml-3 transition-all duration-300 ${isCollapsed ? 'max-h-0 overflow-hidden opacity-0' : editAllItems ? 'opacity-100' : 'max-h-[2000px] opacity-100'}`} inert={isCollapsed || undefined}>
+            <div data-designer-category-products hidden={draggingCategory}
+              className={`space-y-2 pl-8 border-l-2 border-slate-100 ml-3 ${isCollapsed ? 'max-h-0 overflow-hidden opacity-0' : 'opacity-100'}`}
+              inert={isCollapsed || draggingCategory || undefined}>
+              <div className="flex justify-end pr-1">
+                <ListAction label="Adicionar produto no início" add busy={shakingCategory === cat}
+                  onClick={() => initiateAdd(cat, 'product', 'first')} />
+              </div>
+              {newItemDraft?.type === 'product' && newItemDraft.categoryId === cat && newItemDraft.position === 'first' && renderProductDraft()}
               {(grouped[cat] || []).filter(product => !product.isFreeText).map(product => {
                 const pIsHidden = style.hiddenProductIds?.includes(product.id);
                 const productSelectionType = 'product';
@@ -354,12 +367,14 @@ export const ProductList: React.FC<ProductListProps> = ({
                 const isPristineProduct = isPristineNewProduct(product);
                 
                 return (
-                  <div 
+                  <React.Fragment key={product.id}>
+                  <div
                     key={product.id} 
                     id={`product-container-${product.id}`}
-                    className={`relative select-none ${menuOpenId === product.id ? 'z-[130]' : 'z-0'}`}
+                    className={`relative flex items-start gap-2 select-none ${menuOpenId === product.id ? 'z-[130]' : 'z-0'}`}
                   >
-                    {editAllItems || editModeId === product.id ? (
+                    <div className="min-w-0 flex-1">
+                    {!savedEditIds.has(product.id) && (editAllItems || editModeId === product.id) ? (
                       <EditForm 
                         type="product" 
                         style={style}
@@ -368,7 +383,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                         autoFocus={editModeId === product.id}
                         formData={{ ...product, ...existingEdits[product.id] }}
                         setFormData={update => updateExistingEdit(product.id, update)}
-                        saveEdit={saveEdit} 
+                        saveEdit={() => saveEdit(product.id)}
                         cancelEdit={() => cancelEdit(product.id)}
                         imageSource={productImageUpload?.id === product.id ? productImageUpload.previewUrl : existingEdits[product.id]?.image ?? product.image}
                         imageUploading={productImageUpload?.id === product.id}
@@ -443,8 +458,9 @@ export const ProductList: React.FC<ProductListProps> = ({
                           </button>
                           {menuOpenId === product.id && (
                             <>
-                              <div data-product-designer-options-menu="true" className="absolute right-0 top-8 z-[140] bg-white shadow-xl border border-slate-100 rounded-lg py-1 w-32 animate-in fade-in zoom-in-95 flex flex-col">
-                                <button onPointerDown={(e) => e.stopPropagation()} onClick={() => startEdit(product.id)} className="px-4 py-2 text-xs text-left hover:bg-slate-50 flex items-center gap-2"> <Edit3 size={14}/> Editar </button>
+                              <div data-product-designer-options-menu="true" className="absolute right-0 top-8 z-[140] bg-white shadow-xl border border-slate-100 rounded-lg py-1 w-44 animate-in fade-in zoom-in-95 flex flex-col">
+                                <button data-product-designer-edit-trigger onPointerDown={(e) => e.stopPropagation()} onClick={() => startEdit(product.id)} className="px-4 py-2 text-xs text-left hover:bg-slate-50 flex items-center gap-2"> <Edit3 size={14}/> Editar </button>
+                                {multiSelectAction}
                                 {imageOptions(product.id, 'product', Boolean(product.image))}
                                 {!isPristineProduct && (
                                   <button 
@@ -471,32 +487,18 @@ export const ProductList: React.FC<ProductListProps> = ({
                         </div>
                       </div>
                     )}
+                    </div>
+                    {(savedEditIds.has(product.id) || (!editAllItems && editModeId !== product.id)) && <ListActions
+                      addLabel="Adicionar produto abaixo" editLabel="Editar produto" busy={shakingCategory === cat}
+                      add={() => initiateAdd(cat, 'product', { after: product.id })} edit={() => startEdit(product.id)} />}
                   </div>
+                  {newItemDraft?.type === 'product' && newItemDraft.categoryId === cat
+                    && typeof newItemDraft.position === 'object' && newItemDraft.position.after === product.id && renderProductDraft()}
+                  </React.Fragment>
                 )
               })}
-              
-              {/* Draft Form for New Product */}
-              {newItemDraft?.type === 'product' && newItemDraft.categoryId === cat && (
-                <EditForm 
-                  type="product" 
-                  style={style}
-                  priceFormat={priceFormat}
-                  setStyle={setStyle}
-                  formData={formData} 
-                  setFormData={setFormData} 
-                  saveEdit={saveEdit} 
-                  cancelEdit={() => cancelEdit('DRAFT')}
-                  autoFocus
-                />
-              )}
-            
-              {/* Add Item Button */}
-              <button 
-                onClick={() => initiateAdd(cat, 'product')}
-                className={`w-full py-2 text-xs font-medium border border-dashed rounded transition-colors flex items-center justify-center gap-2 ${shakingCategory === cat ? 'animate-shake bg-red-50 border-red-500 text-red-600 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : 'text-slate-400 border-slate-300 hover:bg-slate-50 hover:text-indigo-600'}`}
-              >
-                <Plus size={14} /> {shakingCategory === cat ? 'Limite da página atingido' : 'Adicionar item'}
-              </button>
+              {newItemDraft?.type === 'product' && newItemDraft.categoryId === cat
+                && (!newItemDraft.position || newItemDraft.position === 'last') && renderProductDraft()}
             </div>
             
             {/* Render Category Draft Form OUTSIDE wrapper for correct position */}
@@ -509,7 +511,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                   setStyle={setStyle}
                   formData={formData} 
                   setFormData={setFormData} 
-                  saveEdit={saveEdit} 
+                  saveEdit={() => saveEdit()}
                   cancelEdit={() => cancelEdit('DRAFT')}
                   autoFocus
                 />
@@ -521,3 +523,22 @@ export const ProductList: React.FC<ProductListProps> = ({
     </div>
   );
 };
+
+function ListAction({ label, add, busy, onClick }: { label: string; add?: boolean; busy?: boolean; onClick: () => void }) {
+  return <button type="button" title={label} aria-label={label} data-product-designer-edit-trigger
+    className={`grid size-8 shrink-0 place-items-center rounded-full border shadow-sm ${add
+      ? busy ? 'animate-shake border-red-500 bg-red-600 text-white' : 'border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-700'
+      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+    onPointerDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); onClick(); }}>
+    {add ? <Plus size={16} /> : <Edit3 size={15} />}
+  </button>;
+}
+
+function ListActions({ addLabel, editLabel, add, edit, busy }: {
+  addLabel: string; editLabel: string; add: () => void; edit: () => void; busy?: boolean;
+}) {
+  return <div className="flex shrink-0 flex-col gap-1">
+    <ListAction label={addLabel} add busy={busy} onClick={add} />
+    <ListAction label={editLabel} onClick={edit} />
+  </div>;
+}

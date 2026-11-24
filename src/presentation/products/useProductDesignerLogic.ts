@@ -20,6 +20,7 @@ type EditSession = {
     changes: Record<string, Partial<Product>>;
     dividers: { id: string; preset: CategoryDividerStyle }[];
     closed?: { cancelledId?: string };
+    savedIds: Set<string>;
 };
 
 interface UseProductDesignerLogicProps {
@@ -51,6 +52,7 @@ export const useProductDesignerLogic = ({
     // --- STATE ---
     const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
     const [editModeId, setEditModeId] = useState<string | null>(null);
+    const [savedEditIds, setSavedEditIds] = useState<ReadonlySet<string>>(new Set());
     const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
     const [showInsights, setShowInsights] = useState(false);
     const [bulkPercentage, setBulkPercentage] = useState<number | string>(10);
@@ -60,7 +62,7 @@ export const useProductDesignerLogic = ({
     const [isUploading, setIsUploading] = useState(false);
 
     // Draft State
-    const [newItemDraft, setNewItemDraft] = useState<{ categoryId: string, type: 'product' | 'category' } | null>(null);
+    const [newItemDraft, setNewItemDraft] = useState<{ categoryId: string, type: 'product' | 'category'; position?: 'first' | 'last' | { after: string } } | null>(null);
 
     // Form State
     const [formData, setFormData] = useState<Partial<Product>>({});
@@ -205,7 +207,7 @@ export const useProductDesignerLogic = ({
                 metadata: { product_id: targetId }
             });
             const image = { image: url, imageAssetId: asset.id };
-            if (session && !session.closed) {
+            if (session && !session.closed && !session.savedIds.has(targetId)) {
                 updateExistingEdit(targetId, previous => ({ ...previous, ...image }));
             } else if (session?.closed?.cancelledId !== targetId) {
                 setProducts(prev => prev.map(p => p.id === targetId ? { ...p, ...image } : p));
@@ -229,7 +231,7 @@ export const useProductDesignerLogic = ({
 
     const onRemoveProductImage = (id: string) => {
         const image = { image: '', imageAssetId: null };
-        if (editSessionRef.current) updateExistingEdit(id, previous => ({ ...previous, ...image }));
+        if (editSessionRef.current && !editSessionRef.current.savedIds.has(id)) updateExistingEdit(id, previous => ({ ...previous, ...image }));
         else setProducts(prev => prev.map(p => p.id === id ? { ...p, ...image } : p));
     };
 
@@ -302,9 +304,10 @@ export const useProductDesignerLogic = ({
             handlers.sortedCategories.includes(id) ? 'category' : getProductSelectionType(product),
             id
         );
-        editSessionRef.current = { changes: {}, dividers: [] };
-        setExistingEdits({});
-        setPendingDivider(undefined);
+        const session = editSessionRef.current ?? { changes: {}, dividers: [], savedIds: new Set<string>() };
+        editSessionRef.current = session;
+        session.savedIds.delete(id);
+        setSavedEditIds(new Set(session.savedIds));
         setEditModeId(id);
         setMenuOpenId(null);
     };
@@ -328,8 +331,10 @@ export const useProductDesignerLogic = ({
         setPendingDivider(preset);
     };
 
-    const initiateAdd = (categoryId: string, type: 'product' | 'category') => {
-        setNewItemDraft({ categoryId, type });
+    const initiateAdd = (categoryId: string, type: 'product' | 'category', position?: 'first' | 'last' | { after: string }) => {
+        if (editSessionRef.current) finishEditing();
+        if (type === 'product') setCollapsedCategories(previous => new Set([...previous].filter(id => id !== categoryId)));
+        setNewItemDraft({ categoryId, type, position });
         setEditModeId('DRAFT');
         setFormData({ name: '', price: 0, description: '' });
     };
@@ -349,10 +354,14 @@ export const useProductDesignerLogic = ({
             };
             setProducts(prev => [...prev, newProd]);
             setStyle(prev => {
-                const current = prev.customProductOrder?.[newProd.category] || (handlers.groupedProducts[newProd.category] || []).map(p => p.id);
+                const current = (handlers.groupedProducts[newProd.category] || []).map(p => p.id);
+                const position = newItemDraft.position;
+                const after = typeof position === 'object' ? current.indexOf(position.after) : -1;
+                current.splice(position === 'first' ? 0 : after >= 0 ? after + 1 : current.length, 0, newProd.id);
                 return {
                     ...prev,
-                    customProductOrder: { ...prev.customProductOrder, [newProd.category]: [...current, newProd.id] },
+                    manualProductOrder: true,
+                    customProductOrder: { ...prev.customProductOrder, [newProd.category]: current },
                     name: 'Custom'
                 };
             });
@@ -452,11 +461,27 @@ export const useProductDesignerLogic = ({
             saveNewItem();
         }
         setEditModeId(null);
+        setSavedEditIds(new Set());
         setNewItemDraft(null);
         setFormData({});
     };
 
-    const saveEdit = () => finishEditing(undefined, true);
+    const saveEdit = (id?: string) => {
+        const session = editSessionRef.current;
+        if (!id || !session) return finishEditing(undefined, true);
+        const changes = session.changes[id];
+        const dividers = session.dividers.filter(change => change.id === id);
+        saveExistingEdits({ changes: changes ? { [id]: changes } : {}, dividers, savedIds: session.savedIds });
+        const newKey = changes?.name && handlers.sortedCategories.includes(id)
+            ? categoryKey(changes.name, handlers.sortedCategories, id) : id;
+        session.savedIds.add(id);
+        session.savedIds.add(newKey);
+        delete session.changes[id];
+        session.dividers = session.dividers.filter(change => change.id !== id);
+        setPendingDivider(session.dividers[session.dividers.length - 1]?.preset);
+        setExistingEdits({ ...session.changes });
+        setSavedEditIds(new Set(session.savedIds));
+    };
     const saveOnExit = () => finishEditing();
     const cancelEdit = (id: string) => finishEditing(id);
 
@@ -570,7 +595,7 @@ export const useProductDesignerLogic = ({
     return {
         // State
         collapsedCategories,
-        editModeId,
+        editModeId, savedEditIds,
         menuOpenId,
         showInsights,
         bulkPercentage,

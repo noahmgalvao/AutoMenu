@@ -13,6 +13,11 @@ if (!rootElement) {
 
 const root = ReactDOM.createRoot(rootElement);
 const isPublicMenu = /^\/cardapio\/[^/]+\/[^/]+\/?$/.test(window.location.pathname);
+document.addEventListener('contextmenu', event => {
+  if (event.target instanceof Element && !event.target.closest('input, textarea, [contenteditable]:not([contenteditable="false"])')) {
+    event.preventDefault();
+  }
+});
 root.render(
   <React.StrictMode>
     <AppServicesProvider services={browserServices}>

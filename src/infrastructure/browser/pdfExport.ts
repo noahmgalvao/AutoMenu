@@ -1,3 +1,4 @@
+import { preparePrintPageContent } from './printPageContent';
 import {
   type PdfPrintOptions,
   type PdfPageSizePx,
@@ -47,11 +48,7 @@ const PAGE_HEIGHT_PX = 1123;
 
 const EXPORT_CAPTURE_SCALE = 1.5;
 
-const PREVIEW_CAPTURE_SCALE = 0.28;
-
 const TRANSPARENT_PIXEL_DATA_URL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
-
-const previewPageSizes = new Map<string, PdfPageSizePx>();
 
 const normalizePageDimension = (value: number) => (
   Number.isFinite(value) && value > 0 ? Math.round(value) : 0
@@ -85,17 +82,6 @@ export const getPageElementSizePx = (element: HTMLElement): PdfPageSizePx => {
   const heightMm = normalizePhysicalDimension(Number(element.dataset.menuPageHeightMm));
 
   return { width, height, widthMm, heightMm };
-};
-
-export const getCapturedMenuPageSize = (dataUrl: string): PdfPageSizePx | null => (
-  previewPageSizes.get(dataUrl) || null
-);
-
-const rememberPreviewPageSize = (dataUrl: string, size: PdfPageSizePx) => {
-  previewPageSizes.set(dataUrl, size);
-  if (previewPageSizes.size <= 100) return;
-  const oldestKey = previewPageSizes.keys().next().value;
-  if (oldestKey) previewPageSizes.delete(oldestKey);
 };
 
 export class PdfExportError extends Error {
@@ -246,26 +232,6 @@ const inlineCssUrls = async (
   return nextValue;
 };
 
-const stripEditorState = (page: HTMLElement) => {
-  page.querySelectorAll('button, [data-print-control="true"], .automenu-image-resize-handle').forEach((node) => node.remove());
-  page.querySelectorAll<HTMLElement>('[contenteditable]').forEach((node) => node.removeAttribute('contenteditable'));
-  page.querySelectorAll<HTMLElement>('*').forEach((node) => {
-    // html2canvas reads transform matrices instead of the standalone rotate property.
-    if (node.style.rotate && node.style.rotate !== 'none') {
-      node.style.transform = [`rotate(${node.style.rotate})`, node.style.transform].filter(Boolean).join(' ');
-      node.style.removeProperty('rotate');
-    }
-    node.classList.remove(
-      'ring-4',
-      'ring-2',
-      'ring-blue-500',
-      'ring-indigo-500',
-      'bg-indigo-50/10',
-      'bg-indigo-50/30'
-    );
-  });
-};
-
 const preparePageClone = async (
   source: HTMLElement,
   pageSize: PdfPageSizePx,
@@ -295,15 +261,7 @@ const preparePageClone = async (
     transform: 'none',
     boxShadow: 'none',
   });
-  clone.classList.remove('ring-4', 'ring-blue-500', 'shadow-2xl');
-  stripEditorState(clone);
-
-  if (!printBackgrounds) {
-    clone.style.backgroundImage = 'none';
-    clone.style.backgroundColor = '#ffffff';
-    clone.style.backgroundBlendMode = 'normal';
-    clone.querySelectorAll('[data-menu-background-image="true"], [data-template-decoration]').forEach((node) => node.remove());
-  }
+  preparePrintPageContent(clone, printBackgrounds);
 
   sandbox.appendChild(clone);
   document.body.appendChild(sandbox);
@@ -521,24 +479,6 @@ const downloadPdfBlob = (blob: Blob, filename: string) => {
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
-};
-
-export const captureMenuPagePreview = async (
-  pageElement: HTMLElement,
-  pageNumber: number,
-  printBackgrounds: boolean,
-  assetCache: Map<string, string> = new Map()
-) => {
-  const capture = await capturePageAsJpeg(
-    pageElement,
-    pageNumber,
-    { printBackgrounds, grayscale: false },
-    PREVIEW_CAPTURE_SCALE,
-    0.72,
-    assetCache
-  );
-  rememberPreviewPageSize(capture.dataUrl, capture.pageSize);
-  return capture.dataUrl;
 };
 
 export async function exportMenuPageToJpg(

@@ -5,19 +5,6 @@ import { measureRenderedText } from './textFit';
 
 const px = (value: string) => parseFloat(value) || 0;
 
-const largestPriceSize = (width: number, minimum: number, base: number, measure: (size: number) => number) => {
-    if (measure(base) <= width) return base;
-    if (measure(minimum) > width) return null;
-    let lower = minimum;
-    let upper = base;
-    while (upper - lower >= 2) {
-        const middle = Math.floor((lower + upper) / 2);
-        if (measure(middle) <= width) lower = middle;
-        else upper = middle;
-    }
-    return lower;
-};
-
 function measurePriceRow(row: HTMLElement) {
     const title = row.querySelector<HTMLElement>('[data-divider-title]');
     const price = row.querySelector<HTMLElement>('[data-template-price]');
@@ -29,7 +16,6 @@ function measurePriceRow(row: HTMLElement) {
     const priceCss = getComputedStyle(price);
     const titleCss = getComputedStyle(title);
     const base = Number(price.dataset.priceBaseSize);
-    const minimum = Math.min(base, Number(price.dataset.priceMinimumSize));
     const priceInset = px(priceCss.borderLeftWidth) + px(priceCss.borderRightWidth)
         + px(priceCss.paddingLeft) + px(priceCss.paddingRight) + (symbol ? px(priceCss.columnGap) : 0);
     const measurePrice = (size: number) => measureRenderedText(amount, size, priceCss)
@@ -42,8 +28,8 @@ function measurePriceRow(row: HTMLElement) {
     const rowGap = px(getComputedStyle(row).columnGap);
     const dividerGap = row.hasAttribute('data-product-leader') ? rowGap : 0;
     const inlineWidth = row.clientWidth - nameWidth - rowGap - dividerGap;
-    const fit = largestPriceSize(inlineWidth, minimum, base, measurePrice);
-    return { row, price, base, minimum, fit, measurePrice };
+    const width = measurePrice(base);
+    return { row, price, width, wrapped: width > inlineWidth + .5 };
 }
 
 function measureWrappedPriceSpace(row: HTMLElement, slot: HTMLElement | null) {
@@ -94,25 +80,17 @@ export function useResponsivePrices(rootRef: RefObject<HTMLElement | null>, styl
                 return metric;
             }).filter(metric => metric !== null);
 
-            // Prices with the same configured size continue to fit together.
-            const fittedSizes = new Map<number, number>();
-            for (const { base, fit } of metrics) {
-                if (fit !== null) fittedSizes.set(base, Math.min(fit, fittedSizes.get(base) ?? base));
-            }
-            for (const { row, price, base, minimum, fit, measurePrice } of metrics) {
-                const wrapped = fit === null;
-                row.toggleAttribute('data-price-wrap', wrapped);
+            for (const { row, wrapped } of metrics) row.toggleAttribute('data-price-wrap', wrapped);
+            const layouts = metrics.map(metric => {
+                const { row, price, wrapped, width } = metric;
                 const slot = price.closest<HTMLElement>('[data-product-price-slot]');
                 const { left, right } = wrapped ? measureWrappedPriceSpace(row, slot) : { left: 0, right: 0 };
+                return { price, slot, left, right, stacked: wrapped && width > row.clientWidth + left + right + .5 };
+            });
+            for (const { price, slot, left, right, stacked } of layouts) {
                 slot?.style.setProperty('--automenu-price-left', `${left}px`);
                 slot?.style.setProperty('--automenu-price-right', `${right}px`);
-                const wrappedSize = wrapped ? largestPriceSize(row.clientWidth + left + right, minimum, base, measurePrice) : base;
-                price.toggleAttribute('data-price-stacked', wrappedSize === null);
-                const size = fit === null ? wrappedSize ?? minimum : fittedSizes.get(base) ?? base;
-                const fitted = size < base ? `${size}px` : '';
-                if (price.style.getPropertyValue('--automenu-fitted-price-size') !== fitted) {
-                    price.style.setProperty('--automenu-fitted-price-size', fitted);
-                }
+                price.toggleAttribute('data-price-stacked', stacked);
             }
         };
         const schedule = () => { if (!frame) frame = requestAnimationFrame(measure); };
@@ -128,7 +106,7 @@ export function useResponsivePrices(rootRef: RefObject<HTMLElement | null>, styl
         const mutations = new MutationObserver(records => { if (hasMenuContentMutation(records)) schedule(); });
         mutations.observe(root, {
             subtree: true, childList: true, characterData: true,
-            attributes: true, attributeFilter: ['data-word-fit-size'],
+            attributes: true, attributeFilter: ['data-word-fit-size', 'data-price-base-size'],
         });
         document.fonts?.addEventListener('loadingdone', schedule);
         refresh.current = schedule;

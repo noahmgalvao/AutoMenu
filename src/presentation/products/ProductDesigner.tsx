@@ -60,7 +60,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
 
     const {
         collapsedCategories,
-        editModeId,
+        editModeId, savedEditIds,
         menuOpenId,
         showInsights,
         bulkPercentage,
@@ -163,7 +163,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
             return;
         }
         const saveOnOutsideClick = (event: MouseEvent) => {
-            if (event.target instanceof Element && !event.target.closest('[data-product-designer-edit-form], [data-product-designer-file], [data-editor-popover][data-product-image-surface]')) {
+            if (event.target instanceof Element && !event.target.closest('[data-product-designer-edit-form], [data-product-designer-edit-trigger], [data-product-designer-file], [data-editor-popover][data-product-image-surface]')) {
                 saveOnExit();
             }
         };
@@ -270,6 +270,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                         collapsedCategories={collapsedCategories}
                         toggleCollapse={toggleCollapse}
                         editModeId={editModeId}
+                        savedEditIds={savedEditIds}
                         editTogether
                         menuOpenId={menuOpenId}
                         setMenuOpenId={setMenuOpenId}

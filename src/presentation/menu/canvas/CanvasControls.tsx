@@ -1,10 +1,10 @@
 import { createPortal } from 'react-dom';
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import type { FlowDirection } from './flowControls';
+import { controlRail, placeCanvasControl, type ControlBox as Box } from './canvasControlPlacement';
 import { getCanvasViewportBounds, observeAnchorScroll } from './canvasViewport';
 
-type ControlKind = 'quick' | 'flow' | 'move' | 'resize';
-type Box = Record<'left' | 'right' | 'top' | 'bottom', number>;
+type ControlKind = 'quick' | 'flow' | 'insert' | 'move' | 'page' | 'resize';
 type Control = {
     node: HTMLDivElement;
     anchor: HTMLElement;
@@ -15,13 +15,10 @@ type Control = {
 };
 
 const margin = 4;
-const edgeOffset = 10;
-const priority: Record<ControlKind, number> = { move: 0, quick: 1, resize: 2, flow: 3 };
+const priority: Record<ControlKind, number> = { flow: 0, insert: 1, move: 2, page: 2, quick: 3, resize: 4 };
 const pageControlObservers = new WeakMap<HTMLElement, ReturnType<typeof observeControls>>();
 
 export const canvasActionButtonClass = 'automenu-canvas-action relative grid shrink-0 place-items-center text-slate-600 before:pointer-events-none before:absolute before:rounded-full before:border before:border-slate-200 before:bg-white before:shadow-sm hover:before:border-indigo-300 hover:before:bg-indigo-50 hover:text-indigo-700 focus-visible:outline-none focus-visible:before:outline-2 focus-visible:before:outline-indigo-600';
-
-const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
 const insetBounds = ({ left, right, top, bottom }: Box): Box => ({
     left: left + margin, right: right - margin, top: top + margin, bottom: bottom - margin,
@@ -29,7 +26,7 @@ const insetBounds = ({ left, right, top, bottom }: Box): Box => ({
 
 function placeControls(
     page: HTMLElement, canvasElement: HTMLElement | null, zoomLayer: HTMLElement | null,
-    obstacles: NodeListOf<HTMLElement> | undefined, controls: Set<Control>, expireHover: () => void,
+    obstacles: NodeListOf<HTMLElement> | undefined, controls: Set<Control>, railSides: WeakMap<HTMLElement, number>, expireHover: () => void,
 ) {
     const hoverEnabled = matchMedia('(hover: hover) and (min-width: 768px)').matches;
     const time = performance.now();
@@ -61,168 +58,97 @@ function placeControls(
             blockers.push(element.getBoundingClientRect());
         }
     });
+    document.querySelectorAll<HTMLElement>('[data-site-header], [data-mobile-designer-tab]').forEach(element => {
+        if (element.getClientRects().length) blockers.push(element.getBoundingClientRect());
+    });
     page.querySelectorAll('.automenu-image-resize-handle, [data-free-text-resize-handle]').forEach(handle => {
         blockers.push(handle.getBoundingClientRect());
     });
 
     const handles = Array.from(page.querySelectorAll('[data-canvas-transform-handle]'), handle => handle.getBoundingClientRect());
-    for (const { node, anchor, direction, kind, hoverOnly } of active) {
-        const target = anchor.getBoundingClientRect();
-        const flow = kind === 'flow';
-        const viewport = canvas || pageBounds;
-        const bounds = flow ? {
-            ...viewport,
-            left: Math.max(viewport.left, pageRect.left - 24),
-            right: Math.min(viewport.right, pageRect.right + 24),
-        } : viewport;
-        if (target.bottom < bounds.top || target.top > bounds.bottom || target.right < bounds.left || target.left > bounds.right) {
+    const visible = canvas || pageBounds;
+    const entries = active.map(control => ({ control, target: control.anchor.getBoundingClientRect() }));
+    const rails = new Map<HTMLElement, ReturnType<typeof controlRail>>();
+    for (const { control: { node, anchor, direction, kind, hoverOnly }, target } of entries) {
+        const { left, right, top, bottom } = visible;
+        if (target.bottom < top || target.top > bottom || target.right < left || target.left > right) {
             node.style.visibility = 'hidden';
             continue;
         }
-        if (node.style.visibility !== 'visible') node.style.visibility = 'visible';
-        const maxWidth = `${Math.max(0, bounds.right - bounds.left)}px`;
+        const maxWidth = `${Math.max(0, right - left)}px`;
         if (node.style.maxWidth !== maxWidth) node.style.maxWidth = maxWidth;
-        if (flow) {
-            const size = matchMedia('(pointer: coarse)').matches ? 44 : 28;
-            const slot = `${clamp(Math.floor((bounds.bottom - bounds.top - 3 * margin) / 4), 24, size)}px`;
-            if (node.style.getPropertyValue('--canvas-flow-button-size') !== slot) {
-                node.style.setProperty('--canvas-flow-button-size', slot);
-            }
-        }
+        if (!node.offsetWidth || !node.offsetHeight) continue;
         const width = node.offsetWidth;
         const height = node.offsetHeight;
         const centerX = (target.left + target.right) / 2;
         const centerY = (target.top + target.bottom) / 2;
-        const side = direction === 'left' || direction === 'right';
-        const leading = direction === 'left' || direction === 'top';
-        const edge = side ? (leading ? target.left : target.right) : (leading ? target.top : target.bottom);
         let x = centerX - width / 2;
         let y = centerY - height / 2;
 
-        if (flow) {
-            const right = target.right - width / 2 + margin;
-            const left = target.left - width / 2 - margin;
-            x = right + width <= bounds.right || left < bounds.left ? right : left;
+        if (kind === 'flow' || kind === 'insert') {
+            const rail = rails.get(anchor) ?? controlRail(target, visible, railSides.get(anchor));
+            rails.set(anchor, rail);
+            const { edge, side } = rail;
+            railSides.set(anchor, side);
+            // Leave separate columns for move and insert even when the page edges are outside the viewport.
+            const outerX = edge - width / 2 - side * 8;
+            const moveX = Math.max(left, Math.min(right - width, outerX));
+            x = kind === 'flow' ? moveX : moveX + side * (width + margin);
+            if (kind === 'insert' && !entries.some(entry => entry.control.anchor === anchor && entry.control.kind === 'flow')) {
+                x = outerX;
+            }
         } else if (kind === 'quick') {
             x = target.right - width;
-            y = target.top - height - margin;
+            y = target.top - height - 8;
         } else if (kind === 'resize') {
             const column = anchor.closest('[data-drag-column-container="category"]');
-            const neighbor = leading ? column?.previousElementSibling : column?.nextElementSibling;
+            const neighbor = direction === 'left' ? column?.previousElementSibling : column?.nextElementSibling;
             if (!column || !neighbor?.matches('[data-drag-column-container="category"]')) {
                 node.style.visibility = 'hidden';
                 continue;
             }
             const columnRect = column.getBoundingClientRect();
             const neighborRect = neighbor.getBoundingClientRect();
-            const divider = leading ? (neighborRect.right + columnRect.left) / 2 : (columnRect.right + neighborRect.left) / 2;
-            if (divider < bounds.left - margin || divider > bounds.right + margin) {
+            x = (direction === 'left' ? (neighborRect.right + columnRect.left) / 2
+                : (columnRect.right + neighborRect.left) / 2) - width / 2;
+            if (x < left - width / 2 || x > right - width / 2) {
                 node.style.visibility = 'hidden';
                 continue;
             }
-            x = divider - width / 2;
-            y = Math.min(centerY - height / 2, target.top);
+            y = Math.min(y, target.top);
+        } else if (direction === 'left' || direction === 'right') {
+            x = direction === 'left' ? target.left - width - margin : target.right + margin;
         } else {
-            const edgeMin = side ? bounds.left : bounds.top;
-            const edgeMax = side ? bounds.right : bounds.bottom;
-            if (edge < edgeMin - margin || edge > edgeMax + margin) {
-                node.style.visibility = 'hidden';
-                continue;
-            }
-            const center = edge + (leading ? -edgeOffset : edgeOffset);
-            if (side) x = center - width / 2;
-            else y = center - height / 2;
-            if (direction === 'top') {
-                const shortcuts = active.find(control => control.kind === 'quick' && !control.hoverOnly
-                    && (control.anchor === anchor || anchor.contains(control.anchor)));
-                if (shortcuts) {
-                    const slot = Math.min(target.right, bounds.right) - shortcuts.node.offsetWidth - width - margin;
-                    if (slot >= Math.max(target.left, bounds.left)) x = slot;
-                }
-            }
+            if (kind === 'page' && direction === 'top') x = target.right - width - margin;
+            y = direction === 'top' ? target.top - height - margin : target.bottom + margin;
         }
 
-        // Resolve collisions along the same edge first. A narrow target can borrow the space immediately beside it.
-        const directional = kind === 'move';
-        const edgeLeft = side && directional && !leading ? edge - width / 2 : bounds.left;
-        const edgeRight = side && directional && leading ? edge + width / 2 : bounds.right;
-        const edgeTop = !side && directional && !leading ? edge - height / 2 : bounds.top;
-        const edgeBottom = !side && directional && leading ? edge + height / 2 : bounds.bottom;
-        // At the viewport rim the button can be clipped, but its center stays on the intended side.
-        const minimumLeft = Math.min(bounds.left, edgeRight - width);
-        const maximumLeft = Math.max(bounds.right - width, edgeLeft);
-        const minimumTop = Math.min(bounds.top, edgeBottom - height);
-        const maximumTop = Math.max(bounds.bottom - height, edgeTop);
-        const preferredLeft = kind === 'resize' ? x : clamp(x, minimumLeft, maximumLeft);
-        const preferredTop = clamp(y, minimumTop, maximumTop);
-        const slidesHorizontally = flow || !side || kind === 'quick';
-        const minLeft = Math.max(minimumLeft, slidesHorizontally ? Math.min(preferredLeft, target.left - width) - width / 2
-            : preferredLeft - (leading ? edgeOffset : 0));
-        const maxLeft = Math.min(maximumLeft, slidesHorizontally ? Math.max(preferredLeft, target.right) + width / 2
-            : preferredLeft + (leading ? 0 : edgeOffset));
-        const minTop = Math.max(minimumTop, side ? Math.min(preferredTop, target.top - height) - height / 2
-            : preferredTop - (kind === 'quick' ? height + margin : leading ? edgeOffset : 0));
-        const maxTop = Math.min(maximumTop, side ? Math.max(preferredTop, target.bottom) + height / 2
-            : preferredTop + (kind !== 'quick' && !leading ? edgeOffset : 0));
-        const occupied = kind === 'quick' ? [...blockers] : [...blockers, ...handles];
-        if (kind === 'resize') {
-            const range = document.createRange();
-            anchor.querySelectorAll('[data-word-fit]').forEach(text => {
-                range.selectNodeContents(text);
-                occupied.push(...Array.from(range.getClientRects()));
-            });
-        }
-        const xs = kind === 'resize' ? [preferredLeft] : [
-            preferredLeft,
-            ...(flow ? [target.left - width / 2 - margin, target.right - width / 2 + margin] : []),
-            ...occupied.flatMap(box => [box.left - width, box.right]),
-        ].map(value => clamp(value, minLeft, maxLeft));
-        const ys = [preferredTop, ...occupied.flatMap(box => [box.top - height, box.bottom])]
-            .map(value => clamp(value, minTop, maxTop));
-        let left = preferredLeft;
-        let top = preferredTop;
-        let bestOverlap = Infinity;
-        let bestDistance = Infinity;
-        for (const nextLeft of xs) {
-            for (const nextTop of ys) {
-                const overlap = occupied.reduce((total, box) => total
-                    + Math.max(0, Math.min(nextLeft + width, box.right) - Math.max(nextLeft, box.left))
-                    * Math.max(0, Math.min(nextTop + height, box.bottom) - Math.max(nextTop, box.top)), 0);
-                const dx = nextLeft - preferredLeft;
-                const dy = nextTop - preferredTop;
-                const distance = dx * dx * (side ? 16 : 1) + dy * dy * (side ? 1 : kind === 'quick' ? 4 : 16);
-                if (overlap < bestOverlap || (overlap === bestOverlap && distance < bestDistance)) {
-                    bestOverlap = overlap;
-                    bestDistance = distance;
-                    left = nextLeft;
-                    top = nextTop;
-                }
-            }
-        }
-        if (hoverOnly && (bestOverlap > 0 || Math.abs(top - preferredTop) > margin || Math.abs(left - preferredLeft) > width / 2)) {
+        const occupied = kind === 'quick' ? blockers : [...blockers, ...handles];
+        const placement = placeCanvasControl(x, y, width, height, visible, kind === 'resize' ? [] : occupied, kind === 'quick');
+        if (hoverOnly && (Math.abs(placement.top - y) > height || Math.abs(placement.left - x) > width / 2)) {
             node.style.visibility = 'hidden';
             continue;
         }
-        blockers.push({ left, top, right: left + width, bottom: top + height });
-        // Fixed positioning escapes the paper clip when controls need space around the page.
-        const inPaper = left >= pageRect.left && left + width <= pageRect.right
-            && top >= pageRect.top && top + height <= pageRect.bottom;
-        const inOverlay = node.parentElement?.hasAttribute('data-canvas-shortcuts');
-        const position = inPaper || inOverlay ? 'absolute' : 'fixed';
-        if (node.style.position !== position) node.style.position = position;
-        const parent = inPaper || inOverlay ? (node.offsetParent as HTMLElement | null) || anchor : zoomLayer;
-        const parentRect = parent?.getBoundingClientRect();
-        const leftStyle = `${(Math.round(left) - (parentRect?.left ?? 0)) / scale - (parent?.clientLeft ?? 0)}px`;
-        const topStyle = `${(Math.round(top) - (parentRect?.top ?? 0)) / scale - (parent?.clientTop ?? 0)}px`;
-        const transform = `scale(${1 / scale})`;
+        if (kind !== 'resize') blockers.push(placement);
+
+        const host = node.parentElement;
+        const onScreen = host?.hasAttribute('data-canvas-control-overlay');
+        const parent = onScreen && host ? host : (node.offsetParent as HTMLElement | null) || zoomLayer || anchor;
+        const parentRect = parent.getBoundingClientRect();
+        const controlScale = onScreen ? 1 : scale;
+        const leftStyle = `${(Math.round(placement.left) - parentRect.left) / controlScale - parent.clientLeft}px`;
+        const topStyle = `${(Math.round(placement.top) - parentRect.top) / controlScale - parent.clientTop}px`;
         if (node.style.left !== leftStyle) node.style.left = leftStyle;
         if (node.style.top !== topStyle) node.style.top = topStyle;
+        const transform = onScreen ? '' : `scale(${1 / scale})`;
         if (node.style.transform !== transform) node.style.transform = transform;
+        if (node.style.visibility !== 'visible') node.style.visibility = 'visible';
     }
 }
 
 function observeControls(frame: HTMLElement, page: HTMLElement) {
     const controls = new Set<Control>();
+    const railSides = new WeakMap<HTMLElement, number>();
     const canvas = frame.closest<HTMLElement>('[data-automenu-editor-canvas]');
     const zoomLayer = frame.closest<HTMLElement>('[data-canvas-zoom-layer]');
     const obstacles = canvas?.parentElement?.querySelectorAll<HTMLElement>(':scope > [data-canvas-control-obstacle]');
@@ -239,8 +165,8 @@ function observeControls(frame: HTMLElement, page: HTMLElement) {
         if (pending) return;
         pending = requestAnimationFrame(() => {
             pending = 0;
-            placeControls(page, canvas, zoomLayer, obstacles, controls, expireHover);
-            if (zoomLayer?.getAnimations().some(animation => animation.playState === 'running')) update();
+            placeControls(page, canvas, zoomLayer, obstacles, controls, railSides, expireHover);
+            if (zoomLayer?.getAnimations?.().some(animation => animation.playState === 'running')) update();
         });
     };
     const observer = new ResizeObserver(update);
@@ -256,7 +182,8 @@ function observeControls(frame: HTMLElement, page: HTMLElement) {
         observer.observe(element);
         mutations.observe(element, { attributes: true, attributeFilter: ['class', 'style'] });
     });
-    const shortcutLayer = frame.parentElement?.querySelector<HTMLElement>(':scope > [data-canvas-shortcuts]');
+    const shortcutLayer = canvas?.parentElement?.querySelector<HTMLElement>(':scope > [data-canvas-control-overlay]')
+        || frame.parentElement?.querySelector<HTMLElement>(':scope > [data-canvas-shortcuts]');
     shortcutLayer?.addEventListener('pointerover', update);
     shortcutLayer?.addEventListener('pointerout', update);
     frame.addEventListener('pointerover', update);
@@ -318,7 +245,9 @@ export function CanvasActionGroup({ direction, kind, anchorId, anchorSelector, h
         const anchor = anchorId ? document.getElementById(anchorId)
             : anchorSelector ? origin?.closest<HTMLElement>(anchorSelector) : origin?.parentElement;
         if (!frame || !page || !anchor) return;
-        const host = kind === 'quick' ? frame.parentElement?.querySelector<HTMLElement>(':scope > [data-canvas-shortcuts]') : null;
+        const host = frame.closest('[data-automenu-editor-canvas]')?.parentElement
+            ?.querySelector<HTMLElement>(':scope > [data-canvas-control-overlay]')
+            || frame.parentElement?.querySelector<HTMLElement>(':scope > [data-canvas-shortcuts]');
         if (host && host !== overlay) { setOverlay(host); return; }
         const node = ref.current;
         if (!node) return;
@@ -331,7 +260,7 @@ export function CanvasActionGroup({ direction, kind, anchorId, anchorSelector, h
         return coordinator.add({ node, anchor, direction, kind, hoverOnly });
     }, [anchorId, anchorSelector, direction, hoverOnly, kind, overlay]);
     const group = (
-        <div {...props} id={kind === 'quick' ? groupId : props.id} ref={ref} data-canvas-action-group={kind} data-canvas-action-direction={direction} data-selected-control={hoverOnly ? undefined : 'true'}
+        <div {...props} id={props.id || groupId} ref={ref} data-canvas-action-group={kind} data-canvas-action-direction={direction} data-selected-control={hoverOnly ? undefined : 'true'}
             data-drag-ignore="true" data-print-control="true"
             className={`pointer-events-auto absolute z-[80] flex w-max min-w-min origin-top-left flex-wrap items-center gap-1 ${className}`}
             style={{ visibility: 'hidden' }}
@@ -339,9 +268,9 @@ export function CanvasActionGroup({ direction, kind, anchorId, anchorSelector, h
             {children}
         </div>
     );
-    if (kind !== 'quick') return group;
+
     return <>
-        <span hidden ref={marker} aria-controls={groupId} data-canvas-action-anchor={kind} />
+        <span hidden ref={marker} aria-controls={props.id || groupId} data-canvas-action-anchor={kind} />
         {overlay ? createPortal(group, overlay) : group}
     </>;
 }
@@ -352,9 +281,14 @@ export function CanvasFlowActions({ before, up, down, after }: {
     down?: React.ReactNode;
     after?: React.ReactNode;
 }) {
-    const slots = [before, up, down, after];
-    if (!slots.some(Boolean)) return null;
-    return <CanvasActionGroup kind="flow" direction="right">
-        {slots.map((action, index) => action && <div key={index} style={{ gridRow: index + 1 }}>{action}</div>)}
-    </CanvasActionGroup>;
+    return <>
+        {(up || down) && <CanvasActionGroup kind="flow" direction="left">
+            {up && <div style={{ gridRow: 1 }}>{up}</div>}
+            {down && <div style={{ gridRow: 2 }}>{down}</div>}
+        </CanvasActionGroup>}
+        {(before || after) && <CanvasActionGroup kind="insert" direction="left">
+            {before && <div style={{ gridRow: 1 }}>{before}</div>}
+            {after && <div style={{ gridRow: 2 }}>{after}</div>}
+        </CanvasActionGroup>}
+    </>;
 }

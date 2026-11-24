@@ -619,6 +619,9 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             }
             const target = event.target as Node | null;
             if (target && objectMenuRef.current?.contains(target)) return;
+            const trigger = target instanceof Element ? target.closest<HTMLElement>('[data-open-object-menu]') : null;
+            if (trigger && trigger.dataset.objectMenuType === objectMenu.item?.type
+                && trigger.dataset.objectMenuId === objectMenu.item?.id) return;
             setObjectMenu(null);
         };
 
@@ -2353,6 +2356,11 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
         const page = (event.currentTarget as HTMLElement).closest<HTMLElement>('[data-page-index], [data-object-page-index], [data-shortcut-page]');
         const pageIndex = page ? Number(page.dataset.pageIndex ?? page.dataset.objectPageIndex ?? page.dataset.shortcutPage) : undefined;
+        if (objectMenu?.item?.type === item.type && objectMenu.item.id === item.id
+            && (event.currentTarget as HTMLElement).hasAttribute('data-open-object-menu')) {
+            setObjectMenu(null);
+            return;
+        }
         const objectItems = handlers.selectedItems || [];
         const isTargetSelected = objectItems.some(selected => selected.type === item.type && selected.id === item.id
             || (item.type === 'menuTitle' || item.type === 'menuSubtitle') && isHeadingSelectionOnPage(selected, headingPageIndex(item.id)));
@@ -2360,7 +2368,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
         setObjectMenuPosition(null);
         setObjectMenu({ x: event.clientX, y: event.clientY, item, pageIndex, anchored: true });
-    }, [handlers]);
+    }, [handlers, objectMenu]);
 
     (handlers as any).openObjectMenu = openObjectMenu;
 
@@ -2891,7 +2899,6 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                         </>
                     ) : (
                     <>
-                    <button type="button" aria-pressed={handlers.multiSelectMode} onClick={() => { handlers.setMultiSelectMode?.(!handlers.multiSelectMode); setObjectMenu(null); }} className={`w-full px-3 py-2 text-left flex items-center gap-2 ${handlers.multiSelectMode ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-slate-50'}`}><CopyCheck size={15} /> Seleção múltipla</button>
                     {contextObjectItem && contextObjectItem.type !== 'addedImage' && (
                         <button type="button" onClick={(event) => {
                             const { type, id } = contextObjectItem;
@@ -2901,6 +2908,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                             <Edit3 size={15} /> {contextObjectItem.type === 'category' ? 'Editar categoria' : contextFreeTextId ? 'Editar texto' : 'Editar produto'}
                         </button>
                     )}
+                    <button type="button" aria-pressed={handlers.multiSelectMode} onClick={() => { handlers.setMultiSelectMode?.(!handlers.multiSelectMode); setObjectMenu(null); }} className={`w-full px-3 py-2 text-left flex items-center gap-2 ${handlers.multiSelectMode ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-slate-50'}`}><CopyCheck size={15} /> Seleção múltipla</button>
                     {contextImage?.shape && <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"
                         onClick={() => { handlers.startImageEditing(contextImage.id); setObjectMenu(null); }}><Edit3 size={15} /> Editar forma</button>}
                     {photoTarget && <>

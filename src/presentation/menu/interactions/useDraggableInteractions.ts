@@ -2889,6 +2889,8 @@ export const useDraggableInteractions = (
                 }
                 isDraggingRef.current = true;
                 hasDragMutationRef.current = false;
+                dragSourceContextRef.current = pending.element.dataset.dragContext || null;
+                productDesignerScrollContainerRef.current = pending.element.closest<HTMLElement>('[data-product-designer-scroll-container="true"]');
                 const selection = pending.canvasSelection;
                 if (selection && isDraggableSelectionItem(selection.source)) {
                     activeSelectionCanvasRef.current = selection.canvas;
@@ -2947,8 +2949,6 @@ export const useDraggableInteractions = (
                 activePointerRef.current = { pointerId: pending.pointerId, pointerType: pending.pointerType, freeText: !selectionDragRef.current && Boolean(draggedProduct?.isFreeText) };
                 motionRef.current.lastPointer = { x: pointer.x, y: pointer.y };
                 motionRef.current.dragStartPointer = { x: pointer.x, y: pointer.y };
-                dragSourceContextRef.current = pending.element.dataset.dragContext || null;
-                productDesignerScrollContainerRef.current = pending.element.closest<HTMLElement>('[data-product-designer-scroll-container="true"]');
                 if (selectionDragRef.current) return;
                 if (!selection) handleSelection(pending.type === 'product' && draggedProduct?.isFreeText ? 'freeText' : pending.type, pending.id);
 
@@ -4018,21 +4018,24 @@ export const useDraggableInteractions = (
             const sourceType = draggedProduct?.isFreeText ? 'freeText' : type;
             const element = event.currentTarget as HTMLElement;
             const canvas = element.closest<HTMLElement>('[data-automenu-editor-canvas="true"]');
+            const designer = element.dataset.dragContext === 'product-designer'
+                ? element.closest<HTMLElement>('[data-product-designer-scroll-container="true"]') : null;
             const items = getDraggableSelection(selectedItems);
             const source = items.find(item => item.type === sourceType && item.id === id);
             let canvasSelection: PendingDrag['canvasSelection'];
-            if (canvas && source && (multiSelectMode || items.length > 1)) {
+            const selectionRoot = canvas || designer;
+            if (selectionRoot && source && (multiSelectMode || items.length > 1)) {
                 const productCategories = new Set(products.filter(product =>
                     !product.isFreeText && items.some(item => item.type === 'product' && item.id === product.id)
                 ).map(product => product.category));
                 const clear = productCategories.size > 1;
-                canvasSelection = { canvas, source, items: clear ? [source] : items, clear };
+                canvasSelection = { canvas: selectionRoot, source, items: clear ? [source] : items, clear };
             }
             if (canvas && !canvasSelection && draggedProduct?.isFreeText && style.freeTextBackgrounds?.[id]) {
                 const background = { type: 'freeText' as const, id };
                 canvasSelection = { canvas, source: background, items: [background], clear: true };
             }
-            if (!canvasSelection && (multiSelectMode || type === 'addedImage')) return;
+            if (!canvasSelection && ((multiSelectMode && !designer) || type === 'addedImage')) return;
 
             event.stopPropagation();
 
@@ -4083,7 +4086,7 @@ export const useDraggableInteractions = (
             pendingDragRef.current = pending;
 
             // Canvas clicks select on click and a drag selects on activation.
-            if (pointerType !== 'touch' && !canvas) {
+            if (pointerType !== 'touch' && !canvas && !canvasSelection && !multiSelectMode) {
                 handleSelection(sourceType, id);
             }
         },
