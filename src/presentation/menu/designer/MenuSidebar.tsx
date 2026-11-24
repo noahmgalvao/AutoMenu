@@ -1,5 +1,6 @@
 import type { FormattingKind, FormattingScope } from '../../../domain/menu/itemFormatting';
-import { MenuDesignDialog, SaveTemplateDialog, designDialogButton } from './MenuDesignDialog';
+import { SaveTemplateDialog } from './MenuDesignDialog';
+import { GeneralRulesDialog, RulesLayoutEditor, type RulesLayoutSection } from './GeneralRules';
 import { DesignerTapButton } from '../../common/DesignerTapButton';
 import { preventBrowserContextMenu } from '../../common/noBrowserSelection';
 import type { CanvasShape } from '../../../domain/menu/model';
@@ -13,7 +14,7 @@ import {
   PageSection,
   LayoutSection, 
   StyleSection, 
-  SortingSection, GeneralRulesSection
+  SortingSection
 } from './SidebarSections';
 import { resolveFontSizeLimits, resolveMinimumFontSize } from '../../../domain/menu/styleRules';
 
@@ -24,6 +25,8 @@ interface MenuSidebarProps {
     onPublishTemplate?: (id: string) => Promise<void>;
     onPdfClick?: () => void;
     handleResetDesign: () => void;
+    restoreRuleDefaults: () => void;
+    onRulesLayoutEditingChange: (editing: boolean) => void;
     
     // Data Props
     style: MenuStyle;
@@ -61,7 +64,7 @@ interface MenuSidebarProps {
 }
 
 export const MenuSidebar: React.FC<MenuSidebarProps> = ({
-    isOpen, onClose, onPdfClick, handleResetDesign,
+    isOpen, onClose, onPdfClick, handleResetDesign, restoreRuleDefaults, onRulesLayoutEditingChange,
     style, setStyle, templates, applyTemplate, onSaveTemplate, onPublishTemplate, sortOption, setSortOption, products, currentUserId,
     selection, setSelection, selectedFreeText, selectedAddedImage, selectedAddedImageIds,
     formattingScope, itemStyle, setSidebarFormatting,
@@ -69,10 +72,35 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
     resizeSelectedAddedImages, removeSelectedAddedImages, layerSelectedAddedImages
 }) => {
     
-    const [rules, setRules] = useState<MenuStyle | null>(null);
+    const [rulesSnapshot, setRulesSnapshot] = useState<MenuStyle | null>(null);
+    const [rulesSection, setRulesSection] = useState<RulesLayoutSection | null>(null);
     const [savingTemplate, setSavingTemplate] = useState(false);
     const [savedTemplate, setSavedTemplate] = useState(false);
     const { sheetRef, height, isMobile, isExpanded, openPartial, toggleExpanded, dragHandlers } = useBottomSheetDrag(isOpen, onClose);
+
+    const closeRules = () => {
+        setRulesSnapshot(null);
+        setRulesSection(null);
+        onRulesLayoutEditingChange(false);
+    };
+
+    React.useEffect(() => {
+        if (isOpen) return;
+        setRulesSnapshot(null);
+        setRulesSection(null);
+        onRulesLayoutEditingChange(false);
+    }, [isOpen, onRulesLayoutEditingChange]);
+
+    const resetRulesSection = (section: RulesLayoutSection) => {
+        if (!rulesSnapshot) return;
+        if (section === 'margins') {
+            if (style.margins === rulesSnapshot.margins && style.pagePadding === rulesSnapshot.pagePadding) return;
+            setStyle(current => ({ ...current, margins: rulesSnapshot.margins, pagePadding: rulesSnapshot.pagePadding, name: 'Custom' }));
+        } else {
+            if (style.contentSpacing === rulesSnapshot.contentSpacing && style.itemGap === rulesSnapshot.itemGap) return;
+            setStyle(current => ({ ...current, contentSpacing: rulesSnapshot.contentSpacing, itemGap: rulesSnapshot.itemGap, name: 'Custom' }));
+        }
+    };
 
     React.useEffect(() => {
         if (shapePickerRequest) {
@@ -104,6 +132,12 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
             `}
             style={{ height: isMobile ? height : undefined }}
         >
+        {rulesSection ? <RulesLayoutEditor style={style} setStyle={setStyle} section={rulesSection}
+          reset={() => resetRulesSection(rulesSection)} close={closeRules} confirm={() => {
+            setRulesSection(null);
+            onRulesLayoutEditingChange(false);
+          }} />
+        : <>
         <div 
             className="p-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center flex-shrink-0 min-w-0 touch-none cursor-grab active:cursor-grabbing"
             {...dragHandlers}
@@ -112,7 +146,7 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
             <Paintbrush size={16} /> Visual
           </h2>
           <div className="flex shrink-0 gap-1.5">
-            <button type="button" onClick={() => setRules(style)} onPointerDown={e => e.stopPropagation()}
+            <button type="button" onClick={() => setRulesSnapshot(style)} onPointerDown={e => e.stopPropagation()}
                 aria-label="Configurações do cardápio" title="Configurações do cardápio"
                 className="grid h-8 w-9 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100">
                 <Settings size={16} />
@@ -215,21 +249,18 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
             </button>
           </div>
 
-        {rules && <MenuDesignDialog title="Regras gerais" close={() => setRules(null)} footer={
-            <footer className="flex shrink-0 justify-end gap-2 border-t border-slate-200 bg-white px-5 py-3">
-              <button type="button" onClick={() => setRules(null)} className={designDialogButton + ' border border-slate-200'}>Cancelar</button>
-              <button type="button" onClick={() => { if (rules !== style) setStyle(rules); setRules(null); }}
-                className={designDialogButton + ' bg-indigo-700 text-white'}>Aplicar</button>
-            </footer>
-        }>
-            <div className="p-5">
-              <GeneralRulesSection style={rules} setStyle={update => setRules(current =>
-                current && (typeof update === 'function' ? update(current) : update))} />
-            </div>
-        </MenuDesignDialog>}
+        </div>
+        </>}
+        {rulesSnapshot && !rulesSection && <GeneralRulesDialog
+          style={style} setStyle={setStyle} close={closeRules} reset={resetRulesSection} restoreDefaults={restoreRuleDefaults}
+          edit={section => {
+            if (isExpanded) openPartial();
+            setRulesSection(section);
+            onRulesLayoutEditingChange(true);
+          }}
+        />}
         {savingTemplate && onSaveTemplate && <SaveTemplateDialog close={() => setSavingTemplate(false)} canPublish={Boolean(onPublishTemplate)}
           save={async (...values) => { await onSaveTemplate(...values); setSavingTemplate(false); setSavedTemplate(true); }} />}
-        </div>
       </div>
     );
 };

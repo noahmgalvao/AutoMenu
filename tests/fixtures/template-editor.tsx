@@ -156,7 +156,7 @@ function Fixture() {
         setHistory(current => [...current, future[0]]);
         setFuture(current => current.slice(1));
       }}
-      canUndo={history.length > 1} canRedo={future.length > 0} splitCategoryAcrossPages />
+      canUndo={history.length > 1} canRedo={future.length > 0} isOpen={params.has('general-rules')} splitCategoryAcrossPages />
   </>;
 }
 

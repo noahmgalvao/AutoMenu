@@ -2458,6 +2458,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     useEffect(() => {
         if (readOnly) return;
         const handleNativePaste = (event: ClipboardEvent) => {
+            if (previewRootRef.current?.closest('[inert]')) return;
             const target = event.target as HTMLElement | null;
             if (target?.closest('input, textarea, select')) return;
             const field = target?.closest<HTMLElement>('[contenteditable="true"]');

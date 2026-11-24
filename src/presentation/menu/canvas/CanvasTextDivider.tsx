@@ -58,7 +58,7 @@ export function CanvasTextDivider({ preset, color, titleEdge, product = false }:
             }
             const bounds = row.getBoundingClientRect();
             const scale = bounds.width / row.offsetWidth || 1;
-            const gap = (parseFloat(getComputedStyle(row).columnGap) || 4) * scale;
+            const gap = (parseFloat(getComputedStyle(row).columnGap) || (product ? 0 : 4)) * scale;
             const slotBounds = slot.getBoundingClientRect();
             const titleCenter = heading.top + heading.height / 2;
             if (!price || !continuation) {
@@ -86,7 +86,7 @@ export function CanvasTextDivider({ preset, color, titleEdge, product = false }:
         };
         mutations.observe(text, textOptions);
         if (price) mutations.observe(price, textOptions);
-        mutations.observe(row, { attributes: true, attributeFilter: ['data-price-wrap'] });
+        mutations.observe(row, { attributes: true, attributeFilter: ['data-price-wrap', 'style'] });
         document.fonts?.addEventListener('loadingdone', schedule);
         update();
         return () => {

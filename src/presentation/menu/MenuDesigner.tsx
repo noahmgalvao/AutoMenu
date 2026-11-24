@@ -31,6 +31,7 @@ import {
     type WordFitScope,
 } from './canvas/textFit';
 import { roundPrice } from '../../domain/menu/price';
+import { resolveFontSizeLimits, resolveMenuContentSpacing, resolveMenuMargins, resolveMinimumFontSize } from '../../domain/menu/styleRules';
 import { resolveMenuPageDimensions } from '../../domain/menu/pageSetup';
 import { optimizeImageForUpload, preloadImage } from '../../infrastructure/browser/imageUpload';
 import { FontPropagationPrompt, type FontPropagationRequest } from './FontPropagationPrompt';
@@ -269,6 +270,14 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 : next;
         });
     }, []);
+    const [rulesLayoutEditing, setRulesLayoutEditing] = useState(false);
+    const changeRulesLayoutEditing = useCallback((editing: boolean) => {
+        setRulesLayoutEditing(editing);
+        if (editing) {
+            changeSelection({ type: null, id: null });
+            setTipsOpen(false);
+        }
+    }, [changeSelection]);
     const handleCanvasSelectedItems = useCallback((items: SelectionItem[]) => {
         onSelectedPagesChange?.(items.filter(item => item.type === 'page').map(item => Number(item.id)));
         const targeted = items.filter(item => item.type === 'category' || item.type === 'product');
@@ -814,16 +823,32 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const applyTemplate = (template: MenuStyle) =>
         setStyle((current) => applyTemplateToCurrentStyle(current, template));
 
-    const handleResetDesign = async () => {
-        const id = getAppliedTemplateId(style);
+    const restoreTemplateSettings = async (restore: (current: MenuStyle, template: MenuStyle) => MenuStyle) => {
+        const id = getAppliedTemplateId(style) ?? style.id;
         const versionId = style.appliedTemplateVersionId;
         const currentTemplate = templates.find(template => template.id === id)
             || PRESET_TEMPLATES.find(template => template.id === id);
         const historical = workspaceId && versionId && versionId !== currentTemplate?.templateVersionId
             ? await loadTemplateVersion({ workspaceId, versionId }).catch(() => null) : null;
-        setStyle(current => getAppliedTemplateId(current) !== id || current.appliedTemplateVersionId !== versionId
-            ? current : applyTemplateToCurrentStyle({ ...current, itemFormattingOverrides: undefined }, historical || currentTemplate || INITIAL_STYLE));
+        setStyle(current => current.id !== style.id || (getAppliedTemplateId(current) ?? current.id) !== id || current.appliedTemplateVersionId !== versionId
+            ? current : restore(current, historical || currentTemplate || INITIAL_STYLE));
     };
+
+    const handleResetDesign = () => restoreTemplateSettings((current, template) =>
+        applyTemplateToCurrentStyle({ ...current, itemFormattingOverrides: undefined }, template));
+
+    const restoreRuleDefaults = () => restoreTemplateSettings((current, template) => ({
+        ...current,
+        name: 'Custom',
+        margins: resolveMenuMargins(template),
+        contentSpacing: resolveMenuContentSpacing(template),
+        showPrices: template.showPrices ?? true,
+        splitCategoryAcrossPages: template.splitCategoryAcrossPages ?? INITIAL_STYLE.splitCategoryAcrossPages,
+        productsCanChangeCategory: template.productsCanChangeCategory ?? INITIAL_STYLE.productsCanChangeCategory,
+        allowSameWordBreak: template.allowSameWordBreak ?? false,
+        minimumFontSize: resolveMinimumFontSize(template),
+        fontSizeLimits: resolveFontSizeLimits(template),
+    }));
 
     const handleProductUpdate = (id: string, field: keyof Product, value: any, priceEnteredWithDecimals?: boolean) => {
         if (!setProducts) return;
@@ -2018,7 +2043,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 />
 
                 <div ref={tipsAnchorRef} className="absolute left-4 top-20 z-[80] flex items-start">
-                    {hasVisibleTips && (
+                    {!rulesLayoutEditing && hasVisibleTips && (
                         <button
                             type="button"
                             onClick={() => setTipsOpen(current => !current)}
@@ -2267,6 +2292,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                             event.stopPropagation();
                             return;
                         }
+                        if (rulesLayoutEditing) return;
                         const target = event.target;
                         if (target instanceof Element && event.currentTarget.contains(target)
                             && !target.closest('[data-menu-print-page], [data-print-control], button, input, textarea, select, [contenteditable="true"]')) {
@@ -2290,6 +2316,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                         >
                             <div ref={zoomLayerRef}
                                 data-canvas-zoom-layer
+                                inert={rulesLayoutEditing}
                                 style={{ transform: `scale(${renderScale})`, minWidth: `${resolveMenuPageDimensions(style).widthPx}px` }}
                                 className="absolute left-0 top-0 w-max origin-top-left"
                                 onClick={(e) => e.stopPropagation()}
@@ -2343,7 +2370,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                         </div>
                     </div>
                 </div>
-                <div data-canvas-control-overlay className="pointer-events-none absolute inset-0 z-[71] [overflow:clip]" />
+                <div data-canvas-control-overlay inert={rulesLayoutEditing} className="pointer-events-none absolute inset-0 z-[71] [overflow:clip]" />
             </div>
 
             {/* 2. SIDEBAR EDITOR */}
@@ -2352,6 +2379,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 onClose={onClose}
                 onPdfClick={() => handlePrint()}
                 handleResetDesign={handleResetDesign}
+                restoreRuleDefaults={() => void restoreRuleDefaults()}
+                onRulesLayoutEditingChange={changeRulesLayoutEditing}
                 style={style}
                 setStyle={setStyle}
                 templates={templates}

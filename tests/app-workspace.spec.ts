@@ -292,7 +292,7 @@ test('menu rename and deletion support undo and redo', async ({ page }) => {
   await expect(activeName).toHaveText('Reserva');
 });
 
-test('menu rules commit numeric values and are separate from account settings', async ({ page }) => {
+test('general rules save immediately and reopen on Layout', async ({ page }) => {
   await openWorkspace(page);
   await page.getByRole('button', { name: 'Meu perfil' }).click();
   await page.getByRole('button', { name: 'Configurações', exact: true }).click();
@@ -302,20 +302,15 @@ test('menu rules commit numeric values and are separate from account settings', 
   const gear = page.getByRole('button', { name: 'Configurações do cardápio' });
   await gear.click();
   const rules = page.getByRole('dialog', { name: 'Regras gerais' });
+  await expect(rules.getByRole('tab', { name: 'Layout' })).toHaveAttribute('aria-selected', 'true');
+  await expect(rules.getByRole('spinbutton')).toHaveCount(0);
+  const advanced = rules.getByRole('tab', { name: 'Avançadas' });
+  await advanced.click();
   const minimum = rules.getByRole('spinbutton', { name: 'Mínimo geral', exact: true });
-  await minimum.fill('1');
-  await expect(minimum).toHaveValue('1');
   await minimum.fill('23');
-  await minimum.press('Enter');
-  await expect(minimum).toHaveValue('23');
-  await expect(rules.getByText('Limites máximos', { exact: true })).toBeVisible();
-  const allow = (name: string) => rules.getByRole('switch', { name });
-  const split = allow('Continuar categoria na página seguinte');
-  const wordBreak = allow('Permitir quebra de linha na mesma palavra');
-  const increase = rules.getByRole('button', { name: 'Aumentar Mínimo geral' });
-  const decrease = rules.getByRole('button', { name: 'Diminuir Mínimo geral' });
-  await increase.click();
+  await rules.getByRole('button', { name: 'Aumentar Mínimo geral' }).click();
   await expect(minimum).toHaveValue('24');
+  const decrease = rules.getByRole('button', { name: 'Diminuir Mínimo geral' });
   const stepBox = (await decrease.boundingBox())!;
   await page.mouse.move(stepBox.x + stepBox.width / 2, stepBox.y + stepBox.height / 2);
   await page.mouse.down();
@@ -324,30 +319,57 @@ test('menu rules commit numeric values and are separate from account settings', 
   } finally {
     await page.mouse.up();
   }
-  await minimum.fill('23');
-  await minimum.press('Enter');
+  await minimum.fill('8');
+  const split = rules.getByRole('switch', { name: 'Continuar categoria na página seguinte' });
   await split.click();
-  await allow('Permitir mudar produto de categoria ao arrastar').click();
-  await wordBreak.press('Space');
-  await rules.getByRole('button', { name: 'Aplicar', exact: true }).click();
+
+  await page.mouse.click(5, 5);
+  await expect(rules).toHaveCount(0);
   await expect(gear).toBeFocused();
   await gear.click();
-  await expect(split).toBeChecked();
-  await expect(wordBreak).toBeChecked();
-  await expect(minimum).toHaveValue('23');
-  await minimum.fill('8');
-  await minimum.press('Enter');
-  await rules.getByRole('button', { name: 'Aplicar', exact: true }).click();
-  await gear.click();
+  await expect(rules.getByRole('tab', { name: 'Layout' })).toHaveAttribute('aria-selected', 'true');
+  await advanced.click();
   await expect(minimum).toHaveValue('8');
-  await rules.getByRole('button', { name: 'Cancelar', exact: true }).click();
-  await page.getByTitle('Desfazer', { exact: true }).click();
+  await expect(split).toBeChecked();
+  await rules.getByRole('button', { name: 'Restaurar Padrão', exact: true }).click();
+  await expect(minimum).toHaveValue(String(PRESET_TEMPLATES[0].minimumFontSize ?? 15));
+  await expect(split).not.toBeChecked();
+  await rules.getByRole('button', { name: 'Fechar', exact: true }).click();
+  await expect(rules).toHaveCount(0);
+});
+
+test('editing layout updates the canvas before confirmation and can reset the opening values', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?cols=2&lanes=2&general-rules');
+  const gear = page.getByRole('button', { name: 'Configurações do cardápio' });
   await gear.click();
-  await expect(minimum).toHaveValue('23');
-  await rules.getByRole('button', { name: 'Cancelar', exact: true }).click();
-  await page.getByTitle('Desfazer', { exact: true }).click();
-  await gear.click();
-  await expect(minimum).toHaveValue('15');
+  const rules = page.getByRole('dialog', { name: 'Regras gerais' });
+  const editSpacing = rules.getByRole('button', { name: 'Editar espaçamentos' });
+  await editSpacing.click();
+  await expect(rules).toHaveCount(0);
+  const layer = page.locator('[data-canvas-zoom-layer]');
+  await expect(layer).toHaveAttribute('inert', '');
+  const editor = page.getByRole('region', { name: 'Espaçamentos' });
+  const betweenProducts = editor.getByRole('spinbutton', { name: 'Entre produtos', exact: true });
+  const previousSpacing = await betweenProducts.inputValue();
+  const priceSpacing = editor.getByRole('spinbutton', { name: 'Nome → preço (horizontal)', exact: true });
+  const row = layer.locator('[data-product-text-row]').first();
+  await betweenProducts.fill('0');
+  await expect(layer.locator('[data-pagination-grid]').first()).toHaveCSS('row-gap', '0px');
+  await priceSpacing.fill('0');
+  await expect(row).toHaveCSS('column-gap', '0px');
+  await expect(row).toHaveAttribute('data-compact-price-gap', /^(start|end)$/);
+  await editor.getByRole('button', { name: 'Confirmar e voltar às regras gerais' }).click();
+  await expect(rules).toBeVisible();
+  await editSpacing.click();
+  await expect(betweenProducts).toHaveValue('0');
+  await editor.getByRole('button', { name: 'Reiniciar espaçamentos' }).click();
+  await expect(betweenProducts).toHaveValue(previousSpacing);
+  await priceSpacing.fill('20');
+  await editor.getByRole('button', { name: 'Fechar regras gerais' }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(rules).toHaveCount(0);
+  await expect(layer).not.toHaveAttribute('inert', '');
+  await expect(row).toHaveCSS('column-gap', '20px');
 });
 
 test('mobile header returns after scrolling and stays accessible above either expanded panel', async ({ page }) => {

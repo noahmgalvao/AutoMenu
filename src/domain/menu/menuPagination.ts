@@ -293,7 +293,8 @@ export const calculateItemHeight = (
         }
 
         const cardVerticalPadding = categoryColumnCount > 1 || columnCount > 2 ? 12 : columnCount > 1 ? 16 : PRODUCT_CARD_VERTICAL_PADDING_PX;
-        contentHeight = Math.max(contentHeight, sidePhoto ? photoHeight : 0) + cardVerticalPadding + 28;
+        const compactPadding = Math.min(cardVerticalPadding, spacing.betweenProducts * 2);
+        contentHeight = Math.max(contentHeight, sidePhoto ? photoHeight : 0) + compactPadding + 28;
     } else {
         const hasImage = Boolean(style.showImages && product.image);
         const stackPhoto = photoAlignment === 'center' || categoryColumnCount >= 3 && !photoAlignment;

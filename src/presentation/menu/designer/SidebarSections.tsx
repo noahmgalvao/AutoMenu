@@ -1,10 +1,8 @@
 import type { FormattingKind, FormattingScope } from '../../../domain/menu/itemFormatting';
-import { FontSizeInput } from './FontSizeInput';
 import { triggerLimitFeedback } from '../canvas/textFit';
 import { canMoveImageLayer } from '../../../domain/menu/imageLayers';
 import { MINI_FOOD_INK } from '../../../domain/menu/miniFoods';
 import { HoldStepButton } from '../../common/HoldStepButton';
-import { BooleanSwitch } from '../../common/BooleanSwitch';
 import { ColorPicker } from './ColorPicker';
 import { DecorationControls } from './Decorations';
 import { ShapeChoices, ShapePicker, ShapeSettings } from './ShapePicker';
@@ -12,9 +10,9 @@ import { canvasShapeUrl, applyCanvasShapeParameters, setCanvasImageBackground } 
 import type { CanvasShape } from '../../../domain/menu/model';
 
 import React, { useRef } from 'react';
-import type { MenuStyle, Product, ElementStyle, SortOption, AddedImage, FontSizeLimitKey } from '../../../domain/menu/model';
+import type { MenuStyle, Product, ElementStyle, SortOption, AddedImage } from '../../../domain/menu/model';
 import { isMiniFoodTexture, normalizeTextureUrl } from '../../../domain/menu/defaults';
-import { resolveFontSizeLimits, resolveMenuContentSpacing, resolveMenuMargins, resolveMinimumFontSize, MIN_CONFIGURABLE_FONT_SIZE, roundFontSize, resolveProductImageFrame, clampPhotoScale, MIN_PHOTO_SCALE, MAX_PHOTO_SCALE } from '../../../domain/menu/styleRules';
+import { resolveFontSizeLimits, resolveProductImageFrame, clampPhotoScale, MIN_PHOTO_SCALE, MAX_PHOTO_SCALE } from '../../../domain/menu/styleRules';
 import { normalizeMenuPageSetup, resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 import { StyleControls } from './StyleControls';
 import { PriceFormatSettings } from './PriceFormatSettings';
@@ -614,177 +612,6 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle })
         ))}
     </div>
   </section>
-  );
-};
-
-// --- GENERAL RULES SECTION ---
-interface GeneralRulesSectionProps {
-  style: MenuStyle;
-  setStyle: React.Dispatch<React.SetStateAction<MenuStyle>>;
-}
-
-const RuleNumberInput: React.FC<{
-  value: number;
-  label: string;
-  min?: number;
-  max?: number;
-  normalizeValue?: (value: number) => number;
-  onChange: (value: number) => void;
-}> = ({ value, label, min = 0, max = 300, normalizeValue, onChange }) => (
-  <div className="grid content-between justify-items-start gap-1 text-xs text-slate-700">
-    <span>{label}</span>
-    <FontSizeInput label={label} value={value} min={min} max={max} commitOnBlur showStepButtons stepSubject=""
-      onChange={next => onChange(normalizeValue ? normalizeValue(next) : next)}
-      className="!w-12 bg-white text-center font-semibold tabular-nums text-slate-700"
-    />
-  </div>
-);
-
-export const GeneralRulesSection: React.FC<GeneralRulesSectionProps> = ({ style, setStyle }) => {
-  const fontSizeLimits = resolveFontSizeLimits(style);
-  const minimumFontSize = resolveMinimumFontSize(style);
-  const margins = resolveMenuMargins(style);
-  const contentSpacing = resolveMenuContentSpacing(style);
-  const fontLimitRows: Array<{ key: FontSizeLimitKey; label: string }> = [
-    { key: 'menuTitle', label: 'Título' },
-    { key: 'menuSubtitle', label: 'Subtítulo' },
-    { key: 'category', label: 'Nome das categorias' },
-    { key: 'productName', label: 'Nome dos produtos' },
-    { key: 'productPrice', label: 'Preço dos produtos' },
-    { key: 'productDescription', label: 'Descrições dos produtos' },
-    { key: 'freeText', label: 'Texto livre' },
-  ];
-  const marginRows: Array<{ key: keyof typeof margins; label: string }> = [
-    { key: 'top', label: 'Superior' },
-    { key: 'bottom', label: 'Inferior' },
-    { key: 'left', label: 'Esquerda' },
-    { key: 'right', label: 'Direita' },
-    { key: 'columnGap', label: 'Entre colunas' },
-  ];
-  const spacingRows: Array<{ key: keyof typeof contentSpacing; label: string }> = [
-    { key: 'headerToContent', label: 'Cabeçalho → primeira categoria' },
-    { key: 'categoryToProduct', label: 'Categoria → produto' },
-    { key: 'productNameToDescription', label: 'Produto → descrição' },
-    { key: 'betweenProducts', label: 'Entre produtos' },
-    { key: 'productNameToPrice', label: 'Nome → preço (horizontal)' },
-  ];
-
-  const updateFontLimit = (key: FontSizeLimitKey, value: number) => {
-    const normalizedValue = roundFontSize(value);
-    setStyle((previous) => {
-      const nextElementStyles = { ...previous.elementStyles };
-      if (key !== 'freeText') {
-        const elementKey = key as keyof MenuStyle['elementStyles'];
-        const currentElementStyle = nextElementStyles[elementKey];
-        if (currentElementStyle?.fontSize && currentElementStyle.fontSize > normalizedValue) {
-          nextElementStyles[elementKey] = { ...currentElementStyle, fontSize: normalizedValue };
-        }
-      }
-      return {
-        ...previous,
-        fontSizeLimits: { ...resolveFontSizeLimits(previous), [key]: normalizedValue },
-        elementStyles: nextElementStyles,
-        name: 'Custom',
-      };
-    });
-  };
-
-  return (
-    <section className="space-y-3">
-      {([
-        ['showPrices', 'Mostrar preços no cardápio', true],
-        ['splitCategoryAcrossPages', 'Continuar categoria na página seguinte', false],
-        ['productsCanChangeCategory', 'Permitir mudar produto de categoria ao arrastar', false],
-        ['allowSameWordBreak', 'Permitir quebra de linha na mesma palavra', false,
-          'Ex.: permitir “HAMBU” / “RGUER” em duas linhas. Desativado, o texto reduz até o mínimo.'],
-      ] as const).map(([key, label, fallback, description]) => (
-        <BooleanSwitch key={key} label={label} value={style[key] ?? fallback} description={description}
-          className="border-slate-200 bg-slate-50"
-          onChange={value => setStyle(previous => ({ ...previous, [key]: value, name: 'Custom' }))} />
-      ))}
-
-      <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <h4 className="text-xs font-bold text-slate-600">Limite de tamanho das fontes</h4>
-        <div className="border-b border-slate-200 pb-2">
-          <RuleNumberInput
-            label="Mínimo geral"
-            value={minimumFontSize}
-            min={MIN_CONFIGURABLE_FONT_SIZE}
-            max={300}
-            normalizeValue={roundFontSize}
-            onChange={(value) => setStyle((previous) => ({
-              ...previous,
-              minimumFontSize: value,
-              fontSizeLimits: (() => {
-                const limits = resolveFontSizeLimits(previous);
-                return {
-                  menuTitle: Math.max(value, limits.menuTitle),
-                  menuSubtitle: Math.max(value, limits.menuSubtitle),
-                  category: Math.max(value, limits.category),
-                  productName: Math.max(value, limits.productName),
-                  productPrice: Math.max(value, limits.productPrice),
-                  productDescription: Math.max(value, limits.productDescription),
-                  freeText: Math.max(value, limits.freeText),
-                };
-              })(),
-              elementStyles: Object.fromEntries(
-                Object.entries(previous.elementStyles).map(([key, elementStyle]) => [
-                  key,
-                  elementStyle?.fontSize && elementStyle.fontSize < value
-                    ? { ...elementStyle, fontSize: value }
-                    : elementStyle,
-                ]),
-              ) as MenuStyle['elementStyles'],
-              name: 'Custom',
-            }))}
-          />
-        </div>
-        <h4 className="pt-1 text-xs font-bold text-slate-600">Limites máximos</h4>
-        <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
-          {fontLimitRows.map(({ key, label }) => (
-            <RuleNumberInput key={key} label={label} value={fontSizeLimits[key]} min={minimumFontSize} max={300}
-              normalizeValue={roundFontSize} onChange={(value) => updateFontLimit(key, value)} />
-          ))}
-        </div>
-      </div>
-
-      <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <h4 className="text-xs font-bold text-slate-600">Margens</h4>
-        <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
-          {marginRows.map(({ key, label }) => (
-            <RuleNumberInput
-              key={key}
-              label={label}
-              value={margins[key]}
-              onChange={(value) => setStyle((previous) => ({
-                ...previous,
-                margins: { ...resolveMenuMargins(previous), [key]: value },
-                name: 'Custom',
-              }))}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <h4 className="text-xs font-bold text-slate-600">Espaçamentos</h4>
-        <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
-          {spacingRows.map(({ key, label }) => (
-            <RuleNumberInput
-              key={key}
-              label={label}
-              value={contentSpacing[key]}
-              max={200}
-              onChange={(value) => setStyle((previous) => ({
-                ...previous,
-                contentSpacing: { ...resolveMenuContentSpacing(previous), [key]: value },
-                name: 'Custom',
-              }))}
-            />
-          ))}
-        </div>
-      </div>
-    </section>
   );
 };
 

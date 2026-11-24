@@ -5,11 +5,12 @@ import { X } from 'lucide-react';
 import { getErrorMessage } from '../../../application/errorMessages';
 import { BooleanSwitch } from '../../common/BooleanSwitch';
 
-export function MenuDesignDialog({ title, children, footer, close, busy = false }: {
-  title: string; children: ReactNode; footer?: ReactNode; close: () => void; busy?: boolean;
+export function MenuDesignDialog({ title, children, footer, close, busy = false, dismissOnBackdrop = false }: {
+  title: string; children: ReactNode; footer?: ReactNode; close: () => void; busy?: boolean; dismissOnBackdrop?: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
+  const backdropPressed = useRef(false);
   useLayoutEffect(() => {
     const node = dialog.current;
     const trigger = document.activeElement;
@@ -23,11 +24,18 @@ export function MenuDesignDialog({ title, children, footer, close, busy = false 
   }, []);
 
   return createPortal(<dialog ref={dialog} aria-labelledby={titleId}
+    onPointerDown={event => {
+      backdropPressed.current = dismissOnBackdrop && event.target === event.currentTarget;
+    }}
+    onClick={event => {
+      if (backdropPressed.current && event.target === event.currentTarget && !busy) close();
+      backdropPressed.current = false;
+    }}
     onCancel={event => { event.preventDefault(); if (!busy) close(); }}
     className={`m-auto w-[min(34rem,calc(100%-2rem))] max-h-[84dvh] overscroll-contain rounded-2xl bg-white text-slate-800 shadow-xl backdrop:bg-slate-950/50 ${footer ? 'flex-col overflow-hidden open:flex' : 'overflow-auto'}`}>
     <header className="sticky top-0 z-10 flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5 py-3">
       <h2 id={titleId} className="text-lg font-semibold">{title}</h2>
-      <button type="button" aria-label="Fechar" disabled={busy} onClick={close} className="rounded-lg p-2 hover:bg-slate-100"><X size={18} /></button>
+      <button type="button" aria-label={dismissOnBackdrop ? `Fechar ${title.toLowerCase()}` : "Fechar"} disabled={busy} onClick={close} className="rounded-lg p-2 hover:bg-slate-100"><X size={18} /></button>
     </header>
     {footer ? <>
       <div className="min-h-0 overflow-y-auto overscroll-contain">{children}</div>

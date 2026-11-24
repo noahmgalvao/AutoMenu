@@ -51,7 +51,7 @@ export function useResponsivePrices(rootRef: RefObject<HTMLElement | null>, styl
     const refresh = useRef<() => void>(undefined);
     const [name, price] = [style.elementStyles.productName, style.elementStyles.productPrice];
     const textMetrics = JSON.stringify([
-        style.fontFamily, style.minimumFontSize, style.fontSizeLimits,
+        style.fontFamily, style.minimumFontSize, style.fontSizeLimits, style.contentSpacing?.productNameToPrice,
         style.design?.price, style.productPhotoAlignments, price?.textAlign,
         name?.fontFamily, name?.fontWeight, name?.italic, name?.fontSize, name?.textTransform, name?.letterSpacing,
         price?.fontFamily, price?.fontWeight, price?.italic, price?.fontSize,

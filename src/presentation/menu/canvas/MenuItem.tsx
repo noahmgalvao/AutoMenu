@@ -26,6 +26,7 @@ import { CanvasTextDivider } from './CanvasTextDivider';
 import { isHeadingTextHit } from './menuHeadingHit';
 import { getPaginationItemKey, getProductCardImageLimit, getProductListImageLimit, getCategoryPhotoSizing } from '../../../domain/menu/menuPagination';
 import { ProductControls, FreeTextResizeHandles, getFreeTextMaximumWidth, getFreeTextContentWidth } from './ProductCanvasControls';
+import { DEFAULT_MENU_CONTENT_SPACING } from '../../../domain/menu/defaults';
 import { FREE_TEXT_PREFIX } from '../../../domain/menu/flow';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 import { ColumnResizeHandles } from './ColumnResizeHandles';
@@ -44,6 +45,17 @@ interface MenuItemProps {
     columnIndex?: number;
     categoryColumnCount?: number;
     backgroundText?: { pageIndex: number; primary: boolean; selected: boolean };
+}
+
+function productTextRowStyle(spacing: ReturnType<typeof resolveMenuContentSpacing>): React.CSSProperties {
+    const gap = spacing.productNameToPrice;
+    return {
+        marginBottom: spacing.productNameToDescription,
+        columnGap: gap,
+        rowGap: 2,
+        '--product-price-gap': `${gap}px`,
+        '--product-price-space-share': gap / DEFAULT_MENU_CONTENT_SPACING.productNameToPrice,
+    } as React.CSSProperties;
 }
 
 const editableTextClassName = 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text select-text touch-auto pointer-events-auto';
@@ -654,6 +666,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const showProductDivider = style.showPrices !== false && productDividerPreset !== 'none';
         const isNameCentered = nameStyle.textAlign === 'center';
         const isNameRight = nameStyle.textAlign === 'right';
+        const verticalPadding = inGroup && !isSelected && !hasProductFill && !getBorderOverride(style, 'product')
+            ? 0 : Math.min(8, contentSpacing.betweenProducts);
         
         const categoryColumnCount = style.categoryColumnCount || 1;
         const productColumnCount = style.columnCount || 1;
@@ -702,8 +716,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             : product.isFreeText
                                 ? undefined
                                 : contentSpacing.betweenProducts,
-                        paddingTop: inGroup && !isSelected && !product.isFreeText && !hasProductFill && !getBorderOverride(style, 'product') ? 0 : undefined,
-                        paddingBottom: inGroup && !isSelected && !product.isFreeText && !hasProductFill && !getBorderOverride(style, 'product') ? 0 : undefined,
+                        paddingBlock: product.isFreeText ? undefined : verticalPadding,
                     }}
                 >
                 <BorderDecoration style={style} scope={product.isFreeText ? 'freeText' : 'product'} id={product.id} />
@@ -786,12 +799,10 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                          <div
                             data-product-text-row="true"
                             data-product-leader={showProductDivider || undefined}
+                            data-compact-price-gap={style.showPrices !== false && contentSpacing.productNameToPrice < DEFAULT_MENU_CONTENT_SPACING.productNameToPrice
+                                ? isNameRight ? 'start' : 'end' : undefined}
                             className={`relative flex min-w-0 ${showProductDivider || isNameCentered ? 'items-center' : 'items-start'}`}
-                            style={{
-                                marginBottom: contentSpacing.productNameToDescription,
-                                columnGap: showProductDivider ? 5 : contentSpacing.productNameToPrice,
-                                rowGap: 2,
-                            }}
+                            style={productTextRowStyle(contentSpacing)}
                          >
                             <div data-product-title-group className={`flex min-w-0 items-center gap-2 ${isNameCentered ? 'justify-center' : isNameRight ? 'justify-end' : ''}`} style={{ flexGrow: showProductDivider ? 0 : 1 }}>
                                 <MenuMarkerGlyph marker={getMarker(style, 'product')} fontSize={clampFontSize(style, 'productName', nameStyle.fontSize, 18)}
@@ -884,6 +895,9 @@ export const MenuItem: React.FC<MenuItemProps> = ({
         const productColumnCount = style.columnCount || 1;
         const categoryColumnCount = style.categoryColumnCount || 1;
         const isCardLayout = usesProductCards(style);
+        const cardTextPadding = isCardLayout
+            ? (categoryColumnCount > 1 || productColumnCount > 2 ? 6 : productColumnCount > 1 ? 8 : 16)
+            : 8;
         const compactControls = categoryColumnCount > 1 || productColumnCount > 1;
         const cardImageHeight = getProductCardImageLimit(style);
         const productGridGap = categoryColumnCount > 1
@@ -984,18 +998,23 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                 >
                                     <div data-product-card-content data-product-flow data-photo-flow={photoAlignment ?? 'template'}
                                         className={`h-full min-w-0 ${sidePhoto ? 'flow-root' : 'flex flex-col'} ${isCardLayout || hasProductFill || getBorderOverride(style, 'product') ? 'p-1.5' : ''}`}
-                                        style={{ borderRadius: 'inherit', '--automenu-background-photo-space': `calc(36px * var(${livePhotoScaleVariable('product')}, ${style.imageScale || 1}))` } as React.CSSProperties}>
+                                        style={{ borderRadius: 'inherit',
+                                            paddingBlock: isCardLayout || hasProductFill || getBorderOverride(style, 'product')
+                                                ? Math.min(6, contentSpacing.betweenProducts) : undefined,
+                                            '--automenu-background-photo-space': `calc(36px * var(${livePhotoScaleVariable('product')}, ${style.imageScale || 1}))` } as React.CSSProperties}>
                                         {renderProductPhoto(style, product, cardImageHeight, sidePhoto ? '42%' : '100%', true)}
-                                        <div data-template-content className={`${isCardLayout ? (categoryColumnCount > 1 || productColumnCount > 2 ? 'p-1.5' : productColumnCount > 1 ? 'p-2' : 'p-4') : 'py-2'} ${sidePhoto ? 'block' : 'flex flex-col flex-grow'} min-w-0 ${textAlignClass}`}>
+                                        <div data-template-content className={`${sidePhoto ? 'block' : 'flex flex-col flex-grow'} min-w-0 ${textAlignClass}`}
+                                            style={{
+                                                paddingInline: isCardLayout ? cardTextPadding : undefined,
+                                                paddingBlock: Math.min(cardTextPadding, contentSpacing.betweenProducts),
+                                            }}>
                                             <div
                                                 data-product-text-row="true"
                                                 data-product-leader={showProductDivider || undefined}
+                                                data-compact-price-gap={style.showPrices !== false && contentSpacing.productNameToPrice < DEFAULT_MENU_CONTENT_SPACING.productNameToPrice
+                                                    ? nameStyle.textAlign === 'right' ? 'start' : 'end' : undefined}
                                                 className={`relative flex min-w-0 ${showProductDivider ? 'items-center' : 'items-start'}`}
-                                                style={{
-                                                    marginBottom: contentSpacing.productNameToDescription,
-                                                    columnGap: showProductDivider ? 5 : contentSpacing.productNameToPrice,
-                                                    rowGap: 2,
-                                                }}
+                                                style={productTextRowStyle(contentSpacing)}
                                             >
                                                 <div data-product-title-group className={`flex min-w-0 items-center gap-1 ${nameStyle.textAlign === 'center' ? 'justify-center' : nameStyle.textAlign === 'right' ? 'justify-end' : 'justify-start'}`} style={{ flexGrow: showProductDivider ? 0 : 1 }}>
                                                     <MenuMarkerGlyph marker={getMarker(style, 'product')} fontSize={clampFontSize(style, 'productName', nameStyle.fontSize, 18)}
