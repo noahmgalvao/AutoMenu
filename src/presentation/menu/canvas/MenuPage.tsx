@@ -336,7 +336,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 )}
                 {isCategorySelected && !isCategoryDragged && !handlers.isResizingCategoryColumns && !handlers.editingId && (
                     <>
-                        <CanvasFlowActions
+                        <CanvasFlowActions aroundCategory
                             before={categoryAddControls.top && renderCategoryAddButton('before', categoryAddBeforeDirection)}
                             up={isCategoryControlAnchor && moveDirections.includes('top') && renderCategoryMoveButton('top')}
                             down={isCategoryControlAnchor && moveDirections.includes('bottom') && renderCategoryMoveButton('bottom')}
@@ -860,7 +860,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
             )}
             {isPageSelected && (
                 <>
-                    <CanvasActionGroup kind="page" direction="top" className="md:hidden" anchorSelector="[data-menu-page-frame]">
+                    <CanvasActionGroup kind="page" direction="top" className="md:hidden">
                         <button type="button" aria-pressed={Boolean(handlers.multiSelectMode)}
                             onClick={() => handlers.setMultiSelectMode?.(!handlers.multiSelectMode)}
                             className={`${canvasActionButtonClass} ${handlers.multiSelectMode ? 'before:!bg-indigo-100 !text-indigo-700' : ''}`}
@@ -871,7 +871,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         const placement = before ? 'antes' : 'depois';
                         const Chevron = before ? ChevronLeft : ChevronRight;
                         return <CanvasActionGroup key={direction} kind="page" direction={before ? 'left' : 'right'}
-                            className="flex-col" anchorSelector="[data-menu-page-frame]">
+                            className="flex-col">
                             <button type="button" onClick={() => onAddPage(pageIndex, direction)}
                                 className={`${canvasActionButtonClass} before:!border-indigo-600 before:!bg-indigo-600 !text-white`}
                                 title={`Adicionar página ${placement}`}><Plus size={20} /></button>
@@ -884,7 +884,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         </CanvasActionGroup>;
                     })}
                     {pageCount > 1 && pageIndex !== 0 && (
-                        <CanvasActionGroup kind="page" direction="bottom" anchorSelector="[data-menu-page-frame]">
+                        <CanvasActionGroup kind="page" direction="bottom">
                             <button type="button" onClick={() => onDeletePage(pageIndex)}
                                 className={`${canvasActionButtonClass} !text-red-600`} title="Excluir página" aria-label="Excluir página">
                                 <Trash2 size={20} />

@@ -36,22 +36,15 @@ const App: React.FC = () => {
   }, []);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [menuNameEdit, setMenuNameEdit] = useState<{ id: string; name: string } | null>(null);
-  const scrollDistance = useRef(0);
   const [isScrolling, setIsScrolling] = useState(false);
   const scrollIdleTimer = useRef<number | undefined>(undefined);
   const restoreNavigation = useCallback(() => {
     window.clearTimeout(scrollIdleTimer.current);
     scrollIdleTimer.current = undefined;
-    scrollDistance.current = 0;
     setIsScrolling(false);
   }, []);
-  const handleCanvasScroll = useCallback((verticalDelta: number) => {
-    if (verticalDelta < 0) {
-      restoreNavigation();
-      return;
-    }
-    scrollDistance.current += verticalDelta;
-    if (scrollDistance.current >= 48) setIsScrolling(true);
+  const handleCanvasScroll = useCallback(() => {
+    setIsScrolling(true);
     window.clearTimeout(scrollIdleTimer.current);
     scrollIdleTimer.current = window.setTimeout(restoreNavigation, 500);
   }, [restoreNavigation]);
@@ -183,7 +176,7 @@ const App: React.FC = () => {
     <MenuMultiSelectionProvider>
     <div className="h-screen bg-slate-50 flex flex-col font-sans text-slate-900 overflow-hidden relative"
       style={{ '--automenu-max-sheet-height': 'calc(100dvh - 4rem)' } as React.CSSProperties}>
-      <nav data-site-header data-no-browser-selection onContextMenu={preventBrowserContextMenu} className={`absolute top-0 left-0 right-0 bg-white border-b border-slate-200 h-16 ${isMenuImportOpen ? 'z-[1100]' : 'z-[60]'} transition-transform duration-300 ${isMenuImportOpen ? 'translate-y-0' : isScrolling ? '-translate-y-full md:translate-y-0' : 'translate-y-0'}`}>
+      <nav data-site-header data-no-browser-selection onContextMenu={preventBrowserContextMenu} className={`fixed md:absolute top-0 left-0 right-0 bg-white border-b border-slate-200 h-16 ${isMenuImportOpen ? 'z-[1100]' : 'z-[60]'} transition-transform duration-300 ${isMenuImportOpen ? 'translate-y-0' : isScrolling ? '-translate-y-full md:translate-y-0' : 'translate-y-0'}`}>
         <div className="w-full px-4 h-full flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
             <div className="hidden md:block bg-indigo-600 p-2 rounded-lg">
@@ -193,7 +186,7 @@ const App: React.FC = () => {
               <button
                 onClick={() => void handleCreateMenu()}
                 disabled={isMenuActionLoading}
-                className="md:hidden grid size-10 shrink-0 place-items-center rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                className="md:hidden grid size-10 shrink-0 place-items-center rounded-xl border border-indigo-600 bg-transparent text-indigo-600 hover:bg-indigo-50 disabled:opacity-50"
                 title="Novo cardápio"
               >
                 {isMenuActionLoading ? <Loader2 size={24} className="animate-spin" /> : <Plus size={24} />}
@@ -334,7 +327,7 @@ const App: React.FC = () => {
             <button
               onClick={() => void handleCreateMenu()}
               disabled={isMenuActionLoading}
-              className="grid size-11 place-items-center rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+              className="grid size-11 place-items-center rounded-xl border border-indigo-600 bg-transparent text-indigo-600 hover:bg-indigo-50 disabled:opacity-50"
               title="Novo cardápio"
             >
               {isMenuActionLoading ? <Loader2 size={24} className="animate-spin" /> : <Plus size={24} />}

@@ -135,6 +135,7 @@ function touchZoomGeometry(touches: TouchList) {
 export function bindCanvasZoomGestures(
     canvas: HTMLElement, layer: HTMLElement, getScale: () => number,
     zoomAt: (scale: number, point: CanvasPoint, anchor: CanvasPoint) => void,
+    onPinchChange?: (active: boolean) => void,
 ) {
     let pinch: { distance: number; scale: number; anchor: CanvasPoint } | undefined;
     const wheel = (event: WheelEvent) => {
@@ -150,6 +151,7 @@ export function bindCanvasZoomGestures(
         event.preventDefault();
         const { point, distance } = touchZoomGeometry(event.touches);
         pinch = { distance: Math.max(1, distance), scale: getScale(), anchor: getZoomAnchor(layer, point) };
+        onPinchChange?.(true);
     };
     const move = (event: TouchEvent) => {
         if (!pinch || event.touches.length !== 2) return;
@@ -157,7 +159,11 @@ export function bindCanvasZoomGestures(
         const { point, distance } = touchZoomGeometry(event.touches);
         zoomAt(pinch.scale * distance / pinch.distance, point, pinch.anchor);
     };
-    const end = () => { pinch = undefined; };
+    const end = () => {
+        if (!pinch) return;
+        pinch = undefined;
+        onPinchChange?.(false);
+    };
     canvas.addEventListener('wheel', wheel, { passive: false });
     canvas.addEventListener('touchstart', start, { passive: false });
     canvas.addEventListener('touchmove', move, { passive: false });

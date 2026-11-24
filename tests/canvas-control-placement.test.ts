@@ -28,3 +28,13 @@ test('the shortcut bar yields to the insert and move controls and stays inside t
         assert.ok(bar.left >= blocker.right || bar.right <= blocker.left || bar.bottom <= blocker.top || bar.top >= blocker.bottom);
     }
 });
+
+
+test('small changes in available space keep a valid control position until the preferred one has room again', () => {
+    const occupied = [{ left: 94, right: 145, top: 131, bottom: 170 }];
+    const first = placeCanvasControl(100, 132, 80, 38, visible, occupied, true);
+    const offset = { x: first.left - 100, y: first.top - 132 };
+    assert.deepEqual(placeCanvasControl(101, 132, 80, 38, visible, occupied, true, offset),
+        { ...first, left: first.left + 1, right: first.right + 1 });
+    assert.equal(placeCanvasControl(101, 132, 80, 38, visible, [], true, offset).top, 132);
+});

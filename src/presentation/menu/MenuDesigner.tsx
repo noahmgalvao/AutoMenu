@@ -68,7 +68,7 @@ interface MenuDesignerProps {
     silentPrintOptions?: Partial<PrintCanvasOptions>;
     onClose?: () => void;
     onOpenVisual?: () => void;
-    onCanvasScroll?: (verticalDelta: number) => void;
+    onCanvasScroll?: () => void;
     workspaceId: string;
     currentUserId: string;
     currentMenuId?: string;
@@ -200,6 +200,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const [hoveredFontScope, setHoveredFontScope] = useState<WordFitScope | null>(null);
     // Zoom Indicator State
     const [showZoomInfo, setShowZoomInfo] = useState(false);
+    const zoomActivityTimer = useRef<number | undefined>(undefined);
+    const zoomInputs = useRef({ pinch: false, buttons: false });
     const zoomTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const canvasScrollPosition = useRef({ left: 0, top: 0 });
     const containerRef = useRef<HTMLDivElement>(null);
@@ -623,52 +625,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     }, [hasVisibleTips]);
 
     React.useLayoutEffect(() => {
-        const container = containerRef.current;
-        const anchor = tipsAnchorRef.current;
-        const canvas = container?.querySelector<HTMLElement>('[data-automenu-editor-canvas="true"]');
-        if (!container || !anchor || !canvas) return;
-
-        let animationFrame: number | null = null;
-        const updatePosition = () => {
-            animationFrame = null;
-            const firstPage = canvas.querySelector<HTMLElement>(
-                '[data-menu-print-page="true"][data-page-index="0"]'
-            );
-            if (!firstPage) {
-                anchor.style.visibility = 'hidden';
-                return;
-            }
-
-            const containerRect = container.getBoundingClientRect();
-            const pageRect = firstPage.getBoundingClientRect();
-            anchor.style.left = `${pageRect.left - containerRect.left}px`;
-            anchor.style.top = `${pageRect.top - containerRect.top - anchor.offsetHeight - 4}px`;
-            anchor.style.visibility = 'visible';
-        };
-        const schedulePosition = () => {
-            if (animationFrame !== null) return;
-            animationFrame = window.requestAnimationFrame(updatePosition);
-        };
-        const resizeObserver = new ResizeObserver(schedulePosition);
-        const mutationObserver = new MutationObserver(records => { if (hasMenuContentMutation(records)) schedulePosition(); });
-
-        resizeObserver.observe(container);
-        resizeObserver.observe(canvas);
-        mutationObserver.observe(canvas, { childList: true, subtree: true });
-        canvas.addEventListener('scroll', schedulePosition, { passive: true });
-        window.addEventListener('resize', schedulePosition);
-        schedulePosition();
-
-        return () => {
-            if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
-            resizeObserver.disconnect();
-            mutationObserver.disconnect();
-            canvas.removeEventListener('scroll', schedulePosition);
-            window.removeEventListener('resize', schedulePosition);
-        };
-    }, [renderScale]);
-
-    React.useLayoutEffect(() => {
         const layer = zoomLayerRef.current;
         const frame = zoomFrameRef.current;
         if (!layer || !frame) return;
@@ -682,16 +638,44 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         return () => observer.disconnect();
     }, []);
 
+    const updateZoomActivity = useCallback(() => {
+        const container = containerRef.current;
+        if (!container) return;
+        if (!container.hasAttribute('data-canvas-zooming')) container.setAttribute('data-canvas-zooming', '');
+        window.clearTimeout(zoomActivityTimer.current);
+        if (!zoomInputs.current.pinch && !zoomInputs.current.buttons) {
+            zoomActivityTimer.current = window.setTimeout(() => {
+                container.removeAttribute('data-canvas-zooming');
+            }, 180);
+        }
+    }, []);
+
+    const updatePinchActivity = useCallback((pinching: boolean) => {
+        zoomInputs.current.pinch = pinching;
+        updateZoomActivity();
+    }, [updateZoomActivity]);
+
+    const updateZoomButtonActivity = useCallback((holding: boolean) => {
+        zoomInputs.current.buttons = holding;
+        updateZoomActivity();
+    }, [updateZoomActivity]);
+
+    useEffect(() => () => {
+        window.clearTimeout(zoomActivityTimer.current);
+        if (zoomTimeoutRef.current) clearTimeout(zoomTimeoutRef.current);
+    }, []);
+
     const zoomAt = useCallback((value: number, point: CanvasPoint, anchor: CanvasPoint) => {
         const canvas = canvasZoomRef.current;
         const layer = zoomLayerRef.current;
         if (!canvas || !layer) return;
         const next = Math.min(2.5, Math.max(0.3, value));
+        updateZoomActivity();
         flushSync(() => { setScale(next); setShowZoomInfo(true); });
         restoreZoomAnchor(canvas, layer, anchor, point);
         if (zoomTimeoutRef.current) clearTimeout(zoomTimeoutRef.current);
         zoomTimeoutRef.current = setTimeout(() => setShowZoomInfo(false), 2000);
-    }, []);
+    }, [updateZoomActivity]);
 
     const updateZoom = useCallback((delta: number) => {
         const canvas = canvasZoomRef.current;
@@ -705,8 +689,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     useEffect(() => {
         const canvas = canvasZoomRef.current;
         const layer = zoomLayerRef.current;
-        if (canvas && layer) return bindCanvasZoomGestures(canvas, layer, () => scaleRef.current, zoomAt);
-    }, [zoomAt]);
+        if (canvas && layer) return bindCanvasZoomGestures(canvas, layer, () => scaleRef.current, zoomAt, updatePinchActivity);
+    }, [zoomAt, updatePinchActivity]);
 
     const { handlePrint, printDialog, fileExports, onPageCountChange } = useCanvasPrinting({
         containerRef, products, style, setStyle, sortOption, currentPrintPageIndex,
@@ -723,9 +707,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const handleScroll = (event: React.UIEvent<HTMLDivElement>) => {
         const { scrollLeft: left, scrollTop: top } = event.currentTarget;
         if (left === canvasScrollPosition.current.left && top === canvasScrollPosition.current.top) return;
-        const verticalDelta = top - canvasScrollPosition.current.top;
         canvasScrollPosition.current = { left, top };
-        if (verticalDelta) onCanvasScroll?.(verticalDelta);
+        onCanvasScroll?.();
     };
 
     const handleCanvasPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -1981,14 +1964,16 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                     scale={scale}
                     updateZoom={updateZoom}
                     showZoomInfo={showZoomInfo}
+                    onHoldChange={updateZoomButtonActivity}
                 />
 
-                <div ref={tipsAnchorRef} data-canvas-control-obstacle className="absolute z-[80] flex items-start gap-2" style={{ visibility: 'hidden' }}>
+                <div ref={tipsAnchorRef} className="absolute left-4 top-20 z-[80] flex items-start">
                     {hasVisibleTips && (
                         <button
                             type="button"
                             onClick={() => setTipsOpen(current => !current)}
                             className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-600 text-base font-bold leading-none text-white shadow-md transition hover:bg-indigo-700"
+                            data-fixed-canvas-tip
                             title="Dicas do cardápio"
                             aria-label="Abrir dicas do cardápio"
                             aria-expanded={tipsOpen}
@@ -2215,7 +2200,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                     <button data-canvas-history-control onClick={redo} disabled={!canRedo} className={`p-2 bg-white rounded-full shadow-lg hover:bg-slate-50 text-slate-700 transition-all ${!canRedo ? 'text-slate-300 cursor-not-allowed' : ''}`} title="Refazer"> <Redo size={16} /> </button>
                 </div>
 
-                <div data-canvas-control-overlay className="pointer-events-none absolute inset-0 z-[71]" />
                 <div
                     ref={canvasZoomRef}
                     data-automenu-editor-canvas="true"
@@ -2245,7 +2229,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                         e.stopPropagation();
                     }}
                 >
-                    <div data-canvas-zoom-surface className="w-max flex-none">
+                    <div data-canvas-zoom-surface className="relative w-max flex-none">
+                        <div data-canvas-control-overlay className="pointer-events-none absolute inset-0 z-[71]" />
                         <div ref={zoomFrameRef} className="relative [overflow:clip] [overflow-clip-margin:32px]"
                             style={{
                                 '--canvas-render-scale': renderScale,

@@ -130,7 +130,7 @@ for (const touch of [false, true]) {
       const between = page.locator('#product-container-side-2');
       const next = page.locator('#product-container-side-12');
       await first.getByRole('heading').click();
-      await expect(first.getByTitle('Ajustar largura da coluna pela borda direita')).toBeVisible();
+      await expect(canvasActionsFor(first, 'resize').getByTitle('Ajustar largura da coluna pela borda direita')).toBeVisible();
       await shortcutsFor(first).getByTitle('Seleção múltipla').click();
       await second.getByRole('heading').click();
       await expect(shortcutsFor(second).getByTitle('Seleção múltipla')).toHaveAttribute('aria-pressed', 'true');
@@ -409,7 +409,7 @@ test('quick controls touch and resize handles stay on grid column dividers', asy
   await expect(quick.getByRole('button').first()).toHaveAttribute('title', 'Editar produto');
   await expect(canvasActionsFor(product, 'insert').getByTitle('Adicionar item à esquerda')).toBeVisible();
   await expect(canvasActionsFor(product, 'insert').getByTitle('Adicionar item à direita')).toBeVisible();
-  await expect(product.getByTitle('Ajustar largura da coluna pela borda direita')).toBeVisible();
+  await expect(canvasActionsFor(product, 'resize').getByTitle('Ajustar largura da coluna pela borda direita')).toBeVisible();
   const quickRects = await quick.getByRole('button').evaluateAll(nodes => nodes.map(node => {
     const rect = node.getBoundingClientRect();
     return { y: Math.round(rect.top), width: rect.width, left: rect.left, right: rect.right };
@@ -421,7 +421,8 @@ test('quick controls touch and resize handles stay on grid column dividers', asy
   const dividerError = await product.evaluate(element => {
     const lane = element.closest('[data-drag-column-container="category"]')!;
     const divider = (lane.getBoundingClientRect().right + lane.nextElementSibling!.getBoundingClientRect().left) / 2;
-    const handle = element.querySelector('[data-column-resize-handle]')!.getBoundingClientRect();
+    const marker = element.querySelector('[data-canvas-action-anchor="resize"]')!;
+    const handle = document.getElementById(marker.getAttribute('aria-controls')!)!.getBoundingClientRect();
     return Math.abs(handle.left + handle.width / 2 - divider);
   });
   expect(dividerError).toBeLessThan(1);
@@ -433,7 +434,8 @@ test('quick controls touch and resize handles stay on grid column dividers', asy
     ])].map(button => button.getBoundingClientRect());
     const intersects = (a: DOMRect, b: DOMRect) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1
       && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
-    const handle = node.querySelector('[data-column-resize-handle]')!.getBoundingClientRect();
+    const marker = node.querySelector('[data-canvas-action-anchor="resize"]')!;
+    const handle = document.getElementById(marker.getAttribute('aria-controls')!)!.getBoundingClientRect();
     const range = document.createRange();
     const onText = [...node.querySelectorAll('[data-word-fit]')].some(element => {
       range.selectNodeContents(element);
@@ -442,7 +444,7 @@ test('quick controls touch and resize handles stay on grid column dividers', asy
     return onText || controls.some((rect, i) => controls.slice(i + 1).some(other => intersects(rect, other)));
   });
   expect(overlap).toBe(false);
-  const handle = product.getByTitle('Ajustar largura da coluna pela borda direita');
+  const handle = canvasActionsFor(product, 'resize').getByTitle('Ajustar largura da coluna pela borda direita');
   const grip = (await handle.boundingBox())!;
   await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
   await page.mouse.down();
@@ -506,13 +508,20 @@ for (const { width, height, touch, buttonSize } of [
       await expect.poll(async () => (await product.boundingBox())!.y).toBeGreaterThan(before + 1);
     });
 
-    test('category insertion and vertical moves use two reachable columns', async ({ page }) => {
+    test('category insertion brackets the whole selected category', async ({ page }) => {
       await page.goto('/tests/fixtures/template-editor.html?editable&cols=1');
       const category = page.locator('[data-category-chunk="Principais"]');
       const title = category.locator('[data-category-id="Principais"]');
       if (touch) await title.tap();
       else await title.click();
       await expect.poll(() => category.evaluate(flowColumnsAreReachable, 4)).toBe(true);
+      const selection = (await category.boundingBox())!;
+      const groups = canvasActionsFor(category, 'insert');
+      const before = (await groups.and(page.locator('[data-canvas-action-direction="top"]')).boundingBox())!;
+      const after = (await groups.and(page.locator('[data-canvas-action-direction="bottom"]')).boundingBox())!;
+      expect(before.y + before.height).toBeLessThanOrEqual(selection.y);
+      expect(after.y).toBeGreaterThanOrEqual(selection.y + selection.height);
+
     });
 
     test('buttons remain compact and reachable for every column combination', async ({ page }) => {
@@ -565,9 +574,11 @@ for (const { width, height, touch, buttonSize } of [
             })).toEqual([]);
 
             if (lanes > 1) {
-              const handle = product.getByTitle('Ajustar largura da coluna pela borda direita');
+              const handle = canvasActionsFor(product, 'resize').getByTitle('Ajustar largura da coluna pela borda direita');
               await expect.poll(() => handle.evaluate(button => {
-                const lane = button.closest('[data-drag-column-container="category"]')!;
+                const group = button.closest('[data-canvas-action-group="resize"]')!;
+                const marker = document.querySelector(`[aria-controls="${group.id}"]`)!;
+                const lane = marker.closest('[data-drag-column-container="category"]')!;
                 const divider = (lane.getBoundingClientRect().right + lane.nextElementSibling!.getBoundingClientRect().left) / 2;
                 const rect = button.getBoundingClientRect();
                 const x = rect.left + rect.width / 2;

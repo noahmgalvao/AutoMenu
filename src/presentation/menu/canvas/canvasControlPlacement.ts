@@ -2,7 +2,7 @@ export type ControlBox = { left: number; right: number; top: number; bottom: num
 
 export const clampControl = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
-const overlaps = (a: ControlBox, b: ControlBox, gap = 0) =>
+export const controlBoxesOverlap = (a: ControlBox, b: ControlBox, gap = 0) =>
     a.left < b.right + gap && a.right > b.left - gap && a.top < b.bottom + gap && a.bottom > b.top - gap;
 
 const boxAt = (left: number, top: number, width: number, height: number): ControlBox =>
@@ -17,6 +17,7 @@ export function controlRail(anchor: ControlBox, viewport: ControlBox, previousSi
 export function placeCanvasControl(
     x: number, y: number, width: number, height: number,
     boundary: ControlBox, occupied: ControlBox[], verticalPriority: boolean,
+    previousOffset?: { x: number; y: number },
 ) {
     const x1 = Math.max(boundary.left, boundary.right - width);
     const y1 = Math.max(boundary.top, boundary.bottom - height);
@@ -24,7 +25,15 @@ export function placeCanvasControl(
     const preferredY = clampControl(y, boundary.top, y1);
     const preferred = boxAt(preferredX, preferredY, width, height);
     const gap = 3;
-    if (occupied.every(box => !overlaps(box, preferred, gap))) return preferred;
+    if (previousOffset && (previousOffset.x || previousOffset.y)) {
+        const previous = boxAt(x + previousOffset.x, y + previousOffset.y, width, height);
+        const inside = previous.left >= boundary.left && previous.right <= boundary.right
+            && previous.top >= boundary.top && previous.bottom <= boundary.bottom;
+        const preferredHasRoom = preferredX === x && preferredY === y
+            && occupied.every(box => !controlBoxesOverlap(box, preferred, gap + 8));
+        if (!preferredHasRoom && inside && occupied.every(box => !controlBoxesOverlap(box, previous))) return previous;
+    }
+    if (occupied.every(box => !controlBoxesOverlap(box, preferred, gap))) return preferred;
 
     const xs = new Set([preferredX, boundary.left, x1]);
     const ys = new Set([preferredY, boundary.top, y1]);

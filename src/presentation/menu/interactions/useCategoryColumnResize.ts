@@ -270,10 +270,11 @@ export const useCategoryColumnResize = (
     const startCategoryColumnResize = useCallback((
         event: React.PointerEvent<HTMLElement>,
         edge: ResizeEdge,
+        anchor: HTMLElement,
     ) => {
         const source = event.currentTarget;
-        const column = source.closest<HTMLElement>('[data-drag-column-container="category"]');
-        const page = source.closest<HTMLElement>('[data-menu-print-page="true"]');
+        const column = anchor.closest<HTMLElement>('[data-drag-column-container="category"]');
+        const page = anchor.closest<HTMLElement>('[data-menu-print-page="true"]');
         const grid = column?.parentElement;
         if (!column || !page || !grid) return;
 

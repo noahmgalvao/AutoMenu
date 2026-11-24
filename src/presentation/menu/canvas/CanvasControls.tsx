@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom';
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import type { FlowDirection } from './flowControls';
-import { controlRail, placeCanvasControl, type ControlBox as Box } from './canvasControlPlacement';
+import { controlRail, controlBoxesOverlap, placeCanvasControl, type ControlBox as Box } from './canvasControlPlacement';
 import { getCanvasViewportBounds, observeAnchorScroll } from './canvasViewport';
 
 type ControlKind = 'quick' | 'flow' | 'insert' | 'move' | 'page' | 'resize';
@@ -12,10 +12,11 @@ type Control = {
     kind: ControlKind;
     hoverOnly: boolean;
     lastHovered?: number;
+    lastOffset?: { x: number; y: number };
 };
 
 const margin = 4;
-const priority: Record<ControlKind, number> = { flow: 0, insert: 1, move: 2, page: 2, quick: 3, resize: 4 };
+const priority: Record<ControlKind, number> = { flow: 0, insert: 1, move: 2, page: 2, resize: 3, quick: 4 };
 const pageControlObservers = new WeakMap<HTMLElement, ReturnType<typeof observeControls>>();
 
 export const canvasActionButtonClass = 'automenu-canvas-action relative grid shrink-0 place-items-center text-slate-600 before:pointer-events-none before:absolute before:rounded-full before:border before:border-slate-200 before:bg-white before:shadow-sm hover:before:border-indigo-300 hover:before:bg-indigo-50 hover:text-indigo-700 focus-visible:outline-none focus-visible:before:outline-2 focus-visible:before:outline-indigo-600';
@@ -26,7 +27,7 @@ const insetBounds = ({ left, right, top, bottom }: Box): Box => ({
 
 function placeControls(
     page: HTMLElement, canvasElement: HTMLElement | null, zoomLayer: HTMLElement | null,
-    obstacles: NodeListOf<HTMLElement> | undefined, controls: Set<Control>, railSides: WeakMap<HTMLElement, number>, expireHover: () => void,
+    container: HTMLElement | null, controls: Set<Control>, railSides: WeakMap<HTMLElement, number>, expireHover: () => void,
 ) {
     const hoverEnabled = matchMedia('(hover: hover) and (min-width: 768px)').matches;
     const time = performance.now();
@@ -53,14 +54,19 @@ function placeControls(
     const pageBounds = insetBounds(pageRect);
 
     const blockers: Box[] = [];
-    obstacles?.forEach(element => {
-        if (element.getClientRects().length && getComputedStyle(element).visibility === 'visible') {
-            blockers.push(element.getBoundingClientRect());
-        }
+    container?.querySelectorAll<HTMLElement>(':scope > [data-canvas-control-obstacle], [data-fixed-canvas-tip]').forEach(element => {
+        if (element.getClientRects().length && getComputedStyle(element).visibility === 'visible') blockers.push(element.getBoundingClientRect());
     });
-    document.querySelectorAll<HTMLElement>('[data-site-header], [data-mobile-designer-tab]').forEach(element => {
-        if (element.getClientRects().length) blockers.push(element.getBoundingClientRect());
-    });
+    const header = document.querySelector<HTMLElement>('[data-site-header]');
+    if (header) {
+        const { left, right } = header.getBoundingClientRect();
+        blockers.push({ left, right, top: 0, bottom: header.offsetHeight });
+    }
+    const tabs = document.querySelector<HTMLElement>('[data-mobile-designer-tab]')?.parentElement;
+    if (tabs?.offsetHeight) {
+        const { left, right } = tabs.getBoundingClientRect();
+        blockers.push({ left, right, top: window.innerHeight - tabs.offsetHeight, bottom: window.innerHeight });
+    }
     page.querySelectorAll('.automenu-image-resize-handle, [data-free-text-resize-handle]').forEach(handle => {
         blockers.push(handle.getBoundingClientRect());
     });
@@ -69,7 +75,8 @@ function placeControls(
     const visible = canvas || pageBounds;
     const entries = active.map(control => ({ control, target: control.anchor.getBoundingClientRect() }));
     const rails = new Map<HTMLElement, ReturnType<typeof controlRail>>();
-    for (const { control: { node, anchor, direction, kind, hoverOnly }, target } of entries) {
+    for (const { control, target } of entries) {
+        const { node, anchor, direction, kind, hoverOnly, lastOffset } = control;
         const { left, right, top, bottom } = visible;
         if (target.bottom < top || target.top > bottom || target.right < left || target.left > right) {
             node.style.visibility = 'hidden';
@@ -85,7 +92,7 @@ function placeControls(
         let x = centerX - width / 2;
         let y = centerY - height / 2;
 
-        if (kind === 'flow' || kind === 'insert') {
+        if (kind === 'flow' || (kind === 'insert' && direction === 'left')) {
             const rail = rails.get(anchor) ?? controlRail(target, visible, railSides.get(anchor));
             rails.set(anchor, rail);
             const { edge, side } = rail;
@@ -97,6 +104,9 @@ function placeControls(
             if (kind === 'insert' && !entries.some(entry => entry.control.anchor === anchor && entry.control.kind === 'flow')) {
                 x = outerX;
             }
+        } else if (kind === 'insert') {
+            x = target.left;
+            y = direction === 'top' ? target.top - height - margin : target.bottom + margin;
         } else if (kind === 'quick') {
             x = target.right - width;
             y = target.top - height - 8;
@@ -111,33 +121,39 @@ function placeControls(
             const neighborRect = neighbor.getBoundingClientRect();
             x = (direction === 'left' ? (neighborRect.right + columnRect.left) / 2
                 : (columnRect.right + neighborRect.left) / 2) - width / 2;
-            if (x < left - width / 2 || x > right - width / 2) {
-                node.style.visibility = 'hidden';
-                continue;
-            }
             y = Math.min(y, target.top);
         } else if (direction === 'left' || direction === 'right') {
             x = direction === 'left' ? target.left - width - margin : target.right + margin;
         } else {
-            if (kind === 'page' && direction === 'top') x = target.right - width - margin;
             y = direction === 'top' ? target.top - height - margin : target.bottom + margin;
         }
 
-        const occupied = kind === 'quick' ? blockers : [...blockers, ...handles];
-        const placement = placeCanvasControl(x, y, width, height, visible, kind === 'resize' ? [] : occupied, kind === 'quick');
+        const occupied = [...blockers, ...handles];
+        let boundary = visible;
+        if (kind === 'insert' && direction === 'top' && target.top - visible.top >= height + margin) {
+            boundary = { ...visible, bottom: target.top - margin };
+        } else if (kind === 'insert' && direction === 'bottom' && visible.bottom - target.bottom >= height + margin) {
+            boundary = { ...visible, top: target.bottom + margin };
+        } else if (kind === 'resize' && x >= left && x + width <= right) {
+            const divider = { ...visible, left: x, right: x + width };
+            const alongDivider = placeCanvasControl(x, y, width, height, divider, occupied, false, lastOffset);
+            if (occupied.every(box => !controlBoxesOverlap(box, alongDivider))) boundary = divider;
+        }
+        const placement = placeCanvasControl(x, y, width, height, boundary, occupied, kind === 'quick', lastOffset);
         if (hoverOnly && (Math.abs(placement.top - y) > height || Math.abs(placement.left - x) > width / 2)) {
             node.style.visibility = 'hidden';
             continue;
         }
-        if (kind !== 'resize') blockers.push(placement);
+        control.lastOffset = { x: placement.left - x, y: placement.top - y };
+        blockers.push(placement);
 
         const host = node.parentElement;
         const onScreen = host?.hasAttribute('data-canvas-control-overlay');
         const parent = onScreen && host ? host : (node.offsetParent as HTMLElement | null) || zoomLayer || anchor;
         const parentRect = parent.getBoundingClientRect();
         const controlScale = onScreen ? 1 : scale;
-        const leftStyle = `${(Math.round(placement.left) - parentRect.left) / controlScale - parent.clientLeft}px`;
-        const topStyle = `${(Math.round(placement.top) - parentRect.top) / controlScale - parent.clientTop}px`;
+        const leftStyle = `${Math.round(placement.left - parentRect.left) / controlScale - parent.clientLeft}px`;
+        const topStyle = `${Math.round(placement.top - parentRect.top) / controlScale - parent.clientTop}px`;
         if (node.style.left !== leftStyle) node.style.left = leftStyle;
         if (node.style.top !== topStyle) node.style.top = topStyle;
         const transform = onScreen ? '' : `scale(${1 / scale})`;
@@ -151,7 +167,8 @@ function observeControls(frame: HTMLElement, page: HTMLElement) {
     const railSides = new WeakMap<HTMLElement, number>();
     const canvas = frame.closest<HTMLElement>('[data-automenu-editor-canvas]');
     const zoomLayer = frame.closest<HTMLElement>('[data-canvas-zoom-layer]');
-    const obstacles = canvas?.parentElement?.querySelectorAll<HTMLElement>(':scope > [data-canvas-control-obstacle]');
+    const container = canvas?.parentElement ?? null;
+    const obstacles = container?.querySelectorAll<HTMLElement>(':scope > [data-canvas-control-obstacle]');
     const viewport = window.visualViewport;
     let pending = 0;
     let hoverTimer: number | undefined;
@@ -165,8 +182,11 @@ function observeControls(frame: HTMLElement, page: HTMLElement) {
         if (pending) return;
         pending = requestAnimationFrame(() => {
             pending = 0;
-            placeControls(page, canvas, zoomLayer, obstacles, controls, railSides, expireHover);
-            if (zoomLayer?.getAnimations?.().some(animation => animation.playState === 'running')) update();
+            if (container?.hasAttribute('data-canvas-zooming')) {
+                controls.forEach(({ node }) => { node.style.visibility = 'hidden'; });
+                return;
+            }
+            placeControls(page, canvas, zoomLayer, container, controls, railSides, expireHover);
         });
     };
     const observer = new ResizeObserver(update);
@@ -176,13 +196,16 @@ function observeControls(frame: HTMLElement, page: HTMLElement) {
     observer.observe(page);
     if (canvas) observer.observe(canvas);
     mutations.observe(frame, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class', 'style'] });
+    if (container) {
+        mutations.observe(container, { childList: true, attributes: true, attributeFilter: ['data-canvas-zooming'] });
+    }
     if (zoomLayer) mutations.observe(zoomLayer, { attributes: true, attributeFilter: ['style'] });
     if (canvas) mutations.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
     obstacles?.forEach(element => {
         observer.observe(element);
         mutations.observe(element, { attributes: true, attributeFilter: ['class', 'style'] });
     });
-    const shortcutLayer = canvas?.parentElement?.querySelector<HTMLElement>(':scope > [data-canvas-control-overlay]')
+    const shortcutLayer = canvas?.querySelector<HTMLElement>('[data-canvas-control-overlay]')
         || frame.parentElement?.querySelector<HTMLElement>(':scope > [data-canvas-shortcuts]');
     shortcutLayer?.addEventListener('pointerover', update);
     shortcutLayer?.addEventListener('pointerout', update);
@@ -192,7 +215,7 @@ function observeControls(frame: HTMLElement, page: HTMLElement) {
     frame.addEventListener('focusout', update);
     const stopObservingScroll = observeAnchorScroll(page, update);
     window.addEventListener('resize', update);
-    window.addEventListener('transitionend', update);
+    frame.addEventListener('transitionend', update);
     viewport?.addEventListener('resize', update);
     viewport?.addEventListener('scroll', update);
     return {
@@ -218,7 +241,7 @@ function observeControls(frame: HTMLElement, page: HTMLElement) {
                 frame.removeEventListener('focusout', update);
                 stopObservingScroll();
                 window.removeEventListener('resize', update);
-                window.removeEventListener('transitionend', update);
+                frame.removeEventListener('transitionend', update);
                 viewport?.removeEventListener('resize', update);
                 viewport?.removeEventListener('scroll', update);
                 pageControlObservers.delete(frame);
@@ -239,14 +262,15 @@ export function CanvasActionGroup({ direction, kind, anchorId, anchorSelector, h
     const [overlay, setOverlay] = useState<HTMLElement | null>(null);
     const groupId = React.useId();
     useLayoutEffect(() => {
+        if (kind === 'page') return;
         const origin = marker.current ?? ref.current;
         const frame = origin?.closest<HTMLElement>('[data-menu-page-frame]');
         const page = frame?.querySelector<HTMLElement>(':scope > [data-menu-print-page]');
         const anchor = anchorId ? document.getElementById(anchorId)
             : anchorSelector ? origin?.closest<HTMLElement>(anchorSelector) : origin?.parentElement;
         if (!frame || !page || !anchor) return;
-        const host = frame.closest('[data-automenu-editor-canvas]')?.parentElement
-            ?.querySelector<HTMLElement>(':scope > [data-canvas-control-overlay]')
+        const host = frame.closest('[data-automenu-editor-canvas]')
+            ?.querySelector<HTMLElement>('[data-canvas-control-overlay]')
             || frame.parentElement?.querySelector<HTMLElement>(':scope > [data-canvas-shortcuts]');
         if (host && host !== overlay) { setOverlay(host); return; }
         const node = ref.current;
@@ -263,7 +287,7 @@ export function CanvasActionGroup({ direction, kind, anchorId, anchorSelector, h
         <div {...props} id={props.id || groupId} ref={ref} data-canvas-action-group={kind} data-canvas-action-direction={direction} data-selected-control={hoverOnly ? undefined : 'true'}
             data-drag-ignore="true" data-print-control="true"
             className={`pointer-events-auto absolute z-[80] flex w-max min-w-min origin-top-left flex-wrap items-center gap-1 ${className}`}
-            style={{ visibility: 'hidden' }}
+            style={kind === 'page' ? undefined : { visibility: 'hidden' }}
             onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}>
             {children}
         </div>
@@ -275,8 +299,9 @@ export function CanvasActionGroup({ direction, kind, anchorId, anchorSelector, h
     </>;
 }
 
-export function CanvasFlowActions({ before, up, down, after }: {
+export function CanvasFlowActions({ before, up, down, after, aroundCategory = false }: {
     before?: React.ReactNode;
+    aroundCategory?: boolean;
     up?: React.ReactNode;
     down?: React.ReactNode;
     after?: React.ReactNode;
@@ -286,7 +311,10 @@ export function CanvasFlowActions({ before, up, down, after }: {
             {up && <div style={{ gridRow: 1 }}>{up}</div>}
             {down && <div style={{ gridRow: 2 }}>{down}</div>}
         </CanvasActionGroup>}
-        {(before || after) && <CanvasActionGroup kind="insert" direction="left">
+        {aroundCategory ? <>
+            {before && <CanvasActionGroup kind="insert" direction="top">{before}</CanvasActionGroup>}
+            {after && <CanvasActionGroup kind="insert" direction="bottom">{after}</CanvasActionGroup>}
+        </> : (before || after) && <CanvasActionGroup kind="insert" direction="left">
             {before && <div style={{ gridRow: 1 }}>{before}</div>}
             {after && <div style={{ gridRow: 2 }}>{after}</div>}
         </CanvasActionGroup>}

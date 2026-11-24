@@ -364,6 +364,13 @@ test('mobile header returns after scrolling and stays accessible above either ex
   await expect.poll(async () => (await header.boundingBox())!.y).toBeLessThan(-30);
   await expect.poll(async () => (await header.boundingBox())!.y, { timeout: 1800 }).toBe(0);
 
+  await canvas.evaluate(element => {
+    element.scrollTop -= 24;
+    element.dispatchEvent(new Event('scroll'));
+  });
+  await expect.poll(async () => (await header.boundingBox())!.y).toBeLessThan(-30);
+  await expect.poll(async () => (await header.boundingBox())!.y).toBe(0);
+
   for (const panel of ['Visual', 'Produtos']) {
     if (panel === 'Produtos') await page.getByRole('button', { name: 'Produtos', exact: true }).last().click();
     const heading = page.getByRole('heading', { name: panel, exact: true });

@@ -72,7 +72,7 @@ body {
 }
 
 [data-canvas-action-group="flow"],
-[data-canvas-action-group="insert"] {
+[data-canvas-action-group="insert"][data-canvas-action-direction="left"] {
   --canvas-flow-button-size: 28px;
   display: grid;
   width: var(--canvas-flow-button-size);
@@ -81,14 +81,48 @@ body {
   pointer-events: none;
 }
 
-:is([data-canvas-action-group="flow"], [data-canvas-action-group="insert"]) .automenu-canvas-action {
+:is([data-canvas-action-group="flow"], [data-canvas-action-group="insert"][data-canvas-action-direction="left"]) .automenu-canvas-action {
   width: var(--canvas-flow-button-size);
   height: var(--canvas-flow-button-size);
   pointer-events: auto;
 }
 
-[data-canvas-selection-dragging] [data-canvas-action-group],
-:has(> [data-automenu-editor-canvas] [data-canvas-selection-dragging], > [data-canvas-selection-dragging]) > [data-canvas-control-overlay] {
+[data-canvas-action-group="page"] {
+  --page-control-scale: calc(1 / var(--canvas-render-scale, 1));
+  transform-origin: center;
+}
+[data-canvas-action-group="page"][data-canvas-action-direction="left"] {
+  left: 0;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(var(--page-control-scale));
+}
+[data-canvas-action-group="page"][data-canvas-action-direction="right"] {
+  right: 0;
+  top: 50%;
+  transform: translate(50%, -50%) scale(var(--page-control-scale));
+}
+[data-canvas-action-group="page"][data-canvas-action-direction="top"] {
+  right: 12%;
+  top: 0;
+  transform: translateY(-50%) scale(var(--page-control-scale));
+}
+[data-canvas-action-group="page"][data-canvas-action-direction="bottom"] {
+  left: 50%;
+  bottom: 0;
+  transform: translate(-50%, 50%) scale(var(--page-control-scale));
+}
+
+[data-canvas-zooming] :is(
+  [data-canvas-action-group]:not([data-canvas-action-group="page"]),
+  [data-canvas-transform-handle],
+  [data-free-text-resize-handle],
+  .automenu-image-resize-handle
+),
+body:has([data-canvas-zooming]) :is([data-inline-format-toolbar], [data-canvas-object-menu]) {
+  visibility: hidden !important;
+}
+
+[data-canvas-selection-dragging] [data-canvas-action-group] {
   visibility: hidden !important;
 }
 
@@ -100,7 +134,7 @@ body {
 }
 
 @media (pointer: coarse) {
-  :is([data-canvas-action-group="flow"], [data-canvas-action-group="insert"]) { --canvas-flow-button-size: 44px; }
+  :is([data-canvas-action-group="flow"], [data-canvas-action-group="insert"][data-canvas-action-direction="left"]) { --canvas-flow-button-size: 44px; }
 
   .automenu-canvas-action {
     width: 44px;
