@@ -272,6 +272,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                         editModeId={editModeId}
                         savedEditIds={savedEditIds}
                         editTogether
+                        isProductDesigner
                         menuOpenId={menuOpenId}
                         setMenuOpenId={setMenuOpenId}
                         formData={formData}

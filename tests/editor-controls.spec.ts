@@ -67,6 +67,31 @@ test('image actions reflect each photo group and adding enables it with the shar
   await expect(value).toHaveClass(/automenu-limit-feedback/);
 });
 
+test('a collapsed product list opens only after two clicks on the same category card', async ({ page }) => {
+  await page.goto(fixture + '?photos=list&product-designer&no-photos');
+  const designer = page.locator('#designer-sheet-products');
+  const category = designer.locator('[data-drag-type="category"][data-drag-id="Entradas"]');
+  const categoryRow = category.locator('../..');
+  const productList = categoryRow.locator('..').locator('[data-designer-category-products]');
+  const name = category.getByText('Entradas', { exact: true });
+
+  await expect(designer.getByRole('button', { name: 'Adicionar produto no início' })).toHaveCount(0);
+  await categoryRow.locator(':scope > button').click();
+  await expect(productList).toBeHidden();
+
+  await name.evaluate(target => {
+    const categoryHeader = target.closest('[data-drag-type="category"]')?.parentElement?.parentElement;
+    if (!categoryHeader) throw new Error('Missing category header');
+    for (const area of [target, categoryHeader, target]) {
+      area.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    }
+  });
+  await expect(productList).toBeHidden();
+  await categoryRow.dispatchEvent('click', { detail: 1 });
+  await name.dblclick();
+  await expect(productList).toBeVisible();
+});
+
 test('product designer also offers Add when its photo group is empty and hidden', async ({ page }) => {
   await page.route('**/tests/asset-upload', route => route.fulfill({ json: { asset: { id: 'test-photo' }, url: '/tests/designer-photo.png' } }));
   await page.route('**/tests/designer-photo.png', route => route.fulfill({ contentType: 'image/png', body: photo }));

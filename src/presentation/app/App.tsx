@@ -186,7 +186,7 @@ const App: React.FC = () => {
               <button
                 onClick={() => void handleCreateMenu()}
                 disabled={isMenuActionLoading}
-                className="md:hidden grid size-10 shrink-0 place-items-center rounded-xl border border-indigo-600 bg-transparent text-indigo-600 hover:bg-indigo-50 disabled:opacity-50"
+                className="md:hidden grid size-10 shrink-0 place-items-center text-indigo-600 hover:text-indigo-700 disabled:opacity-50"
                 title="Novo cardápio"
               >
                 {isMenuActionLoading ? <Loader2 size={24} className="animate-spin" /> : <Plus size={24} />}

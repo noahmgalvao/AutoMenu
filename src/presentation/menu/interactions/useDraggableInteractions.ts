@@ -244,7 +244,8 @@ const CATEGORY_PAGE_SWITCH_THRESHOLD_PX = 96;
 const PRODUCT_DESIGNER_CATEGORY_REORDER_MIN_DISTANCE_PX = 12;
 const PRODUCT_DESIGNER_CATEGORY_REORDER_EDGE_RATIO = 0.2;
 const PRODUCT_DESIGNER_AUTO_SCROLL_EDGE_PX = 72;
-const PRODUCT_DESIGNER_AUTO_SCROLL_MAX_SPEED_PX = 18;
+const PRODUCT_DESIGNER_AUTO_SCROLL_PX_PER_SECOND = 360;
+const IMPORT_PREVIEW_AUTO_SCROLL_MAX_SPEED_PX = 18;
 const TOUCH_CANCEL_COMMIT_DELAY_MS = 900;
 const DRAG_EVENT_OPTIONS: AddEventListenerOptions = { passive: false, capture: true };
 
@@ -581,8 +582,12 @@ export const useDraggableInteractions = (
             || typeof window === 'undefined'
         ) return;
 
-        const step = () => {
-            const container = productDesignerScrollContainerRef.current;
+        const container = productDesignerScrollContainerRef.current;
+        const isProductDesigner = Boolean(container?.closest('#designer-sheet-products'));
+        let lastFrameTime = performance.now();
+        let scrollRemainder = 0;
+
+        const step = (now: number) => {
             const currentPointer = productDesignerAutoScrollPointerRef.current;
             if (!isDraggingRef.current || !container || !currentPointer) {
                 productDesignerAutoScrollFrameRef.current = null;
@@ -607,8 +612,21 @@ export const useDraggableInteractions = (
                 return;
             }
 
+            const elapsed = Math.min(32, Math.max(0, now - lastFrameTime));
+            lastFrameTime = now;
+            const speed = isProductDesigner
+                ? PRODUCT_DESIGNER_AUTO_SCROLL_PX_PER_SECOND * elapsed / 1000 * intensity ** 2
+                : Math.max(2, Math.ceil(IMPORT_PREVIEW_AUTO_SCROLL_MAX_SPEED_PX * intensity));
+            scrollRemainder += direction * speed;
+            const scrollStep = Math.trunc(scrollRemainder);
+            scrollRemainder -= scrollStep;
+            if (scrollStep === 0) {
+                productDesignerAutoScrollFrameRef.current = window.requestAnimationFrame(step);
+                return;
+            }
+
             const previousScrollTop = container.scrollTop;
-            container.scrollTop += direction * Math.max(2, Math.ceil(PRODUCT_DESIGNER_AUTO_SCROLL_MAX_SPEED_PX * intensity));
+            container.scrollTop += scrollStep;
             const appliedDelta = container.scrollTop - previousScrollTop;
             if (Math.abs(appliedDelta) < 0.5) {
                 productDesignerAutoScrollFrameRef.current = null;

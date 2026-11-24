@@ -13,6 +13,8 @@ import { resolveProductDivider } from '../menu/canvas/categoryDividers';
 import { isPristineNewCategory, isPristineNewProduct } from '../../domain/menu/pristineItems';
 import { formatMenuPrice, resolveMenuPriceDecimalPlaces } from '../../domain/menu/price';
 
+const CATEGORY_DOUBLE_CLICK_MS = 400;
+
 interface PendingImageUpload {
   id: string;
   previewUrl: string;
@@ -75,6 +77,7 @@ interface ProductListProps {
   editModeId: string | null;
   savedEditIds: ReadonlySet<string>;
   editTogether?: boolean;
+  isProductDesigner?: boolean;
   menuOpenId: string | null;
   setMenuOpenId: (id: string | null) => void;
   formData: Partial<Product>;
@@ -111,6 +114,7 @@ export const ProductList: React.FC<ProductListProps> = ({
   toggleCollapse,
   editModeId, savedEditIds,
   editTogether = false,
+  isProductDesigner = false,
   menuOpenId,
   setMenuOpenId,
   formData,
@@ -133,6 +137,7 @@ export const ProductList: React.FC<ProductListProps> = ({
   productImageUpload,
   categoryImageUpload,
 }) => {
+  const previousCategoryClick = React.useRef<{ area: HTMLElement; time: number } | null>(null);
   const [shakingCategory, setShakingCategory] = React.useState<string | null>(null);
   const categoryOptionsPointerDownRef = React.useRef<{ category: string; startedAt: number } | null>(null);
   const draggingCategory = handlers.draggedItem?.type === 'category';
@@ -154,6 +159,19 @@ export const ProductList: React.FC<ProductListProps> = ({
     window.addEventListener('menu-category-limit-reached', handleLimitReached);
     return () => window.removeEventListener('menu-category-limit-reached', handleLimitReached);
   }, []);
+
+  React.useEffect(() => {
+    if (!isProductDesigner) return;
+    const clearOutsideCategoryClick = (event: MouseEvent) => {
+      const previous = previousCategoryClick.current;
+      const target = event.target;
+      if (previous && (!(target instanceof Element) || !previous.area.contains(target) || target.closest('button'))) {
+        previousCategoryClick.current = null;
+      }
+    };
+    document.addEventListener('click', clearOutsideCategoryClick, true);
+    return () => document.removeEventListener('click', clearOutsideCategoryClick, true);
+  }, [isProductDesigner]);
 
   const imageOptions = (id: string, type: PhotoType, hasPhoto: boolean) => {
     const key = type === 'category' ? 'showCategoryImages' : 'showImages';
@@ -215,10 +233,10 @@ export const ProductList: React.FC<ProductListProps> = ({
           <div 
             key={cat}
             id={cat}
-            className={`relative mb-4 transition-all min-w-0 ${hasOpenMenuInCategory ? 'z-[120]' : 'z-0'} ${isCatHidden ? 'grayscale' : ''}`}
+            className={`relative min-w-0 ${isProductDesigner ? 'mb-2 last:mb-0' : 'mb-4 transition-all'} ${hasOpenMenuInCategory ? 'z-[120]' : 'z-0'} ${isCatHidden ? 'grayscale' : ''}`}
           >
             {/* Category Header */}
-            <div className="flex items-center gap-2 group mb-2 min-w-0">
+            <div className={`flex items-center gap-2 group min-w-0 ${isProductDesigner ? '' : 'mb-2'}`}>
               <button 
                 onClick={(e) => { e.stopPropagation(); toggleCollapse(cat); }}
                 className="p-1 hover:bg-slate-200 rounded text-slate-400 transition-colors"
@@ -259,7 +277,19 @@ export const ProductList: React.FC<ProductListProps> = ({
                     onDragStart={(e) => e.preventDefault()}
                     onContextMenu={(e) => e.preventDefault()}
                     className={`automenu-drag-item select-none ${(style.categoryColumnCount || 1) === 2 ? 'touch-none md:touch-pan-y' : 'touch-pan-y'} cursor-grab flex items-center justify-between p-2 bg-slate-100 border rounded-lg transition-all active:cursor-grabbing ${isCatHidden ? 'bg-slate-200 text-slate-400' : ''} ${isSelected ? 'border-indigo-500 ring-1 ring-indigo-500' : 'border-slate-200 group-hover:border-indigo-300'} ${isBeingDragged ? 'opacity-40' : ''}`}
-                    onClick={(e) => { e.stopPropagation(); handlers.handleSelection('category', cat, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey || e.metaKey || handlers.multiSelectMode }); }}
+                    onClick={event => {
+                      event.stopPropagation();
+                      if (isProductDesigner && event.detail > 0 && event.target instanceof Element && !event.target.closest('button')) {
+                        const previous = previousCategoryClick.current;
+                        if (previous?.area === event.currentTarget && event.timeStamp - previous.time <= CATEGORY_DOUBLE_CLICK_MS) {
+                          previousCategoryClick.current = null;
+                          if (isCollapsed) toggleCollapse(cat);
+                          return;
+                        }
+                        previousCategoryClick.current = { area: event.currentTarget, time: event.timeStamp };
+                      }
+                      handlers.handleSelection('category', cat, { shiftKey: event.shiftKey, ctrlKey: event.ctrlKey || event.metaKey || handlers.multiSelectMode });
+                    }}
                   >
                     <div className="flex items-center gap-2 font-bold text-slate-700 text-sm min-w-0">
                       <GripVertical size={14} className="text-slate-400" />
@@ -346,18 +376,19 @@ export const ProductList: React.FC<ProductListProps> = ({
                   </div>
                 )}
               </div>
-              {!isEditing && !draggingCategory && <ListActions
+              {!isEditing && (isProductDesigner || !draggingCategory) && <ListActions
                 addLabel="Adicionar categoria abaixo" editLabel="Editar categoria"
+                compact={isProductDesigner} invisible={draggingCategory}
                 add={() => initiateAdd(cat, 'category')} edit={() => startEdit(cat)} />}
             </div>
 
-            <div data-designer-category-products hidden={draggingCategory}
-              className={`space-y-2 pl-8 border-l-2 border-slate-100 ml-3 ${isCollapsed ? 'max-h-0 overflow-hidden opacity-0' : 'opacity-100'}`}
+            <div data-designer-category-products hidden={draggingCategory || (isProductDesigner && isCollapsed)}
+              className={`pl-8 border-l-2 border-slate-100 ml-3 ${isProductDesigner ? 'mt-1 space-y-1.5' : 'space-y-2'} ${!isProductDesigner && isCollapsed ? 'max-h-0 overflow-hidden opacity-0' : ''}`}
               inert={isCollapsed || draggingCategory || undefined}>
-              <div className="flex justify-end pr-1">
+              {!isProductDesigner && <div className="flex justify-end pr-1">
                 <ListAction label="Adicionar produto no início" add busy={shakingCategory === cat}
                   onClick={() => initiateAdd(cat, 'product', 'first')} />
-              </div>
+              </div>}
               {newItemDraft?.type === 'product' && newItemDraft.categoryId === cat && newItemDraft.position === 'first' && renderProductDraft()}
               {(grouped[cat] || []).filter(product => !product.isFreeText).map(product => {
                 const pIsHidden = style.hiddenProductIds?.includes(product.id);
@@ -489,7 +520,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                     )}
                     </div>
                     {(savedEditIds.has(product.id) || (!editAllItems && editModeId !== product.id)) && <ListActions
-                      addLabel="Adicionar produto abaixo" editLabel="Editar produto" busy={shakingCategory === cat}
+                      addLabel="Adicionar produto abaixo" editLabel="Editar produto" busy={shakingCategory === cat} compact={isProductDesigner}
                       add={() => initiateAdd(cat, 'product', { after: product.id })} edit={() => startEdit(product.id)} />}
                   </div>
                   {newItemDraft?.type === 'product' && newItemDraft.categoryId === cat
@@ -524,21 +555,21 @@ export const ProductList: React.FC<ProductListProps> = ({
   );
 };
 
-function ListAction({ label, add, busy, onClick }: { label: string; add?: boolean; busy?: boolean; onClick: () => void }) {
+function ListAction({ label, add, busy, compact, onClick }: { label: string; add?: boolean; busy?: boolean; compact?: boolean; onClick: () => void }) {
   return <button type="button" title={label} aria-label={label} data-product-designer-edit-trigger
-    className={`grid size-8 shrink-0 place-items-center rounded-full border shadow-sm ${add
+    className={`grid shrink-0 place-items-center rounded-full border shadow-sm ${compact ? 'size-7' : 'size-8'} ${add
       ? busy ? 'animate-shake border-red-500 bg-red-600 text-white' : 'border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-700'
       : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
     onPointerDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); onClick(); }}>
-    {add ? <Plus size={16} /> : <Edit3 size={15} />}
+    {add ? <Plus size={compact ? 14 : 16} /> : <Edit3 size={compact ? 13 : 15} />}
   </button>;
 }
 
-function ListActions({ addLabel, editLabel, add, edit, busy }: {
-  addLabel: string; editLabel: string; add: () => void; edit: () => void; busy?: boolean;
+function ListActions({ addLabel, editLabel, add, edit, busy, compact, invisible }: {
+  addLabel: string; editLabel: string; add: () => void; edit: () => void; busy?: boolean; compact?: boolean; invisible?: boolean;
 }) {
-  return <div className="flex shrink-0 flex-col gap-1">
-    <ListAction label={addLabel} add busy={busy} onClick={add} />
-    <ListAction label={editLabel} onClick={edit} />
+  return <div className={`flex shrink-0 flex-col ${compact ? 'gap-0.5' : 'gap-1'} ${invisible ? 'invisible' : ''}`}>
+    <ListAction label={addLabel} add busy={busy} compact={compact} onClick={add} />
+    <ListAction label={editLabel} compact={compact} onClick={edit} />
   </div>;
 }
