@@ -1,3 +1,5 @@
+import { GeneralRulesButton, useGeneralRules } from '../menu/designer/GeneralRules';
+import { restoreGeneralRules, useRestoreTemplateSettings } from '../menu/designer/useRestoreTemplateSettings';
 import { DesignerTapButton } from '../common/DesignerTapButton';
 import { preventBrowserContextMenu } from '../common/noBrowserSelection';
 import React from 'react';
@@ -37,6 +39,8 @@ interface ProductDesignerProps {
     setProducts: React.Dispatch<React.SetStateAction<Product[]>>;
     style: MenuStyle;
     setStyle: React.Dispatch<React.SetStateAction<MenuStyle>>;
+    templates?: MenuStyle[];
+    onRulesLayoutEditingChange?: (editing: boolean) => void;
     setTemplates?: React.Dispatch<React.SetStateAction<MenuStyle[]>>;
     sortOption: SortOption;
     workspaceId: string;
@@ -56,6 +60,8 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
     style,
     setStyle,
     setTemplates,
+    templates = [],
+    onRulesLayoutEditingChange,
     sortOption,
     workspaceId,
     currentUserId,
@@ -132,7 +138,13 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
         onProductAdded: setAddedProductId,
     });
 
-    const { sheetRef, height, isMobile, isExpanded, toggleExpanded, dragHandlers } = useBottomSheetDrag(isOpen, onClose);
+    const { sheetRef, height, isMobile, isExpanded, openPartial, toggleExpanded, dragHandlers } = useBottomSheetDrag(isOpen, onClose);
+    const restoreTemplateSettings = useRestoreTemplateSettings(style, setStyle, templates, workspaceId);
+    const rules = useGeneralRules({
+        style, setStyle, isOpen, restoreDefaults: () => void restoreTemplateSettings(restoreGeneralRules),
+        onLayoutEditingChange: onRulesLayoutEditingChange,
+        prepareEditor: () => { if (isExpanded) openPartial(); },
+    });
     const importFlowRef = React.useRef<MenuImportFlowHandle>(null);
     const [isProductTransferOpen, setIsProductTransferOpen] = React.useState(false);
 
@@ -267,6 +279,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                     document.body.dataset.automenuDeleteContext = 'product-designer';
                 }}
             >
+                {rules.editor || <>
                 {/* Header */}
                 <div
                     className="p-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center flex-shrink-0 min-w-0 touch-none cursor-grab active:cursor-grabbing"
@@ -276,6 +289,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                         <ShoppingCart size={16} /> Produtos
                     </h2>
                     <div className="flex shrink-0 gap-1.5">
+                        <GeneralRulesButton open={rules.open} />
                         <button type="button" onClick={onPdfClick} className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-100 flex items-center gap-1.5 pointer-events-auto" onPointerDown={e => e.stopPropagation()} title="Exportar PDF"><FileText size={14} /> PDF</button>
                         <DesignerTapButton type="button" onClick={toggleExpanded} aria-expanded={isExpanded} className="md:hidden h-8 w-8 rounded-lg text-slate-500 hover:bg-white hover:text-slate-800 pointer-events-auto flex items-center justify-center" onPointerDown={e => e.stopPropagation()} title={isExpanded ? 'Voltar à visualização parcial' : 'Expandir painel'} aria-label={isExpanded ? 'Voltar à visualização parcial' : 'Expandir painel'}>{isExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}</DesignerTapButton>
                         <DesignerTapButton type="button" onClick={onClose} className="md:hidden h-8 w-8 rounded-lg text-slate-500 hover:bg-white hover:text-slate-800 pointer-events-auto flex items-center justify-center" onPointerDown={e => e.stopPropagation()} title="Fechar painel" aria-label="Fechar painel"><X size={18} /></DesignerTapButton>
@@ -350,7 +364,9 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                         categoryImageUpload={categoryImageUpload}
                     />
                 </div>
+                </>}
             </div>
+            {rules.dialog}
 
             {/* Insights Modal */}
             {showInsights && (

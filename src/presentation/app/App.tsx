@@ -57,6 +57,7 @@ function PublishedLinkNotice({ button, onDismiss }: {
 }
 
 const App: React.FC = () => {
+  const [isProductRulesLayoutEditing, setProductRulesLayoutEditing] = useState(false);
   const [activePanel, setActivePanel] = useState<'product' | 'style' | null>('style');
   const [hasOpenedProductDesigner, setHasOpenedProductDesigner] = useState(false);
   const [isCreateMenuOpen, setIsCreateMenuOpen] = useState(false);
@@ -396,6 +397,8 @@ const App: React.FC = () => {
               style={style}
               setStyle={setStyle}
               setTemplates={setTemplates}
+              templates={templates}
+              onRulesLayoutEditingChange={setProductRulesLayoutEditing}
               sortOption={sortOption}
               isOpen={activePanel === 'product'}
               onClose={() => setActivePanel(null)}
@@ -427,6 +430,7 @@ const App: React.FC = () => {
             canRedo={canRedo}
             isOpen={activePanel === 'style'}
             isProductDesignerOpen={activePanel === 'product'}
+            isProductRulesLayoutEditing={activePanel === 'product' && isProductRulesLayoutEditing}
             onOpenVisual={() => setActivePanel('style')}
             printRequestId={printRequestId}
             printRequestMode={printRequestMode}

@@ -338,6 +338,29 @@ test('general rules save immediately and reopen on Layout', async ({ page }) => 
   await expect(rules).toHaveCount(0);
 });
 
+test('the Product Designer opens the shared general rules and keeps live changes', async ({ page }) => {
+  await openWorkspace(page);
+  const visualGear = page.locator('#designer-sheet-visual').getByRole('button', { name: 'Configurações do cardápio' });
+  const visualButtonStyle = await visualGear.getAttribute('class');
+  await page.getByTitle('Designer de produtos', { exact: true }).click();
+  const product = page.locator('#designer-sheet-products');
+  const gear = product.getByRole('button', { name: 'Configurações do cardápio' });
+  await expect(gear).toHaveClass(visualButtonStyle!);
+  await gear.click();
+  const rules = page.getByRole('dialog', { name: 'Regras gerais' });
+  await rules.getByRole('button', { name: 'Editar margens' }).click();
+  const editor = product.getByRole('region', { name: 'Margens' });
+  await expect(page.locator('[data-canvas-zoom-layer]')).toHaveAttribute('inert', '');
+  await editor.getByRole('spinbutton', { name: 'Superior', exact: true }).fill('20');
+  await editor.getByRole('button', { name: 'Confirmar e voltar às regras gerais' }).click();
+  await rules.getByRole('button', { name: 'Fechar', exact: true }).click();
+  await expect(page.locator('[data-canvas-zoom-layer]')).not.toHaveAttribute('inert', '');
+  await page.getByTitle('Designer visual', { exact: true }).click();
+  await visualGear.click();
+  await rules.getByRole('button', { name: 'Editar margens' }).click();
+  await expect(page.getByRole('spinbutton', { name: 'Superior', exact: true })).toHaveValue('20');
+});
+
 test('editing layout updates the canvas before confirmation and can reset the opening values', async ({ page }) => {
   await page.goto('/tests/fixtures/template-editor.html?cols=2&lanes=2&general-rules');
   const gear = page.getByRole('button', { name: 'Configurações do cardápio' });

@@ -1,6 +1,6 @@
 import { useMemo, type RefObject } from 'react';
 import type { MenuStyle, Product, SortOption } from '../../../domain/menu/model';
-import type { PdfExportResult } from '../../../infrastructure/browser/pdfExport';
+import type { PdfExportResult, PrintAssetCache } from '../../../infrastructure/browser/pdfExport';
 import type { PrintCanvasOptions } from './PrintCanvasModal';
 
 export interface CanvasFileExports {
@@ -24,7 +24,7 @@ export function useCanvasFileExports(
         let pdfTask: Promise<PdfExportResult> | undefined;
         const jpgResults = new Map<number, File>();
         const jpgTasks = new Map<number, Promise<File>>();
-        const assetCache = new Map<string, string>();
+        const assetCache: PrintAssetCache = new Map();
 
         // Reuse ready files so the share sheet can open within the original tap.
         const pdf = () => {

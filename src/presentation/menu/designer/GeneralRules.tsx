@@ -1,5 +1,5 @@
-import { useId, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { Check, Pencil, RotateCcw, X } from 'lucide-react';
+import { useEffect, useId, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { Check, Pencil, RotateCcw, Settings, X } from 'lucide-react';
 import { BooleanSwitch } from '../../common/BooleanSwitch';
 import type { FontSizeLimitKey, MenuContentSpacing, MenuMargins, MenuStyle } from '../../../domain/menu/model';
 import {
@@ -9,7 +9,7 @@ import {
 import { FontSizeInput } from './FontSizeInput';
 import { MenuDesignDialog, designDialogButton } from './MenuDesignDialog';
 
-export type RulesLayoutSection = 'spacing' | 'margins';
+type RulesLayoutSection = 'spacing' | 'margins';
 
 const sectionNames = { spacing: 'Espaçamentos', margins: 'Margens' } as const;
 const layoutSections = ['spacing', 'margins'] as const;
@@ -163,7 +163,7 @@ function ResetSectionButton({ section, reset }: { section: RulesLayoutSection; r
     className={iconButton}><RotateCcw size={17} /></button>;
 }
 
-export function GeneralRulesDialog({
+function GeneralRulesDialog({
   style, setStyle, close, edit, reset, restoreDefaults,
 }: RulesProps & {
   close: () => void;
@@ -248,7 +248,7 @@ export function GeneralRulesDialog({
   </MenuDesignDialog>;
 }
 
-export function RulesLayoutEditor({
+function RulesLayoutEditor({
   style, setStyle, section, reset, close, confirm,
 }: RulesProps & {
   section: RulesLayoutSection;
@@ -284,4 +284,66 @@ export function RulesLayoutEditor({
         className="grid size-9 place-items-center rounded-full bg-emerald-600 text-white hover:bg-emerald-700"><Check size={19} /></button>
     </footer>
   </section>;
+}
+
+export function GeneralRulesButton({ open }: { open: () => void }) {
+  return <button type="button" onClick={open} onPointerDown={event => event.stopPropagation()}
+    aria-label="Configurações do cardápio" title="Configurações do cardápio"
+    className="grid h-8 w-9 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100">
+    <Settings size={16} />
+  </button>;
+}
+
+export function useGeneralRules({
+  style, setStyle, isOpen, restoreDefaults, prepareEditor, onLayoutEditingChange,
+}: RulesProps & {
+  isOpen: boolean;
+  restoreDefaults: () => void;
+  prepareEditor: () => void;
+  onLayoutEditingChange?: (editing: boolean) => void;
+}) {
+  const [snapshot, setSnapshot] = useState<MenuStyle | null>(null);
+  const [section, setSection] = useState<RulesLayoutSection | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setSnapshot(null);
+      setSection(null);
+    }
+  }, [isOpen]);
+
+  const editing = isOpen && snapshot !== null && section !== null;
+  useEffect(() => {
+    if (!editing) return;
+    onLayoutEditingChange?.(true);
+    return () => onLayoutEditingChange?.(false);
+  }, [editing, onLayoutEditingChange]);
+
+  const close = () => {
+    setSnapshot(null);
+    setSection(null);
+  };
+
+  const reset = (target: RulesLayoutSection) => {
+    if (!snapshot) return;
+    if (target === 'margins') {
+      if (style.margins === snapshot.margins && style.pagePadding === snapshot.pagePadding) return;
+      setStyle(current => ({ ...current, margins: snapshot.margins, pagePadding: snapshot.pagePadding, name: 'Custom' }));
+    } else {
+      if (style.contentSpacing === snapshot.contentSpacing && style.itemGap === snapshot.itemGap) return;
+      setStyle(current => ({ ...current, contentSpacing: snapshot.contentSpacing, itemGap: snapshot.itemGap, name: 'Custom' }));
+    }
+  };
+
+  return {
+    open: () => setSnapshot(style),
+    editor: editing && <RulesLayoutEditor
+      style={style} setStyle={setStyle} section={section}
+      reset={() => reset(section)} close={close} confirm={() => setSection(null)}
+    />,
+    dialog: isOpen && snapshot && !section && <GeneralRulesDialog
+      style={style} setStyle={setStyle} close={close} reset={reset} restoreDefaults={restoreDefaults}
+      edit={target => { prepareEditor(); setSection(target); }}
+    />,
+  };
 }

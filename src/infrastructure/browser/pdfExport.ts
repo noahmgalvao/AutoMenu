@@ -4,7 +4,7 @@ import {
   type PdfPageSizePx,
   resolvePdfPageIndexes,
 } from '../../domain/publishing/printOptions';
-import html2canvas from 'html2canvas-pro';
+import { rasterizePrintPage } from './rasterizePrintPage';
 import type { PdfPageImage } from './composeMenuPdf';
 import { runFileExport } from './runFileExport';
 
@@ -44,7 +44,15 @@ const PAGE_WIDTH_PX = 794;
 
 const PAGE_HEIGHT_PX = 1123;
 
-const EXPORT_CAPTURE_SCALE = 1.5;
+const PRINT_PIXELS_PER_CSS_PIXEL = 300 / 96;
+const MAX_EXPORT_PIXELS = 16_000_000;
+const MAX_EXPORT_DIMENSION = 8192;
+const EXPORT_JPEG_QUALITY = 1;
+
+const getCaptureScale = ({ width, height }: PdfPageSizePx) => Math.min(
+  PRINT_PIXELS_PER_CSS_PIXEL, Math.sqrt(MAX_EXPORT_PIXELS / (width * height)),
+  MAX_EXPORT_DIMENSION / Math.max(width, height),
+);
 
 const TRANSPARENT_PIXEL_DATA_URL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
 
@@ -181,52 +189,46 @@ const waitForImageReady = async (image: HTMLImageElement) => {
   }
 };
 
-const inlineAsset = async (
-  url: string,
-  cache: Map<string, string>,
-  onDebug?: PdfDebugReporter
-) => {
-  if (!url || url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('#')) return url;
-  if (cache.has(url)) return cache.get(url) || TRANSPARENT_PIXEL_DATA_URL;
+export type PrintAssetCache = Map<string, Promise<string>>;
 
-  try {
-    const parsed = new URL(url, window.location.href);
-    if (parsed.origin === window.location.origin) return url;
+const inlineAsset = async (url: string, cache: PrintAssetCache, onDebug?: PdfDebugReporter) => {
+  if (!url || url.startsWith('data:') || url.startsWith('#')) return url;
+  const absoluteUrl = new URL(url, document.baseURI).href;
+  const pending = cache.get(absoluteUrl);
+  if (pending) return pending;
 
-    const response = await waitWithTimeout(
-      fetch(url, { mode: 'cors', credentials: 'omit' }),
-      12000,
-      'Tempo excedido ao carregar imagem externa.'
-    );
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+  const request = (async () => {
+    try {
+      const response = await fetch(absoluteUrl, { mode: 'cors', signal: AbortSignal.timeout(12000) });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await readBlobAsDataUrl(await response.blob());
+    } catch (error) {
+      emitDebug(onDebug, 'warning', 'assets', 'PDF_ASSET_BLOCKED', 'Um recurso externo ficou indisponível para exportação.', {
+        url: safeAssetUrl(absoluteUrl),
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      return TRANSPARENT_PIXEL_DATA_URL;
     }
-
-    const dataUrl = await readBlobAsDataUrl(await response.blob());
-    cache.set(url, dataUrl);
-    return dataUrl;
-  } catch (error) {
-    cache.set(url, TRANSPARENT_PIXEL_DATA_URL);
-    emitDebug(onDebug, 'warning', 'assets', 'PDF_ASSET_BLOCKED', 'Um recurso externo foi omitido do PDF.', {
-      url: safeAssetUrl(url),
-      reason: error instanceof Error ? error.message : String(error),
-      hint: 'Verifique CORS, URL expirada, permissao do arquivo ou bloqueio de rede.',
-    });
-    return TRANSPARENT_PIXEL_DATA_URL;
-  }
+  })();
+  cache.set(absoluteUrl, request);
+  return request;
 };
 
 const inlineCssUrls = async (
   value: string,
-  cache: Map<string, string>,
-  onDebug?: PdfDebugReporter
+  cache: PrintAssetCache,
+  onDebug?: PdfDebugReporter,
+  baseUrl = document.baseURI,
 ) => {
-  const matches = Array.from(value.matchAll(/url\(["']?([^"')]+)["']?\)/g));
+  const matches = Array.from(value.matchAll(/url\((?:"([^"]*)"|'([^']*)'|([^)]*))\)/g));
+  if (!matches.length) return value;
+  const urls = await Promise.all(matches.map(match => {
+    const url = (match[1] ?? match[2] ?? match[3]).trim();
+    if (!url || url.startsWith('data:') || url.startsWith('#')) return url;
+    return inlineAsset(new URL(url, baseUrl).href, cache, onDebug);
+  }));
   let nextValue = value;
-  for (const match of matches) {
-    const replacement = await inlineAsset(match[1], cache, onDebug);
-    nextValue = nextValue.replace(match[0], `url("${replacement}")`);
-  }
+  matches.forEach((match, index) => { nextValue = nextValue.replace(match[0], () => `url("${urls[index]}")`); });
   return nextValue;
 };
 
@@ -234,7 +236,7 @@ const preparePageClone = async (
   source: HTMLElement,
   pageSize: PdfPageSizePx,
   printBackgrounds: boolean,
-  assetCache: Map<string, string>,
+  assetCache: PrintAssetCache,
   onDebug?: PdfDebugReporter
 ) => {
   const sandbox = document.createElement('div');
@@ -266,22 +268,19 @@ const preparePageClone = async (
 
   try {
     const images = Array.from(clone.querySelectorAll<HTMLImageElement>('img'));
+    for (const image of images) image.loading = 'eager';
     await Promise.all(images.map(async (image) => {
       const sourceUrl = image.currentSrc || image.src;
-      image.crossOrigin = 'anonymous';
+      image.removeAttribute('srcset');
+      image.removeAttribute('sizes');
+      image.removeAttribute('crossorigin');
+      if (!sourceUrl) return;
       image.src = await inlineAsset(sourceUrl, assetCache, onDebug);
       await waitWithTimeout(
         waitForImageReady(image),
         15000,
         'Tempo excedido ao preparar uma imagem para o PDF.'
       );
-    }));
-
-    const styledElements = [clone, ...Array.from(clone.querySelectorAll<HTMLElement>('*'))];
-    await Promise.all(styledElements.map(async (element) => {
-      const computedBackground = window.getComputedStyle(element).backgroundImage;
-      if (!computedBackground || computedBackground === 'none') return;
-      element.style.backgroundImage = await inlineCssUrls(computedBackground, assetCache, onDebug);
     }));
 
     await waitWithTimeout(document.fonts?.ready || Promise.resolve(), 5000, 'Tempo excedido ao carregar fontes.').catch((error) => {
@@ -371,13 +370,12 @@ const renderPageAsJpeg = async (
   source: HTMLElement,
   pageNumber: number,
   options: Pick<PdfPrintOptions, 'printBackgrounds' | 'grayscale'>,
-  captureScale: number,
-  quality: number,
-  assetCache: Map<string, string>,
+  assetCache: PrintAssetCache,
   onDebug?: PdfDebugReporter
 ) => {
   await yieldToBrowser();
   const pageSize = getPageElementSizePx(source);
+  const captureScale = getCaptureScale(pageSize);
   emitDebug(onDebug, 'info', 'capture', 'PDF_CAPTURE_START', `Capturando página ${pageNumber}.`, {
     scale: captureScale,
     width: pageSize.width,
@@ -390,30 +388,50 @@ const renderPageAsJpeg = async (
     const preparedPage = await preparePageClone(source, pageSize, options.printBackgrounds, assetCache, onDebug);
     sandbox = preparedPage.sandbox;
     const { clone } = preparedPage;
-    canvas = await html2canvas(clone, {
-      // The export sandbox contains the page. Avoid cloning the live editor and its dialogs.
-      ignoreElements: element => element.parentElement === document.body
-        && element !== sandbox && element.tagName !== 'STYLE' && element.tagName !== 'LINK',
-      backgroundColor: '#ffffff',
-      scale: captureScale,
-      useCORS: true,
-      allowTaint: false,
-      logging: false,
-      removeContainer: true,
-      imageTimeout: 15000,
-      width: pageSize.width,
-      height: pageSize.height,
-      windowWidth: pageSize.width,
-      windowHeight: pageSize.height,
-      scrollX: 0,
-      scrollY: 0,
-    });
+    try {
+      canvas = await rasterizePrintPage(clone, pageSize.width, pageSize.height, captureScale,
+        (value, baseUrl) => inlineCssUrls(value, assetCache, onDebug, baseUrl));
+    } catch (error) {
+      // Keep file generation available on browsers that block SVG HTML capture.
+      emitDebug(onDebug, 'warning', 'capture', 'PDF_NATIVE_RENDER_UNAVAILABLE', 'O navegador usou o renderizador de compatibilidade.', {
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      const styledElements = [clone, ...Array.from(clone.querySelectorAll<HTMLElement>('*'))];
+      await Promise.all(styledElements.map(async (element) => {
+        const computedBackground = window.getComputedStyle(element).backgroundImage;
+        if (!computedBackground || computedBackground === 'none') return;
+        element.style.backgroundImage = await inlineCssUrls(computedBackground, assetCache, onDebug);
+      }));
+
+      const { default: html2canvas } = await import('html2canvas-pro');
+      clone.querySelectorAll<HTMLElement>('[style*="rotate:"]').forEach(node => {
+        if (!node.style.rotate || node.style.rotate === 'none') return;
+        node.style.transform = `rotate(${node.style.rotate}) ${node.style.transform || ''}`;
+        node.style.removeProperty('rotate');
+      });
+      canvas = await html2canvas(clone, {
+        ignoreElements: element => element.parentElement === document.body
+          && element !== sandbox && element.tagName !== 'STYLE' && element.tagName !== 'LINK',
+        backgroundColor: '#ffffff',
+        scale: captureScale,
+        useCORS: true,
+        logging: false,
+        imageTimeout: 15000,
+        width: pageSize.width,
+        height: pageSize.height,
+        // Retain the same responsive breakpoints as the page on screen.
+        windowWidth: window.innerWidth,
+        windowHeight: window.innerHeight,
+        scrollX: 0,
+        scrollY: 0,
+      });
+    }
 
     if (!canvas.width || !canvas.height) {
       throw new PdfExportError('PDF_EMPTY_CANVAS', 'capture', `A captura da página ${pageNumber} ficou vazia.`);
     }
 
-    const jpeg = await convertCanvasToJpeg(canvas, options.grayscale, quality);
+    const jpeg = await convertCanvasToJpeg(canvas, options.grayscale, EXPORT_JPEG_QUALITY);
     emitDebug(onDebug, 'success', 'capture', 'PDF_CAPTURE_OK', `Página ${pageNumber} capturada.`, {
       width: canvas.width,
       height: canvas.height,
@@ -481,10 +499,10 @@ export async function exportMenuPageToJpg(
   element: HTMLElement,
   pageNumber: number,
   title: string,
-  assetCache: Map<string, string>,
+  assetCache: PrintAssetCache,
 ) {
   const { jpeg } = await capturePageAsJpeg(
-    element, pageNumber, { printBackgrounds: true, grayscale: false }, EXPORT_CAPTURE_SCALE, 0.92, assetCache,
+    element, pageNumber, { printBackgrounds: true, grayscale: false }, assetCache,
   );
   return new File([jpeg], `${sanitizeFileName(title)}-pagina-${pageNumber}.jpg`, { type: 'image/jpeg' });
 }
@@ -522,10 +540,10 @@ export const exportMenuPagesToPdf = async ({
     );
   }
 
-  const assetCache = new Map<string, string>();
+  const assetCache: PrintAssetCache = new Map();
   const pages: PdfPageImage[] = [];
   for (const { element, index } of pagesToPrint) {
-    pages.push(await capturePageAsJpeg(element, index + 1, options, EXPORT_CAPTURE_SCALE, 0.9, assetCache, onDebug));
+    pages.push(await capturePageAsJpeg(element, index + 1, options, assetCache, onDebug));
   }
 
   emitDebug(onDebug, 'info', 'compose', 'PDF_COMPOSE_START', 'Montando o PDF.', { pages: pages.length });

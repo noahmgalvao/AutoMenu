@@ -70,10 +70,7 @@ function LivePrintPreview({ page, width, height, options }: {
       preparePrintPageContent(clone, options.printBackgrounds);
       clone.removeAttribute('id');
       clone.removeAttribute('data-menu-print-page');
-      clone.querySelectorAll('[id], [data-canvas-selection-outline]').forEach(node => {
-        if (node.hasAttribute('data-canvas-selection-outline')) node.remove();
-        else node.removeAttribute('id');
-      });
+      clone.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'));
       clone.inert = true;
       host.replaceChildren(clone);
     };

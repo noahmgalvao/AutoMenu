@@ -4,11 +4,10 @@ import { MenuFontContext } from './designer/SearchableSelects';
 import { hasMenuContentMutation } from './canvas/menuContentMutations';
 import { applyContrastTip, scanBackgroundTextOverlap, scanTextContrast, type ContrastTip, type OverlapTip } from './canvas/canvasTextTips';
 import { categoryName } from '../../domain/menu/categoryName';
-import { applyTemplateToCurrentStyle, getAppliedTemplateId } from '../../application/templates/templateApplication';
+import { applyTemplateToCurrentStyle } from '../../application/templates/templateApplication';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import type { Product, MenuStyle, SortOption, ElementStyle, AddedImage, CanvasShape } from '../../domain/menu/model';
-import { INITIAL_STYLE, PRESET_TEMPLATES } from '../../domain/menu/defaults';
 import { MenuPreview } from './canvas/MenuPreview';
 import { Undo, Redo, AlertCircle, Check, X } from 'lucide-react';
 import { ZoomControls } from './designer/ZoomControls';
@@ -31,7 +30,7 @@ import {
     type WordFitScope,
 } from './canvas/textFit';
 import { roundPrice } from '../../domain/menu/price';
-import { resolveFontSizeLimits, resolveMenuContentSpacing, resolveMenuMargins, resolveMinimumFontSize } from '../../domain/menu/styleRules';
+import { restoreGeneralRules, useRestoreTemplateSettings } from './designer/useRestoreTemplateSettings';
 import { resolveMenuPageDimensions } from '../../domain/menu/pageSetup';
 import { optimizeImageForUpload, preloadImage } from '../../infrastructure/browser/imageUpload';
 import { FontPropagationPrompt, type FontPropagationRequest } from './FontPropagationPrompt';
@@ -61,6 +60,7 @@ interface MenuDesignerProps {
     canRedo?: boolean;
     isOpen?: boolean;
     isProductDesignerOpen?: boolean;
+    isProductRulesLayoutEditing?: boolean;
     printRequestId?: number;
     printRequestMode?: 'download' | 'publish' | 'publish-silent';
     onPrintComplete?: (result: PdfExportResult, requestId: number) => void;
@@ -158,8 +158,9 @@ const formatLayoutIssueBreakdown = (categories: number, products: number, freeTe
     return `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`;
 };
 
-const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, onProductEditChange, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintDownloadChange, silentPrintOptions, virtualLinkControls, fileExportRef, onExportablePagesChange, onSelectedPagesChange, onClose, onOpenVisual, onCanvasScroll, workspaceId, currentUserId, currentMenuId, onSaveTemplate, onPublishTemplate, splitCategoryAcrossPages: legacySplit = false, productsCanChangeCategory: legacyDrag = false }) => {
-    const { assets: { uploadFileAsset }, workspace: { loadTemplateVersion } } = useAppServices();
+const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, onProductEditChange, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, isProductRulesLayoutEditing = false, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintDownloadChange, silentPrintOptions, virtualLinkControls, fileExportRef, onExportablePagesChange, onSelectedPagesChange, onClose, onOpenVisual, onCanvasScroll, workspaceId, currentUserId, currentMenuId, onSaveTemplate, onPublishTemplate, splitCategoryAcrossPages: legacySplit = false, productsCanChangeCategory: legacyDrag = false }) => {
+    const { assets: { uploadFileAsset } } = useAppServices();
+    const restoreTemplateSettings = useRestoreTemplateSettings(style, setStyle, templates, workspaceId);
     const splitCategoryAcrossPages = style.splitCategoryAcrossPages ?? legacySplit;
     const productsCanChangeCategory = style.productsCanChangeCategory ?? legacyDrag;
     const [scale, setScale] = useState(DEFAULT_PREVIEW_ZOOM);
@@ -270,14 +271,14 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 : next;
         });
     }, []);
-    const [rulesLayoutEditing, setRulesLayoutEditing] = useState(false);
-    const changeRulesLayoutEditing = useCallback((editing: boolean) => {
-        setRulesLayoutEditing(editing);
-        if (editing) {
+    const [isVisualRulesLayoutEditing, setVisualRulesLayoutEditing] = useState(false);
+    const rulesLayoutEditing = isVisualRulesLayoutEditing || isProductRulesLayoutEditing;
+    React.useLayoutEffect(() => {
+        if (rulesLayoutEditing) {
             changeSelection({ type: null, id: null });
             setTipsOpen(false);
         }
-    }, [changeSelection]);
+    }, [changeSelection, rulesLayoutEditing]);
     const handleCanvasSelectedItems = useCallback((items: SelectionItem[]) => {
         onSelectedPagesChange?.(items.filter(item => item.type === 'page').map(item => Number(item.id)));
         const targeted = items.filter(item => item.type === 'category' || item.type === 'product');
@@ -823,32 +824,10 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const applyTemplate = (template: MenuStyle) =>
         setStyle((current) => applyTemplateToCurrentStyle(current, template));
 
-    const restoreTemplateSettings = async (restore: (current: MenuStyle, template: MenuStyle) => MenuStyle) => {
-        const id = getAppliedTemplateId(style) ?? style.id;
-        const versionId = style.appliedTemplateVersionId;
-        const currentTemplate = templates.find(template => template.id === id)
-            || PRESET_TEMPLATES.find(template => template.id === id);
-        const historical = workspaceId && versionId && versionId !== currentTemplate?.templateVersionId
-            ? await loadTemplateVersion({ workspaceId, versionId }).catch(() => null) : null;
-        setStyle(current => current.id !== style.id || (getAppliedTemplateId(current) ?? current.id) !== id || current.appliedTemplateVersionId !== versionId
-            ? current : restore(current, historical || currentTemplate || INITIAL_STYLE));
-    };
-
     const handleResetDesign = () => restoreTemplateSettings((current, template) =>
         applyTemplateToCurrentStyle({ ...current, itemFormattingOverrides: undefined }, template));
 
-    const restoreRuleDefaults = () => restoreTemplateSettings((current, template) => ({
-        ...current,
-        name: 'Custom',
-        margins: resolveMenuMargins(template),
-        contentSpacing: resolveMenuContentSpacing(template),
-        showPrices: template.showPrices ?? true,
-        splitCategoryAcrossPages: template.splitCategoryAcrossPages ?? INITIAL_STYLE.splitCategoryAcrossPages,
-        productsCanChangeCategory: template.productsCanChangeCategory ?? INITIAL_STYLE.productsCanChangeCategory,
-        allowSameWordBreak: template.allowSameWordBreak ?? false,
-        minimumFontSize: resolveMinimumFontSize(template),
-        fontSizeLimits: resolveFontSizeLimits(template),
-    }));
+    const restoreRuleDefaults = () => restoreTemplateSettings(restoreGeneralRules);
 
     const handleProductUpdate = (id: string, field: keyof Product, value: any, priceEnteredWithDecimals?: boolean) => {
         if (!setProducts) return;
@@ -2380,7 +2359,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 onPdfClick={() => handlePrint()}
                 handleResetDesign={handleResetDesign}
                 restoreRuleDefaults={() => void restoreRuleDefaults()}
-                onRulesLayoutEditingChange={changeRulesLayoutEditing}
+                onRulesLayoutEditingChange={setVisualRulesLayoutEditing}
                 style={style}
                 setStyle={setStyle}
                 templates={templates}
