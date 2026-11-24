@@ -1,4 +1,5 @@
 import QRCode from 'qrcode';
+import { runFileExport } from './runFileExport';
 
 export const copyText = async (value: string) => {
   if (navigator.clipboard?.writeText) {
@@ -63,9 +64,9 @@ export async function downloadJpgFiles(files: File[], title: string) {
     downloadBlob(files[0], files[0].name);
     return;
   }
-  const { zipSync } = await import('fflate');
-  const entries = await Promise.all(files.map(async file => [file.name, new Uint8Array(await file.arrayBuffer())] as const));
-  // JPEGs are already compressed.
-  const archive = zipSync(Object.fromEntries(entries), { level: 0 });
-  downloadBlob(new Blob([archive], { type: 'application/zip' }), `${title}.zip`);
+  const archive = await runFileExport({ kind: 'jpg-zip', files }, async () => {
+    const { zipJpgFiles } = await import('./zipJpgFiles');
+    return zipJpgFiles(files);
+  });
+  downloadBlob(archive, `${title}.zip`);
 }

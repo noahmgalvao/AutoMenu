@@ -206,6 +206,10 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
     }, [categories, collapsedCategories, draggedItem, draggedSelection, isOpen]);
 
     React.useEffect(() => {
+        if (!isOpen && menuOpenId) setMenuOpenId(null);
+    }, [isOpen, menuOpenId, setMenuOpenId]);
+
+    React.useEffect(() => {
         if (!editModeId) return;
         if (!isOpen) {
             saveOnExit();
@@ -323,7 +327,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                         savedEditIds={savedEditIds}
                         editTogether
                         isProductDesigner
-                        menuOpenId={menuOpenId}
+                        menuOpenId={isOpen ? menuOpenId : null}
                         setMenuOpenId={setMenuOpenId}
                         formData={formData}
                         setFormData={setFormData}

@@ -11,7 +11,7 @@ import '../designer/templateDesign.css';
 import React from 'react';
 import { resolveMenuPriceDecimalPlaces } from '../../../domain/menu/price';
 import type { AddedImage, Product, MenuStyle } from '../../../domain/menu/model';
-import { Crop, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CopyCheck, MoreHorizontal, Plus, Edit3, Trash2 } from 'lucide-react';
+import { Crop, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CopyCheck, MoreHorizontal, Plus, Edit3, Trash2 } from 'lucide-react';
 import { Resizable } from 're-resizable';
 import { MenuItem } from './MenuItem';
 import { CanvasActionGroup, CanvasFlowActions, canvasActionButtonClass } from './CanvasControls';
@@ -864,7 +864,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         <button type="button" aria-pressed={Boolean(handlers.multiSelectMode)}
                             onClick={() => handlers.setMultiSelectMode?.(!handlers.multiSelectMode)}
                             className={`${canvasActionButtonClass} ${handlers.multiSelectMode ? 'before:!bg-indigo-100 !text-indigo-700' : ''}`}
-                            title="Seleção múltipla"><CheckSquare size={18} /></button>
+                            title="Seleção múltipla"><CopyCheck size={19} /></button>
                     </CanvasActionGroup>
                     {(['before', 'after'] as const).filter(direction => pageAddControls[direction]).map(direction => {
                         const before = direction === 'before';

@@ -1,16 +1,22 @@
-const modals = new Set<HTMLElement>();
+const modals = new Map<HTMLElement, number>();
 const scrollKeys = new Set([' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Home', 'End']);
 
 function preventBackgroundScroll(event: Event) {
   let active: HTMLElement | undefined;
-  for (const modal of modals) active = modal;
+  let highestPriority = -Infinity;
+  for (const [modal, priority] of modals) {
+    if (priority >= highestPriority) {
+      active = modal;
+      highestPriority = priority;
+    }
+  }
   if (!active || event.composedPath().includes(active)) return;
   if (event instanceof KeyboardEvent && !scrollKeys.has(event.key)) return;
   event.preventDefault();
   event.stopPropagation();
 }
 
-export function lockModalScrolling(element: HTMLElement | null) {
+export function lockModalScrolling(element: HTMLElement | null, priority = 0) {
   if (!element) return;
   if (!modals.size) {
     document.documentElement.dataset.modalScrollLocked = 'true';
@@ -18,7 +24,7 @@ export function lockModalScrolling(element: HTMLElement | null) {
     document.addEventListener('touchmove', preventBackgroundScroll, { capture: true, passive: false });
     document.addEventListener('keydown', preventBackgroundScroll, true);
   }
-  modals.add(element);
+  modals.set(element, priority);
   element.dataset.modalScrollBoundary = 'true';
   return () => {
     modals.delete(element);

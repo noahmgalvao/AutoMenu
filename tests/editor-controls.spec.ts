@@ -101,8 +101,9 @@ test('product designer also offers Add when its photo group is empty and hidden'
   const category = page.locator('[data-drag-type="category"][data-drag-id="Entradas"] [data-product-options-trigger]');
   const product = page.locator('#product-container-1');
   const menu = page.locator('[data-product-designer-options-menu]');
-  for (const open of [() => category.click(), async () => { await product.hover(); await product.getByRole('button').last().click(); }]) {
+  for (const open of [() => category.click(), async () => { await product.hover(); await product.getByRole('button', { name: 'Mais ações' }).click(); }]) {
     await open();
+    await expect(page.locator('body > [data-product-designer-options-menu]')).toBeVisible();
     await expect(menu.getByRole('button', { name: 'Habilitar imagens' }).or(menu.getByRole('button', { name: 'Desabilitar imagens' }))).toHaveCount(0);
     const chooser = page.waitForEvent('filechooser');
     await menu.getByRole('button', { name: 'Adicionar imagem' }).click();
@@ -177,4 +178,37 @@ test('circle hides rotation and the four pointed shapes render rounded corners',
     await rounding.press('Enter');
     await expect.poll(async () => decodeURIComponent((await shape.locator('img').getAttribute('src'))!)).toMatch(/<path d="M [^"]+ Q /);
   }
+});
+
+
+test.describe('PDF options on touchscreens', () => {
+  test.use({ viewport: { width: 360, height: 640 }, isMobile: true, hasTouch: true });
+
+  test('the options scroll vertically and the thumbnails pan horizontally', async ({ page }) => {
+    await page.goto(fixture + '?background-text');
+    await page.getByTitle('Exportar PDF').tap();
+    const options = page.locator('[data-pdf-options-scroll]');
+    const strip = page.locator('[data-pdf-preview-strip]');
+    const cdp = await page.context().newCDPSession(page);
+
+    const swipe = async (x: number, y: number, dx: number, dy: number) => {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+      for (let i = 1; i <= 8; i++) {
+        await cdp.send('Input.dispatchTouchEvent', {
+          type: 'touchMove', touchPoints: [{ x: x + dx * i / 8, y: y + dy * i / 8 }],
+        });
+      }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    };
+
+    const panel = (await options.boundingBox())!;
+    await swipe(panel.x + 7, panel.y + panel.height - 30, 0, -Math.min(240, panel.height / 2));
+    await expect.poll(() => options.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+    await strip.scrollIntoViewIfNeeded();
+    const preview = (await strip.boundingBox())!;
+    const verticalOffset = await options.evaluate(element => element.scrollTop);
+    await swipe(preview.x + preview.width - 20, preview.y + preview.height / 2, -95, 0);
+    await expect.poll(() => strip.evaluate(element => element.scrollLeft)).toBeGreaterThan(0);
+    await expect.poll(() => options.evaluate(element => element.scrollTop)).toBe(verticalOffset);
+  });
 });

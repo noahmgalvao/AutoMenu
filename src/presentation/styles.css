@@ -109,7 +109,8 @@ body:has([data-canvas-zooming]) :is([data-inline-format-toolbar], [data-canvas-o
 }
 
 [data-canvas-selection-dragging] [data-canvas-action-group],
-[data-automenu-editor-canvas]:has([data-canvas-object-dragging]) [data-canvas-action-group="resize"] {
+[data-automenu-editor-canvas][data-canvas-selection-dragging] ~ [data-canvas-control-overlay] [data-canvas-action-group],
+[data-automenu-editor-canvas]:has([data-canvas-object-dragging]) ~ [data-canvas-control-overlay] [data-canvas-action-group="resize"] {
   visibility: hidden !important;
 }
 

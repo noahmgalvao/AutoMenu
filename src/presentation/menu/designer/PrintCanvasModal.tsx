@@ -1,5 +1,6 @@
 import { lockModalScrolling } from '../../common/modalScroll';
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { preparePrintPageContent } from '../../../infrastructure/browser/printPageContent';
 import { AlertTriangle, CheckCircle2, Image as ImageIcon, Loader2, Printer, Scissors, Settings2, X } from 'lucide-react';
 import type { PdfExportResult } from '../../../infrastructure/browser/pdfExport';
@@ -11,6 +12,8 @@ import { isPublishLocked } from '../../publishing/useMenuPublishing';
 import { BooleanSwitch } from '../../common/BooleanSwitch';
 
 export type PrintCanvasOptions = PdfPrintOptions;
+
+const lockPdfOptionsScroll = (element: HTMLElement | null) => lockModalScrolling(element, 1);
 
 export type PrintPreviewPage = {
   pageNumber: number;
@@ -179,20 +182,11 @@ function PrintOptionsPreview({ options, previewPages }: { options: PrintCanvasOp
   React.useEffect(() => {
     const strip = stripRef.current;
     if (!strip) return;
-    const scrollHorizontally = (event: WheelEvent) => {
-      if (event.ctrlKey || event.metaKey) {
-        event.preventDefault();
-        return;
-      }
-      if (event.shiftKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
-      const maxScroll = strip.scrollWidth - strip.clientWidth;
-      if (maxScroll <= 0 || (event.deltaY < 0 ? strip.scrollLeft <= 0 : strip.scrollLeft >= maxScroll - 1)) return;
-      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? strip.clientWidth : 1;
-      event.preventDefault();
-      strip.scrollLeft += event.deltaY * unit;
+    const preventPreviewZoom = (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey) event.preventDefault();
     };
-    strip.addEventListener('wheel', scrollHorizontally, { passive: false });
-    return () => strip.removeEventListener('wheel', scrollHorizontally);
+    strip.addEventListener('wheel', preventPreviewZoom, { passive: false });
+    return () => strip.removeEventListener('wheel', preventPreviewZoom);
   }, [hasPages]);
 
   return <section className="min-w-0">
@@ -202,10 +196,11 @@ function PrintOptionsPreview({ options, previewPages }: { options: PrintCanvasOp
     <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
       {hasPages ? (
         <div ref={stripRef} data-pdf-preview-strip aria-label="Páginas da prévia" tabIndex={0}
-          className="flex min-w-0 cursor-grab touch-none select-none items-start gap-3 overflow-x-auto overflow-y-hidden pb-2 active:cursor-grabbing"
+          className="flex min-w-0 cursor-grab select-none items-start gap-3 overflow-x-auto overflow-y-hidden pb-2 active:cursor-grabbing"
+          style={{ touchAction: 'pan-x pan-y', overscrollBehaviorX: 'contain', overscrollBehaviorY: 'auto' }}
           onPointerDown={event => {
             const strip = event.currentTarget;
-            if (!event.isPrimary || event.button !== 0 || strip.scrollWidth <= strip.clientWidth
+            if (event.pointerType === 'touch' || !event.isPrimary || event.button !== 0 || strip.scrollWidth <= strip.clientWidth
               || event.clientY >= strip.getBoundingClientRect().top + strip.clientHeight) return;
             drag.current = { id: event.pointerId, x: event.clientX, scroll: strip.scrollLeft };
             strip.setPointerCapture(event.pointerId);
@@ -286,8 +281,8 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
     }
   };
 
-  return (
-    <div ref={lockModalScrolling} data-pdf-options className="fixed inset-0 z-[9999] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4" onMouseDown={onClose}>
+  return createPortal(
+    <div ref={lockPdfOptionsScroll} data-pdf-options className="fixed inset-0 z-[9999] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4" onMouseDown={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[90dvh] overflow-hidden flex flex-col" onMouseDown={(e) => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-slate-100 flex shrink-0 items-center justify-between">
           <div>
@@ -301,159 +296,161 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
           </button>
         </div>
 
-        <fieldset disabled={locked} inert={locked} className="min-h-0 min-w-0 p-5 overflow-y-auto custom-scrollbar space-y-5 disabled:grayscale disabled:opacity-50">
-          <section>
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-700 mb-3">
-              <Settings2 size={14} /> Configuração da página
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <Field label="Páginas">
-                <select value={options.pageMode} onChange={(e) => update('pageMode', e.target.value as PrintCanvasOptions['pageMode'])} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm bg-white text-ellipsis overflow-hidden whitespace-nowrap">
-                  <option value="all">Todas as páginas</option>
-                  <option value="current" disabled={currentPageIndex === null}>Página atual</option>
-                  <option value="range" disabled={totalPages <= 1}>Intervalo</option>
-                </select>
-              </Field>
-              <Field label="Intervalo">
-                <select
-                  multiple
-                  value={options.pageRange.split(',').filter(Boolean)}
-                  onChange={(e) => {
-                    const selected = Array.from(e.target.selectedOptions).map(opt => opt.value);
-                    update('pageRange', selected.join(','));
-                  }}
-                  disabled={totalPages <= 1 || options.pageMode !== 'range'}
-                  className="w-full h-auto max-h-24 rounded-lg border border-slate-200 px-3 py-1 text-sm bg-white disabled:bg-slate-50 disabled:text-slate-300 custom-scrollbar overflow-y-auto"
-                >
-                  {Array.from({ length: totalPages }).map((_, i) => (
-                    <option key={i} value={i + 1}>Página {i + 1}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Papel">
-                <select value={options.paperSize} onChange={(e) => {
-                  const preset = e.target.value as MenuPageSetup['preset'];
-                  onPageSetupChange({ ...pageSetup, preset, orientation: preset === 'screen' ? 'landscape' : pageSetup.orientation });
-                }} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm bg-white text-ellipsis overflow-hidden whitespace-nowrap">
-                  <option value="A4">A4</option>
-                  <option value="A5">A5</option>
-                  <option value="A3">A3</option>
-                  <option value="Letter">Carta</option>
-                  <option value="screen">Painel 16:9</option>
-                  <option value="Square">Quadrado</option>
-                  <option value="custom">Personalizado</option>
-                </select>
-              </Field>
-              <Field label="Orientação">
-                <select value={options.orientation} onChange={(e) => onPageSetupChange({ ...pageSetup, orientation: e.target.value as MenuPageSetup['orientation'] })} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm bg-white text-ellipsis overflow-hidden whitespace-nowrap">
-                  <option value="portrait">Retrato</option>
-                  <option value="landscape">Paisagem</option>
-                </select>
-              </Field>
-            </div>
-            {(() => {
-              const dimensions = getPaperDimensionsMm(options);
-              const editable = options.paperSize === 'custom';
-              return (
-                <div className="mt-3 grid grid-cols-2 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  {([
-                    { axis: 'width', label: 'Largura', value: dimensions.width },
-                    { axis: 'height', label: 'Altura', value: dimensions.height },
-                  ] as const).map(({ axis, label, value }) => (
-                    <Field key={axis} label={`${label} (mm)`}>
-                      <input
-                        key={`${axis}-${options.orientation}-${value}`}
-                        type="number"
-                        min={50}
-                        max={1000}
-                        step={0.1}
-                        defaultValue={Number(value.toFixed(1))}
-                        onBlur={(event) => updateCustomPaperDimension(axis, Number(event.target.value))}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') event.currentTarget.blur();
-                        }}
-                        disabled={!editable}
-                        className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-100 disabled:text-slate-500"
-                        aria-label={`${label} personalizada do papel em milímetros`}
-                      />
-                    </Field>
-                  ))}
-                  <p className="col-span-2 text-[10px] text-slate-500">
-                    Tamanho final do PDF: {Number(dimensions.width.toFixed(1))} × {Number(dimensions.height.toFixed(1))} mm.
-                  </p>
-                </div>
-              );
-            })()}
-          </section>
-
-          <section>
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-700 mb-3">
-              <Scissors size={14} /> Ajuste, margens e corte
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              <Field label="Margens">
-                <select value={options.marginPreset} onChange={(e) => update('marginPreset', e.target.value as PrintCanvasOptions['marginPreset'])} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm bg-white text-ellipsis overflow-hidden whitespace-nowrap">
-                  <option value="0">0 mm</option>
-                  <option value="3">3 mm</option>
-                  <option value="5">5 mm</option>
-                  <option value="10">10 mm</option>
-                  <option value="custom">Personalizado</option>
-                </select>
-              </Field>
-              <Field label="Personalizado mm">
-                <input type="number" min={0} value={options.customMarginMm === 0 ? '' : options.customMarginMm} onChange={(e) => update('customMarginMm', Number(e.target.value))} disabled={options.marginPreset !== 'custom'} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm disabled:bg-slate-50 disabled:text-slate-300" />
-              </Field>
-              <Field label="Escala">
-                <select value={options.scaleMode} onChange={(e) => update('scaleMode', e.target.value as PrintCanvasOptions['scaleMode'])} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm bg-white text-ellipsis overflow-hidden whitespace-nowrap">
-                  <option value="fit">Ajustar ao papel</option>
-                  <option value="actual">Tamanho real do canvas</option>
-                  <option value="custom">Personalizado</option>
-                </select>
-              </Field>
-              <Field label="Escala %">
-                <input type="number" min={25} max={200} value={options.customScale === 0 ? '' : options.customScale} onChange={(e) => update('customScale', Number(e.target.value))} disabled={options.scaleMode !== 'custom'} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm disabled:bg-slate-50 disabled:text-slate-300" />
-              </Field>
-              <Field label="Sangria mm">
-                <input type="number" min={0} max={10} value={options.bleedMm === 0 ? '' : options.bleedMm} onChange={(e) => update('bleedMm', Number(e.target.value))} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm" />
-              </Field>
-            </div>
-          </section>
-
-          <PrintOptionsPreview
-            options={options}
-            previewPages={previewPages}
-          />
-
-          <section>
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-700 mb-3">
-              <ImageIcon size={14} /> Saida
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              <BooleanSwitch value={options.cropMarks} label="Marcas de corte" className="border-slate-200 bg-white"
-                onChange={checked => update('cropMarks', checked)} />
-              <BooleanSwitch value={options.grayscale} label="Cinza" className="border-slate-200 bg-white"
-                onChange={checked => update('grayscale', checked)} />
-            </div>
-          </section>
-
-          {exportError && (
-            <p role="alert" className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">
-              <AlertTriangle size={17} /> {exportError}
-            </p>
-          )}
-          {virtualLinkControls && (
-            <section className="space-y-2 border-t border-slate-100 pt-4">
-              <VirtualLinkSection {...virtualLinkControls} enabled={virtualLinkEnabled} onChange={setVirtualLinkEnabled} />
-              {virtualLinkEnabled && virtualLinkControls.feedback && (
-                <p role="status" className="flex items-center gap-2 rounded-xl bg-emerald-50 p-3 text-xs font-semibold text-emerald-700">
-                  <CheckCircle2 size={16} /> {virtualLinkControls.feedback}
-                </p>
-              )}
+        <div data-pdf-options-scroll className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto custom-scrollbar">
+          <fieldset disabled={locked} inert={locked} className="min-w-0 space-y-5 p-5 disabled:grayscale disabled:opacity-50">
+            <section>
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-700 mb-3">
+                <Settings2 size={14} /> Configuração da página
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <Field label="Páginas">
+                  <select value={options.pageMode} onChange={(e) => update('pageMode', e.target.value as PrintCanvasOptions['pageMode'])} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm bg-white text-ellipsis overflow-hidden whitespace-nowrap">
+                    <option value="all">Todas as páginas</option>
+                    <option value="current" disabled={currentPageIndex === null}>Página atual</option>
+                    <option value="range" disabled={totalPages <= 1}>Intervalo</option>
+                  </select>
+                </Field>
+                <Field label="Intervalo">
+                  <select
+                    multiple
+                    value={options.pageRange.split(',').filter(Boolean)}
+                    onChange={(e) => {
+                      const selected = Array.from(e.target.selectedOptions).map(opt => opt.value);
+                      update('pageRange', selected.join(','));
+                    }}
+                    disabled={totalPages <= 1 || options.pageMode !== 'range'}
+                    className="w-full h-auto max-h-24 rounded-lg border border-slate-200 px-3 py-1 text-sm bg-white disabled:bg-slate-50 disabled:text-slate-300 custom-scrollbar overflow-y-auto"
+                  >
+                    {Array.from({ length: totalPages }).map((_, i) => (
+                      <option key={i} value={i + 1}>Página {i + 1}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Papel">
+                  <select value={options.paperSize} onChange={(e) => {
+                    const preset = e.target.value as MenuPageSetup['preset'];
+                    onPageSetupChange({ ...pageSetup, preset, orientation: preset === 'screen' ? 'landscape' : pageSetup.orientation });
+                  }} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm bg-white text-ellipsis overflow-hidden whitespace-nowrap">
+                    <option value="A4">A4</option>
+                    <option value="A5">A5</option>
+                    <option value="A3">A3</option>
+                    <option value="Letter">Carta</option>
+                    <option value="screen">Painel 16:9</option>
+                    <option value="Square">Quadrado</option>
+                    <option value="custom">Personalizado</option>
+                  </select>
+                </Field>
+                <Field label="Orientação">
+                  <select value={options.orientation} onChange={(e) => onPageSetupChange({ ...pageSetup, orientation: e.target.value as MenuPageSetup['orientation'] })} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm bg-white text-ellipsis overflow-hidden whitespace-nowrap">
+                    <option value="portrait">Retrato</option>
+                    <option value="landscape">Paisagem</option>
+                  </select>
+                </Field>
+              </div>
+              {(() => {
+                const dimensions = getPaperDimensionsMm(options);
+                const editable = options.paperSize === 'custom';
+                return (
+                  <div className="mt-3 grid grid-cols-2 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    {([
+                      { axis: 'width', label: 'Largura', value: dimensions.width },
+                      { axis: 'height', label: 'Altura', value: dimensions.height },
+                    ] as const).map(({ axis, label, value }) => (
+                      <Field key={axis} label={`${label} (mm)`}>
+                        <input
+                          key={`${axis}-${options.orientation}-${value}`}
+                          type="number"
+                          min={50}
+                          max={1000}
+                          step={0.1}
+                          defaultValue={Number(value.toFixed(1))}
+                          onBlur={(event) => updateCustomPaperDimension(axis, Number(event.target.value))}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') event.currentTarget.blur();
+                          }}
+                          disabled={!editable}
+                          className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-100 disabled:text-slate-500"
+                          aria-label={`${label} personalizada do papel em milímetros`}
+                        />
+                      </Field>
+                    ))}
+                    <p className="col-span-2 text-[10px] text-slate-500">
+                      Tamanho final do PDF: {Number(dimensions.width.toFixed(1))} × {Number(dimensions.height.toFixed(1))} mm.
+                    </p>
+                  </div>
+                );
+              })()}
             </section>
-          )}
-        </fieldset>
 
-        <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-2 bg-slate-50">
+            <section>
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-700 mb-3">
+                <Scissors size={14} /> Ajuste, margens e corte
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <Field label="Margens">
+                  <select value={options.marginPreset} onChange={(e) => update('marginPreset', e.target.value as PrintCanvasOptions['marginPreset'])} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm bg-white text-ellipsis overflow-hidden whitespace-nowrap">
+                    <option value="0">0 mm</option>
+                    <option value="3">3 mm</option>
+                    <option value="5">5 mm</option>
+                    <option value="10">10 mm</option>
+                    <option value="custom">Personalizado</option>
+                  </select>
+                </Field>
+                <Field label="Personalizado mm">
+                  <input type="number" min={0} value={options.customMarginMm === 0 ? '' : options.customMarginMm} onChange={(e) => update('customMarginMm', Number(e.target.value))} disabled={options.marginPreset !== 'custom'} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm disabled:bg-slate-50 disabled:text-slate-300" />
+                </Field>
+                <Field label="Escala">
+                  <select value={options.scaleMode} onChange={(e) => update('scaleMode', e.target.value as PrintCanvasOptions['scaleMode'])} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm bg-white text-ellipsis overflow-hidden whitespace-nowrap">
+                    <option value="fit">Ajustar ao papel</option>
+                    <option value="actual">Tamanho real do canvas</option>
+                    <option value="custom">Personalizado</option>
+                  </select>
+                </Field>
+                <Field label="Escala %">
+                  <input type="number" min={25} max={200} value={options.customScale === 0 ? '' : options.customScale} onChange={(e) => update('customScale', Number(e.target.value))} disabled={options.scaleMode !== 'custom'} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm disabled:bg-slate-50 disabled:text-slate-300" />
+                </Field>
+                <Field label="Sangria mm">
+                  <input type="number" min={0} max={10} value={options.bleedMm === 0 ? '' : options.bleedMm} onChange={(e) => update('bleedMm', Number(e.target.value))} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm" />
+                </Field>
+              </div>
+            </section>
+
+            <PrintOptionsPreview
+              options={options}
+              previewPages={previewPages}
+            />
+
+            <section>
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-700 mb-3">
+                <ImageIcon size={14} /> Saida
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                <BooleanSwitch value={options.cropMarks} label="Marcas de corte" className="border-slate-200 bg-white"
+                  onChange={checked => update('cropMarks', checked)} />
+                <BooleanSwitch value={options.grayscale} label="Cinza" className="border-slate-200 bg-white"
+                  onChange={checked => update('grayscale', checked)} />
+              </div>
+            </section>
+
+            {exportError && (
+              <p role="alert" className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">
+                <AlertTriangle size={17} /> {exportError}
+              </p>
+            )}
+            {virtualLinkControls && (
+              <section className="space-y-2 border-t border-slate-100 pt-4">
+                <VirtualLinkSection {...virtualLinkControls} enabled={virtualLinkEnabled} onChange={setVirtualLinkEnabled} />
+                {virtualLinkEnabled && virtualLinkControls.feedback && (
+                  <p role="status" className="flex items-center gap-2 rounded-xl bg-emerald-50 p-3 text-xs font-semibold text-emerald-700">
+                    <CheckCircle2 size={16} /> {virtualLinkControls.feedback}
+                  </p>
+                )}
+              </section>
+            )}
+          </fieldset>
+        </div>
+
+        <div className="shrink-0 px-5 py-4 border-t border-slate-100 flex justify-end gap-2 bg-slate-50">
           <button onClick={onClose} className="px-4 py-2 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:bg-slate-100">
             Cancelar
           </button>
@@ -464,6 +461,7 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };

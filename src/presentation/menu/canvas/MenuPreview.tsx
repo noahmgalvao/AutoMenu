@@ -643,7 +643,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             const rect = menu.getBoundingClientRect();
             const item = objectMenu.item;
             const root = previewRootRef.current;
-            const buttonScope = root?.closest('[data-automenu-editor-canvas]') ?? root;
+            const buttonScope = root?.closest('[data-automenu-editor-canvas]')?.parentElement ?? root;
             const buttons = item && objectMenu.anchored ? Array.from(buttonScope?.querySelectorAll<HTMLElement>(
                 `[data-object-menu-type="${item.type}"][data-object-menu-id="${CSS.escape(item.id)}"]`
             ) || []).filter(button => button.getBoundingClientRect().width && getComputedStyle(button).visibility === 'visible') : [];

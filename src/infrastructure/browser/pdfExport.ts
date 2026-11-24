@@ -3,12 +3,10 @@ import {
   type PdfPrintOptions,
   type PdfPageSizePx,
   resolvePdfPageIndexes,
-  getPaperDimensionsMm,
-  getPrintMarginMm,
-  getPrintFrameSizeMm,
 } from '../../domain/publishing/printOptions';
 import html2canvas from 'html2canvas-pro';
-import { jsPDF } from 'jspdf';
+import type { PdfPageImage } from './composeMenuPdf';
+import { runFileExport } from './runFileExport';
 
 export type PdfDebugLevel = 'info' | 'warning' | 'error' | 'success';
 
@@ -299,23 +297,42 @@ const preparePageClone = async (
   }
 };
 
-const convertCanvasToJpeg = (canvas: HTMLCanvasElement, grayscale: boolean, quality: number) => {
-  if (!grayscale) return canvas.toDataURL('image/jpeg', quality);
+const encodeJpeg = (canvas: HTMLCanvasElement, quality: number) => new Promise<Blob>((resolve, reject) => {
+  canvas.toBlob(blob => {
+    if (blob?.type === 'image/jpeg' && blob.size >= 100) resolve(blob);
+    else reject(new PdfExportError('PDF_INVALID_IMAGE', 'capture', 'A imagem gerada para a página é inválida.'));
+  }, 'image/jpeg', quality);
+});
 
+const convertCanvasToJpeg = async (canvas: HTMLCanvasElement, grayscale: boolean, quality: number) => {
+  if (!grayscale) return encodeJpeg(canvas, quality);
   const filtered = document.createElement('canvas');
   filtered.width = canvas.width;
   filtered.height = canvas.height;
-  const context = filtered.getContext('2d');
-  if (!context) throw new PdfExportError('PDF_CANVAS_CONTEXT', 'capture', 'O navegador não disponibilizou o contexto do canvas.');
-  context.fillStyle = '#ffffff';
-  context.fillRect(0, 0, filtered.width, filtered.height);
-  context.filter = 'grayscale(100%)';
-  context.drawImage(canvas, 0, 0);
-  const dataUrl = filtered.toDataURL('image/jpeg', quality);
-  filtered.width = 1;
-  filtered.height = 1;
-  return dataUrl;
+  try {
+    const context = filtered.getContext('2d');
+    if (!context) throw new PdfExportError('PDF_CANVAS_CONTEXT', 'capture', 'O navegador não disponibilizou o contexto do canvas.');
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, filtered.width, filtered.height);
+    context.filter = 'grayscale(100%)';
+    context.drawImage(canvas, 0, 0);
+    return await encodeJpeg(filtered, quality);
+  } finally {
+    filtered.width = filtered.height = 1;
+  }
 };
+
+const yieldToBrowser = () => new Promise<void>(resolve => {
+  // Allow rendering and input before each capture, even if the user switches tabs.
+  const fallback = window.setTimeout(() => {
+    window.cancelAnimationFrame(frame);
+    resolve();
+  }, 50);
+  const frame = window.requestAnimationFrame(() => {
+    window.clearTimeout(fallback);
+    window.setTimeout(resolve, 0);
+  });
+});
 
 const mapCaptureError = (error: unknown, pageNumber: number) => {
   if (error instanceof PdfExportError) return error;
@@ -350,7 +367,7 @@ const mapCaptureError = (error: unknown, pageNumber: number) => {
   );
 };
 
-const capturePageAsJpeg = async (
+const renderPageAsJpeg = async (
   source: HTMLElement,
   pageNumber: number,
   options: Pick<PdfPrintOptions, 'printBackgrounds' | 'grayscale'>,
@@ -359,8 +376,7 @@ const capturePageAsJpeg = async (
   assetCache: Map<string, string>,
   onDebug?: PdfDebugReporter
 ) => {
-  // Give pending input and layout a turn before each capture.
-  await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+  await yieldToBrowser();
   const pageSize = getPageElementSizePx(source);
   emitDebug(onDebug, 'info', 'capture', 'PDF_CAPTURE_START', `Capturando página ${pageNumber}.`, {
     scale: captureScale,
@@ -369,11 +385,15 @@ const capturePageAsJpeg = async (
   });
 
   let sandbox: HTMLDivElement | null = null;
+  let canvas: HTMLCanvasElement | undefined;
   try {
     const preparedPage = await preparePageClone(source, pageSize, options.printBackgrounds, assetCache, onDebug);
     sandbox = preparedPage.sandbox;
     const { clone } = preparedPage;
-    const canvas = await html2canvas(clone, {
+    canvas = await html2canvas(clone, {
+      // The export sandbox contains the page. Avoid cloning the live editor and its dialogs.
+      ignoreElements: element => element.parentElement === document.body
+        && element !== sandbox && element.tagName !== 'STYLE' && element.tagName !== 'LINK',
       backgroundColor: '#ffffff',
       scale: captureScale,
       useCORS: true,
@@ -393,53 +413,27 @@ const capturePageAsJpeg = async (
       throw new PdfExportError('PDF_EMPTY_CANVAS', 'capture', `A captura da página ${pageNumber} ficou vazia.`);
     }
 
-    const dataUrl = convertCanvasToJpeg(canvas, options.grayscale, quality);
-    const width = canvas.width;
-    const height = canvas.height;
-    canvas.width = 1;
-    canvas.height = 1;
-
-    if (!dataUrl.startsWith('data:image/jpeg') || dataUrl.length < 100) {
-      throw new PdfExportError('PDF_INVALID_IMAGE', 'capture', `A imagem gerada para a página ${pageNumber} é inválida.`);
-    }
-
+    const jpeg = await convertCanvasToJpeg(canvas, options.grayscale, quality);
     emitDebug(onDebug, 'success', 'capture', 'PDF_CAPTURE_OK', `Página ${pageNumber} capturada.`, {
-      width,
-      height,
-      approximateKb: Math.round(dataUrl.length * 0.75 / 1024),
+      width: canvas.width,
+      height: canvas.height,
+      approximateKb: Math.round(jpeg.size / 1024),
     });
-    return { dataUrl, pageSize };
+    return { jpeg, pageSize };
   } catch (error) {
     throw mapCaptureError(error, pageNumber);
   } finally {
+    if (canvas) canvas.width = canvas.height = 1;
     sandbox?.remove();
   }
 };
 
-const drawCropMarks = (
-  pdf: jsPDF,
-  trimX: number,
-  trimY: number,
-  trimWidth: number,
-  trimHeight: number
-) => {
-  const length = 5;
-  const gap = 1.5;
-  pdf.setDrawColor(17, 24, 39);
-  pdf.setLineWidth(0.2);
-
-  const corners = [
-    { x: trimX, y: trimY, sx: -1, sy: -1 },
-    { x: trimX + trimWidth, y: trimY, sx: 1, sy: -1 },
-    { x: trimX + trimWidth, y: trimY + trimHeight, sx: 1, sy: 1 },
-    { x: trimX, y: trimY + trimHeight, sx: -1, sy: 1 },
-  ];
-
-  corners.forEach(({ x, y, sx, sy }) => {
-    pdf.line(x + (sx * gap), y, x + (sx * (gap + length)), y);
-    pdf.line(x, y + (sy * gap), x, y + (sy * (gap + length)));
-  });
-};
+let captureQueue: Promise<unknown> = Promise.resolve();
+function capturePageAsJpeg(...args: Parameters<typeof renderPageAsJpeg>) {
+  const capture = captureQueue.then(() => renderPageAsJpeg(...args));
+  captureQueue = capture.catch(() => undefined);
+  return capture;
+}
 
 const validatePdfBlob = async (blob: Blob) => {
   if (blob.size < 200) {
@@ -489,11 +483,10 @@ export async function exportMenuPageToJpg(
   title: string,
   assetCache: Map<string, string>,
 ) {
-  const { dataUrl } = await capturePageAsJpeg(
+  const { jpeg } = await capturePageAsJpeg(
     element, pageNumber, { printBackgrounds: true, grayscale: false }, EXPORT_CAPTURE_SCALE, 0.92, assetCache,
   );
-  const blob = await (await fetch(dataUrl)).blob();
-  return new File([blob], `${sanitizeFileName(title)}-pagina-${pageNumber}.jpg`, { type: 'image/jpeg' });
+  return new File([jpeg], `${sanitizeFileName(title)}-pagina-${pageNumber}.jpg`, { type: 'image/jpeg' });
 }
 
 export const exportMenuPagesToPdf = async ({
@@ -529,86 +522,20 @@ export const exportMenuPagesToPdf = async ({
     );
   }
 
-  const paper = getPaperDimensionsMm(options);
-  const marginMm = getPrintMarginMm(options);
-  const bleedMm = Math.max(0, Math.min(10, options.bleedMm || 0));
   const assetCache = new Map<string, string>();
-
-  const pdf = new jsPDF({
-    orientation: options.orientation,
-    unit: 'mm',
-    format: [paper.width, paper.height],
-    compress: true,
-    putOnlyUsedFonts: true,
-  });
-  pdf.setProperties({
-    title: title || 'Cardápio',
-    subject: 'Cardápio exportado pelo AutoMenu',
-    creator: 'AutoMenu',
-  });
-
-  for (let outputIndex = 0; outputIndex < pagesToPrint.length; outputIndex += 1) {
-    const { element, index } = pagesToPrint[outputIndex];
-    if (outputIndex > 0) pdf.addPage([paper.width, paper.height], options.orientation);
-
-    const capture = await capturePageAsJpeg(
-      element,
-      index + 1,
-      options,
-      EXPORT_CAPTURE_SCALE,
-      0.9,
-      assetCache,
-      onDebug
-    );
-    const frame = getPrintFrameSizeMm(options, paper, marginMm, capture.pageSize);
-    const renderWidth = frame.width + (bleedMm * 2);
-    const renderHeight = frame.height + (bleedMm * 2);
-    const renderX = (paper.width - renderWidth) / 2;
-    const renderY = (paper.height - renderHeight) / 2;
-    const trimX = renderX + bleedMm;
-    const trimY = renderY + bleedMm;
-
-    emitDebug(onDebug, 'info', 'compose', 'PDF_COMPOSE_PAGE', `Montando página ${outputIndex + 1} no PDF.`, {
-      sourcePage: index + 1,
-      paper,
-      frame,
-      bleedMm,
-    });
-
-    if (options.includeCanvasShadow) {
-      pdf.setFillColor(203, 213, 225);
-      pdf.roundedRect(renderX + 1.5, renderY + 1.5, renderWidth, renderHeight, 1, 1, 'F');
-    }
-
-    pdf.addImage(
-      capture.dataUrl,
-      'JPEG',
-      renderX,
-      renderY,
-      renderWidth,
-      renderHeight,
-      `automenu-page-${outputIndex}`,
-      'FAST'
-    );
-
-    if (options.cropMarks) drawCropMarks(pdf, trimX, trimY, frame.width, frame.height);
-    if (options.pageNumbers) {
-      pdf.setTextColor(100, 116, 139);
-      pdf.setFontSize(8);
-      pdf.text(
-        `Página ${outputIndex + 1} de ${pagesToPrint.length}`,
-        paper.width - Math.max(4, marginMm),
-        paper.height - Math.max(3, marginMm / 2),
-        { align: 'right' }
-      );
-    }
+  const pages: PdfPageImage[] = [];
+  for (const { element, index } of pagesToPrint) {
+    pages.push(await capturePageAsJpeg(element, index + 1, options, EXPORT_CAPTURE_SCALE, 0.9, assetCache, onDebug));
   }
 
-  emitDebug(onDebug, 'info', 'validate', 'PDF_VALIDATE_START', 'Validando arquivo gerado.');
-  await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+  emitDebug(onDebug, 'info', 'compose', 'PDF_COMPOSE_START', 'Montando o PDF.', { pages: pages.length });
   let blob: Blob;
   try {
-    blob = pdf.output('blob');
+    blob = await runFileExport({ kind: 'pdf', pages, options, title }, async () => {
+      await yieldToBrowser();
+      const { composeMenuPdf } = await import('./composeMenuPdf');
+      return composeMenuPdf(pages, options, title);
+    });
   } catch (error) {
     throw new PdfExportError(
       'PDF_SERIALIZATION_FAILED',
@@ -618,6 +545,7 @@ export const exportMenuPagesToPdf = async ({
       error
     );
   }
+  emitDebug(onDebug, 'info', 'validate', 'PDF_VALIDATE_START', 'Validando arquivo gerado.');
   await validatePdfBlob(blob);
   emitDebug(onDebug, 'success', 'validate', 'PDF_VALIDATE_OK', 'PDF validado.', { sizeBytes: blob.size });
 

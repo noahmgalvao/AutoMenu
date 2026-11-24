@@ -3,6 +3,8 @@ import { hasPhotosForType, type PhotoType } from '../menu/canvas/photoSizing';
 import { categoryName } from '../../domain/menu/categoryName';
 
 import React from 'react';
+import { createPortal } from 'react-dom';
+import { observeAnchorScroll } from '../menu/canvas/canvasViewport';
 import type { CategoryDividerStyle, Product, MenuStyle } from '../../domain/menu/model';
 import { 
   CopyCheck, GripVertical, MoreVertical,
@@ -14,6 +16,59 @@ import { isPristineNewCategory, isPristineNewProduct } from '../../domain/menu/p
 import { formatMenuPrice, resolveMenuPriceDecimalPlaces } from '../../domain/menu/price';
 
 const CATEGORY_DOUBLE_CLICK_MS = 400;
+
+function ProductOptionsMenu({ anchor, floating, children }: {
+  anchor: HTMLButtonElement | null;
+  floating: boolean;
+  children: React.ReactNode;
+}) {
+  const ref = React.useRef<HTMLDivElement>(null);
+  React.useLayoutEffect(() => {
+    if (!floating || !anchor) return;
+    const menu = ref.current;
+    if (!menu) return;
+    const viewport = window.visualViewport;
+    const update = () => {
+      const target = anchor.getBoundingClientRect();
+      const top = (viewport?.offsetTop ?? 0) + 8;
+      const bottom = (viewport?.offsetTop ?? 0) + (viewport?.height ?? window.innerHeight) - 8;
+      const left = (viewport?.offsetLeft ?? 0) + 8;
+      const right = (viewport?.offsetLeft ?? 0) + (viewport?.width ?? window.innerWidth) - 8;
+      const above = target.top - top - 4;
+      const below = bottom - target.bottom - 4;
+      const opensAbove = below < menu.scrollHeight && above > below;
+      const height = Math.max(0, opensAbove ? above : below);
+      menu.style.maxHeight = `${height}px`;
+      menu.style.left = `${Math.max(left, Math.min(target.right, right) - menu.offsetWidth)}px`;
+      menu.style.top = `${opensAbove ? target.top - 4 - menu.offsetHeight : target.bottom + 4}px`;
+      menu.style.visibility = 'visible';
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(anchor);
+    const stopScroll = observeAnchorScroll(anchor, update);
+    window.addEventListener('resize', update);
+    viewport?.addEventListener('resize', update);
+    viewport?.addEventListener('scroll', update);
+    return () => {
+      observer.disconnect();
+      stopScroll();
+      window.removeEventListener('resize', update);
+      viewport?.removeEventListener('resize', update);
+      viewport?.removeEventListener('scroll', update);
+    };
+  }, [anchor, floating]);
+
+  const menu = <div ref={ref} data-product-designer-options-menu="true"
+    style={floating ? { visibility: 'hidden' } : undefined}
+    className={`flex w-44 flex-col rounded-lg border border-slate-100 bg-white py-1 shadow-xl ${floating
+      ? 'fixed z-[110] overflow-y-auto overscroll-contain'
+      : 'absolute right-0 top-8 z-[140] animate-in fade-in zoom-in-95'}`}
+    onClick={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()}>
+    {children}
+  </div>;
+  return floating ? createPortal(menu, document.body) : menu;
+}
 
 interface PendingImageUpload {
   id: string;
@@ -137,6 +192,7 @@ export const ProductList: React.FC<ProductListProps> = ({
   productImageUpload,
   categoryImageUpload,
 }) => {
+  const optionsTrigger = React.useRef<HTMLButtonElement | null>(null);
   const previousCategoryClick = React.useRef<{ area: HTMLElement; time: number } | null>(null);
   const [shakingCategory, setShakingCategory] = React.useState<string | null>(null);
   const categoryOptionsPointerDownRef = React.useRef<{ category: string; startedAt: number } | null>(null);
@@ -328,6 +384,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                     </div>
                     <div className="relative">
                       <button
+                        aria-label="Mais ações"
                         data-product-options-trigger="true"
                         onClick={(e) => {
                           e.stopPropagation();
@@ -336,6 +393,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                           const suppressUntil = Number(document.body.dataset.automenuSuppressProductOptionsUntil || 0);
                           const wasLongTouch = press?.category === cat && Date.now() - press.startedAt >= 300;
                           if (wasLongTouch || Date.now() < suppressUntil) return;
+                          optionsTrigger.current = e.currentTarget;
                           setMenuOpenId(menuOpenId === cat ? null : cat);
                         }}
                         className="p-1 hover:bg-slate-200 rounded text-slate-500"
@@ -350,7 +408,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                       </button>
                       {menuOpenId === cat && (
                         <>
-                          <div data-product-designer-options-menu="true" className="absolute right-0 top-8 z-50 bg-white shadow-xl border border-slate-100 rounded-lg py-1 w-44 animate-in fade-in zoom-in-95 flex flex-col">
+                          <ProductOptionsMenu anchor={optionsTrigger.current} floating={isProductDesigner}>
                             <button data-product-designer-edit-trigger onPointerDown={(e) => e.stopPropagation()} onClick={() => startEdit(cat)} className="px-4 py-2 text-xs text-left hover:bg-slate-50 flex items-center gap-2"> <Edit3 size={14}/> Editar </button>
                             {multiSelectAction}
                             {imageOptions(cat, 'category', Boolean(style.categoryImages?.[cat]?.url))}
@@ -373,7 +431,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                             > 
                               <Trash2 size={14}/> Remover
                             </button>
-                          </div>
+                          </ProductOptionsMenu>
                         </>
                       )}
                     </div>
@@ -484,8 +542,8 @@ export const ProductList: React.FC<ProductListProps> = ({
 
                         {/* Options Menu */}
                         <div className="relative">
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === product.id ? null : product.id); }}
+                          <button aria-label="Mais ações"
+                            onClick={(e) => { e.stopPropagation(); optionsTrigger.current = e.currentTarget; setMenuOpenId(menuOpenId === product.id ? null : product.id); }}
                             className="p-1 hover:bg-slate-100 rounded text-slate-400 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"
                             onPointerDown={e => e.stopPropagation()}
                           >
@@ -493,7 +551,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                           </button>
                           {menuOpenId === product.id && (
                             <>
-                              <div data-product-designer-options-menu="true" className="absolute right-0 top-8 z-[140] bg-white shadow-xl border border-slate-100 rounded-lg py-1 w-44 animate-in fade-in zoom-in-95 flex flex-col">
+                              <ProductOptionsMenu anchor={optionsTrigger.current} floating={isProductDesigner}>
                                 <button data-product-designer-edit-trigger onPointerDown={(e) => e.stopPropagation()} onClick={() => startEdit(product.id)} className="px-4 py-2 text-xs text-left hover:bg-slate-50 flex items-center gap-2"> <Edit3 size={14}/> Editar </button>
                                 {multiSelectAction}
                                 {imageOptions(product.id, 'product', Boolean(product.image))}
@@ -516,7 +574,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                                 > 
                                   <Trash2 size={14}/> Remover
                                 </button>
-                              </div>
+                              </ProductOptionsMenu>
                             </>
                           )}
                         </div>

@@ -17,16 +17,16 @@ interface InsightsModalProps {
 }
 
 export const InsightsModal: React.FC<InsightsModalProps> = ({ products, categories, grouped, style, onClose }) => {
-  const [selectedCategory, setSelectedCategory] = React.useState<string | null>(null);
+  const [selection, setSelection] = React.useState<{ id: string; x: number } | null>(null);
   const data = categories.map(id => ({ id, name: categoryName(id), count: grouped[id]?.length || 0 }));
-  const selected = data.find(category => category.id === selectedCategory);
+  const selected = data.find(category => category.id === selection?.id);
 
   const selectColumn = ({ x, y, width, height, index }: BarShapeProps) => {
     const category = data[index];
     if (!category) return null;
-    const activate = () => setSelectedCategory(category.id);
+    const activate = () => setSelection(previous => previous?.id === category.id ? null : { id: category.id, x: x + width / 2 });
     return <rect x={x} y={y} width={width} height={height} fill="transparent"
-      data-insights-column={category.id} role="button" tabIndex={0} aria-pressed={category.id === selectedCategory}
+      data-insights-column={category.id} role="button" tabIndex={0} aria-pressed={category.id === selection?.id}
       aria-label={`${category.name}, ${category.count} ${category.count === 1 ? 'item' : 'itens'}`}
       className="cursor-pointer outline-none focus-visible:[fill:#eef2ff]"
       onClick={activate} onKeyDown={event => {
@@ -37,9 +37,9 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({ products, categori
   };
 
   const renderBar = ({ x, y, width, height, index }: BarShapeProps) => {
-    const active = data[index]?.id === selectedCategory;
+    const active = selected !== undefined && data[index]?.id === selected.id;
     return <Rectangle x={x} y={y} width={width} height={height} radius={[6, 6, 0, 0]}
-      fill={active ? '#4f46e5' : '#a5b4fc'} stroke={active ? '#312e81' : undefined}
+      fill={!selected || active ? '#4f46e5' : '#a5b4fc'} stroke={active ? '#312e81' : undefined}
       strokeWidth={active ? 2 : undefined} pointerEvents="none" data-insights-selected-bar={active ? '' : undefined} />;
   };
 
@@ -51,7 +51,10 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({ products, categori
     >
       <div
         className="bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]"
-        onClick={(event) => event.stopPropagation()}
+        onClick={event => {
+          event.stopPropagation();
+          if (!(event.target instanceof Element) || !event.target.closest('[data-insights-column]')) setSelection(null);
+        }}
       >
         <div className="p-4 border-b flex justify-between items-center bg-slate-50">
           <h3 className="font-bold text-lg flex items-center gap-2"><BarChartIcon size={20} className="text-indigo-600"/> Análises do cardápio</h3>
@@ -77,7 +80,13 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({ products, categori
 
           <section className="rounded-xl border border-slate-200 bg-white p-3 sm:p-4">
             <h4 className="mb-2 text-sm font-semibold text-slate-700">Itens por categoria</h4>
-            <div className="h-56 w-full">
+            <div className="relative h-56 w-full">
+              {selected && selection && <div role="tooltip" aria-live="polite"
+                className="pointer-events-none absolute top-0 z-10 w-36 -translate-x-1/2 rounded-lg border border-indigo-100 bg-white px-2.5 py-1.5 text-xs text-indigo-900 shadow-md"
+                style={{ left: `clamp(4.5rem, ${selection.x}px, calc(100% - 4.5rem))` }}>
+                <p className="font-semibold">{selected.name}</p>
+                <p>{selected.count} {selected.count === 1 ? 'item' : 'itens'}</p>
+              </div>}
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={data} accessibilityLayer={false}>
                   <XAxis dataKey="name" fontSize={10} tickLine={false} axisLine={false} />
@@ -85,12 +94,6 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({ products, categori
                   <Bar dataKey="count" name="Contagem" shape={renderBar} background={selectColumn} isAnimationActive={false} />
                 </BarChart>
               </ResponsiveContainer>
-            </div>
-            <div aria-live="polite" className="min-h-7 text-sm">
-              {selected && <p className="inline-flex flex-wrap items-center gap-x-2 rounded-md bg-indigo-50 px-2 py-1 text-indigo-900">
-                <span className="font-semibold">{selected.name}</span>
-                <span>{selected.count} {selected.count === 1 ? 'item' : 'itens'}</span>
-              </p>}
             </div>
           </section>
         </div>

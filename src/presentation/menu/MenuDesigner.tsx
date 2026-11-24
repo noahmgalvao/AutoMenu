@@ -2234,7 +2234,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                     }}
                 >
                     <div data-canvas-zoom-surface className="relative w-max flex-none">
-                        <div data-canvas-control-overlay className="pointer-events-none absolute inset-0 z-[71]" />
                         <div ref={zoomFrameRef} className="relative [overflow:clip] [overflow-clip-margin:32px]"
                             style={{
                                 '--canvas-render-scale': renderScale,
@@ -2297,6 +2296,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                         </div>
                     </div>
                 </div>
+                <div data-canvas-control-overlay className="pointer-events-none absolute inset-0 z-[71] [overflow:clip]" />
             </div>
 
             {/* 2. SIDEBAR EDITOR */}

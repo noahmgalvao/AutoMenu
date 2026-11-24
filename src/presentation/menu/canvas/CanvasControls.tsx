@@ -76,7 +76,7 @@ function placeControls(
     for (const { node, anchor, direction, kind, hoverOnly } of active) {
         const target = anchor.getBoundingClientRect();
         const { left, right, top, bottom } = visible;
-        const reject = () => { node.style.visibility = 'hidden'; };
+        const reject = () => { if (node.style.visibility !== 'hidden') node.style.visibility = 'hidden'; };
         if (kind !== 'resize' && (target.bottom < top || target.top > bottom || target.right < left || target.left > right)) {
             reject();
             continue;
@@ -169,7 +169,7 @@ function observeControls(frame: HTMLElement, page: HTMLElement) {
         pending = requestAnimationFrame(() => {
             pending = 0;
             if (container?.hasAttribute('data-canvas-zooming')) {
-                controls.forEach(({ node }) => { node.style.visibility = 'hidden'; });
+                controls.forEach(({ node }) => { if (node.style.visibility !== 'hidden') node.style.visibility = 'hidden'; });
                 return;
             }
             placeControls(page, canvas, zoomLayer, container, controls, expireHover);
@@ -191,7 +191,7 @@ function observeControls(frame: HTMLElement, page: HTMLElement) {
         observer.observe(element);
         mutations.observe(element, { attributes: true, attributeFilter: ['class', 'style'] });
     });
-    const shortcutLayer = canvas?.querySelector<HTMLElement>('[data-canvas-control-overlay]')
+    const shortcutLayer = container?.querySelector<HTMLElement>(':scope > [data-canvas-control-overlay]')
         || frame.parentElement?.querySelector<HTMLElement>(':scope > [data-canvas-shortcuts]');
     shortcutLayer?.addEventListener('pointerover', update);
     shortcutLayer?.addEventListener('pointerout', update);
@@ -255,8 +255,8 @@ export function CanvasActionGroup({ direction, kind, anchorId, anchorSelector, h
         const anchor = anchorId ? document.getElementById(anchorId)
             : anchorSelector ? origin?.closest<HTMLElement>(anchorSelector) : origin?.parentElement;
         if (!frame || !page || !anchor) return;
-        const host = frame.closest('[data-automenu-editor-canvas]')
-            ?.querySelector<HTMLElement>('[data-canvas-control-overlay]')
+        const host = frame.closest('[data-automenu-editor-canvas]')?.parentElement
+            ?.querySelector<HTMLElement>(':scope > [data-canvas-control-overlay]')
             || frame.parentElement?.querySelector<HTMLElement>(':scope > [data-canvas-shortcuts]');
         if (host && host !== overlay) { setOverlay(host); return; }
         const node = ref.current;
