@@ -206,8 +206,13 @@ test.describe('PDF options on touchscreens', () => {
     await expect.poll(() => options.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
     await strip.scrollIntoViewIfNeeded();
     const preview = (await strip.boundingBox())!;
+    const sheet = (await strip.getByRole('img', { name: 'Preview da página 1' }).boundingBox())!;
+    const x = Math.min(preview.x + preview.width - 24, sheet.x + sheet.width / 2);
+    const y = sheet.y + sheet.height / 2;
+    const hit = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.hasAttribute('data-pdf-preview-strip'), { x, y });
+    expect(hit).toBe(true);
     const verticalOffset = await options.evaluate(element => element.scrollTop);
-    await swipe(preview.x + preview.width - 20, preview.y + preview.height / 2, -95, 0);
+    await swipe(x, y, -95, 0);
     await expect.poll(() => strip.evaluate(element => element.scrollLeft)).toBeGreaterThan(0);
     await expect.poll(() => options.evaluate(element => element.scrollTop)).toBe(verticalOffset);
   });

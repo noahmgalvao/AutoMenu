@@ -112,18 +112,19 @@ export function getZoomAnchor(layer: HTMLElement, point: CanvasPoint): CanvasPoi
 }
 
 // Keep the document point under the gesture within the canvas scroll limits.
-export function restoreZoomAnchor(canvas: HTMLElement, layer: HTMLElement, anchor: CanvasPoint, point: CanvasPoint) {
+export function restoreZoomAnchor(canvas: HTMLElement, layer: HTMLElement, anchor: CanvasPoint, point: CanvasPoint, renderScale?: number) {
     const surface = layer.closest<HTMLElement>('[data-canvas-zoom-surface]');
     if (!surface) return;
-    surface.style.marginInline = '0';
-    surface.style.padding = '';
-    const rect = layer.getBoundingClientRect();
-    const scale = rect.width / layer.offsetWidth;
+    const rect = surface.getBoundingClientRect();
+    const scale = renderScale ?? layer.getBoundingClientRect().width / layer.offsetWidth;
     const left = canvas.scrollLeft + rect.left + anchor.x * scale - point.x;
     const top = canvas.scrollTop + rect.top + anchor.y * scale - point.y;
-    surface.style.paddingLeft = `${Math.max(0, -left)}px`;
-    surface.style.paddingTop = `${Math.max(0, -top)}px`;
-    canvas.scrollTo({ left, top, behavior: 'instant' });
+    const paddingLeft = `${Math.max(0, -left)}px`;
+    const paddingTop = `${Math.max(0, -top)}px`;
+    if (surface.style.paddingLeft !== paddingLeft) surface.style.paddingLeft = paddingLeft;
+    if (surface.style.paddingTop !== paddingTop) surface.style.paddingTop = paddingTop;
+    if (surface.style.paddingRight) surface.style.removeProperty('padding-right');
+    canvas.scrollTo({ left: Math.max(0, left), top: Math.max(0, top), behavior: 'instant' });
 }
 
 function touchZoomGeometry(touches: TouchList) {

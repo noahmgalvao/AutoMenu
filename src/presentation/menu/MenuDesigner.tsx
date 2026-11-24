@@ -6,7 +6,7 @@ import { applyContrastTip, scanBackgroundTextOverlap, scanTextContrast, type Con
 import { categoryName } from '../../domain/menu/categoryName';
 import { applyTemplateToCurrentStyle, getAppliedTemplateId } from '../../application/templates/templateApplication';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { flushSync } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import type { Product, MenuStyle, SortOption, ElementStyle, AddedImage, CanvasShape } from '../../domain/menu/model';
 import { INITIAL_STYLE, PRESET_TEMPLATES } from '../../domain/menu/defaults';
 import { MenuPreview } from './canvas/MenuPreview';
@@ -163,7 +163,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const productsCanChangeCategory = style.productsCanChangeCategory ?? legacyDrag;
     const [scale, setScale] = useState(DEFAULT_PREVIEW_ZOOM);
     const [isDesktopViewport, setIsDesktopViewport] = useState(() => window.matchMedia('(min-width: 768px)').matches);
-    const renderScale = scale * (isDesktopViewport ? DESKTOP_PREVIEW_ZOOM_RENDER_MULTIPLIER : MOBILE_PREVIEW_ZOOM_RENDER_MULTIPLIER);
+    const zoomMultiplier = isDesktopViewport ? DESKTOP_PREVIEW_ZOOM_RENDER_MULTIPLIER : MOBILE_PREVIEW_ZOOM_RENDER_MULTIPLIER;
+    const renderScale = scale * zoomMultiplier;
     const [shapePickerRequest, setShapePickerRequest] = useState<{ id: string } | null>(null);
     const openShapePicker = (id: string) => {
         onOpenVisual?.();
@@ -198,14 +199,16 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const [layoutDiagnostics, setLayoutDiagnostics] = useState<LayoutDiagnostics>(EMPTY_LAYOUT_DIAGNOSTICS);
     const [dismissedTips, setDismissedTips] = useState<Set<string>>(() => new Set());
     const [hoveredFontScope, setHoveredFontScope] = useState<WordFitScope | null>(null);
-    // Zoom Indicator State
-    const [showZoomInfo, setShowZoomInfo] = useState(false);
+    const zoomIndicatorRef = useRef<HTMLDivElement>(null);
+    const zoomFrameRequest = useRef(0);
+    const pendingZoom = useRef<{ scale: number; point: CanvasPoint; anchor: CanvasPoint } | null>(null);
     const zoomActivityTimer = useRef<number | undefined>(undefined);
     const zoomInputs = useRef({ pinch: false, buttons: false });
     const zoomTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const canvasScrollPosition = useRef({ left: 0, top: 0 });
     const containerRef = useRef<HTMLDivElement>(null);
     const tipsAnchorRef = useRef<HTMLDivElement>(null);
+    const tipsPanelRef = useRef<HTMLDivElement>(null);
     const canvasPanRef = useRef<{
         pointerId: number;
         startX: number;
@@ -225,12 +228,32 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         if (!tipsOpen) return;
         const closeTipsOutside = (event: PointerEvent) => {
             const target = event.target as Node | null;
-            if (target && tipsAnchorRef.current?.contains(target)) return;
+            if (target && (tipsAnchorRef.current?.contains(target) || tipsPanelRef.current?.contains(target))) return;
             setTipsOpen(false);
             setHoveredFontScope(null);
         };
         document.addEventListener('pointerdown', closeTipsOutside, true);
         return () => document.removeEventListener('pointerdown', closeTipsOutside, true);
+    }, [tipsOpen]);
+
+    React.useLayoutEffect(() => {
+        if (!tipsOpen) return;
+        const anchor = tipsAnchorRef.current;
+        const panel = tipsPanelRef.current;
+        if (!anchor || !panel) return;
+        const update = () => {
+            const bounds = anchor.getBoundingClientRect();
+            panel.style.left = `${bounds.left}px`;
+            panel.style.top = `${bounds.bottom + 8}px`;
+        };
+        update();
+        const observer = new ResizeObserver(update);
+        if (containerRef.current) observer.observe(containerRef.current);
+        window.addEventListener('resize', update);
+        return () => {
+            observer.disconnect();
+            window.removeEventListener('resize', update);
+        };
     }, [tipsOpen]);
 
     // State for selection context (What element is user clicking?)
@@ -265,7 +288,9 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const zoomLayerRef = useRef<HTMLDivElement>(null);
     const zoomFrameRef = useRef<HTMLDivElement>(null);
     const scaleRef = useRef(scale);
-    scaleRef.current = scale;
+    React.useLayoutEffect(() => {
+        scaleRef.current = scale;
+    }, [scale]);
 
     const displayProducts = products;
     const formattingItems = React.useMemo(() => getFormattingItems(products), [products]);
@@ -441,7 +466,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             observer.disconnect();
             if (frameId !== null) window.cancelAnimationFrame(frameId);
         };
-    }, [products, renderScale, style]);
+    }, [products, style]);
 
     useEffect(() => {
         const root = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas="true"]');
@@ -474,6 +499,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
             root.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]').forEach(page => {
                 const pageRect = page.getBoundingClientRect();
+                const pageScale = pageRect.width / page.offsetWidth || 1;
+                const tolerance = 3 * pageScale;
                 const entries = Array.from(page.querySelectorAll<HTMLElement>(
                     '[data-drag-type="category"][data-drag-id], [data-drag-type="product"][data-drag-id]'
                 )).reduce<LayoutElementEntry[]>((result, element) => {
@@ -500,7 +527,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 }, []);
 
                 entries.forEach(entry => {
-                    const tolerance = 3;
                     if (
                         entry.rect.left < pageRect.left - tolerance
                         || entry.rect.right > pageRect.right + tolerance
@@ -518,7 +544,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                         if (first.element.contains(second.element) || second.element.contains(first.element)) continue;
                         const overlapWidth = Math.min(first.rect.right, second.rect.right) - Math.max(first.rect.left, second.rect.left);
                         const overlapHeight = Math.min(first.rect.bottom, second.rect.bottom) - Math.max(first.rect.top, second.rect.top);
-                        if (overlapWidth <= 3 || overlapHeight <= 3) continue;
+                        if (overlapWidth <= tolerance || overlapHeight <= tolerance) continue;
                         addIssue(first, overlappingCategories, overlappingProducts, overlappingFreeTexts);
                         addIssue(second, overlappingCategories, overlappingProducts, overlappingFreeTexts);
                     }
@@ -543,7 +569,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                         ? Math.max(...previousChunks.map(chunk => chunk.getBoundingClientRect().bottom))
                         : previousRect.top;
                     const availableHeight = previousRect.bottom - lastPreviousBottom;
-                    const requiredHeight = firstCurrentChunk.getBoundingClientRect().height + Math.max(4, 12 * renderScale);
+                    const requiredHeight = firstCurrentChunk.getBoundingClientRect().height + 12 * pageScale;
                     if (availableHeight >= requiredHeight) {
                         hasColumnGap = true;
                         break;
@@ -588,7 +614,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             if (frameId !== null) window.cancelAnimationFrame(frameId);
             if (settleFrameId !== null) window.cancelAnimationFrame(settleFrameId);
         };
-    }, [products, renderScale, style]);
+    }, [products, style]);
 
     useEffect(() => {
         const activeKeys = new Set(fontTips.map(tip => `font:${tip.scope}`));
@@ -645,6 +671,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         window.clearTimeout(zoomActivityTimer.current);
         if (!zoomInputs.current.pinch && !zoomInputs.current.buttons) {
             zoomActivityTimer.current = window.setTimeout(() => {
+                flushSync(() => setScale(scaleRef.current));
                 container.removeAttribute('data-canvas-zooming');
             }, 180);
         }
@@ -663,27 +690,46 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     useEffect(() => () => {
         window.clearTimeout(zoomActivityTimer.current);
         if (zoomTimeoutRef.current) clearTimeout(zoomTimeoutRef.current);
+        window.cancelAnimationFrame(zoomFrameRequest.current);
     }, []);
 
     const zoomAt = useCallback((value: number, point: CanvasPoint, anchor: CanvasPoint) => {
-        const canvas = canvasZoomRef.current;
-        const layer = zoomLayerRef.current;
-        if (!canvas || !layer) return;
         const next = Math.min(2.5, Math.max(0.3, value));
+        scaleRef.current = next;
+        pendingZoom.current = { scale: next, point, anchor };
         updateZoomActivity();
-        flushSync(() => { setScale(next); setShowZoomInfo(true); });
-        restoreZoomAnchor(canvas, layer, anchor, point);
+        if (!zoomFrameRequest.current) {
+            zoomFrameRequest.current = window.requestAnimationFrame(() => {
+                zoomFrameRequest.current = 0;
+                const request = pendingZoom.current;
+                pendingZoom.current = null;
+                const canvas = canvasZoomRef.current;
+                const layer = zoomLayerRef.current;
+                const frame = zoomFrameRef.current;
+                if (!request || request.scale !== scaleRef.current || !canvas || !layer || !frame) return;
+                const actualScale = request.scale * zoomMultiplier;
+                layer.style.transform = `scale(${actualScale})`;
+                frame.style.setProperty('--canvas-render-scale', String(actualScale));
+                restoreZoomAnchor(canvas, layer, request.anchor, request.point, actualScale);
+                const indicator = zoomIndicatorRef.current;
+                const label = indicator?.querySelector('[data-canvas-zoom-value]');
+                if (label) label.textContent = request.scale.toFixed(1);
+                indicator?.setAttribute('data-visible', 'true');
+            });
+        }
         if (zoomTimeoutRef.current) clearTimeout(zoomTimeoutRef.current);
-        zoomTimeoutRef.current = setTimeout(() => setShowZoomInfo(false), 2000);
-    }, [updateZoomActivity]);
+        zoomTimeoutRef.current = setTimeout(() => zoomIndicatorRef.current?.removeAttribute('data-visible'), 2000);
+    }, [updateZoomActivity, zoomMultiplier]);
 
     const updateZoom = useCallback((delta: number) => {
         const canvas = canvasZoomRef.current;
         const layer = zoomLayerRef.current;
-        if (!canvas || !layer) return;
+        if (!canvas || !layer) return false;
+        const next = Math.min(2.5, Math.max(0.3, scaleRef.current + delta));
+        if (next === scaleRef.current) return false;
         const bounds = getCanvasViewportBounds(canvas);
         const focus = { x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2 };
-        zoomAt(scaleRef.current + delta, focus, getZoomAnchor(layer, focus));
+        zoomAt(next, focus, getZoomAnchor(layer, focus));
     }, [zoomAt]);
 
     useEffect(() => {
@@ -1967,7 +2013,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 <ZoomControls
                     scale={scale}
                     updateZoom={updateZoom}
-                    showZoomInfo={showZoomInfo}
+                    indicatorRef={zoomIndicatorRef}
                     onHoldChange={updateZoomButtonActivity}
                 />
 
@@ -1986,8 +2032,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                         </button>
                     )}
 
-                    {hasVisibleTips && tipsOpen && (
-                            <div className="absolute left-0 top-10 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl">
+                    {hasVisibleTips && tipsOpen && createPortal(
+                            <div ref={tipsPanelRef} data-canvas-tips-menu className="fixed z-[120] w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl">
                                 <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
                                     <div>
                                         <p className="text-sm font-bold text-slate-800">Dicas do cardápio</p>
@@ -2194,7 +2240,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                         </section>
                                     )}
                                 </div>
-                            </div>
+                            </div>,
+                            document.body,
                     )}
                 </div>
 

@@ -1,6 +1,6 @@
 import { isMiniFoodKind } from '../../../domain/menu/miniFoods';
 import { canvasShapeUrl, getCanvasShapeDimensions, getCanvasShapeTextLayout, shapeTextColor } from '../../../domain/menu/canvasShapes';
-import { blendColor, contrastRatio, nearestContrastingColor, type ContrastSample, type RGB } from '../../../domain/menu/textContrast';
+import { blendColor, contrastRatio, needsContrastTip, suggestedContrastColor, type ContrastSample, type RGB } from '../../../domain/menu/textContrast';
 import type { AddedImage, MenuStyle, Product } from '../../../domain/menu/model';
 
 type SharedText = 'menuTitle' | 'menuSubtitle' | 'category' | 'productName' | 'productDescription' | 'productPrice';
@@ -26,6 +26,7 @@ const labels: Record<SharedText, string> = {
     productName: 'Nomes dos produtos', productDescription: 'Descrições dos produtos', productPrice: 'Preços',
 };
 const selector = '[data-word-fit-scope], [data-template-price] [data-border-text]';
+const interactionFills = ['bg-indigo-50/30', 'bg-indigo-50/20', 'bg-indigo-50/10', 'bg-indigo-500/15'];
 const intersects = (a: TextBox, b: TextBox, gap = 0) =>
     a.left < b.right + gap && a.right > b.left - gap && a.top < b.bottom + gap && a.bottom > b.top - gap;
 
@@ -98,10 +99,11 @@ function collectPageText(page: HTMLElement, style: MenuStyle): TextEntry[] {
         const boxes = domTextBoxes(element);
         if (!id || !boxes.length) continue;
         const css = getComputedStyle(element);
-        const [color, alpha] = parseColor(css.color);
+        const fill = css.webkitTextFillColor;
+        const [color, alpha] = parseColor(!fill || fill.toLowerCase() === 'currentcolor' ? css.color : fill);
         let opacity = alpha;
         for (let parent: HTMLElement | null = element; parent && parent !== page; parent = parent.parentElement) {
-            opacity *= Number(getComputedStyle(parent).opacity);
+            opacity *= Number.parseFloat(getComputedStyle(parent).opacity || '1');
         }
         const bold = Number(css.fontWeight) >= 700;
         const minimum = parseFloat(css.fontSize) >= (bold ? 18.67 : 24) ? 3 : 4.5;
@@ -211,7 +213,10 @@ function solidBackground(entry: TextEntry): RGB {
     const layers: [RGB, number][] = [];
     for (let element: HTMLElement | null = entry.element; element; element = element.parentElement) {
         const css = getComputedStyle(element);
-        const [color, alpha] = parseColor(css.backgroundColor);
+        const { classList } = element;
+        const temporary = !element.style.background && !element.style.backgroundColor
+            && interactionFills.some(fill => classList.contains(fill));
+        const [color, alpha] = temporary ? [[0, 0, 0] as RGB, 0] : parseColor(css.backgroundColor);
         if (alpha) layers.push([color, alpha]);
         if (element.dataset.categoryChunk) {
             const paint = element.querySelector(':scope > [data-category-group-paint]');
@@ -225,7 +230,10 @@ function solidBackground(entry: TextEntry): RGB {
 async function canvasBackground(page: HTMLElement, entries: TextEntry[]) {
     const assets = Array.from(page.querySelectorAll<HTMLElement>('img:not([data-menu-marker]), [data-added-image-id]'));
     const gradients = [page, ...page.querySelectorAll<HTMLElement>('[data-template-header], [data-template-category], [data-template-card]')]
-        .some(element => getComputedStyle(element).backgroundImage !== 'none');
+        .some(element => {
+            const image = getComputedStyle(element).backgroundImage;
+            return Boolean(image && image !== 'none');
+        });
     const requiresRaster = gradients || assets.some(asset => {
         const rect = asset.getBoundingClientRect();
         return entries.some(entry => entry.boxes.some(box => intersects(rect, box)));
@@ -246,7 +254,7 @@ async function canvasBackground(page: HTMLElement, entries: TextEntry[]) {
                     element.style.webkitTextStrokeWidth = '0';
                 });
                 clone.querySelectorAll<HTMLElement>('[class*="bg-indigo-"]').forEach(element => {
-                    element.classList.remove('bg-indigo-50/30', 'bg-indigo-50/20', 'bg-indigo-50/10', 'bg-indigo-500/15');
+                    element.classList.remove(...interactionFills);
                 });
                 clone.querySelectorAll<HTMLElement>('[data-shape-text]').forEach(element => {
                     element.style.visibility = 'hidden';
@@ -297,14 +305,15 @@ export async function scanTextContrast(root: HTMLElement, style: MenuStyle, sign
             groups.set(key, group);
             for (const background of sampleBackground(entry, raster)) {
                 const { minimum, opacity } = entry;
-                group.samples.set(`${background.join(',')}:${minimum}:${opacity}`, { background, minimum, opacity });
-                if (contrastRatio(entry.color, background, opacity) < minimum) group.failing.push(entry.color);
+                const sample = { background, minimum, opacity };
+                group.samples.set(`${background.join(',')}:${minimum}:${opacity}`, sample);
+                if (needsContrastTip(entry.color, sample, entry.scope === 'productDescription')) group.failing.push(entry.color);
             }
         }
     }
     return [...groups].flatMap(([key, { entry, samples, failing }]): ContrastTip[] => {
         if (!failing.length) return [];
-        const color = nearestContrastingColor(failing[0], [...samples.values()]);
+        const color = suggestedContrastColor(failing[0], [...samples.values()]);
         const black = contrastRatio(entry.color, [0, 0, 0]);
         const white = contrastRatio(entry.color, [255, 255, 255]);
         return [{ key, scope: entry.scope, id: entry.id, label: entry.label, color, fill: black > white ? '#000000' : '#ffffff' }];

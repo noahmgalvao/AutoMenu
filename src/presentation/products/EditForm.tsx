@@ -9,7 +9,7 @@ import { AlignCenter, AlignLeft, AlignRight, Check, X } from 'lucide-react';
 import { formatMenuPriceValue, getMenuPriceSymbol, normalizePriceInput, parsePriceInput, type MenuPriceFormat } from '../../domain/menu/price';
 import { PriceFormatSettings } from '../menu/designer/PriceFormatSettings';
 import { CategoryDividerPicker } from '../menu/designer/CategoryDividerPicker';
-import { useReplacePlaceholderOnInput } from '../menu/interactions/useReplacePlaceholderOnInput';
+import { placeCaretAtEditStart, useReplacePlaceholderOnInput } from '../menu/interactions/useReplacePlaceholderOnInput';
 
 interface EditFormProps {
   type: 'product' | 'category';
@@ -110,6 +110,7 @@ export const EditForm: React.FC<EditFormProps> = ({
     >
       <input 
         autoFocus={autoFocus}
+        onFocus={event => placeCaretAtEditStart(event.currentTarget)}
         data-placeholder-field={type === 'category' ? 'category-name' : 'product-name'}
         className="w-full bg-white text-slate-900 [color-scheme:light] font-bold text-sm border-b border-slate-200 focus:border-indigo-500 outline-none pb-1"
         placeholder={type === 'category' ? "Nome da categoria" : "Nome do produto"}
@@ -149,6 +150,7 @@ export const EditForm: React.FC<EditFormProps> = ({
             className="w-full bg-white text-slate-900 [color-scheme:light] text-xs border-b border-slate-200 focus:border-indigo-500 outline-none pb-1"
             placeholder="Descrição"
             data-placeholder-field="product-description"
+            onFocus={event => placeCaretAtEditStart(event.currentTarget)}
             value={formData.description || ''}
             onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
           />

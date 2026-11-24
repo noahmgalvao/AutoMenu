@@ -53,15 +53,7 @@ const editableTextClassName = 'bg-indigo-500/15 ring-2 ring-blue-500 cursor-text
 const focusCanvasFieldAtClick = (event: React.MouseEvent<HTMLElement>) => {
     const field = event.currentTarget;
     if (!field.isContentEditable || field === document.activeElement) return;
-
-    const position = document.caretPositionFromPoint?.(event.clientX, event.clientY);
-    const pointerRange = document.caretRangeFromPoint?.(event.clientX, event.clientY);
-    const node = position?.offsetNode ?? pointerRange?.startContainer;
-    const offset = position?.offset ?? pointerRange?.startOffset ?? 0;
     field.focus({ preventScroll: true });
-    if (field.inputMode !== 'decimal' && node && field.contains(node)) {
-        window.getSelection()?.collapse(node, offset);
-    }
 };
 
 const handleEditableFieldClick = (event: React.MouseEvent<HTMLElement>) => {

@@ -1,6 +1,6 @@
 import { getContiguousRangeStart } from '../../../domain/menu/selectionOrder';
 import { MenuMultiSelection } from './MenuMultiSelection';
-import { isDefaultFreeText } from '../../../domain/menu/pristineItems';
+import { placeCaretAtEditStart } from './useReplacePlaceholderOnInput';
 import { categoryKey } from '../../../domain/menu/categoryName';
 import React, { useState, useCallback, useMemo, useRef } from 'react';
 import { flushSync } from 'react-dom';
@@ -547,12 +547,7 @@ export const useSelectionState = (
         const el = document.getElementById(focusElementId);
         if (!el) return;
         el.focus({ preventScroll: true });
-        const range = document.createRange();
-        range.selectNodeContents(el);
-        if (type === 'freeText' && isDefaultFreeText(product?.name)) range.collapse(false);
-        const selection = window.getSelection();
-        selection?.removeAllRanges();
-        selection?.addRange(range);
+        placeCaretAtEditStart(el, targetField === 'price' ? true : undefined);
     };
 
     const prepareEditing = (item: { type: EditableItemType; id: string }) => {

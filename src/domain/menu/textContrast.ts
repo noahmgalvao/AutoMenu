@@ -40,3 +40,16 @@ export function nearestContrastingColor(original: RGB, samples: ContrastSample[]
     options.sort((a, b) => distance(a) - distance(b));
     return options.length ? hexColor(options[0]) : null;
 }
+
+
+// The tip is advisory. Allow small differences in subdued descriptions while aiming
+// above the minimum when we suggest a new color.
+export function needsContrastTip(color: RGB, sample: ContrastSample, subduedDescription: boolean) {
+    const tolerance = subduedDescription ? 0.6 : 0;
+    return contrastRatio(color, sample.background, sample.opacity) < sample.minimum - tolerance;
+}
+
+export function suggestedContrastColor(original: RGB, samples: ContrastSample[]) {
+    const higherContrast = samples.map(sample => ({ ...sample, minimum: sample.minimum + 0.75 }));
+    return nearestContrastingColor(original, higherContrast) ?? nearestContrastingColor(original, samples);
+}

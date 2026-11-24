@@ -86,7 +86,7 @@ function LivePrintPreview({ page, width, height, options }: {
     };
   }, [visible, element, options.printBackgrounds]);
 
-  return <div role="img" aria-label={`Preview da página ${page.pageNumber}`} className="absolute inset-0 overflow-hidden">
+  return <div role="img" aria-label={`Preview da página ${page.pageNumber}`} className="absolute inset-0 [overflow:clip]">
     <div ref={frame} className="pointer-events-none absolute left-0 top-0 origin-top-left"
       style={{ width: page.width, height: page.height, transform: `scale(${width / Math.max(page.width, 1)}, ${height / Math.max(page.height, 1)})`,
         filter: options.grayscale ? 'grayscale(1)' : undefined }} />
@@ -135,13 +135,13 @@ const PreviewPaper: React.FC<{ options: PrintCanvasOptions; page?: PrintPreviewP
   );
 
   return (
-    <div className="shrink-0">
+    <div data-pdf-preview-paper className="shrink-0">
       <div
-        className="relative bg-white border border-slate-300 overflow-hidden"
+        className="relative bg-white border border-slate-300 [overflow:clip]"
         style={{ width: previewWidth, height: previewHeight }}
       >
         <div
-          className={`absolute overflow-hidden border border-indigo-300 bg-white ${options.includeCanvasShadow ? 'shadow-lg' : ''}`}
+          className={`absolute [overflow:clip] border border-indigo-300 bg-white ${options.includeCanvasShadow ? 'shadow-lg' : ''}`}
           style={{
             left: renderLeft,
             top: renderTop,

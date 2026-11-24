@@ -532,12 +532,29 @@ test('the first insertion replaces default names and descriptions in the canvas'
   await expect(description).toHaveText('Com leite');
 });
 
+test('an existing field starts editing at its end and later allows moving the caret', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?photos=list&no-photos');
+  const name = page.locator('#product-name-1');
+  const description = page.locator('#product-description-1');
+  const nameText = await name.innerText();
+  const descriptionText = await description.innerText();
+
+  await name.click();
+  await name.click({ position: { x: 4, y: 6 } });
+  await page.keyboard.insertText('!');
+  await expect(name).toHaveText(nameText + '!');
+  await description.click({ position: { x: 4, y: 6 } });
+  await page.keyboard.insertText('!');
+  await expect(description).toHaveText(descriptionText + '!');
+  await page.keyboard.press('Home');
+  await page.keyboard.insertText('✓ ');
+  await expect(description).toHaveText('✓ ' + descriptionText + '!');
+});
+
 test('typing in the middle of a product designer placeholder replaces it', async ({ page }) => {
   await page.goto('/tests/fixtures/template-editor.html?photos=list&product-designer&default-fields');
   const product = page.locator('#product-container-1');
-  await product.hover();
-  await product.getByRole('button').last().click();
-  await product.getByRole('button', { name: 'Editar' }).click();
+  await product.getByRole('button', { name: 'Editar produto' }).click();
   const name = product.getByPlaceholder('Nome do produto');
   await name.focus();
   await name.evaluate(input => (input as HTMLInputElement).setSelectionRange(3, 3));

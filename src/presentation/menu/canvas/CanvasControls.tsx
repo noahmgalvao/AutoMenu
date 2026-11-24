@@ -165,13 +165,10 @@ function observeControls(frame: HTMLElement, page: HTMLElement) {
         }, 180);
     };
     const update = () => {
-        if (pending) return;
+        if (pending || container?.hasAttribute('data-canvas-zooming')) return;
         pending = requestAnimationFrame(() => {
             pending = 0;
-            if (container?.hasAttribute('data-canvas-zooming')) {
-                controls.forEach(({ node }) => { if (node.style.visibility !== 'hidden') node.style.visibility = 'hidden'; });
-                return;
-            }
+            if (container?.hasAttribute('data-canvas-zooming')) return;
             placeControls(page, canvas, zoomLayer, container, controls, expireHover);
         });
     };

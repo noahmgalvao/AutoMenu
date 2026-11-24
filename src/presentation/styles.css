@@ -390,3 +390,7 @@ body, body * {
 [data-modal-scroll-boundary] :where(*) {
   overscroll-behavior: contain;
 }
+
+[data-pdf-preview-paper], [data-pdf-preview-paper] * {
+  pointer-events: none !important;
+}

@@ -5,18 +5,18 @@ import { Monitor, ZoomIn, ZoomOut } from 'lucide-react';
 
 interface ZoomControlsProps {
     scale: number;
-    updateZoom: (delta: number) => void;
-    showZoomInfo: boolean;
+    updateZoom: (delta: number) => boolean | void;
+    indicatorRef: React.Ref<HTMLDivElement>;
     onHoldChange: (holding: boolean) => void;
 }
 
-export const ZoomControls: React.FC<ZoomControlsProps> = ({ scale, updateZoom, showZoomInfo, onHoldChange }) => {
+export const ZoomControls: React.FC<ZoomControlsProps> = ({ scale, updateZoom, indicatorRef, onHoldChange }) => {
     return (
         <>
         {/* Zoom Indicator */}
-        <div className={`absolute top-20 left-0 right-0 z-10 flex justify-center pointer-events-none transition-opacity duration-1000 ${showZoomInfo ? 'opacity-100' : 'opacity-0'}`}>
+        <div ref={indicatorRef} className="absolute top-20 left-0 right-0 z-10 flex justify-center pointer-events-none opacity-0 transition-opacity duration-1000 data-[visible=true]:opacity-100">
             <span className="bg-slate-900/80 backdrop-blur-md text-white px-3 py-1 rounded-full text-xs font-medium shadow-lg flex items-center gap-2">
-                <Monitor size={12} /> Live Preview - {scale.toFixed(1)}x
+                <Monitor size={12} /> Live Preview - <span data-canvas-zoom-value>{scale.toFixed(1)}</span>x
             </span>
         </div>
         
