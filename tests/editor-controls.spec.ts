@@ -67,7 +67,7 @@ test('image actions reflect each photo group and adding enables it with the shar
   await expect(value).toHaveClass(/automenu-limit-feedback/);
 });
 
-test('a collapsed product list opens only after two clicks on the same category card', async ({ page }) => {
+test('a product list toggles only after two clicks on the same category card', async ({ page }) => {
   await page.goto(fixture + '?photos=list&product-designer&no-photos');
   const designer = page.locator('#designer-sheet-products');
   const category = designer.locator('[data-drag-type="category"][data-drag-id="Entradas"]');
@@ -90,6 +90,8 @@ test('a collapsed product list opens only after two clicks on the same category 
   await categoryRow.dispatchEvent('click', { detail: 1 });
   await name.dblclick();
   await expect(productList).toBeVisible();
+  await name.dblclick();
+  await expect(productList).toBeHidden();
 });
 
 test('product designer also offers Add when its photo group is empty and hidden', async ({ page }) => {

@@ -34,6 +34,7 @@ interface UseProductDesignerLogicProps {
     currentUserId: string;
     currentMenuId: string;
     productsCanChangeCategory?: boolean;
+    onProductAdded?: (id: string) => void;
 }
 
 export const useProductDesignerLogic = ({
@@ -46,7 +47,8 @@ export const useProductDesignerLogic = ({
     workspaceId,
     currentUserId,
     currentMenuId,
-    productsCanChangeCategory
+    productsCanChangeCategory,
+    onProductAdded,
 }: UseProductDesignerLogicProps) => {
     const { assets: { uploadFileAsset }, prepareMenuImport } = useAppServices();
     // --- STATE ---
@@ -353,6 +355,7 @@ export const useProductDesignerLogic = ({
                 image: ''
             };
             setProducts(prev => [...prev, newProd]);
+            onProductAdded?.(newProd.id);
             setStyle(prev => {
                 const current = (handlers.groupedProducts[newProd.category] || []).map(p => p.id);
                 const position = newItemDraft.position;

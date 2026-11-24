@@ -150,6 +150,7 @@ export const useMenuInteractions = (input: InteractionProps) => {
         // ...draggableInteractions
         dragScope: draggableInteractions.dragScope,
         draggedItem: draggableInteractions.draggedItem,
+        draggedSelection: draggableInteractions.draggedSelection,
         isCanvasObjectDragging: (type: SelectionType, id: string) =>
             draggableInteractions.draggedSelection.some(item => item.type === type && item.id === id)
             || (draggableInteractions.draggedItem?.id === id

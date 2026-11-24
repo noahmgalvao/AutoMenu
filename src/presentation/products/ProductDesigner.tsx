@@ -19,6 +19,19 @@ import { useAppServices } from '../app/AppServicesProvider';
 import type { MenuProductSource } from '../../domain/workspace/model';
 import { PricePropagationPrompt } from '../menu/PricePropagationPrompt';
 
+function centerListItem(container: HTMLElement, item: HTMLElement) {
+    const viewport = container.getBoundingClientRect();
+    const target = item.getBoundingClientRect();
+    const screen = window.visualViewport;
+    const top = Math.max(viewport.top, screen?.offsetTop ?? 0);
+    const bottom = Math.min(viewport.bottom, screen ? screen.offsetTop + screen.height : window.innerHeight);
+    if (bottom <= top) return;
+    container.scrollTo({
+        top: container.scrollTop + (target.top + target.bottom - top - bottom) / 2,
+        behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+    });
+}
+
 interface ProductDesignerProps {
     products: Product[];
     setProducts: React.Dispatch<React.SetStateAction<Product[]>>;
@@ -57,6 +70,9 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
     const productsCanChangeCategory = style.productsCanChangeCategory ?? legacyDrag;
     const splitCategoryAcrossPages = style.splitCategoryAcrossPages ?? legacySplit;
     const { workspace: { linkSyncedMenuProducts } } = useAppServices();
+    const listRef = React.useRef<HTMLDivElement>(null);
+    const reopenedCategories = React.useRef<string[]>([]);
+    const [addedProductId, setAddedProductId] = React.useState<string | null>(null);
 
     const {
         collapsedCategories,
@@ -112,7 +128,8 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
         workspaceId,
         currentUserId,
         currentMenuId,
-        productsCanChangeCategory
+        productsCanChangeCategory,
+        onProductAdded: setAddedProductId,
     });
 
     const { sheetRef, height, isMobile, isExpanded, toggleExpanded, dragHandlers } = useBottomSheetDrag(isOpen, onClose);
@@ -152,9 +169,41 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
             ])
         ) as Record<string, Product[]>
     ), [handlers.groupedProducts]);
-    const categories = handlers.sortedCategories.filter((category) => (
+    const categories = React.useMemo(() => handlers.sortedCategories.filter(category => (
         !category.startsWith(FREE_TEXT_PREFIX) && (grouped[category]?.length || 0) > 0
-    ));
+    )), [handlers.sortedCategories, grouped]);
+
+    React.useLayoutEffect(() => {
+        const container = listRef.current;
+        if (!isOpen || !container || (newItemDraft?.type !== 'product' && !addedProductId)) return;
+        const frame = requestAnimationFrame(() => {
+            const target = newItemDraft?.type === 'product'
+                ? container.querySelector<HTMLElement>('[data-new-product-draft]')
+                : container.querySelector<HTMLElement>(`#product-container-${CSS.escape(addedProductId ?? '')}`);
+            if (target) centerListItem(container, target);
+            if (addedProductId) setAddedProductId(null);
+        });
+        return () => cancelAnimationFrame(frame);
+    }, [addedProductId, isOpen, newItemDraft]);
+
+    const { draggedItem, draggedSelection } = handlers;
+    React.useLayoutEffect(() => {
+        const container = listRef.current;
+        if (!isOpen || !container) {
+            reopenedCategories.current = [];
+            return;
+        }
+        if (draggedItem?.type === 'category') {
+            const dragged = new Set([draggedItem.id, ...draggedSelection.filter(item => item.type === 'category').map(item => item.id)]);
+            reopenedCategories.current = categories.filter(category => dragged.has(category) && !collapsedCategories.has(category));
+            return;
+        }
+        const first = categories.find(category => reopenedCategories.current.includes(category) && !collapsedCategories.has(category));
+        reopenedCategories.current = [];
+        if (first === undefined) return;
+        const header = container.querySelector<HTMLElement>(`[data-product-designer-category-header="${CSS.escape(first)}"]`);
+        if (header) centerListItem(container, header);
+    }, [categories, collapsedCategories, draggedItem, draggedSelection, isOpen]);
 
     React.useEffect(() => {
         if (!editModeId) return;
@@ -232,6 +281,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                 {/* List - Content Scrolls Here */}
                 <div
                     className="flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain custom-scrollbar p-4 space-y-4 pb-20 min-w-0"
+                    ref={listRef}
                     data-product-designer-scroll-container="true"
                     onScroll={() => { if (menuOpenId) setMenuOpenId(null); }}
                     onClickCapture={(event) => {

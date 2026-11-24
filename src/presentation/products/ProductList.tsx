@@ -189,8 +189,11 @@ export const ProductList: React.FC<ProductListProps> = ({
     </>;
   };
 
-  const renderProductDraft = () => <EditForm type="product" style={style} priceFormat={priceFormat} setStyle={setStyle}
-    formData={formData} setFormData={setFormData} saveEdit={() => saveEdit()} cancelEdit={() => cancelEdit('DRAFT')} autoFocus />;
+  const renderProductDraft = () => {
+    const form = <EditForm type="product" style={style} priceFormat={priceFormat} setStyle={setStyle}
+      formData={formData} setFormData={setFormData} saveEdit={() => saveEdit()} cancelEdit={() => cancelEdit('DRAFT')} autoFocus />;
+    return isProductDesigner ? <div data-new-product-draft>{form}</div> : form;
+  };
   const multiSelectAction = <button type="button" aria-pressed={Boolean(handlers.multiSelectMode)}
     onPointerDown={event => event.stopPropagation()}
     onClick={event => {
@@ -236,7 +239,8 @@ export const ProductList: React.FC<ProductListProps> = ({
             className={`relative min-w-0 ${isProductDesigner ? 'mb-2 last:mb-0' : 'mb-4 transition-all'} ${hasOpenMenuInCategory ? 'z-[120]' : 'z-0'} ${isCatHidden ? 'grayscale' : ''}`}
           >
             {/* Category Header */}
-            <div className={`flex items-center gap-2 group min-w-0 ${isProductDesigner ? '' : 'mb-2'}`}>
+            <div data-product-designer-category-header={isProductDesigner ? cat : undefined}
+              className={`flex items-center gap-2 group min-w-0 ${isProductDesigner ? '' : 'mb-2'}`}>
               <button 
                 onClick={(e) => { e.stopPropagation(); toggleCollapse(cat); }}
                 className="p-1 hover:bg-slate-200 rounded text-slate-400 transition-colors"
@@ -283,7 +287,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                         const previous = previousCategoryClick.current;
                         if (previous?.area === event.currentTarget && event.timeStamp - previous.time <= CATEGORY_DOUBLE_CLICK_MS) {
                           previousCategoryClick.current = null;
-                          if (isCollapsed) toggleCollapse(cat);
+                          toggleCollapse(cat);
                           return;
                         }
                         previousCategoryClick.current = { area: event.currentTarget, time: event.timeStamp };
@@ -520,7 +524,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                     )}
                     </div>
                     {(savedEditIds.has(product.id) || (!editAllItems && editModeId !== product.id)) && <ListActions
-                      addLabel="Adicionar produto abaixo" editLabel="Editar produto" busy={shakingCategory === cat} compact={isProductDesigner}
+                      addLabel="Adicionar produto abaixo" editLabel="Editar produto" busy={shakingCategory === cat} compact={isProductDesigner} small={isProductDesigner}
                       add={() => initiateAdd(cat, 'product', { after: product.id })} edit={() => startEdit(product.id)} />}
                   </div>
                   {newItemDraft?.type === 'product' && newItemDraft.categoryId === cat
@@ -555,21 +559,27 @@ export const ProductList: React.FC<ProductListProps> = ({
   );
 };
 
-function ListAction({ label, add, busy, compact, onClick }: { label: string; add?: boolean; busy?: boolean; compact?: boolean; onClick: () => void }) {
+function ListAction({ label, add, busy, compact, small, onClick }: {
+  label: string; add?: boolean; busy?: boolean; compact?: boolean; small?: boolean; onClick: () => void;
+}) {
+  const icon = add ? <Plus size={small ? 12 : compact ? 14 : 16} /> : <Edit3 size={small ? 12 : compact ? 13 : 15} />;
+  const surface = add
+    ? busy ? 'animate-shake border-red-500 bg-red-600 text-white' : 'border-indigo-600 bg-indigo-600 text-white group-hover/list-action:bg-indigo-700'
+    : 'border-slate-200 bg-white text-slate-600 group-hover/list-action:bg-slate-50';
   return <button type="button" title={label} aria-label={label} data-product-designer-edit-trigger
-    className={`grid shrink-0 place-items-center rounded-full border shadow-sm ${compact ? 'size-7' : 'size-8'} ${add
-      ? busy ? 'animate-shake border-red-500 bg-red-600 text-white' : 'border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-700'
-      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+    className={`group/list-action grid shrink-0 place-items-center rounded-full ${compact ? 'size-7' : 'size-8'}`}
     onPointerDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); onClick(); }}>
-    {add ? <Plus size={compact ? 14 : 16} /> : <Edit3 size={compact ? 13 : 15} />}
+    <span aria-hidden="true" className={`pointer-events-none grid place-items-center rounded-full border shadow-sm ${small ? 'size-[22px]' : 'size-full'} ${surface}`}>
+      {icon}
+    </span>
   </button>;
 }
 
-function ListActions({ addLabel, editLabel, add, edit, busy, compact, invisible }: {
-  addLabel: string; editLabel: string; add: () => void; edit: () => void; busy?: boolean; compact?: boolean; invisible?: boolean;
+function ListActions({ addLabel, editLabel, add, edit, busy, compact, small, invisible }: {
+  addLabel: string; editLabel: string; add: () => void; edit: () => void; busy?: boolean; compact?: boolean; small?: boolean; invisible?: boolean;
 }) {
   return <div className={`flex shrink-0 flex-col ${compact ? 'gap-0.5' : 'gap-1'} ${invisible ? 'invisible' : ''}`}>
-    <ListAction label={addLabel} add busy={busy} compact={compact} onClick={add} />
-    <ListAction label={editLabel} compact={compact} onClick={edit} />
+    <ListAction label={addLabel} add busy={busy} compact={compact} small={small} onClick={add} />
+    <ListAction label={editLabel} compact={compact} small={small} onClick={edit} />
   </div>;
 }
