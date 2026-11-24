@@ -3,7 +3,8 @@ import { DesignerTapButton } from '../common/DesignerTapButton';
 import { MenuMultiSelectionProvider } from '../menu/interactions/MenuMultiSelection';
 import { preventBrowserContextMenu } from '../common/noBrowserSelection';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertCircle, ChefHat, History, Loader2, Paintbrush, Plus, Send, ShoppingCart, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { AlertCircle, Check, ChefHat, History, Loader2, Paintbrush, Plus, Send, ShoppingCart, X } from 'lucide-react';
 import MenuDesigner from '../menu/MenuDesigner';
 import { AuthScreen } from '../account/AuthScreen';
 import { ProfileMenu } from '../account/ProfileMenu';
@@ -22,6 +23,38 @@ const ProductDesigner = React.lazy(loadProductDesigner);
 const SettingsModal = React.lazy(() => import('../account/SettingsModal').then((module) => ({
   default: module.SettingsModal,
 })));
+
+function PublishedLinkNotice({ button, onDismiss }: {
+  button: React.RefObject<HTMLButtonElement | null>;
+  onDismiss: () => void;
+}) {
+  const [position, setPosition] = useState({ top: 0, right: 0 });
+  React.useLayoutEffect(() => {
+    const anchor = button.current;
+    if (!anchor) return;
+    const update = () => {
+      const bounds = anchor.getBoundingClientRect();
+      setPosition({ top: Math.max(8, bounds.bottom + 8), right: Math.max(8, window.innerWidth - bounds.right) });
+    };
+    update();
+    window.addEventListener('resize', update);
+    const header = anchor.closest('[data-site-header]');
+    header?.addEventListener('transitionend', update);
+    return () => {
+      window.removeEventListener('resize', update);
+      header?.removeEventListener('transitionend', update);
+    };
+  }, [button]);
+
+  return createPortal(
+    <div role="status" className="fixed z-[10030]" style={position}>
+      <button type="button" onClick={onDismiss} className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-800 shadow-sm">
+        <Check size={14} /> Link publicado
+      </button>
+    </div>,
+    document.body,
+  );
+}
 
 const App: React.FC = () => {
   const [activePanel, setActivePanel] = useState<'product' | 'style' | null>('style');
@@ -104,11 +137,13 @@ const App: React.FC = () => {
     setActivePanel(current => current === 'style' ? null : 'style');
   };
 
+  const [downloadingConfiguredPdf, setDownloadingConfiguredPdf] = useState(false);
+  const publishButton = useRef<HTMLButtonElement>(null);
   const {
     printRequestId, printRequestMode, publication, isPublishOpen, setIsPublishOpen, isPublishing, busyActions,
-    publishFeedback, buttonResults, fileExportRef, hasPublishedChanges, requestPrint,
+    publishFeedback, publishedLinkNotice, dismissPublishedLinkNotice, buttonResults, fileExportRef, hasPublishedChanges, requestPrint,
     preparePdf, prepareJpg, handleLinkAction, handlePublishConfirm, handlePdfAction, handleJpgAction,
-    handlePublicationSlugChange, handlePrintComplete, handlePrintError, handlePrintCancel,
+    handlePublicationSlugChange, handlePrintComplete, handlePrintError,
   } = useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu, setLoadError, products, style, sortOption });
 
   if (!isConfigured()) {
@@ -165,7 +200,7 @@ const App: React.FC = () => {
     hasPublication: Boolean(publication),
     publicUrl: publication ? getPublicationUrl(publication) : null,
     publicationMenuSlug: publication?.menuSlug,
-    busyActions,
+    busyActions: downloadingConfiguredPdf ? new Set([...busyActions, 'download-pdf']) : busyActions,
     feedback: publishFeedback,
     buttonResults,
     onLinkAction: action => void handleLinkAction(action),
@@ -222,7 +257,11 @@ const App: React.FC = () => {
             <button type="button" onClick={() => setIsRevisionHistoryOpen(true)} className="h-10 w-10 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 flex items-center justify-center" title="Histórico de revisões"><History size={18} /></button>
             <button
               type="button"
-              onClick={() => setIsPublishOpen(true)}
+              ref={publishButton}
+              onClick={() => {
+                dismissPublishedLinkNotice();
+                setIsPublishOpen(true);
+              }}
               className={`h-10 px-3 sm:px-4 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors disabled:opacity-60 ${publication && hasPublishedChanges
                 ? 'border border-amber-400 bg-amber-50 text-amber-800 shadow-sm shadow-amber-100 hover:bg-amber-100'
                 : publication
@@ -256,6 +295,7 @@ const App: React.FC = () => {
         </div>
       </nav>
 
+      {publishedLinkNotice && <PublishedLinkNotice button={publishButton} onDismiss={dismissPublishedLinkNotice} />}
       <PublishModal
         {...virtualLinkControls}
         open={isPublishOpen}
@@ -392,7 +432,7 @@ const App: React.FC = () => {
             printRequestMode={printRequestMode}
             onPrintComplete={handlePrintComplete}
             onPrintError={handlePrintError}
-            onPrintCancel={handlePrintCancel}
+            onPrintDownloadChange={setDownloadingConfiguredPdf}
             silentPrintOptions={publication?.pdfOptions as Partial<PrintCanvasOptions> | undefined}
             fileExportRef={fileExportRef}
             onExportablePagesChange={setPageCount}

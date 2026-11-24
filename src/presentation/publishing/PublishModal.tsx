@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { resolveImagePages, toggleImagePage, type ImagePages } from '../../domain/publishing/imagePages';
 import { lockModalScrolling } from '../common/modalScroll';
-import type { JpgAction, PublishOptions } from './useMenuPublishing';
+import { isPublishLocked, type JpgAction, type PublishOptions } from './useMenuPublishing';
 import { loadUserPreferences, saveUserPreferences } from '../../infrastructure/browser/userPreferences';
 
 import { ActionButton, Choice, VirtualLinkSection, type VirtualLinkControls } from './VirtualLinkSection';
@@ -66,6 +66,7 @@ export const PublishModal: React.FC<PublishModalProps> = ({
   const [pdfOptionsOpened, setPdfOptionsOpened] = React.useState(false);
   const [pagesOpen, setPagesOpen] = React.useState(false);
   const { pdf, jpg, virtualLink } = preferences;
+  const locked = isPublishLocked(publishingLink, busyActions);
   const hasSelection = selectedPages.some(index => index >= 0 && index < pageCount);
   const imagePages = React.useMemo<ImagePages>(() => pageChoice && (pageChoice.mode !== 'selection' || hasSelection)
     ? pageChoice : { mode: hasSelection ? 'selection' : 'all' }, [pageChoice, hasSelection]);
@@ -80,15 +81,15 @@ export const PublishModal: React.FC<PublishModalProps> = ({
   }, [open, preferenceKey]);
 
   React.useEffect(() => {
-    if (!open || !pdf || !pageCount || pdfOptionsOpened || publishingLink) return;
+    if (!open || !pdf || !pageCount || pdfOptionsOpened || locked) return;
     const timer = window.setTimeout(preparePdf, 900);
     return () => window.clearTimeout(timer);
-  }, [open, pdf, pageCount, preparePdf, pdfOptionsOpened, publishingLink]);
+  }, [open, pdf, pageCount, preparePdf, pdfOptionsOpened, locked]);
   React.useEffect(() => {
-    if (!open || !jpg || !indexes.length || pdfOptionsOpened || publishingLink) return;
+    if (!open || !jpg || !indexes.length || pdfOptionsOpened || locked) return;
     const timer = window.setTimeout(() => prepareJpg(indexes), 900);
     return () => window.clearTimeout(timer);
-  }, [open, jpg, indexes, prepareJpg, pdfOptionsOpened, publishingLink]);
+  }, [open, jpg, indexes, prepareJpg, pdfOptionsOpened, locked]);
 
   const updatePreferences = (next: typeof DEFAULT_PREFERENCES) => {
     setPreferences(next);
@@ -100,7 +101,6 @@ export const PublishModal: React.FC<PublishModalProps> = ({
   const pageLabel = imagePages.mode === 'all' ? (pagesOpen ? 'Todas as páginas' : 'Todas') : imagePages.mode === 'selection' ? 'Seleção'
     : indexes.length === 1 ? `Página ${indexes[0] + 1}` : `${indexes.length} páginas`;
   const confirming = (virtualLink && publishingLink) || (!pdf && !virtualLink && jpg && busyActions.has('download-jpg'));
-  const canPublish = canConfirm && !confirming && !(virtualLink && busyActions.has('save-slug'));
 
   return (
     <div ref={lockModalScrolling} className="fixed inset-0 z-[1200] bg-slate-950/45 backdrop-blur-sm flex items-center justify-center p-3 md:p-4" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
@@ -112,7 +112,7 @@ export const PublishModal: React.FC<PublishModalProps> = ({
           <button onClick={onClose} aria-label="Fechar publicação" className="p-2 rounded-xl text-slate-400 hover:bg-slate-100"><X size={18} /></button>
         </div>
 
-        <div className="min-h-0 overflow-y-auto p-5 space-y-4 custom-scrollbar">
+        <fieldset disabled={locked} className="min-h-0 min-w-0 overflow-y-auto p-5 space-y-4 custom-scrollbar disabled:pointer-events-none disabled:grayscale disabled:opacity-50">
           {hasPendingChanges && (
             <div className="rounded-2xl border border-red-300 bg-red-50 p-3.5 text-red-800 flex items-start gap-3">
               <AlertCircle size={19} className="mt-0.5 shrink-0" />
@@ -181,11 +181,11 @@ export const PublishModal: React.FC<PublishModalProps> = ({
           />
 
           {!pdf && !jpg && !virtualLink && <p className="text-xs text-red-600">Selecione pelo menos uma opção.</p>}
-        </div>
+        </fieldset>
 
         <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-between gap-2 shrink-0">
           <button onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-600">Fechar</button>
-          <button onClick={() => onConfirm({ pdf, jpgPages: jpg ? indexes : null, virtualLink })} disabled={!canPublish} aria-busy={confirming || undefined} data-unavailable={!canConfirm || undefined} className="relative px-7 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 data-[unavailable]:opacity-50 flex items-center gap-2">
+          <button onClick={() => onConfirm({ pdf, jpgPages: jpg ? indexes : null, virtualLink })} disabled={!canConfirm || locked} aria-busy={confirming || undefined} data-unavailable={!canConfirm || undefined} className="relative px-7 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 disabled:grayscale disabled:opacity-50 flex items-center gap-2">
             {confirming && <Loader2 size={15} className="absolute left-2 animate-spin" />} Publicar
           </button>
         </div>

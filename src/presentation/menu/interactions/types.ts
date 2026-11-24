@@ -52,7 +52,7 @@ export interface InteractionProps {
     onUpdateProducts?: (updates: { id: string, field: keyof Product, value: any }[]) => void;
     onUpdateCategoryName?: (oldName: string, newName: string) => void;
     onUpdateMenuText?: (field: 'menuTitle' | 'menuSubtitle', value: string) => void;
-    onCommitCategoryOrder?: (newOrder: string[]) => void;
+    onCommitCategoryOrder?: (newOrder: string[], movedCategories?: string[]) => void;
     onCommitProductOrder?: (category: string, newOrder: string[], manuallyChanged: boolean) => void;
     onToggleProductVisibility?: (productId: string, visible: boolean) => void;
     onAddProduct?: (category: string, productId?: string, isFreeText?: boolean, specificId?: string, initialData?: Partial<Product>, options?: { index?: number }) => void;

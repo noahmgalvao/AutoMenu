@@ -64,7 +64,7 @@ interface MenuDesignerProps {
     printRequestMode?: 'download' | 'publish' | 'publish-silent';
     onPrintComplete?: (result: PdfExportResult, requestId: number) => void;
     onPrintError?: (error: Error, requestId: number) => void;
-    onPrintCancel?: (requestId: number) => void;
+    onPrintDownloadChange?: (active: boolean) => void;
     silentPrintOptions?: Partial<PrintCanvasOptions>;
     onClose?: () => void;
     onOpenVisual?: () => void;
@@ -157,7 +157,7 @@ const formatLayoutIssueBreakdown = (categories: number, products: number, freeTe
     return `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`;
 };
 
-const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, onProductEditChange, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions, virtualLinkControls, fileExportRef, onExportablePagesChange, onSelectedPagesChange, onClose, onOpenVisual, onCanvasScroll, workspaceId, currentUserId, currentMenuId, onSaveTemplate, onPublishTemplate, splitCategoryAcrossPages: legacySplit = false, productsCanChangeCategory: legacyDrag = false }) => {
+const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, onProductEditChange, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintDownloadChange, silentPrintOptions, virtualLinkControls, fileExportRef, onExportablePagesChange, onSelectedPagesChange, onClose, onOpenVisual, onCanvasScroll, workspaceId, currentUserId, currentMenuId, onSaveTemplate, onPublishTemplate, splitCategoryAcrossPages: legacySplit = false, productsCanChangeCategory: legacyDrag = false }) => {
     const { assets: { uploadFileAsset }, workspace: { loadTemplateVersion } } = useAppServices();
     const splitCategoryAcrossPages = style.splitCategoryAcrossPages ?? legacySplit;
     const productsCanChangeCategory = style.productsCanChangeCategory ?? legacyDrag;
@@ -694,7 +694,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
     const { handlePrint, printDialog, fileExports, onPageCountChange } = useCanvasPrinting({
         containerRef, products, style, setStyle, sortOption, currentPrintPageIndex,
-        printRequestId, printRequestMode, onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions,
+        printRequestId, printRequestMode, onPrintComplete, onPrintError, onPrintDownloadChange, silentPrintOptions,
         clearCanvasSelection: () => setSelection({ type: null, id: null }),
     });
 
@@ -1438,8 +1438,12 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         });
     };
 
-    const handleCommitCategoryOrder = (newOrder: string[]) => {
-        setStyle(prev => ({ ...prev, customCategoryOrder: newOrder, name: 'Custom' }));
+    const handleCommitCategoryOrder = (newOrder: string[], movedCategories?: string[]) => {
+        setStyle(prev => {
+            const categoryPositions = movedCategories && prev.categoryPositions ? { ...prev.categoryPositions } : prev.categoryPositions;
+            if (movedCategories && categoryPositions) movedCategories.forEach(id => delete categoryPositions[id]);
+            return { ...prev, customCategoryOrder: newOrder, categoryPositions, name: 'Custom' };
+        });
     };
 
     const handleCommitProductOrder = (category: string, newOrder: string[], manuallyChanged: boolean) => {

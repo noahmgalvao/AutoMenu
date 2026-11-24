@@ -1,3 +1,4 @@
+import { getContiguousRangeStart } from '../../../domain/menu/selectionOrder';
 import { MenuMultiSelection } from './MenuMultiSelection';
 import { isDefaultFreeText } from '../../../domain/menu/pristineItems';
 import { categoryKey } from '../../../domain/menu/categoryName';
@@ -133,16 +134,14 @@ export const useSelectionState = (
         const selectedKeys = new Set(selectedItems.map(item => getSelectionKey(item.type, item.id)));
         const order = selectedItems.every(item => item.type === 'category')
             ? selectableItems.filter(item => item.type === 'category')
-            : selectableItems;
-        const firstIndex = order.findIndex(item => selectedKeys.has(getSelectionKey(item.type, item.id)));
-        const range = order.slice(firstIndex, firstIndex + selectedItems.length);
-        const continuous = firstIndex >= 0 && range.length === selectedItems.length
-            && range.every(item => selectedKeys.has(getSelectionKey(item.type, item.id)));
+            : selectableItems.filter(item => item.type === 'category' || !style.hiddenProductIds?.includes(item.id));
+        const first = getContiguousRangeStart(order.map(item => getSelectionKey(item.type, item.id)), selectedKeys);
+        const range = first >= 0 ? order.slice(first, first + selectedItems.length) : null;
 
-        return continuous
+        return range
             ? { first: range[0], last: range[range.length - 1] }
             : { first: lastSelected, last: lastSelected };
-    }, [selectableItems, selectedId, selectedItems]);
+    }, [selectableItems, selectedId, selectedItems, style.hiddenProductIds]);
 
     const getSelectionControlEdges = useCallback((type: SelectionType, id: string | null) => {
         if (!selectionEndpoints) return { top: true, bottom: true };

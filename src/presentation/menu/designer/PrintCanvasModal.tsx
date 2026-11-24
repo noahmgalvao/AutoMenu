@@ -1,13 +1,13 @@
 import { lockModalScrolling } from '../../common/modalScroll';
 import React from 'react';
 import { preparePrintPageContent } from '../../../infrastructure/browser/printPageContent';
-import { AlertTriangle, Check, CheckCircle2, Image as ImageIcon, Loader2, Printer, Scissors, Settings2, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Image as ImageIcon, Loader2, Printer, Scissors, Settings2, X } from 'lucide-react';
 import type { PdfExportResult } from '../../../infrastructure/browser/pdfExport';
 import { getPaperDimensionsMm, getPrintFrameSizeMm, getPrintMarginMm, type PdfPrintOptions } from '../../../domain/publishing/printOptions';
 import { getErrorMessage } from '../../../application/errorMessages';
 import type { MenuPageSetup } from '../../../domain/menu/pageModel';
 import { VirtualLinkSection, type VirtualLinkControls } from '../../publishing/VirtualLinkSection';
-import { useButtonFeedback } from '../../publishing/useButtonFeedback';
+import { isPublishLocked } from '../../publishing/useMenuPublishing';
 import { BooleanSwitch } from '../../common/BooleanSwitch';
 
 export type PrintCanvasOptions = PdfPrintOptions;
@@ -21,6 +21,8 @@ export type PrintPreviewPage = {
 
 export interface PrintCanvasModalProps {
   isOpen: boolean;
+  isPrinting?: boolean;
+  awaitingPublicationPdf?: boolean;
   options: PrintCanvasOptions;
   currentPageIndex: number | null;
   totalPages: number;
@@ -172,13 +174,17 @@ const PreviewPaper: React.FC<{ options: PrintCanvasOptions; page?: PrintPreviewP
 function PrintOptionsPreview({ options, previewPages }: { options: PrintCanvasOptions; previewPages: PrintPreviewPage[] }) {
   const paper = getPaperDimensionsMm(options);
   const stripRef = React.useRef<HTMLDivElement>(null);
+  const drag = React.useRef<{ id: number; x: number; scroll: number } | null>(null);
   const hasPages = previewPages.length > 0;
   React.useEffect(() => {
     const strip = stripRef.current;
     if (!strip) return;
     const scrollHorizontally = (event: WheelEvent) => {
-      // Trackpads, Shift + wheel, and pinch-to-zoom keep their native behavior.
-      if (event.ctrlKey || event.shiftKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        return;
+      }
+      if (event.shiftKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
       const maxScroll = strip.scrollWidth - strip.clientWidth;
       if (maxScroll <= 0 || (event.deltaY < 0 ? strip.scrollLeft <= 0 : strip.scrollLeft >= maxScroll - 1)) return;
       const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? strip.clientWidth : 1;
@@ -196,7 +202,22 @@ function PrintOptionsPreview({ options, previewPages }: { options: PrintCanvasOp
     <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
       {hasPages ? (
         <div ref={stripRef} data-pdf-preview-strip aria-label="Páginas da prévia" tabIndex={0}
-          className="flex min-w-0 touch-pan-x items-start gap-3 overflow-x-auto overflow-y-hidden pb-2">
+          className="flex min-w-0 cursor-grab touch-none select-none items-start gap-3 overflow-x-auto overflow-y-hidden pb-2 active:cursor-grabbing"
+          onPointerDown={event => {
+            const strip = event.currentTarget;
+            if (!event.isPrimary || event.button !== 0 || strip.scrollWidth <= strip.clientWidth
+              || event.clientY >= strip.getBoundingClientRect().top + strip.clientHeight) return;
+            drag.current = { id: event.pointerId, x: event.clientX, scroll: strip.scrollLeft };
+            strip.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={event => {
+            const start = drag.current;
+            if (start?.id !== event.pointerId) return;
+            event.currentTarget.scrollLeft = start.scroll + start.x - event.clientX;
+          }}
+          onLostPointerCapture={event => {
+            if (drag.current?.id === event.pointerId) drag.current = null;
+          }}>
           {previewPages.map(page => <PreviewPaper key={page.pageNumber} options={options} page={page} />)}
         </div>
       ) : <p className="text-xs text-slate-500">Nenhuma página válida selecionada.</p>}
@@ -207,6 +228,8 @@ function PrintOptionsPreview({ options, previewPages }: { options: PrintCanvasOp
 
 export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
   isOpen,
+  isPrinting = false,
+  awaitingPublicationPdf = false,
   options,
   currentPageIndex,
   totalPages,
@@ -219,10 +242,10 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
   onComplete,
   onError,
 }) => {
-  const [isPrinting, setIsPrinting] = React.useState(false);
   const [exportError, setExportError] = React.useState<string | null>(null);
-  const { results, show: showResult } = useButtonFeedback();
-  const downloaded = results.pdf === 'Baixado';
+  const locked = isPrinting || Boolean(virtualLinkControls && isPublishLocked(
+    virtualLinkControls.publishingLink && !awaitingPublicationPdf, virtualLinkControls.busyActions,
+  ));
   const [virtualLinkEnabled, setVirtualLinkEnabled] = React.useState(false);
 
   React.useEffect(() => {
@@ -251,19 +274,15 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
   };
 
   const handlePrintClick = async () => {
-    if (isPrinting) return;
-    setIsPrinting(true);
+    if (locked) return;
     setExportError(null);
     try {
       const result = await onPrint();
-      showResult('pdf', 'Baixado');
       onComplete?.(result);
     } catch (error) {
       const message = getErrorMessage(error, 'Não foi possível gerar o PDF.');
       setExportError(message);
       onError?.(error instanceof Error ? error : new Error(message));
-    } finally {
-      setIsPrinting(false);
     }
   };
 
@@ -282,7 +301,7 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
           </button>
         </div>
 
-        <div className="min-h-0 p-5 overflow-y-auto custom-scrollbar space-y-5">
+        <fieldset disabled={locked} inert={locked} className="min-h-0 min-w-0 p-5 overflow-y-auto custom-scrollbar space-y-5 disabled:grayscale disabled:opacity-50">
           <section>
             <div className="flex items-center gap-2 text-xs font-bold text-slate-700 mb-3">
               <Settings2 size={14} /> Configuração da página
@@ -432,18 +451,16 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
               )}
             </section>
           )}
-        </div>
+        </fieldset>
 
         <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-2 bg-slate-50">
           <button onClick={onClose} className="px-4 py-2 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:bg-slate-100">
             Cancelar
           </button>
-          <button onClick={handlePrintClick} disabled={isPrinting} aria-busy={isPrinting}
-            className={`min-w-36 justify-center px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition-colors disabled:opacity-60 disabled:cursor-wait ${
-              downloaded && !isPrinting ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-900 text-white hover:bg-slate-800'
-            }`}>
-            {isPrinting ? <Loader2 size={16} className="animate-spin" /> : downloaded ? <Check size={16} /> : <Printer size={16} />}
-            <span aria-live="polite">{isPrinting ? 'Gerando PDF...' : downloaded ? 'Baixado' : 'Baixar PDF'}</span>
+          <button onClick={handlePrintClick} disabled={locked} aria-busy={isPrinting}
+            className="min-w-36 justify-center px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 bg-slate-900 text-white hover:bg-slate-800 disabled:grayscale disabled:opacity-50">
+            {isPrinting ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
+            <span>Baixar PDF</span>
           </button>
         </div>
       </div>

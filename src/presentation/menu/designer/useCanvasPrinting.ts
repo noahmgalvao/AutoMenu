@@ -1,6 +1,6 @@
 import { resolvePdfPageIndexes } from '../../../domain/publishing/printOptions';
 import { useCanvasFileExports } from './useCanvasFileExports';
-import { useEffect, useLayoutEffect, useMemo, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { MenuStyle, Product, SortOption } from '../../../domain/menu/model';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 import type { PdfExportResult } from '../../../infrastructure/browser/pdfExport';
@@ -55,18 +55,21 @@ interface CanvasPrintingOptions {
     printRequestId: number;
     onPrintComplete?: (result: PdfExportResult, requestId: number) => void;
     onPrintError?: (error: Error, requestId: number) => void;
-    onPrintCancel?: (requestId: number) => void;
+    onPrintDownloadChange?: (active: boolean) => void;
     silentPrintOptions?: Partial<PrintCanvasOptions>;
     clearCanvasSelection: () => void;
 }
 
 export function useCanvasPrinting({
     containerRef, products, style, setStyle, sortOption, currentPrintPageIndex,
-    printRequestMode, printRequestId, onPrintComplete, onPrintError, onPrintCancel, silentPrintOptions, clearCanvasSelection,
+    printRequestMode, printRequestId, onPrintComplete, onPrintError, onPrintDownloadChange, silentPrintOptions, clearCanvasSelection,
 }: CanvasPrintingOptions) {
+    const printModalOpen = useRef(false);
     const [showPrintModal, setShowPrintModal] = useState(false);
     const [printSettings, setPrintOptions] = useState<PrintCanvasOptions>(() => getDefaultPrintOptions(style));
     const [lastCompletedPrintOptions, setLastCompletedPrintOptions] = useState<PrintCanvasOptions | null>(null);
+    const printing = useRef(false);
+    const [isPrinting, setIsPrinting] = useState(false);
     const [publicationPrintRequest, setPublicationPrintRequest] = useState<number | null>(null);
     const [printPageCount, setPrintPageCount] = useState(0);
     const [printPreviewPages, setPrintPreviewPages] = useState<PrintPreviewPage[]>([]);
@@ -111,6 +114,7 @@ export function useCanvasPrinting({
         document.dispatchEvent(new Event('automenu:close-inline-formatting'));
         const pageCount = containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]').length || 0;
         setPrintPageCount(pageCount);
+        printModalOpen.current = true;
         setShowPrintModal(true);
     };
 
@@ -182,6 +186,8 @@ export function useCanvasPrinting({
 
     const printDialog: PrintCanvasModalProps | null = showPrintModal ? {
         isOpen: true,
+        isPrinting,
+        awaitingPublicationPdf: publicationPrintRequest !== null,
         options: printOptions,
         currentPageIndex: selectedPrintPage,
         totalPages: printPageCount,
@@ -190,13 +196,33 @@ export function useCanvasPrinting({
         onChange: setPrintOptions,
         onPageSetupChange: setup => updateCanvasPageSetup(setStyle, setup, products),
         onClose() {
+            printModalOpen.current = false;
             setShowPrintModal(false);
-            if (publicationPrintRequest !== null) onPrintCancel?.(publicationPrintRequest);
+            if (publicationPrintRequest !== null && !printing.current) {
+                void publishCanvasPdf(publicationPrintRequest);
+            }
         },
-        onPrint: executeCanvasPrint,
+        async onPrint() {
+            printing.current = true;
+            setIsPrinting(true);
+            onPrintDownloadChange?.(true);
+            try {
+                return await executeCanvasPrint();
+            } finally {
+                printing.current = false;
+                setIsPrinting(false);
+                onPrintDownloadChange?.(false);
+            }
+        },
+        onError() {
+            if (publicationPrintRequest !== null && !printModalOpen.current) {
+                void publishCanvasPdf(publicationPrintRequest);
+            }
+        },
         onComplete() {
             setLastCompletedPrintOptions(printOptions);
             if (publicationPrintRequest !== null) {
+                printModalOpen.current = false;
                 setShowPrintModal(false);
                 void publishCanvasPdf(publicationPrintRequest);
             }

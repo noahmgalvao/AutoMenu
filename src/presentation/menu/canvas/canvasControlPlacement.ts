@@ -8,10 +8,24 @@ export const controlBoxesOverlap = (a: ControlBox, b: ControlBox, gap = 0) =>
 const boxAt = (left: number, top: number, width: number, height: number): ControlBox =>
     ({ left, top, right: left + width, bottom: top + height });
 
-export function controlRail(anchor: ControlBox, viewport: ControlBox, previousSide?: number) {
-    if (anchor.left >= viewport.left + (previousSide === -1 ? 6 : -2)) return { edge: anchor.left, side: 1 };
-    if (anchor.right <= viewport.right + 2) return { edge: anchor.right, side: -1 };
-    return { edge: viewport.left + 4, side: 1 };
+export const controlBoxContains = (outer: ControlBox, inner: ControlBox) =>
+    inner.left >= outer.left && inner.right <= outer.right && inner.top >= outer.top && inner.bottom <= outer.bottom;
+
+export function getObjectControlBox(
+    target: ControlBox, kind: 'flow' | 'insert' | 'move', direction: 'top' | 'bottom' | 'left' | 'right',
+    width: number, height: number,
+) {
+    const middle = (target.top + target.bottom) / 2;
+    if (kind === 'flow') {
+        const y = direction === 'top' ? middle - height - 2 : middle + 2;
+        return boxAt(target.left - width + 3, y, width, height);
+    }
+    if (direction === 'left' || direction === 'right') {
+        const x = direction === 'left' ? target.left - width - 2 : target.right + 2;
+        return boxAt(x, middle - height / 2, width, height);
+    }
+    const y = direction === 'top' ? target.top - height - 2 : target.bottom + 2;
+    return boxAt(target.left + 4, y, width, height);
 }
 
 export function placeCanvasControl(

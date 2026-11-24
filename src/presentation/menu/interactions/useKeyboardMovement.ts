@@ -1,3 +1,4 @@
+import { moveContiguousSelection } from '../../../domain/menu/selectionOrder';
 import { isCanvasObjectOrControlTarget } from '../canvas/canvasHitTargets';
 import React, { useRef, useMemo } from 'react';
 import type { Product } from '../../../domain/menu/model';
@@ -17,7 +18,7 @@ export const useKeyboardMovement = (
 ) => {
     const { 
         products, style, scale,
-        onMoveCategory, onMoveProduct, onUpdateProduct, onUpdateProducts,
+        onMoveCategory, onMoveProduct, onCommitCategoryOrder, onCommitProductOrder, onUpdateProduct, onUpdateProducts,
         onStyleUpdate, onAddProduct, onAddCategory, onDeleteProduct
     } = props;
     const pageHeightPx = resolveMenuPageDimensions(style).heightPx;
@@ -29,7 +30,7 @@ export const useKeyboardMovement = (
     );
 
     const getBatchActionItems = (clickedItem: SelectionItem) => {
-        const isClickedSelected = selectedItems.some(item => item.id === clickedItem.id);
+        const isClickedSelected = selectedItems.some(item => item.type === clickedItem.type && item.id === clickedItem.id);
         return isClickedSelected && selectedItems.length > 1 ? selectedItems : [clickedItem];
     };
 
@@ -55,6 +56,31 @@ export const useKeyboardMovement = (
             type: type === 'category' ? 'category' : getProductSelectionType(product) as Exclude<SelectionType, null>,
             id,
         });
+
+        if (actionItems.length > 1) {
+            // Commit a contiguous block once, using the neighbor outside the block.
+            const selected = new Set(actionItems.map(item => item.id));
+            const before = direction === 'up' || direction === 'left';
+            if (onCommitCategoryOrder && actionItems.every(item => item.type === 'category')) {
+                const visible = sortedCategories.filter(category => !category.startsWith(FREE_TEXT_PREFIX));
+                const next = moveContiguousSelection(sortedCategories, visible, selected, before);
+                if (next) {
+                    if (next !== sortedCategories) onCommitCategoryOrder([...next], [...selected]);
+                    return;
+                }
+            }
+            if (onCommitProductOrder && actionItems.every(item =>
+                item.type === 'product' && products.find(product => product.id === item.id)?.category === catName
+            )) {
+                const order = (groupedProducts[catName] || []).map(product => product.id);
+                const visible = order.filter(id => !style.hiddenProductIds?.includes(id));
+                const next = moveContiguousSelection(order, visible, selected, before);
+                if (next) {
+                    if (next !== order) onCommitProductOrder(catName, [...next], true);
+                    return;
+                }
+            }
+        }
 
         const sortedItems = [...actionItems].sort((a, b) => {
             const indexA = visualList.find(v => v.type === (a.type === 'category' ? 'header' : 'product') && v.id === a.id)?.globalIndex ?? 0;

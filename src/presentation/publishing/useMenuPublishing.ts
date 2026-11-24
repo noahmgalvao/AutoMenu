@@ -14,6 +14,9 @@ import { getExpectedPublicationUrl, getPublicationUrl } from './publicationUrl';
 type PrintRequestMode = 'download' | 'publish' | 'publish-silent';
 type PublishLinkAction = 'copy-link' | 'share-link' | 'download-qr' | 'share-qr' | 'open-link';
 export type PublishAction = PublishLinkAction | 'publish' | 'download-pdf' | 'share-pdf' | 'download-jpg' | 'share-jpg' | 'save-slug';
+export function isPublishLocked(publishingLink: boolean | undefined, actions: ReadonlySet<PublishAction>) {
+  return Boolean(publishingLink || [...actions].some(action => action.startsWith('download-') || action.startsWith('share-') || action === 'save-slug'));
+}
 export type JpgAction = 'download' | 'share';
 export type PublishOptions = { pdf: boolean; jpgPages: number[] | null; virtualLink: boolean };
 
@@ -37,10 +40,16 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
   const [{ id: printRequestId, mode: printRequestMode }, setPrintRequest] = useState<{ id: number; mode: PrintRequestMode }>({ id: 0, mode: 'download' });
   const lastPrintRequestId = useRef(0);
   const [publication, setPublication] = useState<MenuPublication | null>(null);
-  const [isPublishOpen, setIsPublishOpen] = useState(false);
+  const [isPublishOpen, setPublishOpen] = useState(false);
+  const publishOpen = useRef(false);
+  const setIsPublishOpen = (open: boolean) => {
+    publishOpen.current = open;
+    setPublishOpen(open);
+  };
   const [isPublishing, setIsPublishing] = useState(false);
   const [busyActions, setBusyActions] = useState<ReadonlySet<PublishAction>>(() => new Set());
   const actionsInProgress = useRef(new Set<PublishAction>());
+  const [publishedLinkNotice, setPublishedLinkNotice] = useState(false);
   const [publishFeedback, setPublishFeedback] = useState<string | null>(null);
   const publicationJob = useRef<PublicationJob | null>(null);
   const publishFeedbackTimeoutRef = useRef<number | null>(null);
@@ -53,6 +62,7 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
 
   useEffect(() => {
     const menuId = workspaceData?.menu.id;
+    setPublishedLinkNotice(false);
     if (!menuId) {
       setPublication(null);
       return;
@@ -64,6 +74,12 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
       .catch((error) => { if (!cancelled) setLoadError(getErrorMessage(error, 'Falha ao carregar publicação.')); });
     return () => { cancelled = true; };
   }, [getMenuPublication, setLoadError, workspaceData?.menu.id]);
+
+  useEffect(() => {
+    if (!publishedLinkNotice) return;
+    const timer = window.setTimeout(() => setPublishedLinkNotice(false), 5000);
+    return () => window.clearTimeout(timer);
+  }, [publishedLinkNotice]);
 
   const contentSignature = useMemo(
     () => getMenuContentSignature(products, style, sortOption),
@@ -135,9 +151,10 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
     const job: PublicationJob = { menuId, promise, resolve, reject };
     publicationJob.current = job;
     setIsPublishing(true);
+    setPublishedLinkNotice(false);
     void forceSaveCurrentMenu()
       .then(() => {
-        if (publicationJob.current === job) job.requestId = requestPrint(pdfOptions ? 'publish' : 'publish-silent');
+        if (publicationJob.current === job) job.requestId = requestPrint(pdfOptions && publishOpen.current ? 'publish' : 'publish-silent');
       })
       .catch(error => {
         if (clearPublicationJob(job)) job.reject(error);
@@ -189,7 +206,6 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
       }
     }
     downloadBlob(qrBlob, qrFilename);
-    showButtonResult(action, 'Baixado');
   }, [showButtonResult]);
 
   const handleLinkAction = (action: PublishLinkAction) => runAction(action, async () => {
@@ -227,7 +243,6 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
       return;
     }
     await downloadJpgFiles(files, title);
-    showButtonResult('download-jpg', 'Baixado');
   };
 
   const handleJpgAction = (action: JpgAction, indexes: number[]) => runAction(
@@ -264,7 +279,6 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
 
     await runAction('publish', async () => {
       await getOrStartPublication(pdf);
-      showPublishFeedback('Link publicado');
     }, 'Falha ao publicar cardápio.');
   };
 
@@ -286,7 +300,6 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
         }
       }
       downloadBlob(result.blob, result.filename);
-      showButtonResult(action === 'download' ? 'download-pdf' : 'share-pdf', 'Baixado');
     }, 'Não foi possível exportar o PDF.');
   };
 
@@ -318,6 +331,7 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
       });
       if (!clearPublicationJob(job)) return;
       setPublication(published);
+      setPublishedLinkNotice(true);
       job.resolve(published);
     } catch (error) {
       if (clearPublicationJob(job)) job.reject(error);
@@ -329,15 +343,10 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
     if (job?.requestId === requestId && clearPublicationJob(job)) job.reject(error);
   };
 
-  const handlePrintCancel = (requestId: number) => {
-    const job = publicationJob.current;
-    if (job?.requestId === requestId) cancelPublication(job);
-  };
-
   return {
     printRequestId, printRequestMode, publication, isPublishOpen, setIsPublishOpen, isPublishing, busyActions,
-    publishFeedback, buttonResults, fileExportRef, hasPublishedChanges, requestPrint,
+    publishFeedback, publishedLinkNotice, dismissPublishedLinkNotice: () => setPublishedLinkNotice(false), buttonResults, fileExportRef, hasPublishedChanges, requestPrint,
     preparePdf, prepareJpg, handleLinkAction, handlePublishConfirm, handlePdfAction, handleJpgAction,
-    handlePublicationSlugChange, handlePrintComplete, handlePrintError, handlePrintCancel,
+    handlePublicationSlugChange, handlePrintComplete, handlePrintError,
   };
 }

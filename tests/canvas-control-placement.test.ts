@@ -1,16 +1,32 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { controlRail, placeCanvasControl } from '../src/presentation/menu/canvas/canvasControlPlacement';
+import { controlBoxContains, controlBoxesOverlap, getObjectControlBox, placeCanvasControl } from '../src/presentation/menu/canvas/canvasControlPlacement';
 
 const visible = { left: 4, right: 356, top: 56, bottom: 408 };
 const target = { left: 36, right: 282, top: 195, bottom: 212 };
 
-test('the rail stays left, mirrors right when clipped, and remains reachable when both corners leave the viewport', () => {
-    assert.deepEqual(controlRail(target, visible), { edge: 36, side: 1 });
-    assert.deepEqual(controlRail({ ...target, left: -40 }, visible), { edge: 282, side: -1 });
-    assert.deepEqual(controlRail({ ...target, left: -40, right: 412 }, visible), { edge: 8, side: 1 });
-    assert.equal(controlRail({ ...target, left: 6 }, visible, -1).side, -1);
-    assert.equal(controlRail({ ...target, left: 6 }, visible, 1).side, 1);
+test('insertions bracket the selected range and keep the same position relative to the object at any zoom', () => {
+    const last = { ...target, top: 248, bottom: 265 };
+    const before = getObjectControlBox(target, 'insert', 'top', 28, 28);
+    const after = getObjectControlBox(last, 'insert', 'bottom', 28, 28);
+    assert.equal(before.left, after.left);
+    assert.equal(target.top - before.bottom, 2);
+    assert.equal(after.top - last.bottom, 2);
+    assert.equal(controlBoxesOverlap(before, target), false);
+    assert.equal(controlBoxesOverlap(after, last), false);
+
+    const taller = { ...target, right: 340, bottom: 300 };
+    const bottom = getObjectControlBox(taller, 'insert', 'bottom', 28, 28);
+    assert.equal(bottom.top - taller.bottom, 2);
+    assert.equal(bottom.left - taller.left, before.left - target.left);
+});
+
+test('only a control whose official area is entirely within the visible canvas is shown', () => {
+    const nearTop = { ...target, top: 72, bottom: 94 };
+    assert.equal(controlBoxContains(visible, getObjectControlBox(nearTop, 'insert', 'top', 28, 28)), false);
+    assert.equal(controlBoxContains(visible, getObjectControlBox(nearTop, 'insert', 'bottom', 28, 28)), true);
+    const clipped = { ...target, left: -10 };
+    assert.equal(controlBoxContains(visible, getObjectControlBox(clipped, 'flow', 'bottom', 28, 28)), false);
 });
 
 test('the shortcut bar yields to the insert and move controls and stays inside the visible canvas at low zoom', () => {

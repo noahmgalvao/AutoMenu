@@ -140,7 +140,10 @@ export const ProductControls = ({
     const isSelected = handlers.isSelected?.(selectionType, selectionId) ?? handlers.selectedId === selectionId;
     const isActive = isSelected && ((handlers.selectedItems?.length || 0) <= 1 || handlers.selectedId === selectionId);
     const flow = handlers.getFlowControlDirections?.(selectionType, selectionId) || { before: 'top', after: 'bottom' };
+    const grouped = (handlers.selectedItems?.length || 0) > 1;
     const addFlow = isSelected && showAddControls ? handlers.getAddControlDirections?.(selectionType, selectionId) || flow : flow;
+    const beforeDirection = showGridMoveControls && !grouped ? addFlow.before : 'top';
+    const afterDirection = showGridMoveControls && !grouped ? addFlow.after : 'bottom';
     const [limitReached, setLimitReached] = React.useState(false);
 
     React.useEffect(() => {
@@ -202,11 +205,11 @@ export const ProductControls = ({
         <>
             {outline}
             {showBoundaryActions && !isFreeText && (
-                <CanvasFlowActions grouped={(handlers.selectedItems?.length || 0) > 1}
-                    before={showInsertion && showTopControl && renderAdd('before', addFlow.before)}
+                <CanvasFlowActions beforeDirection={beforeDirection} afterDirection={afterDirection}
+                    before={showInsertion && showTopControl && renderAdd('before', beforeDirection)}
                     up={up && renderMove(up.direction, up.edge)}
                     down={down && renderMove(down.direction, down.edge)}
-                    after={showInsertion && showBottomControl && renderAdd('after', addFlow.after)}
+                    after={showInsertion && showBottomControl && renderAdd('after', afterDirection)}
                 />
             )}
             {!handlers.editingId && (!isSelected || isActive) && (

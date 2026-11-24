@@ -475,17 +475,15 @@ test('quick controls touch and resize handles stay on grid column dividers', asy
   await page.mouse.up();
 });
 
-const flowColumnsAreReachable = (item: Element, expectedButtons: number) => {
+const visibleControlsAreReachable = (item: Element, expectedButtons: number) => {
   const groups = Array.from(item.querySelectorAll(':scope > :is([data-canvas-action-anchor="flow"], [data-canvas-action-anchor="insert"])'));
-  const columns = groups.map(marker => Array.from(document.getElementById(marker.getAttribute('aria-controls') || '')
+  const buttons = groups.flatMap(marker => Array.from(document.getElementById(marker.getAttribute('aria-controls') || '')
     ?.querySelectorAll('button') || []));
-  const buttons = columns.flat();
-  return buttons.length === expectedButtons && columns.every(column => column.every((button, index) => {
+  const visible = buttons.filter(button => getComputedStyle(button).visibility !== 'hidden');
+  return buttons.length === expectedButtons && visible.length > 0 && visible.every(button => {
     const rect = button.getBoundingClientRect();
-    const previous = column[index - 1]?.getBoundingClientRect();
-    return (!previous || (Math.abs(rect.left - previous.left) < 1 && rect.top >= previous.bottom - 1))
-      && document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)?.closest('button') === button;
-  }));
+    return document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)?.closest('button') === button;
+  });
 };
 
 for (const { width, height, touch, buttonSize } of [
@@ -506,12 +504,12 @@ for (const { width, height, touch, buttonSize } of [
       await expect.poll(() => product.evaluate(item => {
         const box = item.getBoundingClientRect();
         const bar = document.getElementById(item.querySelector('[data-canvas-action-anchor="quick"]')!.getAttribute('aria-controls')!)!.getBoundingClientRect();
-        return bar.bottom <= box.top + 1 && box.top - bar.bottom <= 60 && Math.abs(bar.right - box.right) < 1;
+        return bar.bottom <= box.top + 1 || bar.top >= box.bottom - 1;
       })).toBe(true);
       const rail = canvasActionsFor(product, 'flow');
       const count = await rail.getByRole('button').count() + await canvasActionsFor(product, 'insert').getByRole('button').count();
       expect(count).toBeGreaterThanOrEqual(3);
-      await expect.poll(() => product.evaluate(flowColumnsAreReachable, count)).toBe(true);
+      await expect.poll(() => product.evaluate(visibleControlsAreReachable, count)).toBe(true);
       if (!touch) {
         const beforeHover = await rail.boundingBox();
         await rail.getByTitle('Mover abaixo').hover();
@@ -530,7 +528,7 @@ for (const { width, height, touch, buttonSize } of [
       const title = category.locator('[data-category-id="Principais"]');
       if (touch) await title.tap();
       else await title.click();
-      await expect.poll(() => category.evaluate(flowColumnsAreReachable, 4)).toBe(true);
+      await expect.poll(() => category.evaluate(visibleControlsAreReachable, 4)).toBe(true);
       const selection = (await category.boundingBox())!;
       const groups = canvasActionsFor(category, 'insert');
       const before = (await groups.and(page.locator('[data-canvas-action-direction="top"]')).boundingBox())!;
@@ -564,14 +562,14 @@ for (const { width, height, touch, buttonSize } of [
               const toolbar = document.getElementById(element.querySelector('[data-canvas-action-anchor="quick"]')!.getAttribute('aria-controls')!)!.getBoundingClientRect();
               const horizontalOverlap = Math.min(item.right, toolbar.right) - Math.max(item.left, toolbar.left);
               return horizontalOverlap >= Math.min(item.width, toolbar.width) / 2
-                && toolbar.bottom <= item.top + 1 && item.top - toolbar.bottom <= 96;
+                && (toolbar.bottom <= item.top + 1 || toolbar.top >= item.bottom - 1);
             })).toBe(true);
 
             const flowButtons = canvasActionsFor(product, 'flow').getByRole('button')
               .or(canvasActionsFor(product, 'insert').getByRole('button'));
-            await expect(flowButtons.first()).toBeVisible();
+            await expect(flowButtons.filter({ visible: true }).first()).toBeVisible();
             const flowCount = await flowButtons.count();
-            await expect.poll(() => product.evaluate(flowColumnsAreReachable, flowCount)).toBe(true);
+            await expect.poll(() => product.evaluate(visibleControlsAreReachable, flowCount)).toBe(true);
 
             await expect.poll(() => product.evaluate(element => {
               const item = element.getBoundingClientRect();

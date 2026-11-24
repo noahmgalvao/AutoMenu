@@ -65,7 +65,7 @@ interface MenuPreviewProps {
     onUpdateProducts?: (updates: { id: string, field: keyof Product, value: any }[]) => void;
     onUpdateCategoryName?: (oldName: string, newName: string) => void;
     onUpdateMenuText?: (field: 'menuTitle' | 'menuSubtitle', value: string) => void;
-    onCommitCategoryOrder?: (newOrder: string[]) => void;
+    onCommitCategoryOrder?: (newOrder: string[], movedCategories?: string[]) => void;
     onCommitProductOrder?: (category: string, newOrder: string[], manuallyChanged: boolean) => void;
     onToggleProductVisibility?: (productId: string, visible: boolean) => void;
     onAddProduct?: (category: string, productId?: string, isFreeText?: boolean, specificId?: string, initialData?: Partial<Product>, options?: { index?: number }) => void;
@@ -672,7 +672,9 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 const rightSpace = viewportRight - bounds.right - gap;
                 const above = bounds.top - gap - edge;
                 const below = viewportBottom - bounds.bottom - gap;
-                if (Math.max(leftSpace, rightSpace) >= rect.width) {
+                if (item?.type === 'product' && below >= 104) {
+                    nextPosition = { left: clampX(x), top: bounds.bottom + gap, maxHeight: Math.min(maxHeight, below) };
+                } else if (Math.max(leftSpace, rightSpace) >= rect.width) {
                     const left = rightSpace >= rect.width ? bounds.right + gap : bounds.left - rect.width - gap;
                     nextPosition = { left: clampX(left), top: clampY(y, maxHeight), maxHeight };
                 } else {

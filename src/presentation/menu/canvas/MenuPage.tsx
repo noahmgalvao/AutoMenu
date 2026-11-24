@@ -336,7 +336,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 )}
                 {isCategorySelected && !isCategoryDragged && !handlers.isResizingCategoryColumns && !handlers.editingId && (
                     <>
-                        <CanvasFlowActions aroundCategory grouped={(handlers.selectedItems?.length || 0) > 1}
+                        <CanvasFlowActions
                             before={categoryControlEdges.top && renderCategoryAddButton('before', categoryAddBeforeDirection)}
                             up={categoryControlEdges.top && moveDirections.includes('top') && renderCategoryMoveButton('top')}
                             down={categoryControlEdges.bottom && moveDirections.includes('bottom') && renderCategoryMoveButton('bottom')}
@@ -875,12 +875,12 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                             <button type="button" onClick={() => onAddPage(pageIndex, direction)}
                                 className={`${canvasActionButtonClass} before:!border-indigo-600 before:!bg-indigo-600 !text-white`}
                                 title={`Adicionar página ${placement}`}><Plus size={20} /></button>
-                            {onMovePage && (before ? pageIndex > 0 : pageIndex < pageCount - 1) && (
+                            {onMovePage && (before ? pageIndex > 0 : pageIndex < pageCount - 1) ? (
                                 <button type="button" onClick={() => onMovePage(pageIndex, direction)} className={canvasActionButtonClass}
                                     title={before ? 'Trocar com a página anterior' : 'Trocar com a próxima página'}>
                                     <Chevron size={19} />
                                 </button>
-                            )}
+                            ) : <span aria-hidden="true" className={`${canvasActionButtonClass} invisible`} />}
                         </CanvasActionGroup>;
                     })}
                     {pageCount > 1 && pageIndex !== 0 && (
