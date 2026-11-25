@@ -6,10 +6,10 @@ globalThis.addEventListener('message', async (event: MessageEvent<FileExportRequ
   try {
     if (request.kind === 'pdf') {
       const { composeMenuPdf } = await import('./composeMenuPdf');
-      reply = { blob: await composeMenuPdf(request.pages, request.options, request.title) };
+      reply = { blob: await composeMenuPdf(request.pages, request.settings, request.title) };
     } else {
-      const { zipJpgFiles } = await import('./zipJpgFiles');
-      reply = { blob: await zipJpgFiles(request.files) };
+      const { zipImageFiles } = await import('./zipImageFiles');
+      reply = { blob: await zipImageFiles(request.files) };
     }
   } catch (error) {
     reply = { error: error instanceof Error ? error.message : String(error) };

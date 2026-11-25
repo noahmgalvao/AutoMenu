@@ -1,7 +1,7 @@
 import { chooseDesignerOption } from './fixtures/designer-picker';
 import { shortcutsFor } from './fixtures/canvas-shortcuts';
 import { test, expect, type Page } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 
 const url = '/tests/fixtures/template-editor.html';
 
@@ -763,14 +763,16 @@ test('exports a landscape screen-sized PDF using the same dimensions as the edit
   await page.locator('[data-template-option="menu-board"] > button').click();
   await expect(page.locator('[data-menu-print-page]').first()).toHaveAttribute('data-menu-page-width-mm','320');
   await expect(page.locator('[data-menu-print-page]').first()).toHaveAttribute('data-menu-page-height-mm','180');
-  await page.getByRole('button',{name:'PDF',exact:true}).click();
-  await expect(page.locator('[data-pdf-options]').getByRole('button', { name: 'Todas', exact: true })).toBeEnabled();
-  const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button',{name:'Baixar PDF',exact:true}).click();
-  const file = await downloadPromise;
-  await expect(page.getByText(file.suggestedFilename(), { exact: false })).toHaveCount(0);
   const path = testInfo.outputPath('landscape-preview.pdf');
-  await file.saveAs(path);
+  const pdfData = await page.evaluate(async () => {
+    const modulePath = '/src/infrastructure/browser/pdfExport.ts';
+    const { exportProfileFiles, getPageElementSizePx } = await import(modulePath) as typeof import('../src/infrastructure/browser/pdfExport');
+    const page = document.querySelector<HTMLElement>('[data-menu-print-page]')!;
+    const [file] = await exportProfileFiles([{ number: 1, size: getPageElementSizePx(page), snapshot: page.cloneNode(true) as HTMLElement }],
+      'PDF', { dpi: 150, bleed: 0, marks: false, markOffset: 0, color: 'RGB', quality: 100 }, 'Cardápio');
+    return [...new Uint8Array(await file.arrayBuffer())];
+  });
+  await writeFile(path, Buffer.from(pdfData));
   const pdf = (await readFile(path)).toString('latin1');
   const [,width,height] = pdf.match(/\/MediaBox\s*\[0 0 ([\d.]+) ([\d.]+)\]/) || [];
   expect(Number(width)).toBeCloseTo(320 * 72 / 25.4);
@@ -778,7 +780,7 @@ test('exports a landscape screen-sized PDF using the same dimensions as the edit
   await testInfo.attach('Landscape PDF', {path,contentType:'application/pdf'});
 });
 
-test('PDF page setup updates the editor and restores the portrait columns', async ({ page }) => {
+test('page setup updates the editor and restores the portrait columns', async ({ page }) => {
   await page.goto(`${url}?photos=list&lanes=2&different-categories&right-column&general-rules`);
   const canvasPage = page.locator('[data-menu-print-page]').first();
   const columns = canvasPage.locator('[data-drag-column-container="category"]');
@@ -787,21 +789,12 @@ test('PDF page setup updates the editor and restores the portrait columns', asyn
   )));
   await expect(columns).toHaveCount(2);
   const portraitGroups = await getGroups();
-  await page.getByRole('button', { name: 'PDF', exact: true }).click();
-  await page.locator('[data-pdf-options]').getByRole('button', { name: 'Todas', exact: true }).click();
-  await expect(page.getByRole('group', { name: 'Páginas do PDF', exact: true }).getByRole('button', { name: 'Seleção' })).toBeDisabled();
-  await page.getByRole('group', { name: 'Páginas do PDF', exact: true }).getByRole('button', { name: 'Todas as páginas' }).click();
-  const orientation = page.getByRole('combobox', { name: 'Orientação', exact: true });
-  await orientation.selectOption('landscape');
+  await page.getByRole('button', { name: 'Paisagem', exact: true }).click();
   await expect(canvasPage).toHaveAttribute('data-menu-page-width-mm', '297');
   await expect(columns).toHaveCount(2);
-  await orientation.selectOption('portrait');
+  await page.getByRole('button', { name: 'Retrato', exact: true }).click();
   await expect(canvasPage).toHaveAttribute('data-menu-page-width-mm', '210');
   await expect.poll(getGroups).toEqual(portraitGroups);
-  await page.getByRole('combobox', { name: 'Papel', exact: true }).selectOption('A5');
-  await expect(canvasPage).toHaveAttribute('data-menu-page-width-mm', '148');
-  await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
-  await expect(page.getByLabel('Tamanho da página')).toHaveText('A5');
 });
 
 test('the editor uses one landscape column for a single category and restores portrait settings', async ({ page }) => {

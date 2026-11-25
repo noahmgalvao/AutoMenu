@@ -4,17 +4,14 @@ import { MenuMultiSelectionProvider } from '../menu/interactions/MenuMultiSelect
 import { preventBrowserContextMenu } from '../common/noBrowserSelection';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircle, Check, ChefHat, History, Loader2, Paintbrush, Plus, Send, ShoppingCart, X } from 'lucide-react';
+import { AlertCircle, Check, ChefHat, History, Loader2, Paintbrush, Plus, ShoppingCart, X } from 'lucide-react';
 import MenuDesigner from '../menu/MenuDesigner';
 import { AuthScreen } from '../account/AuthScreen';
 import { ProfileMenu } from '../account/ProfileMenu';
+import { PublishButton, type PublishButtonProps } from '../publishing/PublishButton';
 import { PublishModal } from '../publishing/PublishModal';
-import type { VirtualLinkControls } from '../publishing/VirtualLinkSection';
 import { CreateMenuModal } from './CreateMenuModal';
 import { RevisionHistoryModal } from './RevisionHistoryModal';
-import type { PrintCanvasOptions } from '../menu/designer/PrintCanvasModal';
-import { getDefaultPublicationSlug } from '../../domain/publishing/publicationSlug';
-import { getPublicationPrefix, getPublicationUrl } from '../publishing/publicationUrl';
 import { useMenuPublishing } from '../publishing/useMenuPublishing';
 import { useWorkspaceEditor } from './useWorkspaceEditor';
 const loadProductDesigner = () => import('../products/ProductDesigner').then((module) => ({
@@ -139,13 +136,20 @@ const App: React.FC = () => {
     setActivePanel(current => current === 'style' ? null : 'style');
   };
 
-  const [downloadingConfiguredPdf, setDownloadingConfiguredPdf] = useState(false);
   const publishButton = useRef<HTMLButtonElement>(null);
-  const {
-    printRequestId, publication, isPublishOpen, setIsPublishOpen, isPublishing, busyActions,
-    publishedLinkNotice, dismissPublishedLinkNotice, buttonResults, fileExportRef, hasPublishedChanges, requestPrint,
-    preparePdf, prepareJpg, preparePublication, handleLinkAction, handlePublishLink, handlePdfAction, handleJpgAction,
-  } = useMenuPublishing({ session, workspaceData, setLoadError, products, style, sortOption });
+  const publishInvoker = useRef<HTMLElement | null>(null);
+  const publishing = useMenuPublishing({ session, workspaceData, products, style, sortOption });
+  const { isPublishOpen, setIsPublishOpen, publishedLinkNotice, dismissPublishedLinkNotice, fileExportRef } = publishing;
+  const publishControl: PublishButtonProps = {
+    tone: publishing.tone,
+    busy: publishing.isPublishing,
+    onClick: () => {
+      publishInvoker.current = document.activeElement instanceof HTMLElement && document.activeElement.matches('[aria-haspopup="dialog"]')
+        ? document.activeElement : publishButton.current;
+      dismissPublishedLinkNotice();
+      setIsPublishOpen(true);
+    },
+  };
 
   if (!isConfigured()) {
     return (
@@ -196,19 +200,6 @@ const App: React.FC = () => {
     );
   }
 
-  const virtualLinkControls: VirtualLinkControls = {
-    publishingLink: isPublishing,
-    linkPrefix: getPublicationPrefix(publication?.restaurantSlug || workspaceData.workspace.slug),
-    defaultMenuSlug: getDefaultPublicationSlug(workspaceData.menu.name, workspaceData.menu.id),
-    publicUrl: publication ? getPublicationUrl(publication) : null,
-    publicationMenuSlug: publication?.menuSlug,
-    busyActions: downloadingConfiguredPdf ? new Set([...busyActions, 'download-pdf']) : busyActions,
-    error: loadError,
-    buttonResults,
-    onLinkAction: action => void handleLinkAction(action),
-    onPublishLink: menuSlug => void handlePublishLink(menuSlug),
-  };
-
   return (
     <MenuMultiSelectionProvider>
     <div className="h-screen bg-slate-50 flex flex-col font-sans text-slate-900 overflow-hidden relative"
@@ -257,23 +248,7 @@ const App: React.FC = () => {
 
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => setIsRevisionHistoryOpen(true)} className="h-10 w-10 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 flex items-center justify-center" title="Histórico de revisões"><History size={18} /></button>
-            <button
-              type="button"
-              ref={publishButton}
-              onClick={() => {
-                dismissPublishedLinkNotice();
-                setIsPublishOpen(true);
-              }}
-              className={`h-10 px-3 sm:px-4 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors disabled:opacity-60 ${publication && hasPublishedChanges
-                ? 'border border-amber-400 bg-amber-50 text-amber-800 shadow-sm shadow-amber-100 hover:bg-amber-100'
-                : publication
-                  ? 'border border-emerald-400 bg-emerald-50 text-emerald-700 shadow-sm shadow-emerald-100 hover:bg-emerald-100'
-                  : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              {isPublishing ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-              <span className="hidden sm:inline">Publicar</span>
-            </button>
+            <PublishButton header buttonRef={publishButton} {...publishControl} />
             <ProfileMenu
               profile={workspaceData.profile}
               workspace={workspaceData.workspace}
@@ -298,21 +273,8 @@ const App: React.FC = () => {
       </nav>
 
       {publishedLinkNotice && <PublishedLinkNotice button={publishButton} onDismiss={dismissPublishedLinkNotice} />}
-      <PublishModal
-        {...virtualLinkControls}
-        open={isPublishOpen}
-        preferenceKey={`automenu:publish-options:${session.user.id}`}
-        hasPendingChanges={Boolean(publication && hasPublishedChanges)}
-        onClose={() => setIsPublishOpen(false)}
-        onPdfAction={handlePdfAction}
-        onJpgAction={handleJpgAction}
-        pageCount={pageCount}
-        selectedPages={selectedPages}
-        preparePdf={preparePdf}
-        preparePublication={preparePublication}
-        prepareJpg={prepareJpg}
-        error={loadError}
-      />
+      <PublishModal key={workspaceData.menu.id} publishing={publishing}
+        title={workspaceData.menu.name} pageCount={pageCount} selectedPages={selectedPages} restoreFocus={publishInvoker} />
 
       <CreateMenuModal
         open={isCreateMenuOpen}
@@ -406,7 +368,7 @@ const App: React.FC = () => {
               workspaceId={workspaceData.workspace.id}
               currentUserId={session.user.id}
               currentMenuId={workspaceData.menu.id}
-              onPdfClick={requestPrint}
+              publishControl={publishControl}
               onImportVisibilityChange={setIsMenuImportOpen}
             />
           </React.Suspense>
@@ -433,13 +395,11 @@ const App: React.FC = () => {
             isProductDesignerOpen={activePanel === 'product'}
             onRulesLayoutEditingChange={setRulesLayoutEditing}
             onOpenVisual={() => setActivePanel('style')}
-            printRequestId={printRequestId}
-            onPrintDownloadChange={setDownloadingConfiguredPdf}
-            silentPrintOptions={publication?.pdfOptions as Partial<PrintCanvasOptions> | undefined}
             fileExportRef={fileExportRef}
+            exportTitle={workspaceData.menu.name}
             onExportablePagesChange={setPageCount}
             onSelectedPagesChange={handleSelectedPages}
-            virtualLinkControls={virtualLinkControls}
+            publishControl={publishControl}
             onClose={() => setActivePanel(null)}
             onCanvasScroll={handleCanvasScroll}
             workspaceId={workspaceData.workspace.id}

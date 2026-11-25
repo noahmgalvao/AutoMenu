@@ -1,5 +1,4 @@
 import type { MenuPublication } from '../../domain/workspace/model';
-import { slugify } from '../../application/workspace/state';
 
 const getPortablePublicationStorageKey = (menuId: string) => `automenu:portable-publication:${menuId}`;
 
@@ -40,10 +39,4 @@ export const savePortablePublication = (publication: MenuPublication) => {
   } catch {
     // The public link still works even when local preference storage is unavailable.
   }
-};
-
-export const updatePortablePublicationMenuSlug = (publication: MenuPublication, menuSlug: string) => {
-  const updated = { ...publication, menuSlug: slugify(menuSlug), updatedAt: new Date().toISOString() };
-  savePortablePublication(updated);
-  return updated;
 };

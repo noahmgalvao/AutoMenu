@@ -2,6 +2,9 @@ import React from 'react';
 import { Loader2 } from 'lucide-react';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { useAppServices } from '../app/AppServicesProvider';
+import { MenuPreview } from '../menu/canvas/MenuPreview';
+import { resolveMenuPageDimensions } from '../../domain/menu/pageSetup';
+import type { WorkspaceMenuContent } from '../../application/workspace/workspaceGateway';
 import type { MenuPublication } from '../../domain/workspace/model';
 
 type PdfDocumentLike = {
@@ -123,7 +126,7 @@ const MobilePdfViewer: React.FC<{ bytes: ArrayBuffer }> = ({ bytes }) => {
 };
 
 export const PublicMenuPage: React.FC = () => {
-  const { publications: { loadPublicMenuPublication } } = useAppServices();
+  const { publications: { loadPublicMenuPublication, loadPublishedContent } } = useAppServices();
   const parts = window.location.pathname.split('/').filter(Boolean);
   const restaurantSlug = decodeURIComponent(parts[1] || '');
   const menuSlug = decodeURIComponent(parts[2] || '');
@@ -132,6 +135,7 @@ export const PublicMenuPage: React.FC = () => {
   const publishingStartedAt = Number(query.get('publishing') || 0);
   const previousPublicationUpdatedAt = query.get('previousPublication');
   const [publication, setPublication] = React.useState<MenuPublication | null>(null);
+  const [content, setContent] = React.useState<WorkspaceMenuContent | null>(null);
   const [inlinePdfUrl, setInlinePdfUrl] = React.useState<string | null>(null);
   const [pdfBytes, setPdfBytes] = React.useState<ArrayBuffer | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -155,19 +159,25 @@ export const PublicMenuPage: React.FC = () => {
         do {
           result = await loadPublicMenuPublication({ restaurantSlug, menuSlug, portableSnapshotUrl });
           const isNewPublication = Boolean(
-            result?.pdfUrl
+            result
             && (!previousPublicationUpdatedAt || result.updatedAt !== previousPublicationUpdatedAt),
           );
           if (!publishingStartedAt || isNewPublication) break;
           await waitForRetry(controller.signal, 900);
         } while (Date.now() < deadline);
 
-        if (!result?.pdfUrl) {
+        if (!result) {
           setError('Cardápio não encontrado.');
           return;
         }
         setPublication(result);
         document.title = result.pdfFilename.replace(/\.pdf$/i, '') || 'Cardápio';
+
+        if (!result.pdfUrl) {
+          const snapshot = await loadPublishedContent(result);
+          if (!controller.signal.aborted) setContent(snapshot);
+          return;
+        }
 
         const response = await fetch(result.pdfUrl, { signal: controller.signal, cache: 'no-store' });
         if (!response.ok) throw new Error('Falha ao carregar PDF');
@@ -185,7 +195,7 @@ export const PublicMenuPage: React.FC = () => {
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [menuSlug, portableSnapshotUrl, previousPublicationUpdatedAt, publishingStartedAt, restaurantSlug]);
+  }, [loadPublicMenuPublication, loadPublishedContent, menuSlug, portableSnapshotUrl, previousPublicationUpdatedAt, publishingStartedAt, restaurantSlug]);
 
   if (loading) {
     return (
@@ -195,6 +205,8 @@ export const PublicMenuPage: React.FC = () => {
       </div>
     );
   }
+
+  if (content) return <PublishedMenuPreview content={content} />;
 
   if (!publication?.pdfUrl || !pdfBytes) {
     return (
@@ -221,3 +233,20 @@ export const PublicMenuPage: React.FC = () => {
     </main>
   );
 };
+
+function PublishedMenuPreview({ content }: { content: WorkspaceMenuContent }) {
+  const container = React.useRef<HTMLElement>(null);
+  const [width, setWidth] = React.useState(() => window.innerWidth - 24);
+  React.useEffect(() => {
+    if (!container.current) return;
+    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
+    observer.observe(container.current);
+    return () => observer.disconnect();
+  }, []);
+  const scale = Math.min(1, Math.max(0.01, width / resolveMenuPageDimensions(content.style).widthPx));
+  return <main ref={container} aria-label="Cardápio publicado" className="min-h-dvh overflow-x-hidden bg-slate-100 p-3">
+    <div style={{ zoom: scale }}>
+      <MenuPreview {...content} readOnly stackPages splitCategoryAcrossPages={content.style.splitCategoryAcrossPages} />
+    </div>
+  </main>;
+}

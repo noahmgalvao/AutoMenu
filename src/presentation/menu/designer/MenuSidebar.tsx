@@ -1,3 +1,4 @@
+import { PublishButton, type PublishButtonProps } from '../../publishing/PublishButton';
 import type { FormattingKind, FormattingScope } from '../../../domain/menu/itemFormatting';
 import { SaveTemplateDialog } from './MenuDesignDialog';
 import { GeneralRulesButton, useGeneralRules } from './GeneralRules';
@@ -7,7 +8,7 @@ import type { CanvasShape } from '../../../domain/menu/model';
 import { TemplatePicker } from './TemplatePicker';
 import React, { useState } from 'react';
 import type { MenuStyle, Product, ElementStyle, SortOption, AddedImage } from '../../../domain/menu/model';
-import { FileText, Maximize2, Minimize2, Paintbrush, RotateCcw, X } from 'lucide-react';
+import { Maximize2, Minimize2, Paintbrush, RotateCcw, X } from 'lucide-react';
 import { useBottomSheetDrag } from '../../common/useBottomSheetDrag';
 import { 
   ElementsSection, 
@@ -23,7 +24,7 @@ interface MenuSidebarProps {
     onClose?: () => void;
     onSaveTemplate?: (name: string, description: string, id: string, publish: boolean) => Promise<void>;
     onPublishTemplate?: (id: string) => Promise<void>;
-    onPdfClick?: () => void;
+    publishControl?: PublishButtonProps;
     handleResetDesign: () => void;
     restoreRuleDefaults: () => void;
     onRulesLayoutEditingChange?: (editing: boolean) => void;
@@ -64,7 +65,7 @@ interface MenuSidebarProps {
 }
 
 export const MenuSidebar: React.FC<MenuSidebarProps> = ({
-    isOpen, onClose, onPdfClick, handleResetDesign, restoreRuleDefaults, onRulesLayoutEditingChange,
+    isOpen, onClose, publishControl, handleResetDesign, restoreRuleDefaults, onRulesLayoutEditingChange,
     style, setStyle, templates, applyTemplate, onSaveTemplate, onPublishTemplate, sortOption, setSortOption, products, currentUserId,
     selection, setSelection, selectedFreeText, selectedAddedImage, selectedAddedImageIds,
     formattingScope, itemStyle, setSidebarFormatting,
@@ -120,7 +121,7 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
           </h2>
           <div className="flex shrink-0 gap-1.5">
             <GeneralRulesButton open={rules.open} />
-            <button type="button" onClick={onPdfClick} className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-100 flex items-center gap-1.5 pointer-events-auto" onPointerDown={e => e.stopPropagation()} title="Exportar PDF"><FileText size={14} /> PDF</button>
+            {publishControl && <PublishButton {...publishControl} />}
             <DesignerTapButton type="button" onClick={toggleExpanded} aria-expanded={isExpanded} className="md:hidden h-8 w-8 rounded-lg text-slate-500 hover:bg-white hover:text-slate-800 pointer-events-auto flex items-center justify-center" onPointerDown={e => e.stopPropagation()} title={isExpanded ? 'Voltar à visualização parcial' : 'Expandir painel'} aria-label={isExpanded ? 'Voltar à visualização parcial' : 'Expandir painel'}>{isExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}</DesignerTapButton>
             <DesignerTapButton type="button" onClick={onClose} className="md:hidden h-8 w-8 rounded-lg text-slate-500 hover:bg-white hover:text-slate-800 pointer-events-auto flex items-center justify-center" onPointerDown={e => e.stopPropagation()} title="Fechar painel" aria-label="Fechar painel"><X size={18} /></DesignerTapButton>
           </div>

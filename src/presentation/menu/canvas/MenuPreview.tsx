@@ -85,6 +85,7 @@ interface MenuPreviewProps {
     splitCategoryAcrossPages?: boolean;
     productsCanChangeCategory?: boolean;
     readOnly?: boolean;
+    stackPages?: boolean;
     visiblePageIndex?: number;
     onPageCountChange?: (pageCount: number) => void;
     onSplitCategorySwap?: (suggestion: SplitCategorySwap | null) => void;
@@ -2768,7 +2769,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             </div>, document.body)}
             {!readOnly && handlers.showAddModal && (createPortal(<div ref={lockModalScrolling} className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm" onClick={() => handlers.setShowAddModal(null)}> <div className="bg-white p-4 rounded-xl shadow-2xl animate-fade-in" onClick={e => e.stopPropagation()}> <h3 className="text-lg font-bold mb-4">Itens ocultos</h3> <div className="space-y-2 max-h-60 overflow-y-auto"> {products.filter(p => p.category === handlers.showAddModal!.category && !handlers.groupedProducts[handlers.showAddModal!.category]?.find(gp => gp.id === p.id)).map(p => (<button key={p.id} onClick={() => restoreProduct(p.id)} className="w-full p-2 text-left hover:bg-slate-100 rounded flex justify-between items-center"> <span>{p.name}</span> <Plus size={14} /> </button>))} </div> <div className="mt-4 pt-4 border-t"> <button onClick={createNewInModal} className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"> Criar novo item </button> </div> </div> </div>, document.body))}
 
-            <div className={`relative isolate flex flex-row items-start w-fit mx-auto ${readOnly ? 'gap-4 p-0 min-h-0' : 'gap-8 px-[52px] pb-20 pt-16 min-h-full'}`}>
+            <div className={`relative isolate flex ${props.stackPages ? 'flex-col' : 'flex-row'} items-start w-fit mx-auto ${readOnly ? 'gap-4 p-0 min-h-0' : 'gap-8 px-[52px] pb-20 pt-16 min-h-full'}`}>
                 {pages.map((pageContent, i) => (
                     visiblePageIndex != null && i !== visiblePageIndex ? null :
                     <MenuPage

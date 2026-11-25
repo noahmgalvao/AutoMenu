@@ -1,6 +1,6 @@
-import { useRef, type ButtonHTMLAttributes } from 'react';
+import { useRef, type ButtonHTMLAttributes, type Ref } from 'react';
 
-type Props = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'onClick'> & { onClick?: () => void; onSwipeUp?: () => void };
+type Props = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'onClick'> & { ref?: Ref<HTMLButtonElement>; onClick?: () => void; onSwipeUp?: () => void };
 
 export function DesignerTapButton({ onClick, onSwipeUp, onPointerDown, ...props }: Props) {
     const touch = useRef<{ id: number; x: number; y: number } | null>(null);

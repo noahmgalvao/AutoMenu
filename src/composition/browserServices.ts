@@ -1,7 +1,6 @@
 import { readCustomMarkerCache, writeCustomMarkerCache } from '../infrastructure/browser/customMarkerCache';
 import type { AppServices } from '../application/appServices';
 import { readFavoriteCache, writeFavoriteCache } from '../infrastructure/browser/favoriteCache';
-import { updatePortablePublicationMenuSlug } from '../infrastructure/browser/portablePublicationCache';
 import { uploadDataUrlAsset, uploadFileAsset } from '../infrastructure/supabase/assets';
 import { listCustomMenuMarkers, saveCustomMenuMarker, deleteCustomMenuMarker } from '../infrastructure/supabase/customMenuMarkers';
 import * as auth from '../infrastructure/supabase/auth';
@@ -10,7 +9,7 @@ import { fetchFavorites, isPermanentFavoriteError, persistFavorite } from '../in
 import { loadWorkspaceData, loadWorkspaceMenuData } from '../infrastructure/supabase/workspace/loadWorkspace';
 import { createWorkspaceMenu, deleteWorkspaceMenus, renameWorkspaceMenu, restoreWorkspaceMenus } from '../infrastructure/supabase/workspace/menus';
 import { linkSyncedMenuProducts, listMenuProductSources, listMenuProductSyncs, unlinkSyncedMenuProducts } from '../infrastructure/supabase/workspace/productLinks';
-import { getMenuPublication, loadPublicMenuPublication, publishWorkspaceMenu, updatePublicationMenuSlug } from '../infrastructure/supabase/workspace/publications';
+import { getMenuPublication, loadPublicMenuPublication, publishWorkspaceMenu, verifyPublicMenuPublication, loadPublishedContent } from '../infrastructure/supabase/workspace/publications';
 import { listMenuRevisions, loadMenuRevisionState } from '../infrastructure/supabase/workspace/revisions';
 import { saveWorkspaceState } from '../infrastructure/supabase/workspace/saveWorkspace';
 import { canPublishTemplates, loadTemplateVersion, publishWorkspaceTemplate, saveWorkspaceTemplate } from '../infrastructure/supabase/workspace/templates';
@@ -24,7 +23,7 @@ export const browserServices = {
     updateAccountIdentity, saveWorkspaceTemplate, canPublishTemplates, publishWorkspaceTemplate, loadTemplateVersion, listMenuRevisions, loadMenuRevisionState,
     listMenuProductSources, listMenuProductSyncs, linkSyncedMenuProducts, unlinkSyncedMenuProducts,
   },
-  publications: { getMenuPublication, loadPublicMenuPublication, publishWorkspaceMenu, updatePublicationMenuSlug, updatePortablePublicationMenuSlug },
+  publications: { getMenuPublication, loadPublicMenuPublication, publishWorkspaceMenu, verifyPublicMenuPublication, loadPublishedContent },
   assets: { uploadFileAsset },
   customMarkers: { listCustomMenuMarkers, saveCustomMenuMarker, deleteCustomMenuMarker, readCustomMarkerCache, writeCustomMarkerCache },
   favorites: { fetchFavorites, isPermanentFavoriteError, persistFavorite, readFavoriteCache, writeFavoriteCache },

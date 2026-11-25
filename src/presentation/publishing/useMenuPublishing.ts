@@ -1,60 +1,99 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getErrorMessage } from '../../application/errorMessages';
 import type { AuthSession } from '../../application/account/authGateway';
-import type { WorkspaceMenuContent } from '../../application/workspace/workspaceGateway';
+import { getErrorMessage } from '../../application/errorMessages';
+import type { PublicationAvailability } from '../../application/publishing/publicationGateway';
 import { getMenuContentSignature } from '../../application/workspace/state';
+import type { WorkspaceMenuContent } from '../../application/workspace/workspaceGateway';
+import { getDefaultPublicationSlug } from '../../domain/publishing/publicationSlug';
 import type { LoadedWorkspaceData, MenuPublication } from '../../domain/workspace/model';
-import { copyText, createQrCodeBlob, downloadBlob, downloadJpgFiles, shareFiles } from '../../infrastructure/browser/shareFiles';
+import { copyText, createQrCodeBlob, downloadBlob, shareFiles } from '../../infrastructure/browser/shareFiles';
 import { useAppServices } from '../app/AppServicesProvider';
 import type { CanvasFileExports } from '../menu/designer/useCanvasFileExports';
+import { getPublicationPrefix, getPublicationUrl } from './publicationUrl';
 import { useButtonFeedback } from './useButtonFeedback';
-import { getDefaultPublicationSlug } from '../../domain/publishing/publicationSlug';
-import { getPublicationUrl } from './publicationUrl';
 
-type PublishLinkAction = 'copy-link' | 'share-link' | 'download-qr' | 'share-qr';
-export type PublishAction = PublishLinkAction | 'publish' | 'download-pdf' | 'share-pdf' | 'download-jpg' | 'share-jpg';
-export function isPublishLocked(publishingLink: boolean | undefined, actions: ReadonlySet<PublishAction>) {
-  return Boolean(publishingLink || [...actions].some(action => action.startsWith('download-') || action.startsWith('share-')));
-}
-export type JpgAction = 'download' | 'share';
-interface PublicationJob {
-  menuId: string;
-  promise: Promise<MenuPublication>;
-}
+export type LinkAction = 'copy-link' | 'share-link' | 'download-qr' | 'share-qr';
+export type PublicationTone = 'neutral' | 'pending' | 'synced' | 'failed';
 
 interface MenuPublishingOptions extends WorkspaceMenuContent {
   session: AuthSession | null;
   workspaceData: LoadedWorkspaceData | null;
-  setLoadError: (message: string | null) => void;
 }
 
-export function useMenuPublishing({ session, workspaceData, setLoadError, products, style, sortOption }: MenuPublishingOptions) {
-  const { publications: { getMenuPublication, publishWorkspaceMenu, updatePublicationMenuSlug, updatePortablePublicationMenuSlug } } = useAppServices();
-  const [printRequestId, setPrintRequestId] = useState(0);
-  const [publication, setPublication] = useState<MenuPublication | null>(null);
+interface LinkState {
+  menuId: string | undefined;
+  record: MenuPublication | null;
+  availability: PublicationAvailability | null;
+  publishedSignature?: string;
+  failure?: string;
+}
+
+export function useMenuPublishing({ session, workspaceData, products, style, sortOption }: MenuPublishingOptions) {
+  const { publications } = useAppServices();
+  const menuId = workspaceData?.menu.id;
   const [isPublishOpen, setIsPublishOpen] = useState(false);
-  const [isPublishing, setIsPublishing] = useState(false);
-  const [busyActions, setBusyActions] = useState<ReadonlySet<PublishAction>>(() => new Set());
-  const actionsInProgress = useRef(new Set<PublishAction>());
+  const [state, setState] = useState<LinkState>({ menuId, record: null, availability: 'checking' });
+  const [runningMenus, setRunningMenus] = useState<ReadonlySet<string>>(() => new Set());
   const [publishedLinkNotice, setPublishedLinkNotice] = useState(false);
-  const publicationJob = useRef<PublicationJob | null>(null);
-  const { results: buttonResults, show: showButtonResult } = useButtonFeedback();
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [busyAction, setBusyAction] = useState<LinkAction>();
+  const actionRef = useRef<LinkAction | undefined>(undefined);
+  const jobs = useRef(new Map<string, Promise<MenuPublication>>());
+  const confirmed = useRef(new Map<string, string>());
+  const lastChecked = useRef<{ id: string; time: number } | undefined>(undefined);
+  const activeMenu = useRef(menuId);
+  activeMenu.current = menuId;
   const fileExportRef = useRef<CanvasFileExports>(null);
+  const { results: buttonResults, show: showButtonResult } = useButtonFeedback();
+  const contentSignature = useMemo(() => getMenuContentSignature(products, style, sortOption), [products, style, sortOption]);
+
+  const refresh = useCallback(async (id: string, cancelled: () => boolean) => {
+    if (jobs.current.has(id)) return;
+    if (lastChecked.current?.id === id && Date.now() - lastChecked.current.time < 20_000) return;
+    lastChecked.current = { id, time: Date.now() };
+    const stillCurrent = () => activeMenu.current === id && !cancelled() && !jobs.current.has(id);
+    const previous = confirmed.current.get(id);
+    let record: MenuPublication | null = null;
+    try {
+      record = await publications.getMenuPublication(id);
+      if (!stillCurrent() || confirmed.current.get(id) !== previous) return;
+      if (!record) {
+        setState({ menuId: id, record: null, availability: null });
+        return;
+      }
+      setState(current => ({ menuId: id, record, availability: current.record?.id === record?.id ? current.availability : 'checking' }));
+      const result = await publications.verifyPublicMenuPublication(record);
+      if (stillCurrent() && confirmed.current.get(id) === previous) {
+        setState({ menuId: id, record, availability: result.availability, publishedSignature: result.contentSignature });
+      }
+    } catch {
+      if (stillCurrent() && confirmed.current.get(id) === previous) {
+        setState(current => ({ menuId: id, record: record ?? (current.menuId === id ? current.record : null), availability: 'unknown' }));
+      }
+    }
+  }, [publications]);
 
   useEffect(() => {
-    const menuId = workspaceData?.menu.id;
     setPublishedLinkNotice(false);
-    if (!menuId) {
-      setPublication(null);
-      return;
-    }
+    setActionError(null);
+    if (!menuId) return;
     let cancelled = false;
-    setPublication(null);
-    void getMenuPublication(menuId)
-      .then((result) => { if (!cancelled) setPublication(current => current?.menuId === menuId ? current : result); })
-      .catch((error) => { if (!cancelled) setLoadError(getErrorMessage(error, 'Falha ao carregar publicação.')); });
-    return () => { cancelled = true; };
-  }, [getMenuPublication, setLoadError, workspaceData?.menu.id]);
+    const check = () => void refresh(menuId, () => cancelled);
+    const reconnect = () => { lastChecked.current = undefined; check(); };
+    check();
+    window.addEventListener('online', reconnect);
+    return () => {
+      cancelled = true;
+      if (lastChecked.current?.id === menuId) lastChecked.current = undefined;
+      window.removeEventListener('online', reconnect);
+    };
+  }, [menuId, refresh]);
+
+  useEffect(() => {
+    if (!isPublishOpen || !menuId) return;
+    const timer = window.setTimeout(() => { void refresh(menuId, () => false); }, 250);
+    return () => window.clearTimeout(timer);
+  }, [isPublishOpen, menuId, refresh]);
 
   useEffect(() => {
     if (!publishedLinkNotice) return;
@@ -62,205 +101,90 @@ export function useMenuPublishing({ session, workspaceData, setLoadError, produc
     return () => window.clearTimeout(timer);
   }, [publishedLinkNotice]);
 
-  const contentSignature = useMemo(
-    () => getMenuContentSignature(products, style, sortOption),
-    [products, style, sortOption],
-  );
-  const hasPublishedChanges = Boolean(publication && publication.contentSignature !== contentSignature);
+  const current: LinkState = state.menuId === menuId ? state : { menuId, record: null, availability: 'checking' };
+  const publication = current.record;
+  const defaultMenuSlug = workspaceData ? getDefaultPublicationSlug(workspaceData.menu.name, workspaceData.menu.id) : 'cardapio';
+  const publicUrl = publication ? getPublicationUrl(publication) : null;
+  const linkPrefix = workspaceData ? getPublicationPrefix(publication?.restaurantSlug || workspaceData.workspace.slug) : '';
+  const pending = Boolean(publication && (current.publishedSignature ?? publication.contentSignature) !== contentSignature);
+  const isPublishing = Boolean(menuId && runningMenus.has(menuId));
+  const tone: PublicationTone = current.failure || current.availability === 'offline' ? 'failed'
+    : pending ? 'pending' : current.availability === 'online' ? 'synced' : 'neutral';
 
-  useEffect(() => {
-    if (!publication) return;
-    void createQrCodeBlob(getPublicationUrl(publication)).catch(() => undefined);
-  }, [publication?.id, publication?.menuSlug, publication?.portableSnapshotUrl, publication?.updatedAt]);
-
-  const requestPrint = () => setPrintRequestId(current => current + 1);
-
-  const runAction = async (action: PublishAction, run: () => Promise<void>, fallback: string) => {
-    const actions = actionsInProgress.current;
-    if (actions.has(action)) return;
-    actions.add(action);
-    setBusyActions(new Set(actions));
-    setLoadError(null);
-    try {
-      await run();
-    } catch (error) {
-      if (!(error instanceof DOMException && error.name === 'AbortError')) setLoadError(getErrorMessage(error, fallback));
-    } finally {
-      actions.delete(action);
-      setBusyActions(new Set(actions));
-    }
-  };
-
-  const clearPublicationJob = useCallback((job: PublicationJob) => {
-    if (publicationJob.current !== job) return false;
-    publicationJob.current = null;
-    setIsPublishing(false);
-    return true;
-  }, []);
-
-  const menuId = workspaceData?.menu.id;
-  useEffect(() => () => {
-    const job = publicationJob.current;
-    if (job && job.menuId === menuId) clearPublicationJob(job);
-  }, [clearPublicationJob, menuId]);
-
-  const getOrStartPublication = (menuSlug?: string) => {
-    const pending = publicationJob.current;
-    if (pending && pending.menuId === menuId) return pending.promise;
+  const publish = (slug?: string): Promise<MenuPublication> => {
     if (!workspaceData || !menuId || !session) return Promise.reject(new Error('O cardápio ainda está carregando.'));
-
-    const current = publication?.menuId === menuId ? publication : null;
-    const job: PublicationJob = { menuId, promise: Promise.resolve().then(async () => {
-      if (publicationJob.current !== job) throw new DOMException('Publicação cancelada.', 'AbortError');
-      if (current?.pdfUrl && current.contentSignature === contentSignature) {
-        if (!menuSlug || current.menuSlug === menuSlug) return current;
-        return current.portableSnapshotUrl
-          ? updatePortablePublicationMenuSlug(current, menuSlug)
-          : updatePublicationMenuSlug({ publicationId: current.id, menuSlug });
-      }
-
-      const result = await getFileExports().publicationPdf();
-      if (publicationJob.current !== job) throw new DOMException('Publicação cancelada.', 'AbortError');
-      return publishWorkspaceMenu({
-        workspace: workspaceData.workspace, menu: workspaceData.menu, userId: session.user.id,
-        products, style, sortOption,
-        menuSlug: !current && menuSlug === getDefaultPublicationSlug(workspaceData.menu.name, menuId) ? undefined : menuSlug,
-        pdfBlob: result.blob, pdfFilename: result.filename, pdfOptions: {},
-      });
+    const running = jobs.current.get(menuId);
+    if (running) return running;
+    const requested = !publication && slug === defaultMenuSlug ? undefined : slug;
+    const task = publications.publishWorkspaceMenu({
+      workspace: workspaceData.workspace, menu: workspaceData.menu, userId: session.user.id,
+      products, style, sortOption, menuSlug: requested,
     }).then(published => {
-      if (clearPublicationJob(job)) {
-        setPublication(published);
+      confirmed.current.set(menuId, published.publishedVersionId);
+      if (activeMenu.current === menuId) {
+        lastChecked.current = { id: menuId, time: Date.now() };
+        setState({ menuId, record: published, availability: 'online', publishedSignature: published.contentSignature });
         setPublishedLinkNotice(true);
       }
       return published;
     }, error => {
-      clearPublicationJob(job);
+      if (activeMenu.current === menuId) {
+        setState(previous => ({ ...previous, menuId, failure: getErrorMessage(error, 'Não foi possível publicar o cardápio.') }));
+      }
       throw error;
-    }) };
-    publicationJob.current = job;
-    setIsPublishing(true);
+    }).finally(() => {
+      jobs.current.delete(menuId);
+      setRunningMenus(new Set(jobs.current.keys()));
+    });
+    jobs.current.set(menuId, task);
+    setRunningMenus(new Set(jobs.current.keys()));
     setPublishedLinkNotice(false);
-    return job.promise;
+    setActionError(null);
+    setState(previous => ({ ...previous, menuId, failure: undefined }));
+    return task;
   };
 
-  const performPublishedLinkAction = useCallback(async (
-    published: MenuPublication,
-    action: PublishLinkAction,
-  ) => {
-    const url = getPublicationUrl(published);
-    const qrFilename = `qrcode-${published.menuSlug || 'cardapio'}.png`;
-
-    if (action === 'copy-link') {
-      await copyText(url);
-      showButtonResult(action, 'Copiado');
-      return;
-    }
-
-    if (action === 'share-link') {
-      if (navigator.share) {
+  const handleLinkAction = async (action: LinkAction) => {
+    if (!publicUrl || !publication || actionRef.current) return;
+    actionRef.current = action;
+    setBusyAction(action);
+    setActionError(null);
+    try {
+      if (action === 'share-link' && navigator.share) {
         try {
-          await navigator.share({ title: published.pdfFilename.replace(/\.pdf$/i, ''), url });
+          await navigator.share({ title: publication.pdfFilename.replace(/\.pdf$/i, ''), url: publicUrl });
           return;
         } catch (error) {
-          if (error instanceof DOMException && error.name === 'AbortError') {
-            return;
-          }
+          if (error instanceof DOMException && error.name === 'AbortError') return;
         }
       }
-      await copyText(url);
-      showButtonResult(action, 'Copiado');
-      return;
-    }
-
-    const qrBlob = await createQrCodeBlob(url);
-    if (action === 'share-qr') {
-      const file = new File([qrBlob], qrFilename, { type: 'image/png' });
-      try {
-        if (await shareFiles('QR code do cardápio', [file])) return;
-      } catch (error) {
-        if (!(error instanceof DOMException && error.name === 'NotAllowedError')) throw error;
+      if (action === 'copy-link' || action === 'share-link') {
+        await copyText(publicUrl);
+        showButtonResult(action, 'Copiado');
+        return;
       }
-    }
-    downloadBlob(qrBlob, qrFilename);
-  }, [showButtonResult]);
-
-  const handleLinkAction = (action: PublishLinkAction) => runAction(action, async () => {
-    const published = publication ?? await getOrStartPublication();
-    await performPublishedLinkAction(published, action);
-  }, 'Não foi possível concluir a ação.');
-
-  const getFileExports = () => {
-    if (!fileExportRef.current) throw new Error('O cardápio ainda está carregando.');
-    return fileExportRef.current;
-  };
-
-  const preparePdf = useCallback(() => {
-    if (fileExportRef.current) void Promise.resolve(fileExportRef.current.pdf()).catch(() => undefined);
-  }, []);
-
-  const preparePublication = useCallback(() => {
-    if (fileExportRef.current && (!publication?.pdfUrl || hasPublishedChanges)) {
-      void Promise.resolve(fileExportRef.current.publicationPdf()).catch(() => undefined);
-    }
-  }, [publication, hasPublishedChanges]);
-
-  const prepareJpg = useCallback((indexes: readonly number[]) => {
-    if (fileExportRef.current && indexes.length) void Promise.resolve(fileExportRef.current.jpg(indexes)).catch(() => undefined);
-  }, []);
-
-  const exportJpg = async (action: JpgAction, indexes: number[]) => {
-    const prepared = getFileExports().jpg(indexes);
-    const files = prepared instanceof Promise ? await prepared : prepared;
-    const title = files[0].name.replace(/-pagina-\d+\.jpg$/i, '');
-    if (action === 'share') {
-      try {
-        if (!await shareFiles(title, files)) throw new Error('Este navegador não permite compartilhar arquivos JPG.');
-      } catch (error) {
-        if (error instanceof DOMException && error.name === 'NotAllowedError') {
-          setLoadError('O navegador bloqueou o compartilhamento de arquivos JPG.');
-          return;
-        }
-        throw error;
+      const qr = await createQrCodeBlob(publicUrl);
+      const file = new File([qr], `qrcode-${publication.menuSlug}.png`, { type: 'image/png' });
+      if (action === 'share-qr') {
+        try { if (await shareFiles('QR Code do cardápio', [file])) return; } catch { /* Offer the file as a download. */ }
       }
-      return;
+      downloadBlob(file, file.name);
+      showButtonResult(action, 'Baixado');
+    } catch (error) {
+      if (activeMenu.current === menuId) setActionError(getErrorMessage(error, 'Não foi possível concluir a ação.'));
+    } finally {
+      actionRef.current = undefined;
+      setBusyAction(undefined);
     }
-    await downloadJpgFiles(files, title);
-  };
-
-  const handleJpgAction = (action: JpgAction, indexes: number[]) => runAction(
-    action === 'download' ? 'download-jpg' : 'share-jpg',
-    () => exportJpg(action, indexes),
-    'Não foi possível exportar as imagens JPG.',
-  );
-
-  const handlePublishLink = (menuSlug: string) => runAction('publish', async () => {
-    await getOrStartPublication(menuSlug);
-  }, 'Falha ao publicar cardápio.');
-
-  const handlePdfAction = async (action: 'options' | 'download' | 'share') => {
-    setLoadError(null);
-    if (action === 'options') {
-      requestPrint();
-      return;
-    }
-    await runAction(action === 'download' ? 'download-pdf' : 'share-pdf', async () => {
-      const prepared = getFileExports().pdf();
-      const result = prepared instanceof Promise ? await prepared : prepared;
-      if (action === 'share') {
-        const file = new File([result.blob], result.filename, { type: 'application/pdf' });
-        try {
-          if (await shareFiles(result.filename.replace(/\.pdf$/i, ''), [file])) return;
-        } catch (error) {
-          if (!(error instanceof DOMException && error.name === 'NotAllowedError')) throw error;
-        }
-      }
-      downloadBlob(result.blob, result.filename);
-    }, 'Não foi possível exportar o PDF.');
   };
 
   return {
-    printRequestId, publication, isPublishOpen, setIsPublishOpen, isPublishing, busyActions,
-    publishedLinkNotice, dismissPublishedLinkNotice: () => setPublishedLinkNotice(false), buttonResults, fileExportRef, hasPublishedChanges, requestPrint,
-    preparePdf, prepareJpg, preparePublication, handleLinkAction, handlePublishLink, handlePdfAction, handleJpgAction,
+    isPublishOpen, setIsPublishOpen, isPublishing, tone, pending,
+    availability: current.availability, publicationError: current.failure, linkActionError: actionError,
+    publication, publicUrl, linkPrefix, defaultMenuSlug, contentSignature, fileExportRef,
+    publishedLinkNotice, dismissPublishedLinkNotice: () => setPublishedLinkNotice(false),
+    publish, handleLinkAction, busyAction, buttonResults,
   };
 }
+
+export type MenuPublishing = ReturnType<typeof useMenuPublishing>;

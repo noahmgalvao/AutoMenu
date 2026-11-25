@@ -7,8 +7,7 @@ import { PRESET_TEMPLATES } from '../../src/domain/templates/templateCatalog';
 import { applyTemplateToCurrentStyle } from '../../src/application/templates/templateApplication';
 import { sampleProducts } from '../../src/presentation/menu/designer/TemplatePreviewSurface';
 import { MenuPreview } from '../../src/presentation/menu/canvas/MenuPreview';
-import { exportMenuPagesToPdf } from '../../src/infrastructure/browser/pdfExport';
-import { resolveMenuPageDimensions } from '../../src/domain/menu/pageSetup';
+import { exportProfileFiles, getPageElementSizePx } from '../../src/infrastructure/browser/pdfExport';
 import '../../src/presentation/styles.css';
 
 const library = [...PRESET_TEMPLATES, INITIAL_STYLE];
@@ -37,21 +36,16 @@ function CatalogReview() {
     Object.assign(window, {
       reviewTemplate: (index: number, adverse: boolean) => setReview({ index, adverse }),
       reviewMenuPdf: async () => {
-        const { setup, widthMm, heightMm } = resolveMenuPageDimensions(style);
-        const result = await exportMenuPagesToPdf({
-          title: template.name, download: false,
-          pageElements: [...document.querySelectorAll<HTMLElement>('[data-menu-print-page]')],
-          currentPageIndex: 0,
-          options: { orientation: setup.orientation, paperSize: setup.preset === 'screen' ? 'custom' : setup.preset,
-            customPaperWidthMm: widthMm, customPaperHeightMm: heightMm, marginPreset: '0', customMarginMm: 0,
-            scaleMode: 'actual', customScale: 100, bleedMm: 0, pageRange: '', pageMode: 'all',
-            cropMarks: false, pageNumbers: true, printBackgrounds: true, grayscale: false, includeCanvasShadow: false },
-        });
+        const pages = [...document.querySelectorAll<HTMLElement>('[data-menu-print-page]')].map((element, index) => ({
+          number: index + 1, size: getPageElementSizePx(element), snapshot: element.cloneNode(true) as HTMLElement,
+        }));
+        const [file] = await exportProfileFiles(pages, 'PDF',
+          { dpi: 300, bleed: 0, marks: false, markOffset: 0, color: 'RGB', quality: 100 }, template.name);
         return new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => resolve(String(reader.result));
           reader.onerror = reject;
-          reader.readAsDataURL(result.blob);
+          reader.readAsDataURL(file);
         });
       },
     });

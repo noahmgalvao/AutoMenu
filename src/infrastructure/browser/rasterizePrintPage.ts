@@ -42,8 +42,10 @@ const snapshotStyle = (style: CSSStyleDeclaration) => paintProperties.flatMap(pr
 }).join('');
 
 export async function rasterizePrintPage(
-  page: HTMLElement, width: number, height: number, scale: number,
+  page: HTMLElement, width: number, height: number,
   inlineUrls: (value: string, baseUrl: string) => Promise<string>,
+  pixels: { width: number; height: number },
+  readPixels: boolean,
 ) {
   const snapshot = page.cloneNode(true) as HTMLElement;
   const sources = [page, ...page.querySelectorAll('*')];
@@ -109,8 +111,8 @@ export async function rasterizePrintPage(
   ]);
 
   const svg = document.createElementNS(svgNamespace, 'svg');
-  const pixelWidth = Math.round(width * scale);
-  const pixelHeight = Math.round(height * scale);
+  const pixelWidth = pixels.width;
+  const pixelHeight = pixels.height;
   svg.setAttribute('width', String(pixelWidth));
   svg.setAttribute('height', String(pixelHeight));
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
@@ -132,7 +134,7 @@ export async function rasterizePrintPage(
   const canvas = document.createElement('canvas');
   canvas.width = pixelWidth;
   canvas.height = pixelHeight;
-  const context = canvas.getContext('2d');
+  const context = canvas.getContext('2d', { willReadFrequently: readPixels });
   try {
     if (!context) throw new Error('O navegador não disponibilizou o contexto de imagem.');
     context.drawImage(image, 0, 0, pixelWidth, pixelHeight);

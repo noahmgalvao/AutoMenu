@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
 import { resolveImagePages, toggleImagePage, type ImagePages } from '../../domain/publishing/imagePages';
 import { DisclosureChevron } from '../common/DisclosureChevron';
-import { ActionButton } from './VirtualLinkSection';
+import { actionClasses } from './VirtualLinkSection';
+import type { ExportFormat } from '../../domain/publishing/exportProfiles';
 
 export function ExportPagePicker({ format, choice, pageCount, selectedPages, onChange, disabled }: {
-  format: 'PDF' | 'JPG';
+  format: ExportFormat;
   choice: ImagePages;
   pageCount: number;
   selectedPages: readonly number[];
@@ -13,14 +14,31 @@ export function ExportPagePicker({ format, choice, pageCount, selectedPages, onC
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const group = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const closeOutside = (event: MouseEvent) => {
+      if (event.target instanceof Node && !group.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener('click', closeOutside);
+    return () => document.removeEventListener('click', closeOutside);
+  }, [open]);
   const indexes = resolveImagePages(choice, pageCount, selectedPages);
   const hasSelection = selectedPages.some(index => index >= 0 && index < pageCount);
-  const label = choice.mode === 'all' ? (open ? 'Todas as páginas' : 'Todas') : choice.mode === 'selection' ? 'Seleção'
+  const label = choice.mode === 'all' ? 'Todas' : choice.mode === 'selection' ? 'Seleção'
     : indexes.length === 1 ? `Página ${indexes[0] + 1}` : `${indexes.length} páginas`;
 
-  return <>
-    <ActionButton icon={<DisclosureChevron open={open} size={15} />} label={label} expanded={open}
-      disabled={disabled || !pageCount} onClick={() => setOpen(current => !current)} />
+  return <div ref={group} className="space-y-1.5" onKeyDown={event => {
+    if (event.key !== 'Escape' || !open) return;
+    event.stopPropagation();
+    setOpen(false);
+    button.current?.focus();
+  }}>
+    <button ref={button} type="button" aria-label={`Páginas: ${label}`} aria-expanded={open} disabled={disabled || !pageCount}
+      onClick={() => setOpen(current => !current)} className={`${actionClasses} flex w-full items-center justify-between pl-3 pr-2.5`}>
+      {label}<DisclosureChevron open={open} size={15} />
+    </button>
     {open && (
       <div role="group" aria-label={`Páginas do ${format}`} className="order-last col-span-full max-h-48 min-w-0 space-y-1 overflow-y-auto rounded-xl border border-slate-200 p-2">
         {([{ mode: 'all', label: 'Todas as páginas' }, { mode: 'selection', label: 'Seleção' }] as const).map(option => (
@@ -35,7 +53,7 @@ export function ExportPagePicker({ format, choice, pageCount, selectedPages, onC
         ))}
       </div>
     )}
-  </>;
+  </div>;
 }
 
 function PageOption({ label, checked, disabled, onClick }: {

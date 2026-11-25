@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { inflateSync } from 'node:zlib';
+import { unzipSync } from 'fflate';
 import { shortcutsFor } from './fixtures/canvas-shortcuts';
 import { expect, test, type Page } from '@playwright/test';
 import type { MenuStyle } from '../src/domain/menu/model';
@@ -68,21 +68,22 @@ test('the app signs in, keeps the product editor through history, and stores an 
   const product = page.locator('[data-automenu-editor-canvas] #product-container-suco');
   const title = product.getByRole('heading');
   await expect(title).toHaveText('Suco natural');
-  await page.getByRole('button', { name: 'Publicar', exact: true }).click();
-  const linkSwitch = page.getByRole('switch', { name: 'Gerar link virtual' });
-  const linkSection = linkSwitch.locator('..');
-  await expect(linkSection.getByText('Link do cardápio')).toBeVisible();
-  const linkActions = await linkSection.getByRole('button').allTextContents();
-  await page.getByRole('button', { name: 'Fechar', exact: true }).click();
+  const openPublish = () => page.locator('nav').getByRole('button', { name: 'Publicar', exact: true }).click();
+  await openPublish();
+  const dialog = page.getByRole('dialog', { name: 'Publicar' });
+  await expect(dialog.getByRole('button', { name: 'Link virtual', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await dialog.getByRole('button', { name: 'PDF', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Gerar PDF', exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Fechar publicação' }).click();
   await page.getByRole('heading', { name: 'Visual', exact: true }).locator('..')
-    .getByRole('button', { name: 'PDF', exact: true }).click();
-  await expect(linkSwitch).not.toBeChecked();
-  await expect(linkSection.getByText('Link do cardápio')).toHaveCount(0);
-  await linkSwitch.click();
-  await expect(linkSwitch).toBeChecked();
-  await expect(linkSection.getByText('QR code', { exact: true })).toBeVisible();
-  expect(await linkSection.getByRole('button').allTextContents()).toEqual(linkActions);
-  await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
+    .getByRole('button', { name: 'Publicar', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Link virtual', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await dialog.getByRole('button', { name: 'Fechar publicação' }).click();
+  await page.getByTitle('Designer de produtos').click();
+  await page.getByRole('heading', { name: 'Produtos', exact: true }).locator('..')
+    .getByRole('button', { name: 'Publicar', exact: true }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Fechar publicação' }).click();
 
   await context.setOffline(true);
   await title.click();
@@ -104,157 +105,284 @@ test('the app signs in, keeps the product editor through history, and stores an 
   }, `automenu_pending_workspace_${workspaceId}_${menuId}`)).toBe('Suco de laranja');
 });
 
-test('the virtual link publishes in place and stays separate from PDF print options', async ({ page }) => {
-  test.setTimeout(30000);
-  await openWorkspace(page);
+function publishDialog(page: Page) {
+  return page.getByRole('dialog', { name: 'Publicar' });
+}
+
+async function openPublishMenu(page: Page) {
+  await page.locator('nav').getByRole('button', { name: 'Publicar', exact: true }).click();
+  return publishDialog(page);
+}
+
+test('the virtual link publishes a full snapshot, keeps its address during sync, and separates the draft address', async ({ page }) => {
+  await openWorkspace(page, ['Menu de teste'], { blankPages: [{ id: 'second', index: 1, fixedPosition: true }] });
   let uploads = 0;
-  let publishedRow: Record<string, unknown> | null = null;
-  await page.route('**/rest/v1/menu_publications?*', route => {
-    const method = route.request().method();
-    if (method === 'POST') {
-      publishedRow = route.request().postDataJSON();
-      return route.fulfill({ json: publishedRow });
+  let row: Record<string, unknown> | null = null;
+  let releases = 0;
+  let releaseRequest: (() => void) | undefined;
+  let hold = false;
+  await page.route('**/rest/v1/menu_publications?*', async route => {
+    if (route.request().method() === 'POST') {
+      if (hold) await new Promise<void>(resolve => { releaseRequest = resolve; });
+      releases++;
+      row = { id: 'public-id', ...route.request().postDataJSON(), updated_at: new Date().toISOString() };
+      return route.fulfill({ status: 201, body: '' });
     }
-    if (method === 'PATCH') {
-      publishedRow = { ...publishedRow, ...route.request().postDataJSON() };
-      return route.fulfill({ json: publishedRow });
-    }
-    return route.fulfill({ json: publishedRow });
+    const slug = new URL(route.request().url()).searchParams.get('menu_slug');
+    return route.fulfill({ json: !slug || slug === `eq.${row?.menu_slug}` ? row : null });
   });
-  await page.route('**/storage/v1/object/sign/menu-assets/**', route =>
-    route.fulfill({ json: { signedURL: '/object/sign/menu-assets/cardapio.pdf?token=test' } }));
-  await page.route('**/storage/v1/object/menu-assets/**', route => {
+  await page.route('**/storage/v1/object/**', route => {
     uploads++;
-    return route.fulfill({ json: { Key: 'cardapio.pdf' } });
-  });
-  await page.evaluate(() => {
-    document.body.dataset.publishOpenedTabs = '0';
-    window.open = () => {
-      document.body.dataset.publishOpenedTabs = String(Number(document.body.dataset.publishOpenedTabs) + 1);
-      return null;
-    };
+    return route.fulfill({ status: 500, body: '' });
   });
 
-  await page.getByRole('button', { name: 'Publicar', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Publicar' });
+  const dialog = await openPublishMenu(page);
   const slug = dialog.getByRole('textbox', { name: 'Final do link' });
-  const link = dialog.getByRole('link', { name: /cardápio|cardapio/ });
-  await expect(slug).toHaveValue('menu-de-teste-30000000');
-  await expect(link).toHaveAttribute('href', /\/cardapio\/teste\/menu-de-teste-30000000$/);
-  await dialog.getByRole('group', { name: 'Ações de PDF' }).getByRole('button', { name: 'Opções' }).click();
-  await page.getByRole('combobox', { name: 'Margens', exact: true }).selectOption('10');
-  await page.getByRole('spinbutton', { name: 'Sangria mm' }).fill('2');
-  await page.getByRole('switch', { name: 'Marcas de corte' }).click();
-  await page.getByRole('switch', { name: 'Cinza', exact: true }).click();
-
-  const download = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Baixar PDF', exact: true }).click();
-  const printPdf = await readFile((await (await download).path())!);
-  await page.locator('[data-pdf-options]').getByRole('button', { name: 'Cancelar', exact: true }).click();
+  await expect(dialog.getByText('Não publicado', { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Copiar', exact: true })).toBeDisabled();
   await slug.fill('Almoço Especial');
-  await expect(link).toHaveAttribute('href', /\/cardapio\/teste\/almoco-especial$/);
+  await expect(dialog.getByText(/\/cardapio\/teste\/almoco-especial$/)).toBeVisible();
+  hold = true;
+  await dialog.getByRole('button', { name: 'Publicar link', exact: true }).click();
+  await expect.poll(() => Boolean(releaseRequest)).toBeTruthy();
+  await expect(dialog.getByText('Sincronizando…')).toBeVisible();
+  await expect(dialog.getByText('Atualizado', { exact: true })).toHaveCount(0);
+  releaseRequest!();
+  hold = false;
+  await expect(dialog.getByText('Online', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('Atualizado', { exact: true })).toBeVisible();
+  expect(row).toMatchObject({ pdf_path: null, pdf_options: {}, menu_slug: 'almoco-especial' });
+  expect(uploads).toBe(0);
+  expect(releases).toBe(1);
 
-  const upload = page.waitForRequest(request => request.method() === 'POST'
-    && request.url().includes('/storage/v1/object/menu-assets/') && request.url().endsWith('.pdf'));
-  const publicRecord = page.waitForRequest(request => request.method() === 'POST'
-    && request.url().includes('/rest/v1/menu_publications'));
-  await dialog.getByRole('button', { name: 'Publicar', exact: true }).click();
-  const uploadBody = (await upload).postDataBuffer()!;
-  const publicPdf = uploadBody.subarray(uploadBody.indexOf('%PDF-'));
-  expect((await publicRecord).postDataJSON()).toMatchObject({ pdf_options: {}, menu_slug: 'almoco-especial' });
-  await expect(page.getByText('Link publicado', { exact: true })).toBeVisible();
-  await expect(dialog).toBeVisible();
-  await expect(page.locator('body')).toHaveAttribute('data-publish-opened-tabs', '0');
-  await expect(dialog.getByRole('button', { name: 'Publicar', exact: true })).toHaveCount(1);
-
-  await slug.fill('Almoço 2');
-  const rename = page.waitForRequest(request => request.method() === 'PATCH'
-    && request.url().includes('/rest/v1/menu_publications'));
+  await dialog.getByRole('button', { name: 'QR Code', exact: true }).click();
+  await expect(dialog.getByRole('img', { name: 'QR Code do cardápio' })).toBeVisible();
+  await slug.fill('Outro endereço');
+  await expect(dialog.getByText(/\/cardapio\/teste\/outro-endereco$/)).toBeVisible();
+  await expect(dialog.getByRole('link', { name: 'Acessar' })).toHaveAttribute('href', /\/almoco-especial$/);
   await slug.press('Enter');
-  expect((await rename).postDataJSON()).toEqual({ menu_slug: 'almoco-2' });
-  await expect(slug).toHaveValue('almoco-2');
-  expect(uploads).toBe(1);
+  await expect(dialog.getByRole('link', { name: 'Acessar' })).toHaveAttribute('href', /\/outro-endereco$/);
+  const activeAddress = await dialog.getByRole('link', { name: 'Acessar' }).getAttribute('href');
+  await dialog.getByRole('button', { name: 'Fechar publicação' }).click();
 
-  const getPageDrawing = (pdf: Buffer) => {
-    const firstStream = pdf.indexOf('stream\n') + 'stream\n'.length;
-    const streamEnd = pdf.indexOf('\nendstream', firstStream);
-    return inflateSync(pdf.subarray(firstStream, streamEnd)).toString();
-  };
-  const printDrawing = getPageDrawing(printPdf);
-  const publicDrawing = getPageDrawing(publicPdf);
-  expect(printDrawing).toMatch(/\s[lm]\n/);
-  expect(publicDrawing).not.toMatch(/\s[lm]\n/);
-  const placement = publicDrawing.split('\n').find(line => line.endsWith(' cm'))!.split(' ').map(Number);
-  expect(placement[0]).toBeCloseTo(595.28, 2);
-  expect(placement[3]).toBeCloseTo(841.89, 2);
-  expect(placement[4]).toBeCloseTo(0);
-  expect(placement[5]).toBeCloseTo(0);
-  const imageColorRange = (pdf: Buffer) => {
-    const imageStart = pdf.indexOf(Buffer.from([0xff, 0xd8]));
-    const imageEnd = pdf.indexOf(Buffer.from([0xff, 0xd9]), imageStart) + 2;
-    expect(imageStart).toBeGreaterThan(0);
-    return page.evaluate(async (dataUrl) => {
-      const image = new Image();
-      image.src = dataUrl;
-      await image.decode();
-      const canvas = document.createElement('canvas');
-      canvas.width = canvas.height = 64;
-      const context = canvas.getContext('2d')!;
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
-      let maxChannelDifference = 0;
-      for (let index = 0; index < pixels.length; index += 4) {
-        const rgb = [pixels[index], pixels[index + 1], pixels[index + 2]];
-        maxChannelDifference = Math.max(maxChannelDifference, Math.max(...rgb) - Math.min(...rgb));
-      }
-      return maxChannelDifference;
-    }, `data:image/jpeg;base64,${pdf.subarray(imageStart, imageEnd).toString('base64')}`);
-  };
-  expect(await imageColorRange(printPdf)).toBeLessThan(3);
-  expect(await imageColorRange(publicPdf)).toBeGreaterThan(8);
+  const product = page.locator('[data-automenu-editor-canvas] #product-container-suco');
+  await product.getByRole('heading').click();
+  await shortcutsFor(product).getByRole('button', { name: 'Editar produto' }).click();
+  await product.getByRole('heading').fill('Suco de maracujá');
+  await product.getByRole('heading').press('Enter');
+  await openPublishMenu(page);
+  await expect(dialog.getByText('Alterações pendentes')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Sincronizar', exact: true }).click();
+  await expect(dialog.getByText('Atualizado', { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('link', { name: 'Acessar' })).toHaveAttribute('href', activeAddress!);
+  expect(releases).toBe(3);
+  expect(uploads).toBe(0);
+
+  await page.goto(activeAddress!);
+  await expect(page.getByRole('main', { name: 'Cardápio publicado' })).toBeVisible();
+  await expect(page.getByText('Suco de maracujá', { exact: true })).toBeVisible();
+  await expect(page.locator('[data-menu-print-page]')).toHaveCount(2);
 });
 
-test('PDF and JPG start on all pages and support the canvas selection and individual pages', async ({ page }) => {
+test('a release acknowledges only the version captured when publishing started', async ({ page }) => {
+  await openWorkspace(page);
+  let release: (() => void) | undefined;
+  let row: Record<string, unknown> | null = null;
+  let block = true;
+  await page.route('**/rest/v1/menu_publications?*', async route => {
+    if (route.request().method() !== 'POST') return route.fulfill({ json: row });
+    const captured = route.request().postDataJSON();
+    if (block) await new Promise<void>(resolve => { release = resolve; });
+    row = { id: 'public-id', ...captured };
+    return route.fulfill({ status: 201, body: '' });
+  });
+  const dialog = await openPublishMenu(page);
+  await dialog.getByRole('button', { name: 'Publicar link' }).click();
+  await expect.poll(() => Boolean(release)).toBeTruthy();
+  await dialog.getByRole('button', { name: 'Fechar publicação' }).click();
+  const product = page.locator('[data-automenu-editor-canvas] #product-container-suco');
+  const heading = product.getByRole('heading');
+  await heading.click();
+  await shortcutsFor(product).getByRole('button', { name: 'Editar produto' }).click();
+  await heading.fill('Suco de uva');
+  await heading.press('Enter');
+  block = false;
+  release!();
+  await openPublishMenu(page);
+  await expect(dialog.getByText('Online', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('Alterações pendentes')).toBeVisible();
+  expect(row).toMatchObject({ snapshot: { products: [{ name: 'Suco natural' }] } });
+  await dialog.getByRole('button', { name: 'Sincronizar', exact: true }).click();
+  await expect(dialog.getByText('Atualizado', { exact: true })).toBeVisible();
+  expect(row).toMatchObject({ snapshot: { products: [{ name: 'Suco de uva' }] } });
+});
+
+test('publication status distinguishes an unavailable link from a connection failure', async ({ page }) => {
+  const { menuId, workspaceId } = await openWorkspace(page);
+  let connectionFails = true;
+  await page.route('**/rest/v1/menu_publications?*', route => {
+    const query = new URL(route.request().url()).searchParams;
+    if (query.has('menu_id')) return route.fulfill({ json: {
+      id: 'record', menu_id: menuId, workspace_id: workspaceId, restaurant_slug: 'teste', menu_slug: 'publicado',
+      content_signature: 'old', published_version_id: 'version', pdf_path: null,
+    } });
+    return connectionFails ? route.fulfill({ status: 503, json: { message: 'Service unavailable' } }) : route.fulfill({ json: null });
+  });
+  await page.reload();
+  await expect(page.locator('nav').getByText('Menu de teste')).toBeVisible();
+  const dialog = await openPublishMenu(page);
+  await expect(dialog.getByText('Disponibilidade não verificada')).toBeVisible();
+  await expect(dialog.getByText('Indisponível', { exact: true })).toHaveCount(0);
+  connectionFails = false;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect(dialog.getByText('Indisponível', { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Sincronizar', exact: true })).toBeEnabled();
+});
+
+test('PDF and images share page selection and produce real PDF, JPG, PNG and TIFF files', async ({ page }, testInfo) => {
   await openWorkspace(page, ['Menu de teste'], {
+    pageSetup: { preset: 'custom', orientation: 'landscape', widthMm: 50, heightMm: 75 },
     blankPages: [{ id: 'blank-two', index: 1, fixedPosition: true }, { id: 'blank-three', index: 2, fixedPosition: true }],
   });
   const pages = page.locator('[data-menu-print-page]');
-  await expect(pages).toHaveCount(3);
+  const count = await pages.count();
+  expect(count).toBeGreaterThanOrEqual(3);
   await pages.nth(1).dispatchEvent('click', { bubbles: true });
+  const dialog = await openPublishMenu(page);
+  const pngTab = dialog.getByRole('button', { name: 'PNG', exact: true });
+  const getBytes = async () => {
+    const downloadButton = dialog.getByRole('button', { name: 'Baixar', exact: true });
+    await expect(downloadButton).toBeEnabled({ timeout: 15_000 });
+    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 10_000 }), downloadButton.click()]);
+    return readFile((await download.path())!);
+  };
+  const selectProfile = async (name: string) => {
+    await dialog.getByRole('button', { name: /^Perfil de exportação/ }).click();
+    await dialog.getByRole('group', { name: 'Perfis de exportação' }).getByRole('button', { name: new RegExp(`^${name}(?:$| )`) }).first().click();
+  };
 
-  await page.getByRole('button', { name: 'Publicar', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Publicar' });
-  await dialog.getByRole('switch', { name: 'Gerar JPG' }).click();
-  const jpg = dialog.getByRole('group', { name: 'Ações de JPG' });
-  await jpg.getByRole('button', { name: 'Todas', exact: true }).click();
-  const jpgPages = jpg.getByRole('group', { name: 'Páginas do JPG' });
+  await dialog.getByRole('button', { name: 'Imagem', exact: true }).click();
+  await expect(pngTab).toHaveAttribute('aria-pressed', 'true');
+  await dialog.getByRole('button', { name: 'JPG', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Páginas: Todas', exact: true }).click();
+  const jpgPages = dialog.getByRole('group', { name: 'Páginas do JPG' });
   await expect(jpgPages.getByRole('button', { name: 'Todas as páginas' })).toHaveAttribute('aria-pressed', 'true');
   await jpgPages.getByRole('button', { name: 'Seleção', exact: true }).click();
-  const downloadJpg = page.waitForEvent('download');
-  await jpg.getByRole('button', { name: 'Baixar', exact: true }).click();
-  expect((await downloadJpg).suggestedFilename()).toMatch(/-pagina-2\.jpg$/);
+  await selectProfile('Compartilhamento digital');
+  await dialog.getByRole('button', { name: 'Gerar JPG', exact: true }).click();
+  await expect(dialog.getByText(/-pagina-2\.jpg$/)).toBeVisible();
+  const jpg = await getBytes();
+  expect(jpg.readUInt16BE(0)).toBe(0xffd8);
+  expect(jpg.readUInt16BE(14)).toBe(150);
 
-  await dialog.getByRole('button', { name: 'Opções', exact: true }).click();
-  const print = page.locator('[data-pdf-options]');
-  const pdf = print.getByRole('group', { name: 'Seleção de páginas do PDF' });
-  await pdf.getByRole('button', { name: 'Todas', exact: true }).click();
-  const pdfPages = pdf.getByRole('group', { name: 'Páginas do PDF' });
-  await expect(pdfPages.getByRole('button', { name: 'Todas as páginas' })).toHaveAttribute('aria-pressed', 'true');
-  await pdfPages.getByRole('button', { name: 'Seleção', exact: true }).click();
-  await expect(print.locator('[data-pdf-preview-paper]')).toHaveCount(1);
-  await expect(print.getByRole('img', { name: 'Preview da página 2' })).toBeVisible();
-  await pdf.getByRole('button', { name: 'Seleção', exact: true }).click();
-  await pdfPages.getByRole('button', { name: 'Página 1', exact: true }).click();
+  await dialog.getByRole('button', { name: 'PDF', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Perfil de exportação Impressão profissional', exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Páginas: Seleção', exact: true }).click();
+  const pdfPages = dialog.getByRole('group', { name: 'Páginas do PDF' });
   await pdfPages.getByRole('button', { name: 'Página 3', exact: true }).click();
-  await expect(print.locator('[data-pdf-preview-paper]')).toHaveCount(2);
-  await expect(pdfPages.getByRole('button', { name: 'Seleção' })).toHaveAttribute('aria-pressed', 'false');
-  await expect(pdfPages.getByRole('button', { name: 'Todas as páginas' })).toHaveAttribute('aria-pressed', 'false');
-  const downloadPdf = page.waitForEvent('download');
-  await print.getByRole('button', { name: 'Baixar PDF', exact: true }).click();
-  const bytes = await readFile((await (await downloadPdf).path())!);
-  expect(bytes.toString('latin1')).toMatch(/\/Count 2\b/);
+  await pdfPages.getByRole('button', { name: 'Página 1', exact: true }).click();
+  await expect(pdfPages.getByRole('button', { name: 'Seleção', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await dialog.getByRole('button', { name: 'Gerar PDF', exact: true }).click();
+  const pdfBytes = await getBytes();
+  await testInfo.attach('impressao-profissional.pdf', { body: pdfBytes, contentType: 'application/pdf' });
+  const pdf = pdfBytes.toString('latin1');
+  expect(pdf).toMatch(/\/Count 2\b/);
+  expect(pdf).toMatch(/\/TrimBox \[/);
+  expect(pdf).toMatch(/\/BleedBox \[/);
+
+  await dialog.getByRole('button', { name: 'Imagem', exact: true }).click();
+  await dialog.getByRole('button', { name: 'TIFF', exact: true }).click();
+  await selectProfile('Impressão profissional');
+  await dialog.getByRole('button', { name: 'Gerar TIFF', exact: true }).click();
+  const archive = await getBytes();
+  const tiffs = unzipSync(archive);
+  await testInfo.attach('imagens-tiff.zip', { body: archive, contentType: 'application/zip' });
+  expect(Object.keys(tiffs).map(name => name.match(/-pagina-\d+\.tiff$/)?.[0])).toEqual(['-pagina-1.tiff', '-pagina-3.tiff']);
+  for (const image of Object.values(tiffs)) {
+    const tiff = Buffer.from(image);
+    expect(tiff.subarray(0, 4)).toEqual(Buffer.from([73, 73, 42, 0]));
+    const ifd = tiff.readUInt32LE(4);
+    expect(tiff.readUInt32LE(ifd + 10)).toBe(Math.round(81 / 25.4 * 300));
+    expect(tiff.readUInt32LE(ifd + 22)).toBe(Math.round(56 / 25.4 * 300));
+  }
+
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'canShare', { configurable: true, value: ({ files }: ShareData) => files?.length === 2 });
+    Object.defineProperty(navigator, 'share', { configurable: true, value: async ({ files }: ShareData) => {
+      document.body.dataset.sharedFiles = files?.map(file => file.type).join(',');
+    } });
+  });
+  await dialog.getByRole('button', { name: 'Compartilhar', exact: true }).click();
+  await expect(page.locator('body')).toHaveAttribute('data-shared-files', 'image/tiff,image/tiff');
+  await pngTab.click();
+  await dialog.getByRole('button', { name: 'Gerar PNG', exact: true }).click();
+  const pngs = unzipSync(await getBytes());
+  const firstPng = Buffer.from(Object.values(pngs)[0]);
+  expect(firstPng.readUInt32BE(16)).toBe(Math.round(75 / 25.4 * 300));
+  expect(firstPng.readUInt32BE(20)).toBe(Math.round(50 / 25.4 * 300));
+  expect(firstPng.toString('ascii', 37, 41)).toBe('pHYs');
+  expect(firstPng.readUInt32BE(41)).toBe(Math.round(300 / 0.0254));
 });
 
+test('profile help works by tap on mobile and customized settings inherit the profile', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 360, height: 660 });
+  await openWorkspace(page);
+  const dialog = await openPublishMenu(page);
+  await dialog.getByRole('button', { name: 'PDF', exact: true }).click();
+  const picker = dialog.getByRole('button', { name: /^Perfil de exportação/ });
+  await picker.click();
+  const help = dialog.getByRole('button', { name: 'Informações de Impressão offset' });
+  await help.hover();
+  await expect(dialog.getByRole('tooltip')).toHaveCount(0);
+  await help.click();
+  const tooltip = dialog.getByRole('tooltip');
+  await expect(tooltip.getByText('+2 mm da sangria', { exact: true })).toBeVisible();
+  await expect(tooltip.getByText('220 × 307 mm', { exact: true })).toBeVisible();
+  await expect(picker).toHaveAccessibleName('Perfil de exportação Impressão profissional');
+  const bounds = (await tooltip.boundingBox())!;
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(360);
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(660);
+  await testInfo.attach('publicar-mobile.png', { body: await page.screenshot(), contentType: 'image/png' });
+  await help.press('Escape');
+  await expect(tooltip).toHaveCount(0);
+  await expect(picker).toHaveAttribute('aria-expanded', 'true');
+  await dialog.getByRole('button', { name: /^Impressão offset/ }).click();
+  await picker.click();
+  await dialog.getByRole('button', { name: 'Personalizado', exact: true }).click();
+  await expect(dialog.getByRole('spinbutton', { name: 'Sangria (mm)' })).toHaveValue('5');
+  await expect(dialog.getByRole('spinbutton', { name: 'Afastamento adicional (mm)' })).toHaveValue('2');
+  await dialog.getByRole('switch', { name: 'Marcas de corte' }).click();
+  await expect(dialog.getByRole('spinbutton', { name: 'Afastamento adicional (mm)' })).toHaveCount(0);
+});
+
+test('file generation survives publication failure and publication survives export failure', async ({ page }) => {
+  await openWorkspace(page);
+  let row: Record<string, unknown> | null = null;
+  let failPublication = true;
+  await page.route('**/rest/v1/menu_publications?*', async route => {
+    if (route.request().method() !== 'POST') return route.fulfill({ json: row });
+    if (failPublication) return route.fulfill({ status: 409, json: { code: '23505', message: 'duplicate slug' } });
+    row = { id: 'result', ...route.request().postDataJSON() };
+    return route.fulfill({ status: 201, body: '' });
+  });
+  const dialog = await openPublishMenu(page);
+  await dialog.getByRole('button', { name: 'Imagem', exact: true }).click();
+  await dialog.getByRole('switch', { name: 'Publicar também o link virtual' }).click();
+  await dialog.getByRole('textbox', { name: 'Final do link' }).fill('menu-pareado');
+  await dialog.getByRole('button', { name: 'Publicar e gerar PNG' }).click();
+  await expect(dialog.getByText('Geração concluída')).toBeVisible();
+  await expect(dialog.getByText('Este endereço já está em uso. Escolha outro nome.')).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Baixar', exact: true })).toBeEnabled();
+
+  await dialog.getByRole('button', { name: 'JPG', exact: true }).click();
+  failPublication = false;
+  await page.locator('[data-menu-print-page]').first().evaluate(el => { (el as HTMLElement).dataset.menuPageWidthMm = '4200'; });
+  await dialog.getByRole('button', { name: 'Publicar e gerar JPG' }).click();
+  await expect(dialog.getByText(/excede o limite de memória/)).toBeVisible();
+  await expect(dialog.getByText('Atualizado', { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Publicar e gerar JPG' })).toBeEnabled();
+});
 
 test('product analytics labels the category bar count in Portuguese', async ({ page }) => {
   await openWorkspace(page);

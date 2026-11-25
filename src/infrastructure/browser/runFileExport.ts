@@ -1,9 +1,9 @@
-import type { PdfPrintOptions } from '../../domain/publishing/printOptions';
-import type { PdfPageImage } from './composeMenuPdf';
+import type { ExportSettings } from '../../domain/publishing/exportProfiles';
+import type { ProfilePdfPage } from './composeMenuPdf';
 
 export type FileExportRequest =
-  | { kind: 'pdf'; pages: PdfPageImage[]; options: PdfPrintOptions; title: string }
-  | { kind: 'jpg-zip'; files: File[] };
+  | { kind: 'pdf'; pages: ProfilePdfPage[]; settings: ExportSettings; title: string }
+  | { kind: 'images-zip'; files: File[] };
 
 export type FileExportReply = { blob: Blob } | { error: string };
 

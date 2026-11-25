@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { unzipSync } from 'fflate';
 import { resolveImagePages, toggleImagePage, type ImagePages } from '../src/domain/publishing/imagePages';
-import { downloadJpgFiles, shareFiles } from '../src/infrastructure/browser/shareFiles';
+import { downloadImageFiles, shareFiles } from '../src/infrastructure/browser/shareFiles';
 
 test('individual JPG pages replace the all and editor selection modes', () => {
   const selected = [3, 1, 1, -1, 4, 1.5];
@@ -48,8 +48,8 @@ test('sharing sends the individual JPG files and downloading bundles only multip
     if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument);
     else Reflect.deleteProperty(globalThis, 'document');
   });
-  await downloadJpgFiles([first], 'menu');
-  await downloadJpgFiles([first, second], 'menu');
+  await downloadImageFiles([first], 'menu');
+  await downloadImageFiles([first, second], 'menu');
 
   assert.equal(downloads[0].name, first.name);
   assert.equal(downloads[0].blob, first);

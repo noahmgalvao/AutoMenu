@@ -5,7 +5,7 @@ import { applyTemplateToCurrentStyle, getAppliedTemplateId } from '../src/applic
 import { filterTemplates, swipeDirection } from '../src/domain/templates/templateBrowse';
 import { normalizeMenuPageSetup, resolveMenuPageDimensions } from '../src/domain/menu/pageSetup';
 import { calculatePagination, finalizeMenuPages } from '../src/domain/menu/menuPagination';
-import { getPaperDimensionsMm, getPrintFrameSizeMm, type PdfPrintOptions } from '../src/domain/publishing/printOptions';
+import { exportProfiles, getExportGeometry } from '../src/domain/publishing/exportProfiles';
 import { settleFavorite, visibleFavorites } from '../src/application/templates/favoriteQueue';
 import { isPermanentFavoriteError } from '../src/infrastructure/supabase/templateFavorites';
 import { normalizeTemplateDesign } from '../src/domain/templates/templateDesign';
@@ -100,12 +100,10 @@ test('legacy, preset, custom and display units are consistent with PDF paper and
   assert.equal(normalizeMenuPageSetup({preset:'custom',orientation:'portrait',widthMm:1,heightMm:1200}).heightMm,1000);
   for (const template of PRESET_TEMPLATES) {
     const dim = resolveMenuPageDimensions(template);
-    const options = {paperSize:dim.setup.preset === 'screen' ? 'custom' : dim.setup.preset,
-      orientation:dim.setup.orientation, customPaperWidthMm:dim.setup.widthMm,
-      customPaperHeightMm:dim.setup.heightMm, scaleMode:'actual'} as PdfPrintOptions;
-    const expected = {width:dim.widthMm,height:dim.heightMm};
-    assert.deepEqual(getPaperDimensionsMm(options),expected);
-    assert.deepEqual(getPrintFrameSizeMm(options, expected,0,{width:dim.widthPx,height:dim.heightPx,widthMm:dim.widthMm,heightMm:dim.heightMm}),expected);
+    const settings = exportProfiles.PDF.options.find(profile => profile.id === 'professional')!.settings!;
+    const geometry = getExportGeometry({ width: dim.widthPx, height: dim.heightPx, widthMm: dim.widthMm, heightMm: dim.heightMm }, settings);
+    assert.deepEqual([geometry.trimWidth, geometry.trimHeight], [dim.widthMm, dim.heightMm]);
+    assert.deepEqual([geometry.bleedWidth, geometry.bleedHeight], [dim.widthMm + 6, dim.heightMm + 6]);
   }
 });
 

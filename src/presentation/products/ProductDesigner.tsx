@@ -1,10 +1,11 @@
+import { PublishButton, type PublishButtonProps } from '../publishing/PublishButton';
 import { GeneralRulesButton, useGeneralRules } from '../menu/designer/GeneralRules';
 import { restoreGeneralRules, useRestoreTemplateSettings } from '../menu/designer/useRestoreTemplateSettings';
 import { DesignerTapButton } from '../common/DesignerTapButton';
 import { preventBrowserContextMenu } from '../common/noBrowserSelection';
 import React from 'react';
 import type { Product, MenuStyle, SortOption } from '../../domain/menu/model';
-import { ShoppingCart, FileText, Maximize2, Minimize2, X } from 'lucide-react';
+import { ShoppingCart, Maximize2, Minimize2, X } from 'lucide-react';
 import { useProductDesignerLogic } from './useProductDesignerLogic';
 import { ImportTools } from './ImportTools';
 import { ProductList } from './ProductList';
@@ -47,7 +48,7 @@ interface ProductDesignerProps {
     currentUserId: string;
     currentMenuId: string;
     onClose?: () => void;
-    onPdfClick?: () => void;
+    publishControl?: PublishButtonProps;
     isOpen?: boolean;
     productsCanChangeCategory?: boolean;
     splitCategoryAcrossPages?: boolean;
@@ -67,7 +68,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
     currentUserId,
     currentMenuId,
     onClose,
-    onPdfClick,
+    publishControl,
     isOpen = true,
     productsCanChangeCategory: legacyDrag,
     splitCategoryAcrossPages: legacySplit,
@@ -290,7 +291,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                     </h2>
                     <div className="flex shrink-0 gap-1.5">
                         <GeneralRulesButton open={rules.open} />
-                        <button type="button" onClick={onPdfClick} className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-100 flex items-center gap-1.5 pointer-events-auto" onPointerDown={e => e.stopPropagation()} title="Exportar PDF"><FileText size={14} /> PDF</button>
+                        {publishControl && <PublishButton {...publishControl} />}
                         <DesignerTapButton type="button" onClick={toggleExpanded} aria-expanded={isExpanded} className="md:hidden h-8 w-8 rounded-lg text-slate-500 hover:bg-white hover:text-slate-800 pointer-events-auto flex items-center justify-center" onPointerDown={e => e.stopPropagation()} title={isExpanded ? 'Voltar à visualização parcial' : 'Expandir painel'} aria-label={isExpanded ? 'Voltar à visualização parcial' : 'Expandir painel'}>{isExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}</DesignerTapButton>
                         <DesignerTapButton type="button" onClick={onClose} className="md:hidden h-8 w-8 rounded-lg text-slate-500 hover:bg-white hover:text-slate-800 pointer-events-auto flex items-center justify-center" onPointerDown={e => e.stopPropagation()} title="Fechar painel" aria-label="Fechar painel"><X size={18} /></DesignerTapButton>
                     </div>

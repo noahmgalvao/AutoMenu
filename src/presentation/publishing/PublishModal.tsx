@@ -1,172 +1,208 @@
-import { ExportPagePicker } from './ExportPagePicker';
-import React from 'react';
-import {
-  AlertCircle,
-  Image as ImageIcon,
-  Download,
-  FileText,
-  Send,
-  Settings2,
-  Share2,
-  X,
-} from 'lucide-react';
+import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
+import { Check, Download, Send, Share2, X } from 'lucide-react';
+import { getErrorMessage } from '../../application/errorMessages';
+import { exportProfiles, normalizeExportSettings, type ExportFormat, type ExportSettings, type ImageFormat } from '../../domain/publishing/exportProfiles';
 import { resolveImagePages, type ImagePages } from '../../domain/publishing/imagePages';
+import { downloadImageFiles, shareFiles } from '../../infrastructure/browser/shareFiles';
+import { BooleanSwitch } from '../common/BooleanSwitch';
 import { lockModalScrolling } from '../common/modalScroll';
-import { isPublishLocked, type JpgAction } from './useMenuPublishing';
-import { loadUserPreferences, saveUserPreferences } from '../../infrastructure/browser/userPreferences';
+import { ExportPagePicker } from './ExportPagePicker';
+import { CustomExportSettings, ExportProfilePicker } from './ExportProfiles';
+import { ActionButton, normalizedDraft, PublicationAddressField, PublicationStatus, VirtualLinkSection } from './VirtualLinkSection';
+import { useButtonFeedback } from './useButtonFeedback';
+import type { MenuPublishing } from './useMenuPublishing';
 
-import { ActionButton, Choice, VirtualLinkSection, type VirtualLinkControls } from './VirtualLinkSection';
+const tabs = ['Link virtual', 'PDF', 'Imagem'] as const;
+const formats = ['PNG', 'JPG', 'TIFF'] as const;
+const allPages: ImagePages = { mode: 'all' };
 
-type PdfAction = 'options' | 'download' | 'share';
-
-interface PublishModalProps extends VirtualLinkControls {
-  open: boolean;
-  preferenceKey: string;
-  hasPendingChanges?: boolean;
-  onClose: () => void;
-  pageCount: number;
-  selectedPages: readonly number[];
-  error?: string | null;
-  onJpgAction: (action: JpgAction, pages: number[]) => void;
-  preparePdf: () => void;
-  preparePublication: () => void;
-  prepareJpg: (pages: readonly number[]) => void;
-  onPdfAction: (action: PdfAction) => void;
+function Segments<T extends string>({ options, value, label, onChange }: {
+  options: readonly T[]; value: T; label: string; onChange: (value: T) => void;
+}) {
+  const navigate = (event: KeyboardEvent, option: T) => {
+    const direction = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0;
+    if (!direction) return;
+    event.preventDefault();
+    const index = (options.indexOf(option) + direction + options.length) % options.length;
+    onChange(options[index]);
+    const group = event.currentTarget.parentElement;
+    group?.querySelectorAll('button')[index]?.focus();
+  };
+  return <div aria-label={label} role="group" className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1">
+    {options.map(option => <button key={option} type="button" aria-pressed={option === value}
+      onClick={() => onChange(option)} onKeyDown={event => navigate(event, option)}
+      className={`min-h-9 rounded-lg px-1 text-xs font-bold transition-[background-color,transform] active:scale-[.97] [-webkit-tap-highlight-color:transparent] ${option === value
+        ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:bg-white/60'}`}>{option}</button>)}
+  </div>;
 }
 
-const DEFAULT_PREFERENCES = { pdf: true, jpg: false, virtualLink: true };
+type ProfileState = Partial<Record<ExportFormat, { id: string; custom: ExportSettings }>>;
+interface Generated { key: string; files: File[]; paired: boolean; }
 
-export const PublishModal: React.FC<PublishModalProps> = ({
-  open,
-  publishingLink = false,
-  preferenceKey,
-  hasPendingChanges = false,
-  linkPrefix,
-  defaultMenuSlug,
-  publicUrl,
-  publicationMenuSlug,
-  busyActions,
-  buttonResults,
-  pageCount,
-  selectedPages,
-  error,
-  preparePdf,
-  preparePublication,
-  prepareJpg,
-  onJpgAction,
-  onClose,
-  onLinkAction,
-  onPdfAction,
-  onPublishLink,
-}) => {
-  const [preferences, setPreferences] = React.useState(() => loadUserPreferences(preferenceKey, DEFAULT_PREFERENCES));
-  const [pageChoice, setPageChoice] = React.useState<ImagePages | null>(null);
-  const [pdfOptionsOpened, setPdfOptionsOpened] = React.useState(false);
-  const { pdf, jpg, virtualLink } = preferences;
-  const locked = isPublishLocked(publishingLink, busyActions);
-  const hasSelection = selectedPages.some(index => index >= 0 && index < pageCount);
-  const imagePages = React.useMemo<ImagePages>(() => pageChoice && (pageChoice.mode !== 'selection' || hasSelection)
-    ? pageChoice : { mode: 'all' }, [pageChoice, hasSelection]);
-  const indexes = React.useMemo(() => resolveImagePages(imagePages, pageCount, selectedPages), [imagePages, pageCount, selectedPages]);
+export function PublishModal({ publishing, pageCount, selectedPages, restoreFocus, title }: {
+  publishing: MenuPublishing;
+  pageCount: number;
+  selectedPages: readonly number[];
+  restoreFocus: RefObject<HTMLElement | null>;
+  title: string;
+}) {
+  const { isPublishOpen: open, setIsPublishOpen, fileExportRef, publication, defaultMenuSlug, contentSignature } = publishing;
+  const [tab, setTab] = useState<typeof tabs[number]>('Link virtual');
+  const [imageFormat, setImageFormat] = useState<ImageFormat>('PNG');
+  const [profiles, setProfiles] = useState<ProfileState>({});
+  const [pageChoice, setPageChoice] = useState<ImagePages>(allPages);
+  const [alsoPublish, setAlsoPublish] = useState(false);
+  const [edited, setEdited] = useState<string>();
+  const [generated, setGenerated] = useState<Generated>();
+  const [exportError, setExportError] = useState<{ key: string; message: string }>();
+  const [running, setRunning] = useState<string>();
+  const [fileAction, setFileAction] = useState<'download' | 'share'>();
+  const runningRef = useRef(false);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const { results, show } = useButtonFeedback();
 
-  React.useEffect(() => {
+  const activeSlug = publication?.menuSlug || defaultMenuSlug;
+  const draft = edited ?? activeSlug;
+  const format = tab === 'PDF' ? 'PDF' : imageFormat;
+  const profileSet = exportProfiles[format];
+  const state = profiles[format];
+  const profile = profileSet.options.find(candidate => candidate.id === (state?.id ?? profileSet.initial))!;
+  const custom = state?.custom ?? profile.settings!;
+  const settings = normalizeExportSettings(format, profile.settings ?? custom);
+  const indexes = resolveImagePages(pageChoice, pageCount, selectedPages);
+  const key = JSON.stringify([format, profile.id, settings, indexes, contentSignature, title]);
+  const valid = generated?.key === key ? generated : undefined;
+
+  useEffect(() => {
     if (!open) return;
-    setPreferences(loadUserPreferences(preferenceKey, DEFAULT_PREFERENCES));
-    setPageChoice(null);
-    setPdfOptionsOpened(false);
-  }, [open, preferenceKey]);
+    const target = restoreFocus.current;
+    closeButton.current?.focus({ preventScroll: true });
+    return () => target?.focus({ preventScroll: true });
+  }, [open, restoreFocus]);
 
-  React.useEffect(() => {
-    if (!open || !pdf || !pageCount || pdfOptionsOpened || locked) return;
-    const timer = window.setTimeout(preparePdf, 900);
-    return () => window.clearTimeout(timer);
-  }, [open, pdf, pageCount, preparePdf, pdfOptionsOpened, locked]);
-  React.useEffect(() => {
-    if (!open || !jpg || !indexes.length || pdfOptionsOpened || locked) return;
-    const timer = window.setTimeout(() => prepareJpg(indexes), 900);
-    return () => window.clearTimeout(timer);
-  }, [open, jpg, indexes, prepareJpg, pdfOptionsOpened, locked]);
+  useEffect(() => {
+    if (publication && edited !== undefined && normalizedDraft(edited, defaultMenuSlug) === publication.menuSlug) setEdited(undefined);
+  }, [publication, edited, defaultMenuSlug]);
 
-  React.useEffect(() => {
-    if (!open || !virtualLink || !pageCount || pdfOptionsOpened || locked) return;
-    const timer = window.setTimeout(preparePublication, 650);
-    return () => window.clearTimeout(timer);
-  }, [open, virtualLink, pageCount, preparePublication, pdfOptionsOpened, locked]);
+  const close = () => {
+    setIsPublishOpen(false);
+    setTab('Link virtual');
+    setImageFormat('PNG');
+    setPageChoice(allPages);
+  };
+  const generate = async () => {
+    if (runningRef.current || !indexes.length || (alsoPublish && publishing.isPublishing)) return;
+    runningRef.current = true;
+    setRunning(key);
+    setGenerated(undefined);
+    setExportError(undefined);
+    const slug = publication?.menuSlug ?? normalizedDraft(draft, defaultMenuSlug);
+    if (alsoPublish) {
+      void publishing.publish(slug).catch(() => undefined);
+    }
+    try {
+      const exporter = fileExportRef.current;
+      if (!exporter) throw new Error('O cardápio ainda está carregando.');
+      const files = await exporter.generate(format, settings, indexes);
+      setGenerated({ key, files, paired: alsoPublish });
+    } catch (error) {
+      setExportError({ key, message: error instanceof Error ? error.message : 'Não foi possível gerar o arquivo.' });
+    } finally {
+      runningRef.current = false;
+      setRunning(undefined);
+    }
+  };
 
-  const updatePreferences = (next: typeof DEFAULT_PREFERENCES) => {
-    setPreferences(next);
-    saveUserPreferences(preferenceKey, next);
+  const useFile = async (action: 'download' | 'share') => {
+    if (!valid || fileAction) return;
+    setFileAction(action);
+    setExportError(undefined);
+    const [first] = valid.files;
+    const archiveName = first.name.replace(/-pagina-\d+\.[a-z]+$/i, '');
+    try {
+      if (action === 'share') {
+        try { if (await shareFiles(first.name, valid.files)) return; } catch { /* Offer download instead. */ }
+      }
+      await downloadImageFiles(valid.files, archiveName);
+      show(key, 'Baixado');
+    } catch (error) {
+      setExportError({ key, message: getErrorMessage(error, 'Não foi possível concluir a ação do arquivo.') });
+    } finally {
+      setFileAction(undefined);
+    }
   };
 
   if (!open) return null;
-  return (
-    <div ref={lockModalScrolling} className="fixed inset-0 z-[1200] bg-slate-950/45 backdrop-blur-sm flex items-center justify-center p-3 md:p-4" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div role="dialog" aria-modal="true" aria-label="Publicar" className="w-full max-w-lg max-h-[calc(100dvh-1.5rem)] rounded-3xl bg-white shadow-2xl border border-white/70 overflow-hidden flex flex-col">
-        <div className="p-5 border-b border-slate-100 flex items-center justify-between shrink-0">
-          <div>
-            <h2 className="font-bold text-slate-900 flex items-center gap-2"><Send size={18} className="text-indigo-600" /> Publicar</h2>
-          </div>
-          <button onClick={onClose} aria-label="Fechar publicação" className="p-2 rounded-xl text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+  const pageSizes = tab !== 'Link virtual' ? fileExportRef.current?.pageSizes() ?? [] : [];
+  const generateLabel = `${alsoPublish ? 'Publicar e gerar' : 'Gerar'} ${format}`;
+
+  return <div ref={lockModalScrolling} className="fixed inset-0 z-[1200] flex items-center justify-center bg-slate-950/45 p-3"
+    onPointerDown={event => { if (event.currentTarget === event.target) close(); }}>
+    <div role="dialog" aria-modal="true" aria-label="Publicar"
+      className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+      onKeyDown={event => {
+        if (event.key === 'Escape') { event.stopPropagation(); close(); }
+        if (event.key !== 'Tab') return;
+        const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), select:not([disabled]), a[href], [tabindex="0"]',
+        )).filter(element => element.tabIndex >= 0 && element.getClientRects().length);
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (event.shiftKey && event.target === first) { event.preventDefault(); last?.focus(); }
+        if (!event.shiftKey && event.target === last) { event.preventDefault(); first?.focus(); }
+      }}>
+      <header className="shrink-0 border-b border-slate-100 px-4 pb-3 pt-2">
+        <div className="flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-sm font-bold text-slate-900"><Send size={16} className="text-indigo-600" /> Publicar</h2>
+          <button type="button" ref={closeButton} onClick={close} aria-label="Fechar publicação"
+            className="grid size-10 place-items-center rounded-xl text-slate-500 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-indigo-600 [-webkit-tap-highlight-color:transparent]"><X size={18} /></button>
         </div>
-
-        <fieldset disabled={locked} className="min-h-0 min-w-0 overflow-y-auto p-5 space-y-4 custom-scrollbar disabled:pointer-events-none disabled:grayscale disabled:opacity-50">
-          {hasPendingChanges && (
-            <div className="rounded-2xl border border-red-300 bg-red-50 p-3.5 text-red-800 flex items-start gap-3">
-              <AlertCircle size={19} className="mt-0.5 shrink-0" />
-              <div><p className="text-sm font-bold">Link desatualizado</p><p className="mt-0.5 text-xs leading-relaxed">Publique novamente para mostrar as alterações no cardápio virtual.</p></div>
-            </div>
-          )}
-
-          {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-xs font-medium text-red-700">{error}</p>}
-
-          <div className="space-y-2">
-            <Choice checked={pdf} onChange={(checked) => updatePreferences({ ...preferences, pdf: checked })} icon={<FileText size={20} />} title="Gerar PDF"  />
-            {pdf && (
-              <div className="grid grid-cols-3 gap-2 pl-1" role="group" aria-label="Ações de PDF">
-                <ActionButton icon={<Settings2 size={15} />} label="Opções" onClick={() => { setPdfOptionsOpened(true); onPdfAction('options'); }} />
-                <ActionButton icon={<Download size={15} />} label="Baixar" loading={busyActions.has('download-pdf')} result={buttonResults?.['download-pdf']} primary onClick={() => onPdfAction('download')} />
-                <ActionButton icon={<Share2 size={15} />} label="Compartilhar" loading={busyActions.has('share-pdf')} result={buttonResults?.['share-pdf']} onClick={() => onPdfAction('share')} />
-              </div>
-            )}
+        <Segments options={tabs} value={tab} label="Opções de publicação" onChange={setTab} />
+      </header>
+      <div className="min-h-0 space-y-3 overflow-y-auto overscroll-contain p-4">
+        {tab === 'Link virtual' ? <VirtualLinkSection publishing={publishing} draft={draft} onDraft={setEdited} /> : <>
+          {tab === 'Imagem' && <Segments options={formats} value={imageFormat} label="Formato da imagem" onChange={setImageFormat} />}
+          <ExportProfilePicker key={format} format={format} value={profile.id} custom={normalizeExportSettings(format, custom)}
+            pages={indexes.flatMap(index => pageSizes[index] ? [pageSizes[index]] : [])}
+            onSelect={next => setProfiles(current => ({
+              ...current, [format]: { id: next.id, custom: next.settings ?? settings },
+            }))} />
+          {profile.id === 'custom' && <CustomExportSettings format={format} settings={custom}
+            onChange={next => setProfiles(current => ({ ...current, [format]: { id: 'custom', custom: next } }))} />}
+          <div className="space-y-1.5">
+            <div className="text-xs font-semibold text-slate-700">Páginas</div>
+            <ExportPagePicker format={format} choice={pageChoice} pageCount={pageCount} selectedPages={selectedPages} onChange={setPageChoice} />
           </div>
-
-          <div className="space-y-2">
-            <Choice checked={jpg} onChange={checked => updatePreferences({ ...preferences, jpg: checked })}
-              icon={<ImageIcon size={20} />} title="Gerar JPG"  />
-            {jpg && <>
-              <div className="grid grid-cols-3 gap-2 pl-1" role="group" aria-label="Ações de JPG">
-                <ExportPagePicker format="JPG" choice={imagePages} pageCount={pageCount} selectedPages={selectedPages}
-                  onChange={setPageChoice} />
-                <ActionButton icon={<Download size={15} />} label="Baixar" primary result={buttonResults?.['download-jpg']}
-                  loading={busyActions.has('download-jpg')} disabled={!indexes.length}
-                  onClick={() => onJpgAction('download', indexes)} />
-                <ActionButton icon={<Share2 size={15} />} label="Compartilhar" loading={busyActions.has('share-jpg')}
-                  disabled={!indexes.length} onClick={() => onJpgAction('share', indexes)} />
-              </div>
-            </>}
-          </div>
-
-          <VirtualLinkSection
-            enabled={virtualLink}
-            onChange={checked => updatePreferences({ ...preferences, virtualLink: checked })}
-            publishingLink={publishingLink}
-            linkPrefix={linkPrefix}
-            defaultMenuSlug={defaultMenuSlug}
-            publicUrl={publicUrl}
-            publicationMenuSlug={publicationMenuSlug}
-            busyActions={busyActions}
-            buttonResults={buttonResults}
-            onLinkAction={onLinkAction}
-            onPublishLink={onPublishLink}
-          />
-
-          {!pdf && !jpg && !virtualLink && <p className="text-xs text-red-600">Selecione pelo menos uma opção.</p>}
-        </fieldset>
-
-        <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-between gap-2 shrink-0">
-          <button onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-600">Fechar</button>
-        </div>
+          <BooleanSwitch label={publication ? 'Sincronizar também o link virtual' : 'Publicar também o link virtual'}
+            value={alsoPublish} onChange={setAlsoPublish} className="border-slate-200 bg-slate-50" />
+          {alsoPublish && <div className="space-y-2">
+            <PublicationStatus publishing={publishing} />
+            <PublicationAddressField publishing={publishing} draft={publication?.menuSlug ?? draft} onDraft={setEdited} editable={!publication} />
+            {publishing.publicationError && <p role="alert" className="text-xs font-semibold text-red-700">{publishing.publicationError}</p>}
+          </div>}
+          {exportError?.key === key && <p role="alert" className="text-xs font-semibold text-red-700">{exportError.message}</p>}
+        </>}
       </div>
+      {tab !== 'Link virtual' && <footer className="grid shrink-0 gap-2 border-t border-slate-100 bg-white p-3">
+        {(!valid || (alsoPublish && (!valid.paired || publishing.publicationError))) && <ActionButton label={generateLabel} primary loading={running === key || (alsoPublish && publishing.isPublishing)}
+          disabled={Boolean(running) || !indexes.length || (alsoPublish && publishing.isPublishing)} onClick={() => void generate()} />}
+        {valid && <div className="grid gap-2 rounded-xl bg-slate-50 p-2.5">
+          <div role="status" className="flex min-w-0 items-center gap-2 text-xs">
+            <Check size={16} className="shrink-0 text-emerald-700" />
+            <div className="min-w-0">
+              <div className="font-semibold text-slate-700">Geração concluída</div>
+              <div className="break-all text-slate-500">{valid.files.length === 1 ? valid.files[0].name
+                : `${valid.files[0].name.replace(/-pagina-\d+\.[a-z]+$/i, '')}.zip · ${valid.files.length} imagens`}</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <ActionButton label="Baixar" primary icon={<Download size={15} />} disabled={!!fileAction}
+              loading={fileAction === 'download'} result={results[key]} onClick={() => void useFile('download')} />
+            <ActionButton label="Compartilhar" icon={<Share2 size={15} />} disabled={!!fileAction}
+              loading={fileAction === 'share'} onClick={() => void useFile('share')} />
+          </div>
+        </div>}
+      </footer>}
     </div>
-  );
-};
+  </div>;
+}
