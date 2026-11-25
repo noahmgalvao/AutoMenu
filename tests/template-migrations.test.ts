@@ -105,15 +105,20 @@ test('archiving a menu hides its public link until the menu is restored', async 
     await db.exec(`
       create role authenticated; create role anon;
       create table public.menus(id text primary key, status text not null);
-      create table public.menu_publications(menu_id text references public.menus(id));
+      create table public.menu_publications(menu_id text unique references public.menus(id));
       alter table public.menu_publications enable row level security;
       create policy menu_publications_public_read on public.menu_publications for select using (true);
       grant select on public.menu_publications to anon;
+      grant select, insert, update on public.menu_publications to authenticated;
+      create policy insert_publication on public.menu_publications for insert with check (true);
+      create policy update_publication on public.menu_publications for update using (true);
       insert into public.menus values ('original', 'published'), ('other', 'published');
-      insert into public.menu_publications values ('original'), ('other');
+      insert into public.menu_publications values ('other');
     `);
     await db.exec(await readFile('supabase/migrations/20261121110000_hide_archived_menu_publications.sql', 'utf8'));
-    await db.exec('set role anon');
+    await db.exec('set role authenticated');
+    await assert.rejects(db.exec("insert into menu_publications values ('original') on conflict (menu_id) do update set menu_id = excluded.menu_id"), { code: '42501' });
+    await db.exec("insert into menu_publications values ('original'); set role anon");
     assert.deepEqual((await db.query('select menu_id from public.menu_publications order by menu_id')).rows,
       [{ menu_id: 'original' }, { menu_id: 'other' }]);
     await db.exec("reset role; update public.menus set status = 'archived' where id = 'original'; set role anon");

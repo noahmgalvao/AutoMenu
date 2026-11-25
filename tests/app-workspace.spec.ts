@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { unzipSync } from 'fflate';
+import QRCode from 'qrcode';
 import { shortcutsFor } from './fixtures/canvas-shortcuts';
 import { expect, test, type Page } from '@playwright/test';
 import type { MenuStyle } from '../src/domain/menu/model';
@@ -125,8 +126,9 @@ test('the virtual link publishes a full snapshot, keeps its address during sync,
   const addressChanges: unknown[] = [];
   let releaseRequest: (() => void) | undefined;
   let hold = false;
-  await page.route('**/rest/v1/menu_publications?*', async route => {
+  await page.route(/\/rest\/v1\/menu_publications(?:\?|$)/, async route => {
     if (route.request().method() === 'POST') {
+      expect(route.request().headers()['prefer'] ?? '').not.toContain('resolution=merge-duplicates');
       if (hold) await new Promise<void>(resolve => { releaseRequest = resolve; });
       releases++;
       row = { id: 'public-id', ...route.request().postDataJSON(), updated_at: new Date().toISOString() };
@@ -134,7 +136,8 @@ test('the virtual link publishes a full snapshot, keeps its address during sync,
     }
     if (route.request().method() === 'PATCH') {
       const change = route.request().postDataJSON();
-      addressChanges.push(change);
+      if (change.published_version_id) releases++;
+      else addressChanges.push(change);
       row = { ...row, ...change };
       return route.fulfill({ status: 204 });
     }
@@ -220,8 +223,8 @@ test('a release acknowledges only the version captured when publishing started',
   let release: (() => void) | undefined;
   let row: Record<string, unknown> | null = null;
   let block = true;
-  await page.route('**/rest/v1/menu_publications?*', async route => {
-    if (route.request().method() !== 'POST') return route.fulfill({ json: row });
+  await page.route(/\/rest\/v1\/menu_publications(?:\?|$)/, async route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: row });
     const captured = route.request().postDataJSON();
     if (block) await new Promise<void>(resolve => { release = resolve; });
     row = { id: 'public-id', ...captured };
@@ -250,7 +253,7 @@ test('a release acknowledges only the version captured when publishing started',
 
 test('publishing and syncing use the same public file when the publication table is missing', async ({ page }) => {
   const { menuId, workspaceId } = await openWorkspace(page);
-  await page.route('**/rest/v1/menu_publications?*', route => route.fulfill({ status: 404, json: {
+  await page.route(/\/rest\/v1\/menu_publications(?:\?|$)/, route => route.fulfill({ status: 404, json: {
     code: 'PGRST205', message: "Could not find the table 'public.menu_publications' in the schema cache",
   } }));
   let signedLinks = 0;
@@ -278,18 +281,46 @@ test('publishing and syncing use the same public file when the publication table
   const access = dialog.getByRole('link', { name: 'Acessar' });
   await expect(access).toHaveAttribute('href', /\/menu-storage$/);
   const originalAddress = (await access.getAttribute('href'))!;
+  await dialog.getByRole('button', { name: 'QR Code', exact: true }).click();
+  const qr = dialog.getByRole('img', { name: 'QR Code do cardápio' });
+  await expect.poll(() => qr.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
+  const modules = await qr.evaluate((image: HTMLImageElement) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = image.naturalWidth;
+    const context = canvas.getContext('2d')!;
+    context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    const size = canvas.width / 12 - 8;
+    return Array.from({ length: size * size }, (_, index) => {
+      const x = (index % size + 4) * 12 + 6;
+      const y = (Math.floor(index / size) + 4) * 12 + 6;
+      return pixels[(y * canvas.width + x) * 4] === 0 ? 1 : 0;
+    });
+  });
+  expect(modules).toEqual([...QRCode.create(originalAddress, { errorCorrectionLevel: 'L' }).modules.data]);
   await page.evaluate(() => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
       writeText: async (url: string) => { document.body.dataset.copiedLink = url; },
+      write: async ([item]: ClipboardItem[]) => {
+        const blob = await item.getType('image/png');
+        document.body.dataset.copiedQr = String(blob.size);
+      },
     } });
-    Object.defineProperty(navigator, 'share', { configurable: true, value: async ({ url }: ShareData) => {
-      document.body.dataset.sharedLink = url;
+    Object.defineProperty(navigator, 'canShare', { configurable: true, value: () => true });
+    Object.defineProperty(navigator, 'share', { configurable: true, value: async ({ url, files }: ShareData) => {
+      if (files?.[0]) document.body.dataset.sharedQr = String(files[0].size);
+      else document.body.dataset.sharedLink = url;
     } });
   });
   await dialog.getByRole('button', { name: 'Copiar', exact: true }).click();
   await expect(page.locator('body')).toHaveAttribute('data-copied-link', originalAddress);
   await dialog.getByRole('button', { name: 'Compartilhar', exact: true }).click();
   await expect(page.locator('body')).toHaveAttribute('data-shared-link', originalAddress);
+  const qrSize = await qr.evaluate(async (image: HTMLImageElement) => String((await (await fetch(image.src)).blob()).size));
+  await dialog.getByRole('button', { name: 'Copiar QR', exact: true }).click();
+  await expect(page.locator('body')).toHaveAttribute('data-copied-qr', qrSize);
+  await dialog.getByRole('button', { name: 'Compartilhar QR', exact: true }).click();
+  await expect(page.locator('body')).toHaveAttribute('data-shared-qr', qrSize);
 
   await dialog.getByRole('button', { name: 'Fechar publicação' }).click();
   const product = page.locator('[data-automenu-editor-canvas] #product-container-suco');
@@ -340,7 +371,7 @@ test('synchronizing a portable publication provides a short public address witho
   let row: Record<string, unknown> | null = null;
   await page.evaluate(legacy => localStorage.setItem(`automenu:portable-publication:${legacy.menuId}`, JSON.stringify(legacy)), legacy);
   await page.route('**/legacy-publication.json?*', route => route.fulfill({ json: { publication: legacy } }));
-  await page.route('**/rest/v1/menu_publications?*', route => {
+  await page.route(/\/rest\/v1\/menu_publications(?:\?|$)/, route => {
     if (route.request().method() === 'POST') {
       row = { id: 'published-short', ...route.request().postDataJSON() };
       return route.fulfill({ status: 201 });
@@ -367,7 +398,7 @@ test('synchronizing a portable publication provides a short public address witho
 test('publication status distinguishes an unavailable link from a connection failure', async ({ page }) => {
   const { menuId, workspaceId } = await openWorkspace(page);
   let connectionFails = true;
-  await page.route('**/rest/v1/menu_publications?*', route => {
+  await page.route(/\/rest\/v1\/menu_publications(?:\?|$)/, route => {
     const query = new URL(route.request().url()).searchParams;
     if (query.has('menu_id')) return route.fulfill({ json: {
       id: 'record', menu_id: menuId, workspace_id: workspaceId, restaurant_slug: 'teste', menu_slug: 'publicado',
@@ -515,7 +546,7 @@ test('file generation survives publication failure and publication survives expo
   await openWorkspace(page);
   let row: Record<string, unknown> | null = null;
   let failPublication = true;
-  await page.route('**/rest/v1/menu_publications?*', async route => {
+  await page.route(/\/rest\/v1\/menu_publications(?:\?|$)/, async route => {
     if (route.request().method() !== 'POST') return route.fulfill({ json: row });
     if (failPublication) return route.fulfill({ status: 409, json: { code: '23505', message: 'duplicate slug' } });
     row = { id: 'result', ...route.request().postDataJSON() };

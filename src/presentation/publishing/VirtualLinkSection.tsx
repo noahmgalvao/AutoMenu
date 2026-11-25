@@ -66,7 +66,7 @@ export function VirtualLinkSection({ publishing }: { publishing: MenuPublishing 
   const fieldId = useId();
   const [qrOpen, setQrOpen] = useState(false);
   const [qrPreview, setQrPreview] = useState<{ link: string; image: string }>();
-  const { publication, publicUrl, sharedUrl, linkEnding, updateLinkEnding, defaultMenuSlug, isPublishing,
+  const { publication, publicUrl, linkEnding, updateLinkEnding, defaultMenuSlug, isPublishing,
     availability, pending, publicationError, linkActionError, busyAction, buttonResults, handleLinkAction } = publishing;
   const canRetry = availability === 'offline' || Boolean(publicationError);
   const inlineSync = Boolean(publication && (pending || canRetry || isPublishing || publication.portableSnapshotUrl));
@@ -74,16 +74,16 @@ export function VirtualLinkSection({ publishing }: { publishing: MenuPublishing 
   const publish = () => void publishing.publish().catch(() => undefined);
 
   useEffect(() => {
-    if (!qrOpen || !sharedUrl) return;
+    if (!qrOpen || !publicUrl) return;
     let alive = true;
     let image: string | undefined;
-    void createQrCodeBlob(sharedUrl).then(blob => {
+    void createQrCodeBlob(publicUrl).then(blob => {
       if (!alive) return;
       image = URL.createObjectURL(blob);
-      setQrPreview({ link: sharedUrl, image });
+      setQrPreview({ link: publicUrl, image });
     }).catch(() => undefined);
     return () => { alive = false; if (image) URL.revokeObjectURL(image); };
-  }, [qrOpen, sharedUrl]);
+  }, [qrOpen, publicUrl]);
 
   return <form className="space-y-3" onSubmit={event => {
     event.preventDefault();
@@ -107,10 +107,12 @@ export function VirtualLinkSection({ publishing }: { publishing: MenuPublishing 
       <ActionButton icon={<QrCode size={15} />} label="QR Code" disabled={!publicUrl} expanded={qrOpen}
         onClick={() => { if (qrOpen) setQrPreview(undefined); setQrOpen(!qrOpen); }} />
     </div>
-    {qrOpen && sharedUrl && <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5" aria-label="QR Code do cardápio">
-      {qrPreview?.link === sharedUrl && <img src={qrPreview.image} alt="QR Code do cardápio"
+    {qrOpen && publicUrl && <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5" aria-label="QR Code do cardápio">
+      {qrPreview?.link === publicUrl && <img src={qrPreview.image} alt="QR Code do cardápio"
         className="mx-auto size-36 rounded-xl bg-white ring-1 ring-slate-200 [image-rendering:pixelated]" />}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-3 gap-1.5">
+        <ActionButton icon={<Copy size={15} />} label="Copiar QR" disabled={!!busyAction}
+          result={buttonResults['copy-qr']} loading={busyAction === 'copy-qr'} onClick={() => void handleLinkAction('copy-qr')} />
         <ActionButton icon={<Download size={15} />} label="Baixar QR" disabled={!!busyAction}
           result={buttonResults['download-qr']} loading={busyAction === 'download-qr'} onClick={() => void handleLinkAction('download-qr')} />
         <ActionButton icon={<Share2 size={15} />} label="Compartilhar QR" disabled={!!busyAction}

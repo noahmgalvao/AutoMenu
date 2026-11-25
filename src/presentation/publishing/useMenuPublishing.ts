@@ -9,10 +9,10 @@ import type { LoadedWorkspaceData, MenuPublication } from '../../domain/workspac
 import { copyText, createQrCodeBlob, downloadBlob, shareFiles } from '../../infrastructure/browser/shareFiles';
 import { useAppServices } from '../app/AppServicesProvider';
 import type { CanvasFileExports } from '../menu/designer/useCanvasFileExports';
-import { getPublicationUrl, getShareablePublicationUrl } from './publicationUrl';
+import { getPublicationUrl } from './publicationUrl';
 import { useButtonFeedback } from './useButtonFeedback';
 
-export type LinkAction = 'copy-link' | 'share-link' | 'download-qr' | 'share-qr';
+export type LinkAction = 'copy-link' | 'share-link' | 'download-qr' | 'share-qr' | 'copy-qr';
 export type PublicationTone = 'neutral' | 'pending' | 'synced' | 'failed';
 
 interface MenuPublishingOptions extends WorkspaceMenuContent {
@@ -106,7 +106,6 @@ export function useMenuPublishing({ session, workspaceData, products, style, sor
   const publication = current.record;
   const defaultMenuSlug = getDefaultPublicationSlug(workspaceData?.menu.name ?? '');
   const publicUrl = publication ? getPublicationUrl(publication) : null;
-  const sharedUrl = publication ? getShareablePublicationUrl(publication) : null;
   const draft = addressDraft?.menuId === menuId ? addressDraft?.value : undefined;
   const linkEnding = draft ?? publication?.menuSlug ?? defaultMenuSlug;
   const requestedSlug = normalizePublicationSlug(linkEnding) || defaultMenuSlug;
@@ -157,7 +156,7 @@ export function useMenuPublishing({ session, workspaceData, products, style, sor
   };
 
   const handleLinkAction = async (action: LinkAction) => {
-    if (!publicUrl || !sharedUrl || !publication || actionRef.current) return;
+    if (!publicUrl || !publication || actionRef.current) return;
     actionRef.current = action;
     setBusyAction(action);
     setActionError(null);
@@ -175,7 +174,15 @@ export function useMenuPublishing({ session, workspaceData, products, style, sor
         showButtonResult(action, 'Copiado');
         return;
       }
-      const qr = await createQrCodeBlob(sharedUrl);
+      if (action === 'copy-qr') {
+        if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
+          throw new Error('Este navegador não permite copiar imagens.');
+        }
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': createQrCodeBlob(publicUrl) })]);
+        showButtonResult(action, 'Copiado');
+        return;
+      }
+      const qr = await createQrCodeBlob(publicUrl);
       const file = new File([qr], `qrcode-${publication.menuSlug}.png`, { type: 'image/png' });
       if (action === 'share-qr') {
         try { if (await shareFiles('QR Code do cardápio', [file])) return; } catch { /* Offer the file as a download. */ }
@@ -193,7 +200,7 @@ export function useMenuPublishing({ session, workspaceData, products, style, sor
   return {
     isPublishOpen, setIsPublishOpen, isPublishing, tone, pending,
     availability: current.availability, publicationError: current.failure, linkActionError: actionError,
-    publication, publicUrl, sharedUrl, linkEnding, updateLinkEnding, defaultMenuSlug, contentSignature, fileExportRef,
+    publication, publicUrl, linkEnding, updateLinkEnding, defaultMenuSlug, contentSignature, fileExportRef,
     publishedLinkNotice, dismissPublishedLinkNotice: () => setPublishedLinkNotice(false),
     publish, handleLinkAction, busyAction, buttonResults,
   };

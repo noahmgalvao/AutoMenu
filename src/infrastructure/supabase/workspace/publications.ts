@@ -130,18 +130,27 @@ export const publishWorkspaceMenu: PublicationGateway['publishWorkspaceMenu'] = 
   collectProductAssetIds(products).forEach(id => assetIds.add(id));
   for (const slug of candidates) {
     const payload = {
-      ...(existing ? { id: existing.id } : {}),
       menu_id: menu.id, workspace_id: workspace.id, restaurant_slug: restaurantSlug, menu_slug: slug,
       published_version_id: versionId, pdf_asset_id: null, pdf_bucket: 'menu-assets', pdf_path: null,
       pdf_filename: pdfFilename, pdf_options: {}, snapshot: renderSnapshot,
       asset_ids: Array.from(assetIds), content_signature: contentSignature,
     };
-    // Verify in a separate request, after the public read policy can see the new row.
-    const { error } = await supabase.from('menu_publications').upsert(payload, { onConflict: 'menu_id' });
+    const table = supabase.from('menu_publications');
+    // A first insert must finish before the public read policy can see the new row.
+    const { error } = existing
+      ? await table.update(payload).eq('id', existing.id)
+      : await table.insert(payload);
     if (!error) {
       const published = await confirmPublishedAddress(restaurantSlug, slug, menu.id);
       if (published.publishedVersionId === versionId) void updateMenu().then(() => undefined, () => undefined);
       return published;
+    }
+    if (error.code === '23505' && !existing) {
+      const { data: concurrent, error: lookupError } = await lookupPublication(menu.id);
+      if (lookupError) throw lookupError;
+      if (concurrent && (!customSlug || concurrent.menu_slug === customSlug)) {
+        return confirmPublishedAddress(concurrent.restaurant_slug, concurrent.menu_slug, menu.id);
+      }
     }
     if (error.code === '23505' && preferredSlug) throw addressTaken();
     if (error.code !== '23505') throw new Error(getErrorMessage(error, 'Falha ao salvar o link público.'));
