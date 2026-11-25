@@ -12,6 +12,7 @@ type Control = {
     kind: ControlKind;
     hoverOnly: boolean;
     lastHovered?: number;
+    position?: { x: number; y: number; anchorWidth: number; anchorHeight: number };
 };
 
 const margin = 4;
@@ -73,7 +74,8 @@ function placeControls(
     const handles = Array.from(page.querySelectorAll('[data-canvas-transform-handle]'), handle => handle.getBoundingClientRect());
     const categoryTitles = Array.from(page.querySelectorAll('[id^="category-header-"]'), title => title.getBoundingClientRect());
     const visible = canvas || pageBounds;
-    for (const { node, anchor, direction, kind, hoverOnly } of active) {
+    for (const control of active) {
+        const { node, anchor, direction, kind, hoverOnly, position } = control;
         const target = anchor.getBoundingClientRect();
         const { left, right, top, bottom } = visible;
         const reject = () => { if (node.style.visibility !== 'hidden') node.style.visibility = 'hidden'; };
@@ -91,9 +93,16 @@ function placeControls(
             && blockers.every(blocker => !controlBoxesOverlap(box, blocker));
         let placement: Box | undefined;
 
+        const previousBox = position && Math.abs(position.anchorWidth - target.width) < 1 && Math.abs(position.anchorHeight - target.height) < 1
+            ? { left: target.left + position.x, right: target.left + position.x + width,
+                top: target.top + position.y, bottom: target.top + position.y + height }
+            : undefined;
         if (kind === 'quick') {
             const occupied = [...blockers, ...categoryTitles];
-            for (const y of [target.top - height - 6, target.bottom + 6]) {
+            if (previousBox && isClear(previousBox) && occupied.every(box => !controlBoxesOverlap(previousBox, box))) {
+                placement = previousBox;
+            }
+            for (const y of placement ? [] : [target.top - height - 6, target.bottom + 6]) {
                 if (y < top || y + height > bottom) continue;
                 const band = { left, right, top: y, bottom: y + height };
                 const x = target.right - width;
@@ -118,7 +127,10 @@ function placeControls(
             const x = divider - width / 2;
             const y = Math.max(top, columnRect.top) + 4;
             const limit = Math.min(bottom, columnRect.bottom, y + height * 3);
-            if (x >= left && x + width <= right && y + height <= limit) {
+            if (previousBox && Math.abs(previousBox.left - x) < 1 && previousBox.bottom <= columnRect.bottom
+                && isClear(previousBox) && handles.every(box => !controlBoxesOverlap(previousBox, box))) {
+                placement = previousBox;
+            } else if (x >= left && x + width <= right && y + height <= limit) {
                 const candidate = placeCanvasControl(x, y, width, height,
                     { left: x, right: x + width, top: y, bottom: limit }, [...blockers, ...handles], false);
                 if (isClear(candidate) && handles.every(box => !controlBoxesOverlap(candidate, box))) placement = candidate;
@@ -132,6 +144,8 @@ function placeControls(
             reject();
             continue;
         }
+        control.position = { x: placement.left - target.left, y: placement.top - target.top,
+            anchorWidth: target.width, anchorHeight: target.height };
         blockers.push(placement);
 
         const host = node.parentElement;
@@ -174,7 +188,10 @@ function observeControls(frame: HTMLElement, page: HTMLElement) {
     };
     const observer = new ResizeObserver(update);
     const mutations = new MutationObserver(records => {
-        if (records.some(record => !(record.target instanceof Element && record.target.hasAttribute('data-canvas-action-group')))) update();
+        if (records.some(record => {
+            const target = record.target instanceof Element ? record.target : record.target.parentElement;
+            return !target?.closest('[data-canvas-action-group]');
+        })) update();
     });
     observer.observe(page);
     if (canvas) observer.observe(canvas);

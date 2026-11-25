@@ -5,7 +5,7 @@ import { INITIAL_PRODUCTS, NO_TEMPLATE_ID } from '../../../domain/menu/defaults'
 import type { MenuStyle, Product, SortOption } from '../../../domain/menu/model';
 import { useMenuData } from '../interactions/useMenuData';
 import { applyTemplateToCurrentStyle } from '../../../application/templates/templateApplication';
-import { calculatePagination, finalizeMenuPages } from '../../../domain/menu/menuPagination';
+import { calculatePagination, finalizeMenuPages, getMenuTypographyScale } from '../../../domain/menu/menuPagination';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 import { MenuPage } from '../canvas/MenuPage';
 import { DynamicFontLoader } from '../canvas/MenuPreview';
@@ -61,21 +61,23 @@ export const TemplatePreviewSurface = memo(function TemplatePreviewSurface({
   }, [current, template, sample]);
   const { groupedProductsBase, sortedCategoriesBase } = useMenuData({ products: content, style, sortOption });
   const [measuredHeights, setMeasuredHeights] = useState<ReadonlyMap<string, number>>(() => new Map());
+  const typographyScale = useMemo(() => getMenuTypographyScale(style, groupedProductsBase, sortedCategoriesBase),
+    [style, groupedProductsBase, sortedCategoriesBase]);
   const pages = useMemo(() => {
     const placements = { ...style.categoryPositions, ...style.categoryPlacements };
     const calculated = calculatePagination(
       content, style, groupedProductsBase, sortedCategoriesBase,
-      Object.keys(placements).length > 0 ? placements : null, { splitCategoryAcrossPages: style.splitCategoryAcrossPages, measuredHeights },
+      Object.keys(placements).length > 0 ? placements : null, { typographyScale, measuredHeights },
     );
     return finalizeMenuPages(calculated, style, content);
-  }, [content, style, groupedProductsBase, sortedCategoriesBase, measuredHeights]);
+  }, [content, style, groupedProductsBase, sortedCategoriesBase, measuredHeights, typographyScale]);
   const { widthPx, heightPx } = resolveMenuPageDimensions(style);
   const stage = useRef<HTMLDivElement>(null);
   useResponsivePrices(stage, style);
   const [scale, setScale] = useState(0);
   const lastPage = Math.max(0, pages.length - 1);
   const visibleIndex = Math.min(pageIndex, lastPage);
-  useMenuPageMeasurements(stage, pages, style.columnCount, setMeasuredHeights, scale > 0 ? visibleIndex : undefined);
+  useMenuPageMeasurements(stage, pages, style.columnCount, setMeasuredHeights, typographyScale, scale > 0 ? visibleIndex : undefined);
   useLayoutEffect(() => {
     if (pageIndex !== visibleIndex) onPageChange(visibleIndex);
   }, [onPageChange, pageIndex, visibleIndex]);

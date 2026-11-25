@@ -4,7 +4,7 @@ import { getPaginationHeightKey, type PageLayout } from '../../../domain/menu/me
 import { livePhotoScaleVariable } from './photoSizing';
 
 export function useMenuPageMeasurements(rootRef: RefObject<HTMLElement | null>, pages: PageLayout[], columnCount: number,
-    setMeasuredHeights: Dispatch<SetStateAction<ReadonlyMap<string, number>>>, visiblePage?: number) {
+    setMeasuredHeights: Dispatch<SetStateAction<ReadonlyMap<string, number>>>, typographyScale: number, visiblePage?: number) {
     useLayoutEffect(() => {
         const root = rootRef.current;
         if (!root) return;
@@ -15,7 +15,7 @@ export function useMenuPageMeasurements(rootRef: RefObject<HTMLElement | null>, 
         let frame = 0;
         const measure = () => {
             if (root.style.getPropertyValue(livePhotoScaleVariable('product')) || root.style.getPropertyValue(livePhotoScaleVariable('category'))) return;
-            applyGroupedWordFit(root);
+            applyGroupedWordFit(root, typographyScale);
             const next = new Map<string, number>();
             for (const header of headers) {
                 if (header.offsetWidth && header.dataset.headingMeasurement) {
@@ -62,12 +62,12 @@ export function useMenuPageMeasurements(rootRef: RefObject<HTMLElement | null>, 
             cancelAnimationFrame(frame);
             frame = requestAnimationFrame(measure);
         });
-        wordChanges.observe(root, { subtree: true, attributes: true, attributeFilter: ['data-word-fit-size', 'data-word-fit-reduced'] });
+        wordChanges.observe(root, { subtree: true, attributes: true, attributeFilter: ['data-word-fit-size', 'data-word-fit-base-size', 'data-price-width-scale', 'data-price-base-size'] });
         measure();
         return () => {
             observer.disconnect();
             wordChanges.disconnect();
             cancelAnimationFrame(frame);
         };
-    }, [rootRef, pages, columnCount, visiblePage, setMeasuredHeights]);
+    }, [rootRef, pages, columnCount, typographyScale, visiblePage, setMeasuredHeights]);
 }

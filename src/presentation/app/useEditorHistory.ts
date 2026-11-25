@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import type { MenuStyle, Product } from '../../domain/menu/model';
+import { getCategoryFitRegression } from '../../domain/menu/menuPagination';
+import type { MenuStyle, Product, SortOption } from '../../domain/menu/model';
 
 interface HistoryState {
   products: Product[];
@@ -17,12 +18,26 @@ type HistoryEntry = HistoryState | HistoryAction;
 interface EditorHistoryOptions {
   products: Product[];
   style: MenuStyle;
+  sortOption: SortOption;
   setProductsRaw: Dispatch<SetStateAction<Product[]>>;
   setStyleRaw: Dispatch<SetStateAction<MenuStyle>>;
   pendingPersistActionLabel: { current: string | null };
 }
 
-export function useEditorHistory({ products, style, setProductsRaw, setStyleRaw, pendingPersistActionLabel }: EditorHistoryOptions) {
+const categorySizingFields = [
+  'minimumFontSize', 'revisedMinimumFontSize', 'columnCount', 'categoryColumnCount', 'categoryColumnWidths',
+  'categoryProductColumnCounts', 'layoutMode', 'margins', 'pagePadding', 'pageSetup', 'contentSpacing', 'itemGap',
+  'imageScale', 'categoryImageScale', 'productPhotoRatio', 'categoryPhotoRatio', 'productPhotoAlignments',
+  'productPhotoAlignmentDefault', 'categoryPhotoAlignmentDefault', 'productImageFrame', 'categoryImages',
+  'showImages', 'showCategoryImages', 'showPrices', 'hiddenProductIds', 'menuTitle', 'menuSubtitle', 'headingPages',
+] as const satisfies readonly (keyof MenuStyle)[];
+
+const addsProductsToCategories = (products: Product[], nextProducts: Product[]) => {
+  const categories = new Map(products.map(product => [product.id, product.category]));
+  return nextProducts.some(product => !product.isFreeText && categories.get(product.id) !== product.category);
+};
+
+export function useEditorHistory({ products, style, sortOption, setProductsRaw, setStyleRaw, pendingPersistActionLabel }: EditorHistoryOptions) {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [future, setFuture] = useState<HistoryEntry[]>([]);
   const applying = useRef(false);
@@ -45,19 +60,26 @@ export function useEditorHistory({ products, style, setProductsRaw, setStyleRaw,
   const setProducts = useCallback((value: React.SetStateAction<Product[]>) => {
     saveCheckpoint();
     setProductsRaw(value);
-  }, [saveCheckpoint, setProductsRaw, setStyleRaw]);
+  }, [saveCheckpoint, setProductsRaw]);
 
   const setStyle = useCallback((value: React.SetStateAction<MenuStyle>) => {
     saveCheckpoint();
-    setStyleRaw(value);
-  }, [saveCheckpoint, setProductsRaw, setStyleRaw]);
+    setStyleRaw(previous => {
+      const next = typeof value === 'function' ? value(previous) : value;
+      const resizing = categorySizingFields.some(key => next[key] !== previous[key]);
+      return resizing && getCategoryFitRegression(products, previous, products, next, sortOption) ? previous : next;
+    });
+  }, [products, saveCheckpoint, setStyleRaw, sortOption]);
 
   const setProductsAndStyle = useCallback((nextProducts: Product[], nextStyle: MenuStyle, actionLabel?: string) => {
+    const resizing = categorySizingFields.some(key => nextStyle[key] !== style[key]);
+    if ((resizing || addsProductsToCategories(products, nextProducts))
+      && getCategoryFitRegression(products, style, nextProducts, nextStyle, sortOption)) return;
     saveCheckpoint();
     pendingPersistActionLabel.current = actionLabel || null;
     setProductsRaw(nextProducts);
     setStyleRaw(nextStyle);
-  }, [saveCheckpoint, setProductsRaw, setStyleRaw]);
+  }, [pendingPersistActionLabel, products, saveCheckpoint, setProductsRaw, setStyleRaw, sortOption, style]);
 
   const recordAction = useCallback((action: HistoryAction) => {
     setHistory(previous => [...previous.slice(-49), action]);

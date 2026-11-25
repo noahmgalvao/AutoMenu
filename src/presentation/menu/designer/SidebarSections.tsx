@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import type { FormattingKind, FormattingScope } from '../../../domain/menu/itemFormatting';
 import { getMenuColumnLimit, getProductColumnCount } from '../../../domain/menu/categoryColumns';
 import type { MenuColumnCount } from '../../../domain/menu/model';
@@ -490,9 +491,50 @@ interface LayoutSectionProps {
 
 const columnCounts: MenuColumnCount[] = [1, 2, 3, 4, 5];
 
+function ColumnLimitTooltip({ anchor, id, close }: { anchor: HTMLButtonElement; id: string; close: () => void }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  React.useLayoutEffect(() => {
+    const position = () => {
+      const box = anchor.getBoundingClientRect();
+      const tooltip = ref.current;
+      if (!tooltip) return;
+      const left = Math.min(Math.max(8, box.left + (box.width - tooltip.offsetWidth) / 2), window.innerWidth - tooltip.offsetWidth - 8);
+      const top = box.bottom + 6 + tooltip.offsetHeight <= window.innerHeight - 8
+        ? box.bottom + 6 : Math.max(8, box.top - tooltip.offsetHeight - 6);
+      if (!anchor.isConnected || box.bottom < 0 || box.top >= window.innerHeight) {
+        close();
+        return;
+      }
+      tooltip.style.left = `${left}px`;
+      tooltip.style.top = `${top}px`;
+    };
+    const dismiss = (event: PointerEvent) => {
+      if (event.target instanceof Node && !anchor.contains(event.target)) close();
+    };
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); };
+    position();
+    document.addEventListener('pointerdown', dismiss, true);
+    document.addEventListener('keydown', onKeyDown);
+    window.addEventListener('resize', position);
+    window.addEventListener('scroll', position, true);
+    return () => {
+      document.removeEventListener('pointerdown', dismiss, true);
+      document.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('resize', position);
+      window.removeEventListener('scroll', position, true);
+    };
+  }, [anchor, close]);
+  return createPortal(
+    <p ref={ref} role="tooltip" id={id} className="pointer-events-none fixed z-[200] w-56 max-w-[calc(100vw-1rem)] rounded-lg bg-slate-900 px-3 py-2 text-xs text-white shadow-lg">
+      O número de colunas foi limitado pelas definições de fonte e pelos caracteres do texto do cardápio.
+    </p>, document.body,
+  );
+}
+
 export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle, selectedCategory, products }) => {
   const [limits, setLimits] = React.useState<{ products: number[]; categories: number[] }>({ products: [], categories: [] });
-  const [help, setHelp] = React.useState<'products' | 'categories'>();
+  const [help, setHelp] = React.useState<{ type: 'products' | 'categories'; anchor: HTMLButtonElement }>();
+  const closeHelp = React.useCallback(() => setHelp(undefined), []);
   const helpId = React.useId();
   const categoryCount = style.categoryColumnCount || 1;
   const productCount = getProductColumnCount(style, selectedCategory);
@@ -614,14 +656,14 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle, s
             <div className="mb-1 flex items-center gap-1 text-[10px] font-bold text-slate-500">
               <span>{label}</span>
               {limits[type].length > 0 && <button type="button" aria-label={`Ajuda sobre ${label.toLowerCase()}`}
-                aria-expanded={help === type} aria-describedby={help === type ? helpId : undefined}
-                onClick={() => setHelp(value => value === type ? undefined : type)}
-                onKeyDown={event => { if (event.key === 'Escape') setHelp(undefined); }}
+                aria-expanded={help?.type === type} aria-describedby={help?.type === type ? helpId : undefined}
+                onClick={event => {
+                  const anchor = event.currentTarget;
+                  setHelp(value => value?.type === type ? undefined : { type, anchor });
+                }}
                 className="text-indigo-700"><CircleHelp size={14} /></button>}
             </div>
-            {help === type && limits[type].length > 0 && <p role="tooltip" id={helpId} className="mb-1 rounded bg-indigo-50 p-1.5 text-[11px] text-slate-700">
-              O número de colunas foi limitado pelas definições de fonte e pelos caracteres do texto do cardápio.
-            </p>}
+            {help?.type === type && limits[type].length > 0 && <ColumnLimitTooltip id={helpId} anchor={help.anchor} close={closeHelp} />}
             <div className="flex gap-1">
               {choices.map(count => <button key={count} type="button" aria-pressed={current === count} disabled={limits[type].includes(count)}
                 onClick={() => updateColumnCounts(type, count)}

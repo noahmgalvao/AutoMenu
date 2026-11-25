@@ -166,16 +166,66 @@ test('landscape can use five columns and changing a selected category leaves oth
   await expect(page.getByRole('button', { name: 'Padronizar colunas de produtos' })).toBeVisible();
 });
 
-test('word width blocks narrow columns and a reduction applies to matching product names', async ({ page }) => {
+test('word width limits columns and the floating help dismisses without shifting the controls', async ({ page }) => {
   await page.goto(fixture + '?general-rules&photos=top&cols=1&long-name&no-photos');
   const columns = page.getByRole('group', { name: 'Colunas de produtos' });
   await expect(columns.getByRole('button', { name: '3', exact: true })).toBeDisabled();
-  await columns.getByRole('button', { name: 'Ajuda sobre colunas de produtos' }).click();
-  await expect(columns.getByRole('tooltip')).toContainText('limitado pelas definições de fonte');
+  const help = columns.getByRole('button', { name: 'Ajuda sobre colunas de produtos' });
+  const height = await columns.evaluate(element => element.clientHeight);
+  await help.click();
+  await expect(page.getByRole('tooltip')).toContainText('limitado pelas definições de fonte');
+  await expect(page.getByRole('tooltip')).toHaveCSS('position', 'fixed');
+  expect(await columns.evaluate(element => element.clientHeight)).toBe(height);
+  await help.click();
+  await expect(page.getByRole('tooltip')).toHaveCount(0);
+  await help.click();
+  await columns.getByText('Colunas de produtos', { exact: true }).click();
+  await expect(page.getByRole('tooltip')).toHaveCount(0);
+  await expect.poll(() => page.locator('[data-word-fit-scope="menuTitle"]').first().evaluate(element =>
+    parseFloat(getComputedStyle(element).fontSize) < Number((element as HTMLElement).dataset.wordFitBaseSize),
+  )).toBe(true);
   const names = page.locator('[data-word-fit-scope="productName"]');
   for (const name of await names.all()) {
     await expect(name).toHaveAttribute('data-word-fit-minimum', '13');
     await expect(name).toHaveCSS('font-size', '13px');
     await expect(name).toHaveCSS('overflow-wrap', 'normal');
   }
+});
+
+
+test('a fourth item fits in the next row of a three-column category', async ({ page }) => {
+  await page.goto(fixture + '?photos=cards&cols=3&no-photos');
+  const category = page.locator('[data-category-chunk="Entradas"]');
+  const first = page.locator('#product-container-1');
+  await first.getByRole('heading').click();
+  const insertIds = await first.locator('[data-canvas-action-anchor="insert"]').evaluateAll(nodes =>
+    nodes.map(node => node.getAttribute('aria-controls')).filter(Boolean));
+  await page.locator(insertIds.map(id => `[id="${id}"]`).join(',')).getByRole('button').filter({ visible: true }).first().click();
+  await expect(category.locator('[data-drag-type="product"]')).toHaveCount(4);
+  await expect(category).toHaveCount(1);
+});
+
+
+test('height fitting keeps a whole category below the title and scales foreground text together', async ({ page }) => {
+  await page.goto(fixture + '?photos=cards&cols=3&no-photos&height-fit');
+  const firstPage = page.locator('[data-menu-print-page]').first();
+  const category = firstPage.locator('[data-category-chunk="Entradas"]');
+  await expect(category.locator('[data-drag-type="product"]')).toHaveCount(19);
+  await expect(page.locator('[data-category-chunk="Entradas"]')).toHaveCount(1);
+  await expect.poll(() => category.evaluate(element => {
+    const page = element.closest('[data-menu-print-page]')!;
+    return element.getBoundingClientRect().bottom <= page.getBoundingClientRect().bottom;
+  })).toBe(true);
+  const fontRatios = firstPage.locator('[data-word-fit="true"]:not([data-canvas-background-layer] *), [data-price-base-size]');
+  await expect.poll(() => fontRatios.evaluateAll(elements => {
+    const sizes = elements.map(element => {
+      const data = (element as HTMLElement).dataset;
+      const base = Number(data.wordFitBaseSize || data.priceBaseSize);
+      return { size: parseFloat(getComputedStyle(element).fontSize), base,
+        minimum: Number(data.wordFitMinimum || data.priceMinimum) };
+    });
+    const scale = Math.min(...sizes.map(({ size, base }) => size / base));
+    return scale < 0.99 && sizes.every(({ size, base, minimum }) => Math.abs(size - Math.max(minimum, base * scale)) < .06);
+  })).toBe(true);
+  await expect(firstPage.locator('[data-canvas-background-layer] [data-word-fit]')).toHaveCSS('font-size', '34px');
 });

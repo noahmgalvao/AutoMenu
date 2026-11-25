@@ -2,7 +2,7 @@ import { hasMenuContentMutation } from './menuContentMutations';
 import { useLayoutEffect, useRef, type RefObject } from 'react';
 import type { MenuStyle } from '../../../domain/menu/model';
 import { resolveMinimumFontSize } from '../../../domain/menu/styleRules';
-import { fitTextToUnbrokenWords, measureRenderedText } from './textFit';
+import { measurePriceWidth, measureRenderedText } from './textFit';
 
 const px = (value: string) => parseFloat(value) || 0;
 
@@ -12,15 +12,19 @@ function measurePriceRow(row: HTMLElement, minimum: number) {
     const value = price?.querySelector<HTMLElement>('[data-price-value]');
     if (!title || !price || !value || !row.clientWidth) return null;
 
-    const symbol = price.querySelector<HTMLElement>('[data-price-symbol]')?.innerText ?? '';
-    const amount = value.innerText;
     const priceCss = getComputedStyle(price);
     const titleCss = getComputedStyle(title);
     const base = Number(price.dataset.priceBaseSize);
-    const priceInset = px(priceCss.borderLeftWidth) + px(priceCss.borderRightWidth)
-        + px(priceCss.paddingLeft) + px(priceCss.paddingRight) + (symbol ? px(priceCss.columnGap) : 0);
-    const measurePrice = (size: number) => measureRenderedText(amount, size, priceCss)
-        + measureRenderedText(symbol, size, priceCss) + priceInset;
+    const measurePrice = (size: number) => measurePriceWidth(price, size, priceCss);
+    let low = minimum;
+    let high = base;
+    if (measurePrice(base) > row.clientWidth + .5) {
+        for (let step = 0; step < 10 && high - low > .05; step++) {
+            const middle = (low + high) / 2;
+            if (measurePrice(middle) <= row.clientWidth + .5) low = middle;
+            else high = middle;
+        }
+    } else low = base;
 
     const titleGroup = title.parentElement;
     const marker = titleGroup?.querySelector<HTMLElement>('[data-menu-marker]');
@@ -29,12 +33,7 @@ function measurePriceRow(row: HTMLElement, minimum: number) {
     const rowGap = px(getComputedStyle(row).columnGap);
     const dividerGap = row.hasAttribute('data-product-leader') ? rowGap : 0;
     const inlineWidth = row.clientWidth - nameWidth - rowGap - dividerGap;
-    const size = fitTextToUnbrokenWords(amount, Math.max(1, row.clientWidth - priceInset), base, minimum, {
-        fontFamily: priceCss.fontFamily, fontWeight: priceCss.fontWeight, fontStyle: priceCss.fontStyle,
-        letterSpacing: px(priceCss.letterSpacing),
-    }).fontSize;
-    const group = JSON.stringify([base, priceCss.fontFamily, priceCss.fontWeight, priceCss.fontStyle, priceCss.letterSpacing]);
-    return { row, price, measurePrice, inlineWidth, size, group };
+    return { row, price, widthScale: String(low / base), wrapped: measurePrice(px(priceCss.fontSize)) > inlineWidth + .5 };
 }
 
 function measureWrappedPriceSpace(row: HTMLElement, slot: HTMLElement | null) {
@@ -86,29 +85,15 @@ export function useResponsivePrices(rootRef: RefObject<HTMLElement | null>, styl
                 return metric;
             }).filter(metric => metric !== null);
 
-            const sizesByGroup = new Map<string, number>();
-            for (const { size, group } of metrics) sizesByGroup.set(group, Math.min(size, sizesByGroup.get(group) ?? size));
-            const aligned = metrics.map(metric => {
-                const size = sizesByGroup.get(metric.group)!;
-                const value = `${size}px`;
-                if (metric.price.style.getPropertyValue('--automenu-price-fit-size') !== value) {
-                    metric.price.style.setProperty('--automenu-price-fit-size', value);
-                }
-                const width = metric.measurePrice(size);
-                const wrapped = width > metric.inlineWidth + .5;
-                metric.row.toggleAttribute('data-price-wrap', wrapped);
-                return { ...metric, wrapped, width };
-            });
-            const layouts = aligned.map(metric => {
-                const { row, price, wrapped, width } = metric;
+            for (const { row, price, widthScale, wrapped } of metrics) {
+                if (price.dataset.priceWidthScale !== widthScale) price.dataset.priceWidthScale = widthScale;
+                row.toggleAttribute('data-price-wrap', wrapped);
+            }
+            for (const { row, price, wrapped } of metrics) {
                 const slot = price.closest<HTMLElement>('[data-product-price-slot]');
                 const { left, right } = wrapped ? measureWrappedPriceSpace(row, slot) : { left: 0, right: 0 };
-                return { price, slot, left, right, stacked: wrapped && width > row.clientWidth + left + right + .5 };
-            });
-            for (const { price, slot, left, right, stacked } of layouts) {
                 slot?.style.setProperty('--automenu-price-left', `${left}px`);
                 slot?.style.setProperty('--automenu-price-right', `${right}px`);
-                price.toggleAttribute('data-price-stacked', stacked);
             }
         };
         const schedule = () => { if (!frame) frame = requestAnimationFrame(measure); };

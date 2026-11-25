@@ -176,7 +176,7 @@ export const canIncreaseCanvasFontSize = (
   ));
   return elements.every((element) => {
     const result = measureWordFitElement(element, { baseFontSize: fontSize });
-    return result.fits && result.fontSize >= fontSize;
+    return result.fits;
   });
 };
 
@@ -227,39 +227,44 @@ export const canApplyCanvasColumnCounts = (
     const currentContainerWidth = (isProduct ? product?.clientWidth : chunk?.clientWidth) || currentLaneWidth;
     const layoutInset = isProduct && nextProductCount > 1 ? 16 : 0;
     if (element.hasAttribute('data-template-price')) {
-      const value = element.querySelector<HTMLElement>('[data-price-value]')?.innerText ?? '';
-      const css = getComputedStyle(element);
-      const padding = (parseFloat(css.paddingLeft) || 0) + (parseFloat(css.paddingRight) || 0)
-        + (parseFloat(css.borderLeftWidth) || 0) + (parseFloat(css.borderRightWidth) || 0);
-      return measureRenderedText(value, resolveMinimumFontSize(style), css) <= candidateWidth - layoutInset - padding;
+      return measurePriceWidth(element, resolveMinimumFontSize(style)) <= candidateWidth - layoutInset;
     }
     const reserve = Math.max(layoutInset, currentContainerWidth - currentWidth);
     return measureWordFitElement(element, { availableWidth: Math.max(1, candidateWidth - reserve) }).fits;
   });
 };
 
-export function applyGroupedWordFit(root: HTMLElement) {
-  const groups = new Map<string, { nodes: HTMLElement[]; size: number; reduced: boolean }>();
-  root.querySelectorAll<HTMLElement>('[data-word-fit="true"]').forEach(element => {
-    if (!element.getClientRects().length) return;
-    const data = element.dataset;
-    const key = JSON.stringify([data.wordFitScope, data.wordFitBaseSize, data.wordFitFontFamily,
-      data.wordFitFontWeight, data.wordFitFontStyle, data.wordFitLetterSpacing, data.wordFitTextTransform]);
-    const size = Number(data.wordFitSize);
-    if (!(size > 0)) return;
-    const group = groups.get(key);
-    if (group) {
-      group.nodes.push(element);
-      group.size = Math.min(size, group.size);
-      group.reduced ||= data.wordFitReduced === 'true';
-    } else groups.set(key, { nodes: [element], size, reduced: data.wordFitReduced === 'true' });
-  });
-  for (const { nodes, size, reduced } of groups.values()) {
-    const value = reduced ? `${size}px` : '';
-    for (const element of nodes) {
-      if (element.style.getPropertyValue('--automenu-word-group-size') !== value) {
-        element.style.setProperty('--automenu-word-group-size', value);
+export function measurePriceWidth(price: HTMLElement, size: number, css = getComputedStyle(price)) {
+  const symbol = price.querySelector<HTMLElement>('[data-price-symbol]')?.textContent ?? '';
+  const value = price.querySelector<HTMLElement>('[data-price-value]')?.textContent ?? '';
+  const inset = [css.paddingLeft, css.paddingRight, css.borderLeftWidth, css.borderRightWidth, symbol ? css.columnGap : '0']
+    .reduce((sum, part) => sum + (parseFloat(part) || 0), 0);
+  return measureRenderedText(symbol, size, css) + measureRenderedText(value, size, css) + inset;
+}
+
+export function applyGroupedWordFit(root: HTMLElement, heightScale: number) {
+  const elements = Array.from(root.querySelectorAll<HTMLElement>('[data-word-fit="true"], [data-price-base-size]'))
+    .filter(element => {
+      if (element.closest('[data-canvas-background-layer]')) {
+        element.style.removeProperty('--automenu-fitted-font-size');
+        return false;
       }
+      return element.getClientRects().length > 0;
+    });
+  const scale = elements.reduce((current, { dataset }) => {
+    const base = Number(dataset.wordFitBaseSize);
+    const size = Number(dataset.wordFitSize);
+    const widthScale = base > 0 && size > 0 ? size / base : Number(dataset.priceWidthScale ?? 1);
+    return Math.min(current, widthScale);
+  }, heightScale);
+
+  for (const element of elements) {
+    const { wordFitBaseSize, priceBaseSize, wordFitMinimum, priceMinimum } = element.dataset;
+    const base = Number(wordFitBaseSize ?? priceBaseSize);
+    const minimum = Number(wordFitMinimum ?? priceMinimum) || DEFAULT_MINIMUM_FONT_SIZE;
+    const size = `${Math.max(minimum, base * scale)}px`;
+    if (element.style.getPropertyValue('--automenu-fitted-font-size') !== size) {
+      element.style.setProperty('--automenu-fitted-font-size', size);
     }
   }
 }

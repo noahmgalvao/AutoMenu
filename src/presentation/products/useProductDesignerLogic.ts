@@ -1,3 +1,4 @@
+import { getCategoryFitRegression } from '../../domain/menu/menuPagination';
 import { categoryKey, categoryName } from '../../domain/menu/categoryName';
 
 import React, { useState, useRef } from 'react';
@@ -354,20 +355,26 @@ export const useProductDesignerLogic = ({
                 categoryId: resolveCategoryId(newItemDraft.categoryId),
                 image: ''
             };
+            const current = (handlers.groupedProducts[newProd.category] || []).map(p => p.id);
+            const position = newItemDraft.position;
+            const after = typeof position === 'object' ? current.indexOf(position.after) : -1;
+            current.splice(position === 'first' ? 0 : after >= 0 ? after + 1 : current.length, 0, newProd.id);
+            const nextStyle = {
+                ...style,
+                manualProductOrder: true,
+                customProductOrder: { ...style.customProductOrder, [newProd.category]: current },
+                name: 'Custom',
+            };
+            const blocked = getCategoryFitRegression(products, style, [...products, newProd], nextStyle, sortOption);
+            if (blocked) {
+                window.dispatchEvent(new CustomEvent('menu-category-limit-reached', { detail: { category: blocked } }));
+                return false;
+            }
             setProducts(prev => [...prev, newProd]);
             onProductAdded?.(newProd.id);
-            setStyle(prev => {
-                const current = (handlers.groupedProducts[newProd.category] || []).map(p => p.id);
-                const position = newItemDraft.position;
-                const after = typeof position === 'object' ? current.indexOf(position.after) : -1;
-                current.splice(position === 'first' ? 0 : after >= 0 ? after + 1 : current.length, 0, newProd.id);
-                return {
-                    ...prev,
-                    manualProductOrder: true,
-                    customProductOrder: { ...prev.customProductOrder, [newProd.category]: current },
-                    name: 'Custom'
-                };
-            });
+            setStyle(previous => ({ ...previous, manualProductOrder: true, name: 'Custom',
+                customProductOrder: { ...previous.customProductOrder, [newProd.category]: current },
+            }));
         } else if (newItemDraft.type === 'category') {
             const newCatName = formData.name || 'Nova categoria';
             if (!newCatName) return;
@@ -461,7 +468,7 @@ export const useProductDesignerLogic = ({
             setExistingEdits({});
             setPendingDivider(undefined);
         } else if (newItemDraft && !cancelledId && (explicit || formData.name || formData.description || formData.price)) {
-            saveNewItem();
+            if (saveNewItem() === false && explicit) return;
         }
         setEditModeId(null);
         setSavedEditIds(new Set());

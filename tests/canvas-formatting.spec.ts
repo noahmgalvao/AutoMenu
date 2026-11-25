@@ -871,8 +871,7 @@ for (const layout of ['photos=list&lanes=2', 'photos=cards&cols=3']) {
 test('prices stay inside narrow cards with three product and three category columns', async ({ page }) => {
   await page.goto('/tests/fixtures/template-editor.html?photos=cards&cols=3&lanes=3&price-flow');
   const price = page.locator('#product-container-1 [data-template-price]');
-  await expect(price).toHaveAttribute('data-price-stacked', '');
-  await expect(price).toHaveCSS('font-size', '28px');
+  await expect(price).toHaveCSS('flex-wrap', 'nowrap');
   await expect.poll(() => price.evaluate(element => {
     const price = element.getBoundingClientRect();
     const row = element.parentElement!.getBoundingClientRect();
@@ -880,7 +879,8 @@ test('prices stay inside narrow cards with three product and three category colu
   })).toBeLessThan(0.5);
   const currency = (await price.locator('[data-price-symbol]').boundingBox())!;
   const amount = (await price.locator('[data-price-value]').boundingBox())!;
-  expect(amount.y).toBeGreaterThan(currency.y);
+  expect(Math.abs(amount.y - currency.y)).toBeLessThan(1);
+  expect(amount.x).toBeGreaterThan(currency.x);
 });
 
 test('automatic prices share decimals when a product has cents or was entered with decimals', async ({ page }) => {

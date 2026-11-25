@@ -1,3 +1,4 @@
+import { getCategoryFitRegression } from '../../domain/menu/menuPagination';
 import { getProductColumnCount } from '../../domain/menu/categoryColumns';
 import { useCanvasFileExports, type CanvasFileExports } from './designer/useCanvasFileExports';
 import { formattingLabels, getFormattingGroups, getFormattingItems, getItemFormattingStyle, setElementFormatting, standardizeItemFormatting, updateItemFormatting, type FormattingKind, type FormattingScope } from '../../domain/menu/itemFormatting';
@@ -14,7 +15,6 @@ import { Undo, Redo, AlertCircle, Check, X } from 'lucide-react';
 import { ZoomControls } from './designer/ZoomControls';
 import { MenuSidebar } from './designer/MenuSidebar';
 import type { PublishButtonProps } from '../publishing/PublishButton';
-import type { SplitCategorySwap } from '../../domain/menu/splitCategorySwap';
 import { useAppServices } from '../app/AppServicesProvider';
 import type { MoveDirection, SelectionItem } from './interactions/types';
 import { CustomMarkerLibraryProvider } from './designer/CustomMarkerLibrary';
@@ -165,7 +165,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const [tipsOpen, setTipsOpen] = useState(false);
     const [contrastTips, setContrastTips] = useState<ContrastTip[]>([]);
     const [backgroundOverlapTips, setBackgroundOverlapTips] = useState<OverlapTip[]>([]);
-    const [splitCategorySwap, setSplitCategorySwap] = useState<SplitCategorySwap | null>(null);
     const [fontTips, setFontTips] = useState<FontTip[]>([]);
     const [pendingFontPropagation, setPendingFontPropagation] = useState<FontPropagationRequest | null>(null);
     const [addedImageFeedback, setAddedImageFeedback] = useState<AddedImageFeedback | null>(null);
@@ -338,12 +337,10 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const showOffCanvasTip = offCanvasIssueCount > 0 && !dismissedTips.has('off-canvas-elements');
     const showPositionedCategoryTip = (positionedCategoryIds.length > 0 || layoutDiagnostics.hasColumnGap)
         && !dismissedTips.has('free-categories');
-    const splitCategoryTipKey = splitCategorySwap ? `split-category:${splitCategorySwap.category}` : null;
-    const visibleSplitCategorySwap = splitCategoryTipKey && !dismissedTips.has(splitCategoryTipKey) ? splitCategorySwap : null;
     const configuredCanvasFonts = React.useMemo(() => getConfiguredCanvasFonts(style, products), [style, products]);
     const showMixedFontTip = configuredCanvasFonts.length > 1 && !dismissedTips.has('mixed-fonts');
     const hasVisibleTips = visibleFontTips.length > 0 || showMixedFontTip || showOverlapTip || showOffCanvasTip
-        || showPositionedCategoryTip || Boolean(visibleSplitCategorySwap) || contrastTips.length > 0 || backgroundOverlapTips.length > 0 || kindsWithDifferences.length > 0 || hasMixedProductColumns;
+        || showPositionedCategoryTip || contrastTips.length > 0 || backgroundOverlapTips.length > 0 || kindsWithDifferences.length > 0 || hasMixedProductColumns;
 
     useEffect(() => {
         const root = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas]');
@@ -619,14 +616,13 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         if (configuredCanvasFonts.length > 1) activeKeys.add('mixed-fonts');
         if (positionedCategoryIds.length > 0) activeKeys.add('free-categories');
         if (layoutDiagnostics.hasColumnGap) activeKeys.add('free-categories');
-        if (splitCategoryTipKey) activeKeys.add(splitCategoryTipKey);
         if (overlapIssueCount > 0) activeKeys.add('overlapping-elements');
         if (offCanvasIssueCount > 0) activeKeys.add('off-canvas-elements');
         setDismissedTips(current => {
             const next = new Set(Array.from(current).filter(key => activeKeys.has(key)));
             return next.size === current.size ? current : next;
         });
-    }, [configuredCanvasFonts.length, fontTips, layoutDiagnostics.hasColumnGap, offCanvasIssueCount, overlapIssueCount, positionedCategorySignature, splitCategoryTipKey]);
+    }, [configuredCanvasFonts.length, fontTips, layoutDiagnostics.hasColumnGap, offCanvasIssueCount, overlapIssueCount, positionedCategorySignature]);
 
     useEffect(() => {
         const root = containerRef.current;
@@ -888,6 +884,14 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     };
 
     const handleToggleProductVisibility = (productId: string, visible: boolean) => {
+        if (visible) {
+            const proposed = { ...style, hiddenProductIds: style.hiddenProductIds?.filter(id => id !== productId) };
+            const blocked = getCategoryFitRegression(displayProducts, style, displayProducts, proposed, sortOption);
+            if (blocked) {
+                window.dispatchEvent(new CustomEvent('menu-category-limit-reached', { detail: { category: blocked } }));
+                return;
+            }
+        }
         setStyle(prev => {
             const currentHidden = new Set(prev.hiddenProductIds || []);
             if (visible) currentHidden.delete(productId);
@@ -901,30 +905,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     };
 
     const handleAddProduct = (category: string, productId?: string, isFreeText?: boolean, specificId?: string, initialData?: Partial<Product>, options?: { index?: number }) => {
-        if (!splitCategoryAcrossPages && !productId) {
-            const chunks = document.querySelectorAll(`[data-category-chunk="${CSS.escape(category)}"]`);
-            if (chunks.length > 0) {
-                const lastChunk = chunks[chunks.length - 1];
-                const column = lastChunk.closest('[data-drag-column-container="category"]');
-                if (column && column.parentElement?.childElementCount === 3) {
-                    const pageContainer = column.closest('[data-menu-print-page="true"]');
-                    if (pageContainer) {
-                        const lastChunkRect = lastChunk.getBoundingClientRect();
-                        const pageRect = pageContainer.getBoundingClientRect();
-                        
-                        // Calculate scaled threshold
-                        const scale = pageRect.width / resolveMenuPageDimensions(style).widthPx;
-                        const threshold = pageRect.bottom - (48 * scale) - (40 * scale);
-                        
-                        if (lastChunkRect.bottom > threshold) {
-                            window.dispatchEvent(new CustomEvent('menu-category-limit-reached', { detail: { category } }));
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-
         if (productId) {
             handleToggleProductVisibility(productId, true);
             return;
@@ -946,16 +926,26 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                     ...initialData
                 }]);
             } else {
-                setProducts(prev => [...prev, {
-                    id: newId,
-                    name: 'Novo item',
-                    price: 0,
-                    description: 'Descrição',
-                    category: category,
-                    categoryId,
-                    image: '',
-                    ...initialData
-                }]);
+                const newProduct: Product = {
+                    id: newId, name: 'Novo item', price: 0, description: 'Descrição', category, categoryId, image: '',
+                    ...initialData,
+                };
+                const nextOrder = getOrderedProductsForCategory(category, style).map(product => product.id);
+                const insertIndex = typeof options?.index === 'number' ? Math.max(0, Math.min(options.index, nextOrder.length)) : nextOrder.length;
+                nextOrder.splice(insertIndex, 0, newId);
+                const nextStyle = typeof options?.index === 'number'
+                    ? { ...style, customProductOrder: { ...style.customProductOrder, [category]: nextOrder } }
+                    : style;
+                const blocked = getCategoryFitRegression(displayProducts, style, [...displayProducts, newProduct], nextStyle, sortOption);
+                if (blocked) {
+                    window.dispatchEvent(new CustomEvent('menu-category-limit-reached', { detail: { category: blocked } }));
+                    return;
+                }
+                if (setProductsAndStyle) {
+                    setProductsAndStyle([...displayProducts, newProduct], nextStyle, 'Adicionar produto');
+                    return;
+                }
+                setProducts(previous => [...previous, newProduct]);
             }
             setStyle(prev => {
                 const currentHidden = new Set(prev.hiddenProductIds || []);
@@ -1941,9 +1931,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             };
         }
 
-        if (visibleSplitCategorySwap && nextProducts === products && nextStyle === style) {
-            nextStyle = { ...style, ...visibleSplitCategorySwap.layout, name: 'Custom' };
-        }
         nextStyle = resolveBackgroundOverlap(nextStyle, new Set(backgroundOverlapTips.map(tip => tip.id)));
         for (const tip of contrastTips) {
             const next = applyContrastTip(nextStyle, nextProducts, tip, 'color');
@@ -2111,24 +2098,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                             </div>)}
                                         </div>
                                     </section>}
-                                    {visibleSplitCategorySwap && (
-                                        <section>
-                                            <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Manter categoria junta</h3>
-                                            <div className="flex items-start gap-3 rounded-xl border border-indigo-200 bg-indigo-50 p-3">
-                                                <p className="min-w-0 flex-1 text-xs leading-relaxed text-slate-700">
-                                                    Troque <strong>{categoryName(visibleSplitCategorySwap.category)}</strong> de lugar com <strong>{categoryName(visibleSplitCategorySwap.replacement)}</strong> para manter os produtos das duas categorias juntos.
-                                                </p>
-                                                <div className="flex shrink-0 gap-1">
-                                                    <button type="button" onClick={() => setStyle(current => ({ ...current, ...visibleSplitCategorySwap.layout, name: 'Custom' }))}
-                                                        className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700"
-                                                        aria-label="Trocar categorias de lugar" title="Trocar categorias de lugar"><Check size={16} /></button>
-                                                    <button type="button" onClick={() => splitCategoryTipKey && dismissTip(splitCategoryTipKey)}
-                                                        className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm transition hover:bg-slate-100 hover:text-slate-700"
-                                                        aria-label="Dispensar dica de categoria" title="Dispensar dica de categoria"><X size={16} /></button>
-                                                </div>
-                                            </div>
-                                        </section>
-                                    )}
                                     {showMixedFontTip && (
                                         <section>
                                             <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Fontes diferentes</h3>
@@ -2341,7 +2310,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                     onProductEditStart={handleCanvasProductEditStart}
                                     onProductEditEnd={handleCanvasProductEditEnd}
                                     onPageCountChange={onExportablePagesChange}
-                                    onSplitCategorySwap={setSplitCategorySwap}
                                 />
                             </div>
                         </div>

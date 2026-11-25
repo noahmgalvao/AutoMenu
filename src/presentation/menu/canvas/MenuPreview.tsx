@@ -17,8 +17,7 @@ import React, { useMemo, useEffect, useRef, useCallback, useState } from 'react'
 import { createPortal, flushSync } from 'react-dom';
 import type { CategoryPosition, ElementStyle, Product, MenuStyle, SortOption } from '../../../domain/menu/model';
 import { Crop, AlertTriangle, BringToFront, Copy, CopyCheck, CopyPlus, Edit3, EyeOff, Wallpaper, FlipHorizontal2, FlipVertical2, Images, Layers, Paintbrush, Clipboard, Plus, Scissors, SendToBack, Trash2 } from 'lucide-react';
-import { calculatePagination, finalizeMenuPages, getSavedCategoryPlacements, reflowPositionsForMenuHeadings } from '../../../domain/menu/menuPagination';
-import { findSplitCategorySwap, type SplitCategorySwap } from '../../../domain/menu/splitCategorySwap';
+import { calculatePagination, finalizeMenuPages, getCategoryFitRegression, getMenuTypographyScale, getSavedCategoryPlacements, reflowPositionsForMenuHeadings } from '../../../domain/menu/menuPagination';
 import { FREE_TEXT_PREFIX, SAFETY_BUFFER } from '../../../domain/menu/flow';
 import { isPristineNewCategory, isPristineNewProduct } from '../../../domain/menu/pristineItems';
 import { useMenuInteractions } from '../interactions/useMenuInteractions';
@@ -89,7 +88,6 @@ interface MenuPreviewProps {
     stackPages?: boolean;
     visiblePageIndex?: number;
     onPageCountChange?: (pageCount: number) => void;
-    onSplitCategorySwap?: (suggestion: SplitCategorySwap | null) => void;
     onProductEditStart?: (productId: string) => void;
     onProductEditEnd?: (nextObject?: HTMLElement | null) => void;
     onChangeShape?: (id: string) => void;
@@ -751,7 +749,17 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         return {
             preview: (point: PointerEvent) => {
                 const delta = (point.clientY - startY) * direction / scale;
-                next = scaleObject(1 + delta / gestureHeight);
+                const proposed = scaleObject(1 + delta / gestureHeight);
+                if (proposed) {
+                    const nextStyle = proposed.style ? { ...style, ...proposed.style } : style;
+                    const nextProducts = proposed.products
+                        ? products.map(product => ({ ...product, ...proposed.products?.get(product.id) })) : products;
+                    if (getCategoryFitRegression(products, style, nextProducts, nextStyle, props.sortOption)) {
+                        if (!handle.classList.contains('automenu-limit-feedback')) triggerLimitFeedback(handle);
+                        return;
+                    }
+                }
+                next = proposed;
                 setScalePreview(next);
             },
             finish: (commit: boolean) => {
@@ -811,10 +819,9 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             }),
         ]));
     }, [handlers.groupedProducts, scalePreview]);
-    const paginationOptions = useMemo(() => ({
-        splitCategoryAcrossPages: props.splitCategoryAcrossPages,
-        measuredHeights,
-    }), [props.splitCategoryAcrossPages, measuredHeights]);
+    const typographyScale = useMemo(() => getMenuTypographyScale(layoutStyle, layoutGroups, handlers.sortedCategories),
+        [layoutStyle, layoutGroups, handlers.sortedCategories]);
+    const paginationOptions = useMemo(() => ({ measuredHeights, typographyScale }), [measuredHeights, typographyScale]);
     const basePages = useMemo(() => {
         const effectiveCategoryPositions = handlers.liveCategoryPositions || layoutStyle.categoryPositions;
         const effectiveStyle = effectiveCategoryPositions === layoutStyle.categoryPositions
@@ -840,14 +847,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         ? { ...canvasStyle, categoryPositions: handlers.liveCategoryPositions } : canvasStyle, layoutProducts),
     [basePages, canvasStyle, handlers.liveCategoryPositions, layoutProducts]);
 
-    useEffect(() => {
-        if (!props.onSplitCategorySwap) return;
-        props.onSplitCategorySwap(handlers.draggedItem || scalePreview || readOnly ? null : findSplitCategorySwap(
-            products, style, handlers.groupedProducts, handlers.sortedCategories, basePages, pages, paginationOptions,
-        ));
-    }, [props.onSplitCategorySwap, handlers.draggedItem, handlers.groupedProducts, handlers.sortedCategories, products, style, basePages, pages, paginationOptions, readOnly, scalePreview]);
-
-    useMenuPageMeasurements(previewRootRef, pages, style.columnCount, setMeasuredHeights);
+    useMenuPageMeasurements(previewRootRef, pages, style.columnCount, setMeasuredHeights, typographyScale);
 
     useEffect(() => {
         onPageCountChange?.(pages.length);

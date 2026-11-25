@@ -94,7 +94,7 @@ export const AutoFitText: React.FC<AutoFitTextProps> = ({
     className: `automenu-word-safe ${className}`,
     style: {
       ...style,
-      fontSize: `min(${fit.fontSize}px, var(--automenu-word-group-size, ${fit.fontSize}px))`,
+      fontSize: `min(${fit.fontSize}px, var(--automenu-fitted-font-size, ${fit.fontSize}px))`,
       ...editableColorStyle,
     },
     onInput: (event: React.InputEvent<HTMLElement>) => {

@@ -95,7 +95,6 @@ function AdvancedRules({ style, setStyle }: RulesProps) {
     <section className="space-y-3">
       {([
         ['showPrices', 'Mostrar preços no cardápio', true],
-        ['splitCategoryAcrossPages', 'Continuar categoria na página seguinte', false],
         ['productsCanChangeCategory', 'Permitir mudar produto de categoria ao arrastar', false],
       ] as const).map(([key, label, fallback]) => (
         <BooleanSwitch key={key} label={label} value={style[key] ?? fallback}

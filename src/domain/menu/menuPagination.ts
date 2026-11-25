@@ -1,13 +1,14 @@
 import { getItemFormattingStyle } from './itemFormatting';
 import { headingIsOnPage, headingMeasurementKey } from './menuHeadings';
 import { categoryName } from './categoryName';
-import type { Product, MenuStyle } from './model';
-import { resolveMenuMargins, resolveMinimumFontSize, resolveMenuContentSpacing, clampFontSize, resolveProductImageFrame } from './styleRules';
+import type { Product, MenuStyle, SortOption } from './model';
+import { resolveMenuMargins, resolveMinimumFontSize, resolveMenuContentSpacing, clampFontSize, resolveProductImageFrame, usesProductCards } from './styleRules';
 import { resolveMenuPageDimensions } from './pageSetup';
 import { getProductColumnCount, normalizeColumnWidths } from './categoryColumns';
 import { templateHeaderExtra, templateCategoryExtra } from '../templates/templateDesign';
 import { FREE_TEXT_PREFIX, CATEGORY_CHUNK_GAP_PX, getCategoryChunkGap } from './flow';
 import { formatMenuPrice, resolveMenuPriceDecimalPlaces } from './price';
+import { groupProductsInMenuOrder, sortMenuCategories } from './menuOrdering';
 
 const PRODUCT_GRID_GAP_PX = 24;
 
@@ -16,8 +17,6 @@ const PRODUCT_ITEM_HORIZONTAL_PADDING_PX = 16;
 const PRODUCT_ITEM_VERTICAL_PADDING_PX = 0;
 
 const FREE_TEXT_VERTICAL_PADDING_PX = 16;
-
-const PRODUCT_CARD_VERTICAL_PADDING_PX = 24;
 
 const PRODUCT_CARD_IMAGE_HEIGHT_PX = 168;
 
@@ -61,6 +60,7 @@ export interface CategoryPlacementAssignment {
 export interface PaginationOptions {
     splitCategoryAcrossPages?: boolean;
     measuredHeights?: ReadonlyMap<string, number>;
+    typographyScale?: number;
 }
 
 export function getSavedCategoryPlacements(style: MenuStyle): Record<string, CategoryPlacementAssignment> | null {
@@ -172,7 +172,11 @@ const getPageHeader = (style: MenuStyle, index: number, legacyCopy = false): Ext
     return title || subtitle ? { type: 'main-header', title, subtitle } : null;
 };
 
-const getMainHeaderHeight = (style: MenuStyle, header: PageItem | null, measuredHeights?: PaginationOptions['measuredHeights']) => {
+const getLayoutFontSize = (
+    scale: number, style: MenuStyle, scope: Parameters<typeof clampFontSize>[1], size: unknown, fallback: number,
+) => Math.max(resolveMinimumFontSize(style), clampFontSize(style, scope, size, fallback) * scale);
+
+const getMainHeaderHeight = (style: MenuStyle, header: PageItem | null, measuredHeights?: PaginationOptions['measuredHeights'], scale = 1) => {
     if (header?.type !== 'main-header') return 0;
     const title = header.title ?? true;
     const subtitle = header.subtitle ?? Boolean(style.menuSubtitle?.trim());
@@ -180,9 +184,13 @@ const getMainHeaderHeight = (style: MenuStyle, header: PageItem | null, measured
     const measured = measuredHeights?.get(headingMeasurementKey(title, subtitle)) ?? legacyMetric;
     if (measured !== undefined) return measured;
     const spacing = resolveMenuContentSpacing(style);
-    const titleSize = clampFontSize(style, 'menuTitle', style.elementStyles?.menuTitle?.fontSize, 48);
-    const subtitleSize = clampFontSize(style, 'menuSubtitle', style.elementStyles?.menuSubtitle?.fontSize, 18);
-    return (title ? titleSize * 1.22 : 0) + (subtitle ? subtitleSize * 1.35 : 0)
+    const titleSize = getLayoutFontSize(scale, style, 'menuTitle', style.elementStyles?.menuTitle?.fontSize, 48);
+    const subtitleSize = getLayoutFontSize(scale, style, 'menuSubtitle', style.elementStyles?.menuSubtitle?.fontSize, 18);
+    const margins = resolveMenuMargins(style);
+    const width = resolveMenuPageDimensions(style).widthPx - margins.left - margins.right;
+    const titleLines = getSafeLineCount(style.menuTitle ?? 'MENU', width, titleSize * 0.62);
+    const subtitleLines = getSafeLineCount(style.menuSubtitle || '', width, subtitleSize * 0.55);
+    return (title ? titleSize * 1.22 * titleLines : 0) + (subtitle ? subtitleSize * 1.35 * subtitleLines : 0)
         + (title && subtitle ? style.elementStyles?.menuTitle?.marginBottom ?? 10 : 0)
         + spacing.headerToContent + templateHeaderExtra(style);
 };
@@ -220,14 +228,10 @@ const getEmptyColumnHeight = (style: MenuStyle, baseHeight: number, options: Pag
     const title = style.headingPages?.menuTitle === 'all' && headingIsOnPage(style, 'menuTitle', 0);
     const subtitle = style.headingPages?.menuSubtitle === 'all' && headingIsOnPage(style, 'menuSubtitle', 0);
     const headerHeight = title || subtitle
-        ? getMainHeaderHeight(style, { type: 'main-header', title, subtitle }, options.measuredHeights)
+        ? getMainHeaderHeight(style, { type: 'main-header', title, subtitle }, options.measuredHeights, options.typographyScale)
         : 0;
     return Math.max(1, baseHeight - headerHeight);
 };
-
-export function getPaginationColumnLimit(style: MenuStyle, page: PageLayout, options: PaginationOptions) {
-    return getPaginationContentHeight(style) - getMainHeaderHeight(style, page.mainHeader, options.measuredHeights);
-}
 
 // Helper function to estimate item height dynamically
 export const calculateItemHeight = (
@@ -236,16 +240,17 @@ export const calculateItemHeight = (
     isRowLayout: boolean,
     columnCount: number = 1,
     availableWidth: number = getCategoryColumnWidth(style),
-    categoryColumnCountOverride?: number
+    categoryColumnCountOverride?: number,
+    scale = 1,
 ): number => {
     if (!product.isFreeText) style = getItemFormattingStyle(style, 'product', product.id);
     const spacing = resolveMenuContentSpacing(style);
     const fontSize = product.isFreeText
-        ? clampFontSize(style, 'freeText', product.styles?.fontSize || style.elementStyles?.productName?.fontSize, 18)
-        : clampFontSize(style, 'productName', style.elementStyles?.productName?.fontSize, 18);
+        ? getLayoutFontSize(scale, style, 'freeText', product.styles?.fontSize || style.elementStyles?.productName?.fontSize, 18)
+        : getLayoutFontSize(scale, style, 'productName', style.elementStyles?.productName?.fontSize, 18);
 
-    const descSize = clampFontSize(style, 'productDescription', style.elementStyles?.productDescription?.fontSize, 14);
-    const containerWidth = Math.max(120, availableWidth);
+    const descSize = getLayoutFontSize(scale, style, 'productDescription', style.elementStyles?.productDescription?.fontSize, 14);
+    const containerWidth = Math.max(40, availableWidth);
     const categoryColumnCount = categoryColumnCountOverride || style.categoryColumnCount || 1;
 
     if (product.isFreeText) {
@@ -258,7 +263,7 @@ export const calculateItemHeight = (
         return (fontSize * 1.6 * lines) + layoutMargin + FREE_TEXT_VERTICAL_PADDING_PX + 8;
     }
 
-    const priceSize = clampFontSize(style, 'productPrice', style.elementStyles?.productPrice?.fontSize, 18);
+    const priceSize = getLayoutFontSize(scale, style, 'productPrice', style.elementStyles?.productPrice?.fontSize, 18);
     const imgScale = style.imageScale || 1;
     const photoAlignment = style.productPhotoAlignments?.[product.id] ?? style.productPhotoAlignmentDefault;
     const photoRatio = style.productImageFrame === 'circle' ? 1 : style.productPhotoRatio || 1;
@@ -275,24 +280,26 @@ export const calculateItemHeight = (
             const useBackground = !photoAlignment && resolveProductImageFrame(style, true) === 'template' && style.design?.image === 'background';
             contentHeight += useBackground ? 36 * imgScale : photoHeight;
         }
-        const cardHorizontalPadding = categoryColumnCount > 1 || columnCount > 2 ? 12 : columnCount > 1 ? 16 : 32;
-        const textContentWidth = Math.max(32, usableColWidth - cardHorizontalPadding - (sidePhoto && photoHeight ? photoHeight * photoRatio + 10 : 0));
-        const nameCharWidth = fontSize * 0.6;
-        const editButtonReserve = categoryColumnCount > 1 || columnCount > 1 ? 24 : 40;
-        const nameLines = getSafeLineCount(product.name, Math.max(24, textContentWidth - editButtonReserve), nameCharWidth);
-        contentHeight += (fontSize * 1.6 * nameLines) + spacing.productNameToDescription;
-
-        if (style.showPrices !== false) contentHeight += (priceSize * 1.6) + 6;
+        const cards = usesProductCards(style);
+        const textPadding = cards ? categoryColumnCount > 1 || columnCount > 2 ? 6 : columnCount > 1 ? 8 : 16 : 8;
+        const cardPadding = cards || style.borders?.product || style.cardBackgroundColorOverride ? 6 : 0;
+        const textContentWidth = Math.max(24, usableColWidth - (cards ? textPadding * 2 + 2 : 0)
+            - cardPadding * 2 - (sidePhoto && photoHeight ? photoHeight * photoRatio + 10 : 0));
+        const priceWidth = style.showPrices !== false ? formatMenuPrice(product.price, style).length * priceSize * 0.58 + 8 : 0;
+        const priceHeight = priceWidth ? priceSize * 1.5 : 0;
+        const charWidth = fontSize * 0.6;
+        const wrapsPrice = priceWidth > 0 && product.name.length * charWidth + priceWidth + spacing.productNameToPrice > textContentWidth;
+        const nameLines = getSafeLineCount(product.name, textContentWidth - (wrapsPrice || !priceWidth ? 0 : priceWidth + spacing.productNameToPrice), charWidth);
+        const nameHeight = fontSize * 1.375 * nameLines;
+        contentHeight += wrapsPrice ? nameHeight + priceHeight + 2 : Math.max(nameHeight, priceHeight);
 
         if (product.description) {
-            const descCharWidth = descSize * 0.55;
-            const lines = getSafeLineCount(product.description, textContentWidth, descCharWidth);
-            contentHeight += descSize * 1.6 * lines;
+            const lines = Math.min(4, getSafeLineCount(product.description, textContentWidth, descSize * 0.55));
+            contentHeight += descSize * (Number(style.elementStyles?.productDescription?.lineHeight) || 1.625) * lines + spacing.productNameToDescription;
         }
 
-        const cardVerticalPadding = categoryColumnCount > 1 || columnCount > 2 ? 12 : columnCount > 1 ? 16 : PRODUCT_CARD_VERTICAL_PADDING_PX;
-        const compactPadding = Math.min(cardVerticalPadding, spacing.betweenProducts * 2);
-        contentHeight = Math.max(contentHeight, sidePhoto ? photoHeight : 0) + compactPadding + 28;
+        const verticalPadding = 2 * (Math.min(textPadding, spacing.betweenProducts) + Math.min(cardPadding, spacing.betweenProducts));
+        contentHeight = Math.max(contentHeight, sidePhoto ? photoHeight : 0) + verticalPadding + (cards ? 2 : 0);
     } else {
         const hasImage = Boolean(style.showImages && product.image);
         const stackPhoto = photoAlignment === 'center' || categoryColumnCount >= 3 && !photoAlignment;
@@ -406,6 +413,7 @@ const createPageItemHeightCalculator = (
     categoryColumnCountOverride?: number,
     categoryColumnIndex?: number,
     measuredHeights?: PaginationOptions['measuredHeights'],
+    scale = 1,
 ) => {
     const spacing = resolveMenuContentSpacing(style);
     const categoryColumnCount = categoryColumnCountOverride || style.categoryColumnCount || 1;
@@ -416,7 +424,7 @@ const createPageItemHeightCalculator = (
         if (measured !== undefined) return measured;
         if (item.type === 'category-header') {
             const categoryStyle = getItemFormattingStyle(style, 'category', item.data).elementStyles.category || {};
-            const categoryFontSize = clampFontSize(style, 'category', categoryStyle.fontSize, 24);
+            const categoryFontSize = getLayoutFontSize(scale, style, 'category', categoryStyle.fontSize, 24);
             const editButtonReserve = categoryColumnCount > 1 ? 32 : 52;
             const dividerReserve = categoryStyle.textAlign === 'center' ? 64 : 32;
             const categoryImage = style.showCategoryImages !== false ? style.categoryImages?.[item.data] : undefined;
@@ -440,17 +448,17 @@ const createPageItemHeightCalculator = (
             return (centeredPhoto && imageHeight ? textHeight + imageHeight + 4 : Math.max(textHeight, imageHeight))
                 + spacing.categoryToProduct + 8 + templateCategoryExtra(style);
         }
-        if (item.type === 'product-item') return calculateItemHeight(item.data, { ...style, columnCount: getProductColumnCount(style, item.category) }, false, 1, categoryColumnWidth, categoryColumnCount);
+        if (item.type === 'product-item') return calculateItemHeight(item.data, { ...style, columnCount: getProductColumnCount(style, item.category) }, false, 1, categoryColumnWidth, categoryColumnCount, scale);
         if (item.type === 'free-text-row') {
             const horizontalGap = 8;
             let rowWidth = 0;
             let rowHeight = 0;
             let totalHeight = 0;
             (item.data as Product[]).forEach((product) => {
-                const fontSize = clampFontSize(style, 'freeText', product.styles?.fontSize, 18);
+                const fontSize = getLayoutFontSize(scale, style, 'freeText', product.styles?.fontSize, 18);
                 const estimatedNaturalWidth = Math.max(36, Math.min(categoryColumnWidth, (product.name.length * fontSize * 0.58) + 8));
                 const itemWidth = Math.max(36, Math.min(categoryColumnWidth, Number(product.freeTextWidth) || estimatedNaturalWidth));
-                const itemHeight = calculateItemHeight(product, style, false, 1, itemWidth, categoryColumnCount);
+                const itemHeight = calculateItemHeight(product, style, false, 1, itemWidth, categoryColumnCount, scale);
                 if (rowWidth > 0 && rowWidth + horizontalGap + itemWidth > categoryColumnWidth) {
                     totalHeight += rowHeight + horizontalGap;
                     rowWidth = 0;
@@ -465,7 +473,7 @@ const createPageItemHeightCalculator = (
             const productColumnCount = getProductColumnCount(style, item.category);
             const categoryStyle = { ...style, columnCount: productColumnCount };
             const rowHeight = Math.max(
-                ...(item.data as Product[]).map((product) => calculateItemHeight(product, categoryStyle, true, productColumnCount, categoryColumnWidth, categoryColumnCount))
+                ...(item.data as Product[]).map((product) => calculateItemHeight(product, categoryStyle, true, productColumnCount, categoryColumnWidth, categoryColumnCount, scale))
             );
             return rowHeight;
         }
@@ -500,16 +508,101 @@ const findCategoryColumn = (
     columns: PageColumnLayout[],
     preferredIndex: number,
     emptyColumnHeight: number,
-    requiredHeight: (index: number) => number,
+    requiredHeights: number[],
     remainingHeight: (index: number) => number,
 ) => {
     const columnOrder = columns.map((_, index) => (preferredIndex + index) % columns.length);
-    const fittingColumn = columnOrder.find((index) => remainingHeight(index) + FIT_TOLERANCE_PX >= requiredHeight(index));
+    const fittingColumn = columnOrder.find(index => remainingHeight(index) + FIT_TOLERANCE_PX >= requiredHeights[index]);
     if (fittingColumn !== undefined) return fittingColumn;
-    if (columnOrder.some((index) => requiredHeight(index) <= emptyColumnHeight)) return undefined;
-    // Allow oversized items to render in an empty column if advancing cannot make them fit.
-    return columnOrder.find((index) => columns[index].estimatedHeight === 0);
+    if (requiredHeights.some(height => height <= emptyColumnHeight + FIT_TOLERANCE_PX)) return undefined;
+    // An oversized saved category stays together, in the empty lane with the least overflow.
+    return columnOrder.filter(index => !columns[index].chunks.length)
+        .sort((a, b) => (requiredHeights[a] - remainingHeight(a)) - (requiredHeights[b] - remainingHeight(b)))[0];
 };
+
+const buildCategoryItems = (style: MenuStyle, category: string, products: Product[]): PageItem[] => {
+    const columns = getProductColumnCount(style, category);
+    return [
+        { type: 'category-header', data: category, category },
+        ...buildCategoryProductItems(products, category, style.layoutMode !== 'list' || columns > 1, columns),
+    ];
+};
+
+function getCategoryOverflows(
+    style: MenuStyle, groups: Record<string, Product[]>, order: string[], scale: number,
+) {
+    const columns = style.categoryColumnCount || 1;
+    const pageHeight = getPaginationContentHeight(style);
+    const emptyHeight = getEmptyColumnHeight(style, pageHeight, { typographyScale: scale });
+    const calculators = Array.from({ length: columns }, (_, column) =>
+        createPageItemHeightCalculator(style, columns, column, undefined, scale));
+    const hidden = getHiddenProductIds(style);
+    const placements = getSavedCategoryPlacements(style);
+    const overflows = new Map<string, number>();
+    let first = true;
+    for (const category of order) {
+        if (category.startsWith(FREE_TEXT_PREFIX)) continue;
+        const visible = (groups[category] || []).filter(product => !hidden.has(product.id));
+        if (!visible.length) continue;
+
+        const items = buildCategoryItems(style, category, visible);
+        const position = style.categoryPositions?.[category];
+        const placement = position ?? placements?.[category];
+        const page = placement?.pageIndex ?? 0;
+        const startsUnderHeading = first && !style.pageBreaks?.includes(category) && page === 0;
+        const height = startsUnderHeading ? pageHeight - getMainHeaderHeight(style, getPageHeader(style, 0), undefined, scale) : emptyHeight;
+        const overflow = position?.pageX !== undefined
+            ? items.reduce((sum, item) => sum + calculators[Math.max(0, Math.min(columns - 1, position.columnIndex))](item), 0)
+                - (resolveMenuPageDimensions(style).heightPx - getPaginationBottomInset(style) - position.y)
+            : Math.min(...calculators.map(calculate => items.reduce((sum, item) => sum + calculate(item), 0))) - height;
+        if (overflow > FIT_TOLERANCE_PX) overflows.set(category, overflow);
+        first = false;
+    }
+    return overflows;
+}
+
+export function getMenuTypographyScale(style: MenuStyle, groups: Record<string, Product[]>, order: string[]) {
+    const fits = (scale: number) => getCategoryOverflows(style, groups, order, scale).size === 0;
+    if (fits(1)) return 1;
+    if (!fits(0)) return 0;
+
+    let low = 0;
+    let high = 1;
+    for (let step = 0; step < 10; step++) {
+        const middle = (low + high) / 2;
+        if (fits(middle)) low = middle;
+        else high = middle;
+    }
+    return low;
+}
+
+export function getCategoryFitRegression(
+    products: Product[], style: MenuStyle, nextProducts: Product[], nextStyle: MenuStyle, sort: SortOption,
+) {
+    const overflows = (items: Product[], config: MenuStyle) => {
+        const groups = groupProductsInMenuOrder(items, config.customProductOrder, sort);
+        const order = sortMenuCategories(Object.keys(groups), config.customCategoryOrder, sort.field === 'category' && sort.direction === 'desc');
+        return getCategoryOverflows(config, groups, order, 0);
+    };
+    const next = overflows(nextProducts, nextStyle);
+    if (!next.size) return undefined;
+    const previous = overflows(products, style);
+    const previousCategories = new Map(products.map(product => [product.id, product.category]));
+    const additions = new Set(nextProducts.filter(product => !product.isFreeText
+        && previousCategories.get(product.id) !== product.category).map(product => product.category));
+    return [...next].find(([category, height]) => additions.has(category)
+        || height > (previous.get(category) ?? 0) + FIT_TOLERANCE_PX)?.[0];
+}
+
+function getHiddenProductIds(style: MenuStyle) {
+    const hidden = new Set([...(style.hiddenProductIds || []), ...Object.keys(style.freeTextBackgrounds || {})]);
+    for (const page of style.blankPages || []) {
+        page.copiedLayout?.columns.forEach(column => column.forEach(chunk => chunk.items.forEach(item => {
+            if (item.type !== 'category-header') item.ids.forEach(id => hidden.add(id));
+        })));
+    }
+    return hidden;
+}
 
 const buildLockedPagination = (
     style: MenuStyle,
@@ -522,7 +615,7 @@ const buildLockedPagination = (
     const categoryColumnCount = style.categoryColumnCount || 1;
     const margins = resolveMenuMargins(style);
     const baseColumnHeight = getPaginationContentHeight(style);
-    const headerHeight = (page: PageLayout) => getMainHeaderHeight(style, page.mainHeader, options.measuredHeights);
+    const headerHeight = (page: PageLayout) => getMainHeaderHeight(style, page.mainHeader, options.measuredHeights, options.typographyScale);
     const emptyColumnHeight = getEmptyColumnHeight(style, baseColumnHeight, options);
     const normalizePlacement = (placement?: CategoryPlacementAssignment | null): CategoryPlacementAssignment => {
         const pageIndex = Number(placement?.pageIndex);
@@ -615,7 +708,7 @@ const buildLockedPagination = (
     };
 
     const calculators = Array.from({ length: categoryColumnCount }, (_, columnIndex) => (
-        createPageItemHeightCalculator(style, categoryColumnCount, columnIndex, options.measuredHeights)
+        createPageItemHeightCalculator(style, categoryColumnCount, columnIndex, options.measuredHeights, options.typographyScale)
     ));
 
     sortedCategories.forEach((category) => {
@@ -691,87 +784,32 @@ const buildLockedPagination = (
             return;
         }
 
-        const productColumnCount = getProductColumnCount(style, category);
-        const isRowLayout = style.layoutMode === 'grid' || style.layoutMode === 'cards' || productColumnCount > 1;
-        const contentItems = buildCategoryProductItems(visibleProducts, category, isRowLayout, productColumnCount);
-
-        const headerItem: PageItem = { type: 'category-header', data: category, category };
-        const fullHeights = calculators.map((calculateHeight) => (
-            calculateHeight(headerItem) + contentItems.reduce((sum, item) => sum + calculateHeight(item), 0)
-        ));
-        const keepTogether = !(style.splitCategoryAcrossPages ?? options.splitCategoryAcrossPages) && fullHeights.some((height) => height <= emptyColumnHeight);
-        let remainingItems = [...contentItems];
+        const items = buildCategoryItems(style, category, visibleProducts);
+        const heights = calculators.map(calculate => items.reduce((sum, item) => sum + calculate(item), 0));
         let currentPlacement = placement;
-        let startsCategory = true;
 
         if (freePosition?.pageX !== undefined) {
             const column = ensurePage(placement.pageIndex).columns[placement.columnIndex];
-            const measure = calculators[column.columnIndex];
-            const items: PageItem[] = [headerItem];
-            let height = measure(headerItem);
-            const available = resolveMenuPageDimensions(style).heightPx - margins.bottom - freePosition.y;
-            while (remainingItems.length && height + measure(remainingItems[0]) <= available) {
-                const item = remainingItems.shift()!;
-                items.push(item);
-                height += measure(item);
-            }
-            column.chunks.push({ chunkId: getNextChunkId(category), category, startsCategory: true,
-                columnIndex: placement.columnIndex, items, estimatedHeight: height, flowOffsetBefore: 0 });
-            if (!remainingItems.length) return;
-            startsCategory = false;
-            currentPlacement = advancePlacement(placement);
+            column.chunks.push({
+                chunkId: getNextChunkId(category), category, startsCategory: true,
+                columnIndex: placement.columnIndex, items, estimatedHeight: heights[placement.columnIndex], flowOffsetBefore: 0,
+            });
+            return;
         }
 
-        while (remainingItems.length > 0) {
+        for (;;) {
             const page = ensurePage(currentPlacement.pageIndex);
-            const requiredHeight = (index: number) => {
-                const calculateHeight = calculators[index];
-                const firstItemHeight = calculateHeight(remainingItems[0]);
-                if (!startsCategory) return firstItemHeight;
-                return keepTogether ? fullHeights[index] : calculateHeight(headerItem) + firstItemHeight;
-            };
-            const fittingColumn = findCategoryColumn(page.columns, currentPlacement.columnIndex, emptyColumnHeight, requiredHeight,
-                (columnIndex) => getRemainingHeight({ pageIndex: currentPlacement.pageIndex, columnIndex }, category, startsCategory));
+            const fittingColumn = findCategoryColumn(page.columns, currentPlacement.columnIndex, emptyColumnHeight, heights,
+                columnIndex => getRemainingHeight({ pageIndex: currentPlacement.pageIndex, columnIndex }, category, true));
             if (fittingColumn === undefined) {
                 currentPlacement = { pageIndex: currentPlacement.pageIndex + 1, columnIndex: 0 };
                 continue;
             }
             currentPlacement = { ...currentPlacement, columnIndex: fittingColumn };
-
-            const column = page.columns[currentPlacement.columnIndex];
-            const currentCalculator = calculators[currentPlacement.columnIndex];
-            const currentHeaderItemHeight = startsCategory ? currentCalculator(headerItem) : 0;
-            const naturalHeight = getRemainingHeight(currentPlacement, category, startsCategory);
-            const positionReservedHeight = startsCategory && fullHeights[currentPlacement.columnIndex] <= naturalHeight
-                ? fullHeights[currentPlacement.columnIndex]
-                : requiredHeight(currentPlacement.columnIndex);
-            const flowOffsetBefore = startsCategory
-                ? getFlowOffsetBefore(page, column, currentPlacement, category, positionReservedHeight)
-                : 0;
-            const availableHeight = naturalHeight - flowOffsetBefore + FIT_TOLERANCE_PX;
-            const chunkItems: PageItem[] = startsCategory ? [headerItem] : [];
-            let chunkHeight = currentHeaderItemHeight;
-
-            while (remainingItems.length > 0) {
-                const nextItem = remainingItems[0];
-                const nextItemHeight = currentCalculator(nextItem);
-                const hasContentItem = chunkItems.length > (startsCategory ? 1 : 0);
-
-                if (chunkHeight + nextItemHeight > availableHeight && hasContentItem) break;
-
-                chunkItems.push(nextItem);
-                chunkHeight += nextItemHeight;
-                remainingItems.shift();
-
-                if (chunkHeight > availableHeight) break;
-            }
-
-            pushLockedChunk(currentPlacement, category, startsCategory, chunkItems, chunkHeight, flowOffsetBefore);
-            startsCategory = false;
-
-            if (remainingItems.length > 0) {
-                currentPlacement = advancePlacement(currentPlacement);
-            }
+            const height = heights[fittingColumn];
+            const offset = getFlowOffsetBefore(page, page.columns[fittingColumn], currentPlacement, category, height);
+            pushLockedChunk(currentPlacement, category, true, items, height, offset);
+            break;
         }
         fallbackPlacement = currentPlacement;
     });
@@ -880,18 +918,16 @@ export const calculatePagination = (
     const priceDecimalPlaces = resolveMenuPriceDecimalPlaces(style, products);
     if (style.priceDecimalPlaces !== priceDecimalPlaces) style = { ...style, priceDecimalPlaces };
 
+    if (options.typographyScale === undefined) {
+        options = { ...options, typographyScale: getMenuTypographyScale(style, groupedProducts, sortedCategories) };
+    }
     const categoryColumnCount = style.categoryColumnCount || 1;
     const baseColumnHeight = getPaginationContentHeight(style);
-    const headerHeight = (page: PageLayout) => getMainHeaderHeight(style, page.mainHeader, options.measuredHeights);
+    const headerHeight = (page: PageLayout) => getMainHeaderHeight(style, page.mainHeader, options.measuredHeights, options.typographyScale);
     const emptyColumnHeight = getEmptyColumnHeight(style, baseColumnHeight, options);
     const pageBreaks = new Set(style.pageBreaks || []);
-    const hidden = new Set(style.hiddenProductIds);
-    for (const page of style.blankPages || []) {
-        page.copiedLayout?.columns.forEach(column => column.forEach(chunk => chunk.items.forEach(item => {
-            if (item.type !== 'category-header') item.ids.forEach(id => hidden.add(id));
-        })));
-    }
-    const isHidden = (id: string) => hidden.has(id) || Boolean(style.freeTextBackgrounds?.[id]);
+    const hidden = getHiddenProductIds(style);
+    const isHidden = (id: string) => hidden.has(id);
 
     if (categoryPlacementAssignments) {
         return buildLockedPagination(
@@ -979,7 +1015,7 @@ export const calculatePagination = (
     let currentPage = createPage(getPageHeader(style, 0));
     let currentColumnIndex = 0;
     const calculators = Array.from({ length: categoryColumnCount }, (_, columnIndex) => (
-        createPageItemHeightCalculator(style, categoryColumnCount, columnIndex, options.measuredHeights)
+        createPageItemHeightCalculator(style, categoryColumnCount, columnIndex, options.measuredHeights, options.typographyScale)
     ));
     const getItemHeight = (item: PageItem) => calculators[currentColumnIndex](item);
 
@@ -1077,49 +1113,17 @@ export const calculatePagination = (
             startNextPage();
         }
 
-        const headerItem: PageItem = { type: 'category-header', data: category, category };
-        const fullHeights = calculators.map((calculateHeight) => (
-            calculateHeight(headerItem) + items.reduce((sum, item) => sum + calculateHeight(item), 0)
-        ));
-        const keepTogether = !(style.splitCategoryAcrossPages ?? options.splitCategoryAcrossPages) && fullHeights.some((height) => height <= emptyColumnHeight);
-        let remainingItems = [...items];
-        let startsCategory = true;
-
-        while (remainingItems.length > 0) {
-            const requiredHeight = (index: number) => {
-                const calculateHeight = calculators[index];
-                const firstItemHeight = calculateHeight(remainingItems[0]);
-                if (!startsCategory) return firstItemHeight;
-                return keepTogether ? fullHeights[index] : calculateHeight(headerItem) + firstItemHeight;
-            };
-            const fittingColumn = findCategoryColumn(currentPage.columns, currentColumnIndex, emptyColumnHeight, requiredHeight,
-                columnIndex => getRemainingHeight(category, startsCategory, columnIndex));
+        const heights = calculators.map(calculate => items.reduce((sum, item) => sum + calculate(item), 0));
+        for (;;) {
+            const fittingColumn = findCategoryColumn(currentPage.columns, currentColumnIndex, emptyColumnHeight, heights,
+                columnIndex => getRemainingHeight(category, true, columnIndex));
             if (fittingColumn === undefined) {
                 startNextPage();
                 continue;
             }
             currentColumnIndex = fittingColumn;
-
-            const availableHeight = getRemainingHeight(category, startsCategory) + FIT_TOLERANCE_PX;
-            const chunkItems: PageItem[] = startsCategory ? [headerItem] : [];
-            let chunkHeight = startsCategory ? getItemHeight(headerItem) : 0;
-
-            while (remainingItems.length > 0) {
-                const nextItem = remainingItems[0];
-                const nextItemHeight = getItemHeight(nextItem);
-                const fits = chunkHeight + nextItemHeight <= availableHeight;
-
-                if (!fits && chunkItems.length > (startsCategory ? 1 : 0)) break;
-
-                chunkItems.push(nextItem);
-                chunkHeight += nextItemHeight;
-                remainingItems.shift();
-
-                if (!fits) break;
-            }
-
-            pushChunk(category, startsCategory, chunkItems, chunkHeight);
-            startsCategory = false;
+            pushChunk(category, true, items, heights[fittingColumn]);
+            return;
         }
     };
 
@@ -1140,11 +1144,7 @@ export const calculatePagination = (
             return;
         }
 
-        const productColumnCount = getProductColumnCount(style, category);
-        const isRowLayout = style.layoutMode === 'grid' || style.layoutMode === 'cards' || productColumnCount > 1;
-        const items = buildCategoryProductItems(visibleProducts, category, isRowLayout, productColumnCount);
-
-        placeCategory(category, items);
+        placeCategory(category, buildCategoryItems(style, category, visibleProducts));
     });
 
     if (pageHasAnyContent(currentPage)) {

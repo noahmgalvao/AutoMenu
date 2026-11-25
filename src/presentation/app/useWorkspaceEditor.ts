@@ -77,7 +77,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
   const menuHistoryScope = useRef<string | undefined>(undefined);
   const applyMenuHistory = useRef<(action: MenuHistoryAction, direction: 'undo' | 'redo') => Promise<boolean>>(async () => false);
   const { setProducts, setStyle, setProductsAndStyle, undo, redo, canUndo, canRedo, clearHistory, recordAction, handleProductEditChange } =
-    useEditorHistory({ products, style, setProductsRaw, setStyleRaw, pendingPersistActionLabel: pendingPersistActionLabelRef });
+    useEditorHistory({ products, style, sortOption, setProductsRaw, setStyleRaw, pendingPersistActionLabel: pendingPersistActionLabelRef });
 
   const setTemplates = useCallback((value: SetStateAction<MenuStyle[]>) => {
     setTemplatesRaw(value);

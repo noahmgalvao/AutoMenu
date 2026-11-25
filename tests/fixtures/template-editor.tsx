@@ -38,6 +38,7 @@ function Fixture() {
   const defaultFields = params.has('default-fields');
   const priceFlow = params.has('price-flow');
   const splitCategory = params.has('split-category');
+  const heightFit = params.has('height-fit');
   const batchLayers = params.has('batch-layers');
   const [history, setHistory] = useState<MenuStyle[]>(() => !photoMode ? [
     params.has('neutral') ? { ...INITIAL_STYLE, menuTitle: initial.menuTitle, menuSubtitle: initial.menuSubtitle } : batchLayers ? {
@@ -70,6 +71,14 @@ function Fixture() {
   ] : [{
     ...initial, showImages: !splitCategory && !priceFlow && !params.has('hide-photos'),
     showCategoryImages: params.has('hide-photos') ? false : initial.showCategoryImages,
+    ...(heightFit ? {
+      freeTextBackgrounds: { 'fit-background': { x: 40, y: 40, width: 220, pageIndex: 0 } },
+      elementStyles: {
+        ...initial.elementStyles, menuTitle: { fontSize: 85 }, menuSubtitle: { fontSize: 38 },
+        category: { fontSize: 54 }, productName: { fontSize: 42 },
+        productDescription: { fontSize: 30 }, productPrice: { fontSize: 32 },
+      },
+    } : {}),
     ...(priceFlow ? {
       productDividerStyle: 'dashed',
       elementStyles: {
@@ -100,11 +109,19 @@ function Fixture() {
     { id: 'a1', category: 'A', name: 'A1', price: 12, description: '', customMarginTop: 350 },
     ...[1, 2, 3].map(index => ({ id: `b${index}`, category: 'B', name: `B${index}`, price: 12, description: '', customMarginTop: 190 })),
     { id: 'c1', category: 'C', name: 'C1', price: 12, description: '', customMarginTop: 130 },
+  ] : heightFit ? [
+    ...Array.from({ length: 18 }, (_, index) => ({
+      ...products[0], id: `fit-${index}`, name: 'Prato da casa', description: 'Acompanhamento da estação',
+    })),
+    { id: 'fit-note', isFreeText: true, category: 'Entradas', name: 'Nota do cardápio', description: '', price: 0,
+      freeTextWidth: 350, styles: { fontSize: 34 } },
+    { id: 'fit-background', isFreeText: true, category: 'ft_zone_fit', name: 'Fundo', description: '', price: 0,
+      freeTextWidth: 220, styles: { fontSize: 34 } },
   ] : params.has('background-text') ? [...products, {
     id: 'background-text', category: 'ft_zone_background-text', name: 'Texto de fundo',
     description: '', price: 0, isFreeText: true, freeTextWidth: 160,
   }] : params.has('dense-list') ? Array.from({ length: 22 }, (_, i) => ({
-    id: `side-${i + 1}`, category: 'Acompanhamentos', name: i === 0 ? 'Batata Trufada' : `Novo item ${i}`,
+    id: `side-${i + 1}`, category: !photoMode && i >= 11 ? 'Pratos principais' : 'Acompanhamentos', name: i === 0 ? 'Batata Trufada' : `Novo item ${i}`,
     description: 'Descrição', price: 6.5,
   })) : !photoMode ? products : (params.has('single-product') ? products.slice(0, 1) : products).map(product => ({
     ...product,
