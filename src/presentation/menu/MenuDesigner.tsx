@@ -23,7 +23,6 @@ import { canvasShapeUrl, getCanvasShapeDimensions } from '../../domain/menu/canv
 import { bindCanvasZoomGestures, getZoomAnchor, restoreZoomAnchor, type CanvasPoint, centerCanvasProduct, getCanvasProduct, getCanvasProductBounds, getCanvasViewportBounds, getCanvasViewportFocus, positionCanvasImage } from './canvas/canvasViewport';
 import { MenuColorContext, getMenuPalette } from './designer/ColorPicker';
 import { getImageLayerIndexes, moveImageToMenuBackground } from '../../domain/menu/imageLayers';
-import type { PdfExportResult } from '../../infrastructure/browser/pdfExport';
 import {
     canIncreaseCanvasFontSize,
     getLargestSafeFontSizeForElements,
@@ -62,9 +61,6 @@ interface MenuDesignerProps {
     isProductDesignerOpen?: boolean;
     onRulesLayoutEditingChange?: (editing: boolean) => void;
     printRequestId?: number;
-    printRequestMode?: 'download' | 'publish' | 'publish-silent';
-    onPrintComplete?: (result: PdfExportResult, requestId: number) => void;
-    onPrintError?: (error: Error, requestId: number) => void;
     onPrintDownloadChange?: (active: boolean) => void;
     silentPrintOptions?: Partial<PrintCanvasOptions>;
     onClose?: () => void;
@@ -158,7 +154,7 @@ const formatLayoutIssueBreakdown = (categories: number, products: number, freeTe
     return `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`;
 };
 
-const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, onProductEditChange, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, onRulesLayoutEditingChange, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintDownloadChange, silentPrintOptions, virtualLinkControls, fileExportRef, onExportablePagesChange, onSelectedPagesChange, onClose, onOpenVisual, onCanvasScroll, workspaceId, currentUserId, currentMenuId, onSaveTemplate, onPublishTemplate, splitCategoryAcrossPages: legacySplit = false, productsCanChangeCategory: legacyDrag = false }) => {
+const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, onProductEditChange, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, onRulesLayoutEditingChange, printRequestId = 0, onPrintDownloadChange, silentPrintOptions, virtualLinkControls, fileExportRef, onExportablePagesChange, onSelectedPagesChange, onClose, onOpenVisual, onCanvasScroll, workspaceId, currentUserId, currentMenuId, onSaveTemplate, onPublishTemplate, splitCategoryAcrossPages: legacySplit = false, productsCanChangeCategory: legacyDrag = false }) => {
     const { assets: { uploadFileAsset } } = useAppServices();
     const restoreTemplateSettings = useRestoreTemplateSettings(style, setStyle, templates, workspaceId);
     const splitCategoryAcrossPages = style.splitCategoryAcrossPages ?? legacySplit;
@@ -271,8 +267,12 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 : next;
         });
     }, []);
+    const [selectedPrintPages, setSelectedPrintPages] = useState<number[]>([]);
     const handleCanvasSelectedItems = useCallback((items: SelectionItem[]) => {
-        onSelectedPagesChange?.(items.filter(item => item.type === 'page').map(item => Number(item.id)));
+        const pages = items.filter(item => item.type === 'page').map(item => Number(item.id));
+        setSelectedPrintPages(previous => previous.length === pages.length && previous.every((index, i) => index === pages[i])
+            ? previous : pages);
+        onSelectedPagesChange?.(pages);
         const targeted = items.filter(item => item.type === 'category' || item.type === 'product');
         setSelectedFormattingItems(previous => previous.length === targeted.length
             && previous.every((item, index) => item.type === targeted[index].type && item.id === targeted[index].id)
@@ -282,7 +282,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             ? previous
             : ids);
     }, [onSelectedPagesChange]);
-    const currentPrintPageIndex = selection.type === 'page' && selection.id !== null ? Number(selection.id) : null;
     // State to trigger imperative actions in Preview from Sidebar
     const [previewAction, setPreviewAction] = useState<{ type: string, id: number } | undefined>(undefined);
 
@@ -741,9 +740,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     }, [zoomAt, updatePinchActivity]);
 
     const { handlePrint, printDialog, fileExports, onPageCountChange } = useCanvasPrinting({
-        containerRef, products, style, setStyle, sortOption, currentPrintPageIndex,
-        printRequestId, printRequestMode, onPrintComplete, onPrintError, onPrintDownloadChange, silentPrintOptions,
-        clearCanvasSelection: () => setSelection({ type: null, id: null }),
+        containerRef, products, style, setStyle, sortOption, selectedPages: selectedPrintPages, menuId: currentMenuId,
+        printRequestId, onPrintDownloadChange, silentPrintOptions,
     });
 
     React.useImperativeHandle(fileExportRef, () => fileExports, [fileExports]);

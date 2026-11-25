@@ -2,8 +2,9 @@ import { lockModalScrolling } from '../../common/modalScroll';
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { preparePrintPageContent } from '../../../infrastructure/browser/printPageContent';
-import { AlertTriangle, CheckCircle2, Image as ImageIcon, Loader2, Printer, Scissors, Settings2, X } from 'lucide-react';
-import type { PdfExportResult } from '../../../infrastructure/browser/pdfExport';
+import { AlertTriangle, Image as ImageIcon, Loader2, Printer, Scissors, Settings2, X } from 'lucide-react';
+import type { ImagePages } from '../../../domain/publishing/imagePages';
+import { ExportPagePicker } from '../../publishing/ExportPagePicker';
 import { getPaperDimensionsMm, getPrintFrameSizeMm, getPrintMarginMm, type PdfPrintOptions } from '../../../domain/publishing/printOptions';
 import { getErrorMessage } from '../../../application/errorMessages';
 import type { MenuPageSetup } from '../../../domain/menu/pageModel';
@@ -25,18 +26,18 @@ export type PrintPreviewPage = {
 export interface PrintCanvasModalProps {
   isOpen: boolean;
   isPrinting?: boolean;
-  awaitingPublicationPdf?: boolean;
   options: PrintCanvasOptions;
-  currentPageIndex: number | null;
+  selectedPages: readonly number[];
+  pageChoice: ImagePages;
+  onPageChoiceChange: (choice: ImagePages) => void;
+  canPrint: boolean;
   totalPages: number;
   previewPages: PrintPreviewPage[];
   onChange: React.Dispatch<React.SetStateAction<PrintCanvasOptions>>;
   onPageSetupChange: (setup: MenuPageSetup) => void;
   virtualLinkControls?: VirtualLinkControls;
   onClose: () => void;
-  onPrint: () => Promise<PdfExportResult>;
-  onComplete?: (result: PdfExportResult) => void;
-  onError?: (error: Error) => void;
+  onPrint: () => Promise<void>;
 }
 
 const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
@@ -221,9 +222,11 @@ function PrintOptionsPreview({ options, previewPages }: { options: PrintCanvasOp
 export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
   isOpen,
   isPrinting = false,
-  awaitingPublicationPdf = false,
   options,
-  currentPageIndex,
+  selectedPages,
+  pageChoice,
+  onPageChoiceChange,
+  canPrint,
   totalPages,
   previewPages,
   onChange,
@@ -231,12 +234,10 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
   virtualLinkControls,
   onClose,
   onPrint,
-  onComplete,
-  onError,
 }) => {
   const [exportError, setExportError] = React.useState<string | null>(null);
   const locked = isPrinting || Boolean(virtualLinkControls && isPublishLocked(
-    virtualLinkControls.publishingLink && !awaitingPublicationPdf, virtualLinkControls.busyActions,
+    virtualLinkControls.publishingLink, virtualLinkControls.busyActions,
   ));
   const [virtualLinkEnabled, setVirtualLinkEnabled] = React.useState(false);
 
@@ -266,15 +267,13 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
   };
 
   const handlePrintClick = async () => {
-    if (locked) return;
+    if (locked || !canPrint) return;
     setExportError(null);
     try {
-      const result = await onPrint();
-      onComplete?.(result);
+      await onPrint();
     } catch (error) {
       const message = getErrorMessage(error, 'Não foi possível gerar o PDF.');
       setExportError(message);
-      onError?.(error instanceof Error ? error : new Error(message));
     }
   };
 
@@ -300,29 +299,11 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
                 <Settings2 size={14} /> Configuração da página
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <Field label="Páginas">
-                  <select value={options.pageMode} onChange={(e) => update('pageMode', e.target.value as PrintCanvasOptions['pageMode'])} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm bg-white text-ellipsis overflow-hidden whitespace-nowrap">
-                    <option value="all">Todas as páginas</option>
-                    <option value="current" disabled={currentPageIndex === null}>Página atual</option>
-                    <option value="range" disabled={totalPages <= 1}>Intervalo</option>
-                  </select>
-                </Field>
-                <Field label="Intervalo">
-                  <select
-                    multiple
-                    value={options.pageRange.split(',').filter(Boolean)}
-                    onChange={(e) => {
-                      const selected = Array.from(e.target.selectedOptions).map(opt => opt.value);
-                      update('pageRange', selected.join(','));
-                    }}
-                    disabled={totalPages <= 1 || options.pageMode !== 'range'}
-                    className="w-full h-auto max-h-24 rounded-lg border border-slate-200 px-3 py-1 text-sm bg-white disabled:bg-slate-50 disabled:text-slate-300 custom-scrollbar overflow-y-auto"
-                  >
-                    {Array.from({ length: totalPages }).map((_, i) => (
-                      <option key={i} value={i + 1}>Página {i + 1}</option>
-                    ))}
-                  </select>
-                </Field>
+                <div className="grid content-start gap-1" role="group" aria-label="Seleção de páginas do PDF">
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Páginas</span>
+                  <ExportPagePicker format="PDF" choice={pageChoice} pageCount={totalPages}
+                    selectedPages={selectedPages} onChange={onPageChoiceChange} disabled={locked} />
+                </div>
                 <Field label="Papel">
                   <select value={options.paperSize} onChange={(e) => {
                     const preset = e.target.value as MenuPageSetup['preset'];
@@ -437,11 +418,6 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
             {virtualLinkControls && (
               <section className="space-y-2 border-t border-slate-100 pt-4">
                 <VirtualLinkSection {...virtualLinkControls} enabled={virtualLinkEnabled} onChange={setVirtualLinkEnabled} />
-                {virtualLinkEnabled && virtualLinkControls.feedback && (
-                  <p role="status" className="flex items-center gap-2 rounded-xl bg-emerald-50 p-3 text-xs font-semibold text-emerald-700">
-                    <CheckCircle2 size={16} /> {virtualLinkControls.feedback}
-                  </p>
-                )}
               </section>
             )}
           </fieldset>
@@ -451,7 +427,7 @@ export const PrintCanvasModal: React.FC<PrintCanvasModalProps> = ({
           <button onClick={onClose} className="px-4 py-2 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:bg-slate-100">
             Cancelar
           </button>
-          <button onClick={handlePrintClick} disabled={locked} aria-busy={isPrinting}
+          <button onClick={handlePrintClick} disabled={locked || !canPrint} aria-busy={isPrinting}
             className="min-w-36 justify-center px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 bg-slate-900 text-white hover:bg-slate-800 disabled:grayscale disabled:opacity-50">
             {isPrinting ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
             <span>Baixar PDF</span>

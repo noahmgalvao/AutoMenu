@@ -155,21 +155,21 @@ export const PublicMenuPage: React.FC = () => {
         do {
           result = await loadPublicMenuPublication({ restaurantSlug, menuSlug, portableSnapshotUrl });
           const isNewPublication = Boolean(
-            result?.publication.pdfUrl
-            && (!previousPublicationUpdatedAt || result.publication.updatedAt !== previousPublicationUpdatedAt),
+            result?.pdfUrl
+            && (!previousPublicationUpdatedAt || result.updatedAt !== previousPublicationUpdatedAt),
           );
           if (!publishingStartedAt || isNewPublication) break;
           await waitForRetry(controller.signal, 900);
         } while (Date.now() < deadline);
 
-        if (!result?.publication.pdfUrl) {
+        if (!result?.pdfUrl) {
           setError('Cardápio não encontrado.');
           return;
         }
-        setPublication(result.publication);
-        document.title = result.publication.pdfFilename.replace(/\.pdf$/i, '') || 'Cardápio';
+        setPublication(result);
+        document.title = result.pdfFilename.replace(/\.pdf$/i, '') || 'Cardápio';
 
-        const response = await fetch(result.publication.pdfUrl, { signal: controller.signal, cache: 'no-store' });
+        const response = await fetch(result.pdfUrl, { signal: controller.signal, cache: 'no-store' });
         if (!response.ok) throw new Error('Falha ao carregar PDF');
         const bytes = await response.arrayBuffer();
         setPdfBytes(bytes);

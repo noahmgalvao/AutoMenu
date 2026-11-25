@@ -38,6 +38,7 @@ type ExportMenuPagesParams = {
   title: string;
   onDebug?: PdfDebugReporter;
   download?: boolean;
+  captureCache?: PrintCaptureCache;
 };
 
 const PAGE_WIDTH_PX = 794;
@@ -231,8 +232,8 @@ const inlineCssUrls = async (
   return nextValue;
 };
 
-const preparePageClone = async (
-  source: HTMLElement,
+const preparePageSnapshot = async (
+  clone: HTMLElement,
   pageSize: PdfPageSizePx,
   printBackgrounds: boolean,
   assetCache: PrintAssetCache,
@@ -252,7 +253,6 @@ const preparePageClone = async (
     zIndex: '-1',
   });
 
-  const clone = source.cloneNode(true) as HTMLElement;
   Object.assign(clone.style, {
     width: `${pageSize.width}px`,
     height: `${pageSize.height}px`,
@@ -366,14 +366,14 @@ const mapCaptureError = (error: unknown, pageNumber: number) => {
 };
 
 const renderPageAsJpeg = async (
-  source: HTMLElement,
+  snapshot: HTMLElement,
+  pageSize: PdfPageSizePx,
   pageNumber: number,
   options: Pick<PdfPrintOptions, 'printBackgrounds' | 'grayscale'>,
   assetCache: PrintAssetCache,
   onDebug?: PdfDebugReporter
 ) => {
   await yieldToBrowser();
-  const pageSize = getPageElementSizePx(source);
   const captureScale = getCaptureScale(pageSize);
   emitDebug(onDebug, 'info', 'capture', 'PDF_CAPTURE_START', `Capturando página ${pageNumber}.`, {
     scale: captureScale,
@@ -384,7 +384,7 @@ const renderPageAsJpeg = async (
   let sandbox: HTMLDivElement | null = null;
   let canvas: HTMLCanvasElement | undefined;
   try {
-    const preparedPage = await preparePageClone(source, pageSize, options.printBackgrounds, assetCache, onDebug);
+    const preparedPage = await preparePageSnapshot(snapshot, pageSize, options.printBackgrounds, assetCache, onDebug);
     sandbox = preparedPage.sandbox;
     const { clone } = preparedPage;
     try {
@@ -421,6 +421,34 @@ function capturePageAsJpeg(...args: Parameters<typeof renderPageAsJpeg>) {
   const capture = captureQueue.then(() => renderPageAsJpeg(...args));
   captureQueue = capture.catch(() => undefined);
   return capture;
+}
+
+export type PrintCaptureCache = {
+  assets: PrintAssetCache;
+  pages: WeakMap<HTMLElement, Map<string, Promise<PdfPageImage>>>;
+};
+
+export const createPrintCaptureCache = (): PrintCaptureCache => ({ assets: new Map(), pages: new WeakMap() });
+
+function captureCachedPage(element: HTMLElement, number: number,
+  options: Pick<PdfPrintOptions, 'printBackgrounds' | 'grayscale'>, cache: PrintCaptureCache, onDebug?: PdfDebugReporter) {
+  let captures = cache.pages.get(element);
+  if (!captures) {
+    captures = new Map();
+    cache.pages.set(element, captures);
+  }
+  const key = `${options.printBackgrounds}:${options.grayscale}`;
+  const existing = captures.get(key);
+  if (existing) return existing;
+  // The editor remains usable after closing the export dialog.
+  const pageSize = getPageElementSizePx(element);
+  const snapshot = element.cloneNode(true) as HTMLElement;
+  const pending = capturePageAsJpeg(snapshot, pageSize, number, options, cache.assets, onDebug).catch(error => {
+    captures.delete(key);
+    throw error;
+  });
+  captures.set(key, pending);
+  return pending;
 }
 
 const validatePdfBlob = async (blob: Blob) => {
@@ -470,9 +498,10 @@ export async function exportMenuPageToJpg(
   pageNumber: number,
   title: string,
   assetCache: PrintAssetCache,
+  captureCache?: PrintCaptureCache,
 ) {
-  const { jpeg } = await capturePageAsJpeg(
-    element, pageNumber, { printBackgrounds: true, grayscale: false }, assetCache,
+  const { jpeg } = await captureCachedPage(
+    element, pageNumber, { printBackgrounds: true, grayscale: false }, captureCache ?? { assets: assetCache, pages: new WeakMap() },
   );
   return new File([jpeg], `${sanitizeFileName(title)}-pagina-${pageNumber}.jpg`, { type: 'image/jpeg' });
 }
@@ -484,6 +513,7 @@ export const exportMenuPagesToPdf = async ({
   title,
   onDebug,
   download = true,
+  captureCache = createPrintCaptureCache(),
 }: ExportMenuPagesParams): Promise<PdfExportResult> => {
   const startedAt = performance.now();
   const selectedIndexes = resolvePdfPageIndexes(options, pageElements.length, currentPageIndex);
@@ -510,11 +540,8 @@ export const exportMenuPagesToPdf = async ({
     );
   }
 
-  const assetCache: PrintAssetCache = new Map();
-  const pages: PdfPageImage[] = [];
-  for (const { element, index } of pagesToPrint) {
-    pages.push(await capturePageAsJpeg(element, index + 1, options, assetCache, onDebug));
-  }
+  const pages = await Promise.all(pagesToPrint.map(({ element, index }) =>
+    captureCachedPage(element, index + 1, options, captureCache, onDebug)));
 
   emitDebug(onDebug, 'info', 'compose', 'PDF_COMPOSE_START', 'Montando o PDF.', { pages: pages.length });
   let blob: Blob;

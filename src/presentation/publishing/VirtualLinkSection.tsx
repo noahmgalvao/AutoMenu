@@ -1,21 +1,23 @@
 import React from 'react';
-import { Check, Copy, Download, ExternalLink, Globe2, Loader2, QrCode, Share2 } from 'lucide-react';
+import { Check, Copy, Download, Globe2, Loader2, QrCode, Share2 } from 'lucide-react';
+import { normalizePublicationSlug } from '../../domain/publishing/publicationSlug';
 import { BooleanSwitch } from '../common/BooleanSwitch';
 import type { PublishAction } from './useMenuPublishing';
 import type { ButtonResult } from './useButtonFeedback';
 
-export type LinkAction = 'copy-link' | 'share-link' | 'download-qr' | 'share-qr' | 'open-link';
+export type LinkAction = 'copy-link' | 'share-link' | 'download-qr' | 'share-qr';
 
 export interface VirtualLinkControls {
   publishingLink?: boolean;
-  hasPublication?: boolean;
+  linkPrefix: string;
+  defaultMenuSlug: string;
   publicUrl?: string | null;
   publicationMenuSlug?: string | null;
   busyActions: ReadonlySet<PublishAction>;
-  feedback?: string | null;
+  error?: string | null;
   buttonResults?: Partial<Record<string, ButtonResult>>;
   onLinkAction: (action: LinkAction) => void;
-  onSaveMenuSlug: (menuSlug: string) => void;
+  onPublishLink: (menuSlug: string) => void;
 }
 
 export const Choice: React.FC<{
@@ -60,13 +62,16 @@ export const ActionButton: React.FC<{
 );
 
 export function VirtualLinkSection({
-  enabled, onChange, publishingLink, hasPublication, publicUrl, publicationMenuSlug, busyActions, buttonResults, onLinkAction, onSaveMenuSlug,
+  enabled, onChange, publishingLink, linkPrefix, defaultMenuSlug, publicUrl, publicationMenuSlug,
+  busyActions, buttonResults, error, onLinkAction, onPublishLink,
 }: VirtualLinkControls & { enabled: boolean; onChange: (enabled: boolean) => void }) {
-  const [menuSlug, setMenuSlug] = React.useState(publicationMenuSlug || '');
+  const currentSlug = publicationMenuSlug || defaultMenuSlug;
+  const [draftSlug, setDraftSlug] = React.useState(currentSlug);
   const slugInputId = React.useId();
-  React.useEffect(() => setMenuSlug(publicationMenuSlug || ''), [publicationMenuSlug]);
-  const slugChanged = Boolean(publicationMenuSlug && menuSlug.trim() && menuSlug.trim() !== publicationMenuSlug);
-  const canSaveSlug = slugChanged && !publishingLink && !busyActions.has('save-slug');
+  React.useEffect(() => setDraftSlug(currentSlug), [currentSlug, linkPrefix]);
+  const menuSlug = normalizePublicationSlug(draftSlug) || defaultMenuSlug;
+  const address = publicUrl && menuSlug === publicationMenuSlug ? publicUrl : `${linkPrefix}${encodeURIComponent(menuSlug)}`;
+
   return (
   <div className="space-y-2">
     <Choice checked={enabled} onChange={onChange} icon={<Globe2 size={20} />} title="Gerar link virtual" />
@@ -74,23 +79,35 @@ export function VirtualLinkSection({
       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3.5 space-y-3">
         <div>
           <div className="text-[10px] uppercase tracking-wide font-bold text-slate-400">Link do cardápio</div>
-          <div className="mt-1 truncate text-xs text-slate-600">{publicUrl || '—'}</div>
+          <a href={address} target="_blank" rel="noopener noreferrer" title="Abrir cardápio em nova guia"
+            onClick={event => { if (publishingLink) event.preventDefault(); }}
+            tabIndex={publishingLink ? -1 : undefined}
+            className="mt-1 block break-all text-xs text-indigo-700 hover:underline">
+            <span className="block">{linkPrefix}</span><span className="font-semibold">{menuSlug}</span>
+          </a>
         </div>
 
-        {hasPublication && publicationMenuSlug && (
-          <div>
-            <label htmlFor={slugInputId} className="text-[11px] font-bold text-slate-600">Final do link</label>
-            <div className="mt-1 flex gap-2">
-              <input id={slugInputId} value={menuSlug} onChange={(event) => setMenuSlug(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && canSaveSlug && onSaveMenuSlug(menuSlug)} className="min-w-0 flex-1 h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm" />
-              <button type="button" onClick={() => onSaveMenuSlug(menuSlug)} disabled={!canSaveSlug} className="h-10 px-3 rounded-xl bg-slate-900 text-white text-xs font-bold data-[unavailable]:opacity-40" data-unavailable={!slugChanged || undefined}>{busyActions.has('save-slug') ? <Loader2 size={14} className="animate-spin" /> : 'Salvar'}</button>
-            </div>
+        <form onSubmit={event => {
+          event.preventDefault();
+          if (!publishingLink) onPublishLink(menuSlug);
+        }}>
+          <label htmlFor={slugInputId} className="text-[11px] font-bold text-slate-600">Final do link</label>
+          <div className="mt-1 flex gap-2">
+            <input id={slugInputId} value={draftSlug} placeholder={defaultMenuSlug}
+              onChange={event => setDraftSlug(event.target.value)}
+              autoCapitalize="none" spellCheck={false}
+              className="min-w-0 flex-1 h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm" />
+            <button type="submit" disabled={publishingLink} aria-busy={publishingLink || undefined}
+              className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-indigo-600 px-3 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-60">
+              {publishingLink && <Loader2 aria-hidden="true" size={14} className="animate-spin" />} Publicar
+            </button>
           </div>
-        )}
+        </form>
+        {error && <p role="alert" className="text-xs font-semibold text-red-700">{error}</p>}
 
-        <div className="grid grid-cols-[1fr_1fr_40px] gap-2">
+        <div className="grid grid-cols-2 gap-2">
           <ActionButton icon={<Copy size={15} />} label="Copiar" loading={busyActions.has('copy-link')} result={buttonResults?.['copy-link']} primary onClick={() => onLinkAction('copy-link')} />
           <ActionButton icon={<Share2 size={15} />} label="Compartilhar" loading={busyActions.has('share-link')} result={buttonResults?.['share-link']} onClick={() => onLinkAction('share-link')} />
-          <button type="button" onClick={() => onLinkAction('open-link')} disabled={!hasPublication || busyActions.has('open-link')} className="h-10 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 flex items-center justify-center data-[unavailable]:opacity-40" data-unavailable={!hasPublication || undefined} title="Abrir link em nova guia"><ExternalLink size={16} /></button>
         </div>
 
         <div className="border-t border-slate-200 pt-3">

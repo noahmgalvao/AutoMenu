@@ -2,16 +2,17 @@ import { readFile } from 'node:fs/promises';
 import { inflateSync } from 'node:zlib';
 import { shortcutsFor } from './fixtures/canvas-shortcuts';
 import { expect, test, type Page } from '@playwright/test';
+import type { MenuStyle } from '../src/domain/menu/model';
 import { PRESET_TEMPLATES } from '../src/domain/templates/templateCatalog';
 
-async function openWorkspace(page: Page, names = ['Menu de teste']) {
+async function openWorkspace(page: Page, names = ['Menu de teste'], styleOverrides: Partial<MenuStyle> = {}) {
   const userId = '10000000-0000-4000-8000-000000000001';
   const workspaceId = '20000000-0000-4000-8000-000000000002';
   const menuId = '30000000-0000-4000-8000-000000000003';
   const versionId = '40000000-0000-4000-8000-000000000004';
   const timestamp = '2025-01-01T12:00:00Z';
   const user = { id: userId, email: 'editor@example.test', aud: 'authenticated', role: 'authenticated' };
-  const style = { ...PRESET_TEMPLATES[0], menuTitle: 'Cardápio de teste' };
+  const style = { ...PRESET_TEMPLATES[0], menuTitle: 'Cardápio de teste', ...styleOverrides };
   const products = [{ id: 'suco', category: 'Bebidas', name: 'Suco natural', price: 12, description: 'Feito na hora.' }];
   const sortOption = { field: 'name', direction: 'asc' };
   const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
@@ -103,35 +104,76 @@ test('the app signs in, keeps the product editor through history, and stores an 
   }, `automenu_pending_workspace_${workspaceId}_${menuId}`)).toBe('Suco de laranja');
 });
 
-test('the virtual link uploads a separate PDF when printing and publishing together', async ({ page }) => {
+test('the virtual link publishes in place and stays separate from PDF print options', async ({ page }) => {
   test.setTimeout(30000);
   await openWorkspace(page);
-  await page.route('**/rest/v1/menu_publications?*', route => route.request().method() === 'POST'
-    ? route.fulfill({ json: route.request().postDataJSON() })
-    : route.fulfill({ body: 'null', contentType: 'application/json' }));
+  let uploads = 0;
+  let publishedRow: Record<string, unknown> | null = null;
+  await page.route('**/rest/v1/menu_publications?*', route => {
+    const method = route.request().method();
+    if (method === 'POST') {
+      publishedRow = route.request().postDataJSON();
+      return route.fulfill({ json: publishedRow });
+    }
+    if (method === 'PATCH') {
+      publishedRow = { ...publishedRow, ...route.request().postDataJSON() };
+      return route.fulfill({ json: publishedRow });
+    }
+    return route.fulfill({ json: publishedRow });
+  });
   await page.route('**/storage/v1/object/sign/menu-assets/**', route =>
     route.fulfill({ json: { signedURL: '/object/sign/menu-assets/cardapio.pdf?token=test' } }));
-  await page.route('**/storage/v1/object/menu-assets/**', route => route.fulfill({ json: { Key: 'cardapio.pdf' } }));
-  await page.evaluate(() => { window.open = () => null; });
+  await page.route('**/storage/v1/object/menu-assets/**', route => {
+    uploads++;
+    return route.fulfill({ json: { Key: 'cardapio.pdf' } });
+  });
+  await page.evaluate(() => {
+    document.body.dataset.publishOpenedTabs = '0';
+    window.open = () => {
+      document.body.dataset.publishOpenedTabs = String(Number(document.body.dataset.publishOpenedTabs) + 1);
+      return null;
+    };
+  });
 
   await page.getByRole('button', { name: 'Publicar', exact: true }).click();
-  await page.getByRole('button', { name: 'Publicar', exact: true }).last().click();
+  const dialog = page.getByRole('dialog', { name: 'Publicar' });
+  const slug = dialog.getByRole('textbox', { name: 'Final do link' });
+  const link = dialog.getByRole('link', { name: /cardápio|cardapio/ });
+  await expect(slug).toHaveValue('menu-de-teste-30000000');
+  await expect(link).toHaveAttribute('href', /\/cardapio\/teste\/menu-de-teste-30000000$/);
+  await dialog.getByRole('group', { name: 'Ações de PDF' }).getByRole('button', { name: 'Opções' }).click();
   await page.getByRole('combobox', { name: 'Margens', exact: true }).selectOption('10');
   await page.getByRole('spinbutton', { name: 'Sangria mm' }).fill('2');
   await page.getByRole('switch', { name: 'Marcas de corte' }).click();
   await page.getByRole('switch', { name: 'Cinza', exact: true }).click();
 
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Baixar PDF', exact: true }).click();
+  const printPdf = await readFile((await (await download).path())!);
+  await page.locator('[data-pdf-options]').getByRole('button', { name: 'Cancelar', exact: true }).click();
+  await slug.fill('Almoço Especial');
+  await expect(link).toHaveAttribute('href', /\/cardapio\/teste\/almoco-especial$/);
+
   const upload = page.waitForRequest(request => request.method() === 'POST'
     && request.url().includes('/storage/v1/object/menu-assets/') && request.url().endsWith('.pdf'));
   const publicRecord = page.waitForRequest(request => request.method() === 'POST'
     && request.url().includes('/rest/v1/menu_publications'));
-  const download = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Baixar PDF', exact: true }).click();
-  const printPdf = await readFile((await (await download).path())!);
+  await dialog.getByRole('button', { name: 'Publicar', exact: true }).click();
   const uploadBody = (await upload).postDataBuffer()!;
   const publicPdf = uploadBody.subarray(uploadBody.indexOf('%PDF-'));
-  expect((await publicRecord).postDataJSON().pdf_options).toEqual({});
+  expect((await publicRecord).postDataJSON()).toMatchObject({ pdf_options: {}, menu_slug: 'almoco-especial' });
   await expect(page.getByText('Link publicado', { exact: true })).toBeVisible();
+  await expect(dialog).toBeVisible();
+  await expect(page.locator('body')).toHaveAttribute('data-publish-opened-tabs', '0');
+  await expect(dialog.getByRole('button', { name: 'Publicar', exact: true })).toHaveCount(1);
+
+  await slug.fill('Almoço 2');
+  const rename = page.waitForRequest(request => request.method() === 'PATCH'
+    && request.url().includes('/rest/v1/menu_publications'));
+  await slug.press('Enter');
+  expect((await rename).postDataJSON()).toEqual({ menu_slug: 'almoco-2' });
+  await expect(slug).toHaveValue('almoco-2');
+  expect(uploads).toBe(1);
 
   const getPageDrawing = (pdf: Buffer) => {
     const firstStream = pdf.indexOf('stream\n') + 'stream\n'.length;
@@ -171,6 +213,48 @@ test('the virtual link uploads a separate PDF when printing and publishing toget
   expect(await imageColorRange(printPdf)).toBeLessThan(3);
   expect(await imageColorRange(publicPdf)).toBeGreaterThan(8);
 });
+
+test('PDF and JPG start on all pages and support the canvas selection and individual pages', async ({ page }) => {
+  await openWorkspace(page, ['Menu de teste'], {
+    blankPages: [{ id: 'blank-two', index: 1, fixedPosition: true }, { id: 'blank-three', index: 2, fixedPosition: true }],
+  });
+  const pages = page.locator('[data-menu-print-page]');
+  await expect(pages).toHaveCount(3);
+  await pages.nth(1).dispatchEvent('click', { bubbles: true });
+
+  await page.getByRole('button', { name: 'Publicar', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Publicar' });
+  await dialog.getByRole('switch', { name: 'Gerar JPG' }).click();
+  const jpg = dialog.getByRole('group', { name: 'Ações de JPG' });
+  await jpg.getByRole('button', { name: 'Todas', exact: true }).click();
+  const jpgPages = jpg.getByRole('group', { name: 'Páginas do JPG' });
+  await expect(jpgPages.getByRole('button', { name: 'Todas as páginas' })).toHaveAttribute('aria-pressed', 'true');
+  await jpgPages.getByRole('button', { name: 'Seleção', exact: true }).click();
+  const downloadJpg = page.waitForEvent('download');
+  await jpg.getByRole('button', { name: 'Baixar', exact: true }).click();
+  expect((await downloadJpg).suggestedFilename()).toMatch(/-pagina-2\.jpg$/);
+
+  await dialog.getByRole('button', { name: 'Opções', exact: true }).click();
+  const print = page.locator('[data-pdf-options]');
+  const pdf = print.getByRole('group', { name: 'Seleção de páginas do PDF' });
+  await pdf.getByRole('button', { name: 'Todas', exact: true }).click();
+  const pdfPages = pdf.getByRole('group', { name: 'Páginas do PDF' });
+  await expect(pdfPages.getByRole('button', { name: 'Todas as páginas' })).toHaveAttribute('aria-pressed', 'true');
+  await pdfPages.getByRole('button', { name: 'Seleção', exact: true }).click();
+  await expect(print.locator('[data-pdf-preview-paper]')).toHaveCount(1);
+  await expect(print.getByRole('img', { name: 'Preview da página 2' })).toBeVisible();
+  await pdf.getByRole('button', { name: 'Seleção', exact: true }).click();
+  await pdfPages.getByRole('button', { name: 'Página 1', exact: true }).click();
+  await pdfPages.getByRole('button', { name: 'Página 3', exact: true }).click();
+  await expect(print.locator('[data-pdf-preview-paper]')).toHaveCount(2);
+  await expect(pdfPages.getByRole('button', { name: 'Seleção' })).toHaveAttribute('aria-pressed', 'false');
+  await expect(pdfPages.getByRole('button', { name: 'Todas as páginas' })).toHaveAttribute('aria-pressed', 'false');
+  const downloadPdf = page.waitForEvent('download');
+  await print.getByRole('button', { name: 'Baixar PDF', exact: true }).click();
+  const bytes = await readFile((await (await downloadPdf).path())!);
+  expect(bytes.toString('latin1')).toMatch(/\/Count 2\b/);
+});
+
 
 test('product analytics labels the category bar count in Portuguese', async ({ page }) => {
   await openWorkspace(page);

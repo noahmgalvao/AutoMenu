@@ -108,7 +108,7 @@ export const resolvePdfPageIndexes = (
   totalPages: number,
   currentPageIndex: number | null
 ) => {
-  if (options.pageMode === 'range' && totalPages > 1) return parsePdfPageRange(options.pageRange, totalPages);
+  if (options.pageMode === 'range') return parsePdfPageRange(options.pageRange, totalPages);
   if (options.pageMode === 'current') {
     return currentPageIndex !== null && currentPageIndex >= 0 && currentPageIndex < totalPages
       ? new Set([currentPageIndex])

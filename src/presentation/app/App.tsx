@@ -13,7 +13,8 @@ import type { VirtualLinkControls } from '../publishing/VirtualLinkSection';
 import { CreateMenuModal } from './CreateMenuModal';
 import { RevisionHistoryModal } from './RevisionHistoryModal';
 import type { PrintCanvasOptions } from '../menu/designer/PrintCanvasModal';
-import { getPublicationUrl } from '../publishing/publicationUrl';
+import { getDefaultPublicationSlug } from '../../domain/publishing/publicationSlug';
+import { getPublicationPrefix, getPublicationUrl } from '../publishing/publicationUrl';
 import { useMenuPublishing } from '../publishing/useMenuPublishing';
 import { useWorkspaceEditor } from './useWorkspaceEditor';
 const loadProductDesigner = () => import('../products/ProductDesigner').then((module) => ({
@@ -89,7 +90,7 @@ const App: React.FC = () => {
     workspaceData, products, style, templates, sortOption, setSortOption, isSettingsSaving, isMenuActionLoading,
     setProducts, setStyle, setProductsAndStyle, setTemplates, undo, redo, canUndo, canRedo, handleProductEditChange,
     handleSignIn, handleSignUp, handleSignOut, handleSaveSettings, handleSaveTemplate, onPublishTemplate, handleRequestPasswordReset, handleUpdatePassword,
-    handleSelectMenu, performCreateMenu, handleRenameMenu, handleDeleteMenus, forceSaveCurrentMenu,
+    handleSelectMenu, performCreateMenu, handleRenameMenu, handleDeleteMenus,
   } = useWorkspaceEditor({
     showStylePanel: () => setActivePanel('style'),
     closeProfileMenu: () => setIsProfileMenuOpen(false),
@@ -141,11 +142,10 @@ const App: React.FC = () => {
   const [downloadingConfiguredPdf, setDownloadingConfiguredPdf] = useState(false);
   const publishButton = useRef<HTMLButtonElement>(null);
   const {
-    printRequestId, printRequestMode, publication, isPublishOpen, setIsPublishOpen, isPublishing, busyActions,
-    publishFeedback, publishedLinkNotice, dismissPublishedLinkNotice, buttonResults, fileExportRef, hasPublishedChanges, requestPrint,
-    preparePdf, prepareJpg, handleLinkAction, handlePublishConfirm, handlePdfAction, handleJpgAction,
-    handlePublicationSlugChange, handlePrintComplete, handlePrintError,
-  } = useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu, setLoadError, products, style, sortOption });
+    printRequestId, publication, isPublishOpen, setIsPublishOpen, isPublishing, busyActions,
+    publishedLinkNotice, dismissPublishedLinkNotice, buttonResults, fileExportRef, hasPublishedChanges, requestPrint,
+    preparePdf, prepareJpg, preparePublication, handleLinkAction, handlePublishLink, handlePdfAction, handleJpgAction,
+  } = useMenuPublishing({ session, workspaceData, setLoadError, products, style, sortOption });
 
   if (!isConfigured()) {
     return (
@@ -198,14 +198,15 @@ const App: React.FC = () => {
 
   const virtualLinkControls: VirtualLinkControls = {
     publishingLink: isPublishing,
-    hasPublication: Boolean(publication),
+    linkPrefix: getPublicationPrefix(publication?.restaurantSlug || workspaceData.workspace.slug),
+    defaultMenuSlug: getDefaultPublicationSlug(workspaceData.menu.name, workspaceData.menu.id),
     publicUrl: publication ? getPublicationUrl(publication) : null,
     publicationMenuSlug: publication?.menuSlug,
     busyActions: downloadingConfiguredPdf ? new Set([...busyActions, 'download-pdf']) : busyActions,
-    feedback: publishFeedback,
+    error: loadError,
     buttonResults,
     onLinkAction: action => void handleLinkAction(action),
-    onSaveMenuSlug: menuSlug => void handlePublicationSlugChange(menuSlug),
+    onPublishLink: menuSlug => void handlePublishLink(menuSlug),
   };
 
   return (
@@ -303,12 +304,12 @@ const App: React.FC = () => {
         preferenceKey={`automenu:publish-options:${session.user.id}`}
         hasPendingChanges={Boolean(publication && hasPublishedChanges)}
         onClose={() => setIsPublishOpen(false)}
-        onConfirm={(options) => void handlePublishConfirm(options)}
         onPdfAction={handlePdfAction}
         onJpgAction={handleJpgAction}
         pageCount={pageCount}
         selectedPages={selectedPages}
         preparePdf={preparePdf}
+        preparePublication={preparePublication}
         prepareJpg={prepareJpg}
         error={loadError}
       />
@@ -405,7 +406,7 @@ const App: React.FC = () => {
               workspaceId={workspaceData.workspace.id}
               currentUserId={session.user.id}
               currentMenuId={workspaceData.menu.id}
-              onPdfClick={() => requestPrint('download')}
+              onPdfClick={requestPrint}
               onImportVisibilityChange={setIsMenuImportOpen}
             />
           </React.Suspense>
@@ -433,9 +434,6 @@ const App: React.FC = () => {
             onRulesLayoutEditingChange={setRulesLayoutEditing}
             onOpenVisual={() => setActivePanel('style')}
             printRequestId={printRequestId}
-            printRequestMode={printRequestMode}
-            onPrintComplete={handlePrintComplete}
-            onPrintError={handlePrintError}
             onPrintDownloadChange={setDownloadingConfiguredPdf}
             silentPrintOptions={publication?.pdfOptions as Partial<PrintCanvasOptions> | undefined}
             fileExportRef={fileExportRef}

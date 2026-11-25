@@ -757,17 +757,17 @@ test.describe('mobile product formatting', () => {
 });
 
 test('exports a landscape screen-sized PDF using the same dimensions as the editor', async ({ page }, testInfo) => {
+  await page.goto(`${url}?general-rules`);
   await page.getByRole('button',{name:'Editorial Essencial',exact:true}).click();
   await page.getByRole('textbox',{name:'Pesquisar modelos'}).fill('Menu Board 16:9');
   await page.locator('[data-template-option="menu-board"] > button').click();
   await expect(page.locator('[data-menu-print-page]').first()).toHaveAttribute('data-menu-page-width-mm','320');
   await expect(page.locator('[data-menu-print-page]').first()).toHaveAttribute('data-menu-page-height-mm','180');
   await page.getByRole('button',{name:'PDF',exact:true}).click();
-  await expect(page.getByRole('combobox', { name: 'Páginas', exact: true }).getByRole('option', { name: 'Intervalo' })).toBeEnabled();
+  await expect(page.locator('[data-pdf-options]').getByRole('button', { name: 'Todas', exact: true })).toBeEnabled();
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button',{name:'Baixar PDF',exact:true}).click();
   const file = await downloadPromise;
-  await expect(page.getByText('PDF baixado', { exact: true })).toBeVisible();
   await expect(page.getByText(file.suggestedFilename(), { exact: false })).toHaveCount(0);
   const path = testInfo.outputPath('landscape-preview.pdf');
   await file.saveAs(path);
@@ -779,7 +779,7 @@ test('exports a landscape screen-sized PDF using the same dimensions as the edit
 });
 
 test('PDF page setup updates the editor and restores the portrait columns', async ({ page }) => {
-  await page.goto(`${url}?photos=list&lanes=2&different-categories&right-column`);
+  await page.goto(`${url}?photos=list&lanes=2&different-categories&right-column&general-rules`);
   const canvasPage = page.locator('[data-menu-print-page]').first();
   const columns = canvasPage.locator('[data-drag-column-container="category"]');
   const getGroups = () => columns.evaluateAll(lanes => lanes.map(lane => Array.from(
@@ -788,7 +788,9 @@ test('PDF page setup updates the editor and restores the portrait columns', asyn
   await expect(columns).toHaveCount(2);
   const portraitGroups = await getGroups();
   await page.getByRole('button', { name: 'PDF', exact: true }).click();
-  await expect(page.getByRole('combobox', { name: 'Páginas', exact: true }).getByRole('option', { name: 'Intervalo' })).toBeDisabled();
+  await page.locator('[data-pdf-options]').getByRole('button', { name: 'Todas', exact: true }).click();
+  await expect(page.getByRole('group', { name: 'Páginas do PDF', exact: true }).getByRole('button', { name: 'Seleção' })).toBeDisabled();
+  await page.getByRole('group', { name: 'Páginas do PDF', exact: true }).getByRole('button', { name: 'Todas as páginas' }).click();
   const orientation = page.getByRole('combobox', { name: 'Orientação', exact: true });
   await orientation.selectOption('landscape');
   await expect(canvasPage).toHaveAttribute('data-menu-page-width-mm', '297');

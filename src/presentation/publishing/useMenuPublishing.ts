@@ -4,61 +4,42 @@ import type { AuthSession } from '../../application/account/authGateway';
 import type { WorkspaceMenuContent } from '../../application/workspace/workspaceGateway';
 import { getMenuContentSignature } from '../../application/workspace/state';
 import type { LoadedWorkspaceData, MenuPublication } from '../../domain/workspace/model';
-import type { PdfExportResult } from '../../infrastructure/browser/pdfExport';
 import { copyText, createQrCodeBlob, downloadBlob, downloadJpgFiles, shareFiles } from '../../infrastructure/browser/shareFiles';
 import { useAppServices } from '../app/AppServicesProvider';
 import type { CanvasFileExports } from '../menu/designer/useCanvasFileExports';
 import { useButtonFeedback } from './useButtonFeedback';
-import { getExpectedPublicationUrl, getPublicationUrl } from './publicationUrl';
+import { getDefaultPublicationSlug } from '../../domain/publishing/publicationSlug';
+import { getPublicationUrl } from './publicationUrl';
 
-type PrintRequestMode = 'download' | 'publish' | 'publish-silent';
-type PublishLinkAction = 'copy-link' | 'share-link' | 'download-qr' | 'share-qr' | 'open-link';
-export type PublishAction = PublishLinkAction | 'publish' | 'download-pdf' | 'share-pdf' | 'download-jpg' | 'share-jpg' | 'save-slug';
+type PublishLinkAction = 'copy-link' | 'share-link' | 'download-qr' | 'share-qr';
+export type PublishAction = PublishLinkAction | 'publish' | 'download-pdf' | 'share-pdf' | 'download-jpg' | 'share-jpg';
 export function isPublishLocked(publishingLink: boolean | undefined, actions: ReadonlySet<PublishAction>) {
-  return Boolean(publishingLink || [...actions].some(action => action.startsWith('download-') || action.startsWith('share-') || action === 'save-slug'));
+  return Boolean(publishingLink || [...actions].some(action => action.startsWith('download-') || action.startsWith('share-')));
 }
 export type JpgAction = 'download' | 'share';
-export type PublishOptions = { pdf: boolean; jpgPages: number[] | null; virtualLink: boolean };
-
 interface PublicationJob {
   menuId: string;
-  requestId?: number;
   promise: Promise<MenuPublication>;
-  resolve: (publication: MenuPublication) => void;
-  reject: (error: unknown) => void;
 }
 
 interface MenuPublishingOptions extends WorkspaceMenuContent {
   session: AuthSession | null;
   workspaceData: LoadedWorkspaceData | null;
-  forceSaveCurrentMenu: () => Promise<void>;
   setLoadError: (message: string | null) => void;
 }
 
-export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu, setLoadError, products, style, sortOption }: MenuPublishingOptions) {
+export function useMenuPublishing({ session, workspaceData, setLoadError, products, style, sortOption }: MenuPublishingOptions) {
   const { publications: { getMenuPublication, publishWorkspaceMenu, updatePublicationMenuSlug, updatePortablePublicationMenuSlug } } = useAppServices();
-  const [{ id: printRequestId, mode: printRequestMode }, setPrintRequest] = useState<{ id: number; mode: PrintRequestMode }>({ id: 0, mode: 'download' });
-  const lastPrintRequestId = useRef(0);
+  const [printRequestId, setPrintRequestId] = useState(0);
   const [publication, setPublication] = useState<MenuPublication | null>(null);
-  const [isPublishOpen, setPublishOpen] = useState(false);
-  const publishOpen = useRef(false);
-  const setIsPublishOpen = (open: boolean) => {
-    publishOpen.current = open;
-    setPublishOpen(open);
-  };
+  const [isPublishOpen, setIsPublishOpen] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [busyActions, setBusyActions] = useState<ReadonlySet<PublishAction>>(() => new Set());
   const actionsInProgress = useRef(new Set<PublishAction>());
   const [publishedLinkNotice, setPublishedLinkNotice] = useState(false);
-  const [publishFeedback, setPublishFeedback] = useState<string | null>(null);
   const publicationJob = useRef<PublicationJob | null>(null);
-  const publishFeedbackTimeoutRef = useRef<number | null>(null);
   const { results: buttonResults, show: showButtonResult } = useButtonFeedback();
   const fileExportRef = useRef<CanvasFileExports>(null);
-
-  useEffect(() => () => {
-    if (publishFeedbackTimeoutRef.current) window.clearTimeout(publishFeedbackTimeoutRef.current);
-  }, []);
 
   useEffect(() => {
     const menuId = workspaceData?.menu.id;
@@ -70,7 +51,7 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
     let cancelled = false;
     setPublication(null);
     void getMenuPublication(menuId)
-      .then((result) => { if (!cancelled) setPublication(result); })
+      .then((result) => { if (!cancelled) setPublication(current => current?.menuId === menuId ? current : result); })
       .catch((error) => { if (!cancelled) setLoadError(getErrorMessage(error, 'Falha ao carregar publicação.')); });
     return () => { cancelled = true; };
   }, [getMenuPublication, setLoadError, workspaceData?.menu.id]);
@@ -92,17 +73,7 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
     void createQrCodeBlob(getPublicationUrl(publication)).catch(() => undefined);
   }, [publication?.id, publication?.menuSlug, publication?.portableSnapshotUrl, publication?.updatedAt]);
 
-  const showPublishFeedback = useCallback((message: string) => {
-    if (publishFeedbackTimeoutRef.current) window.clearTimeout(publishFeedbackTimeoutRef.current);
-    setPublishFeedback(message);
-    publishFeedbackTimeoutRef.current = window.setTimeout(() => setPublishFeedback(null), 2200);
-  }, []);
-
-  const requestPrint = (mode: PrintRequestMode = 'download') => {
-    const id = ++lastPrintRequestId.current;
-    setPrintRequest({ id, mode });
-    return id;
-  };
+  const requestPrint = () => setPrintRequestId(current => current + 1);
 
   const runAction = async (action: PublishAction, run: () => Promise<void>, fallback: string) => {
     const actions = actionsInProgress.current;
@@ -127,39 +98,49 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
     return true;
   }, []);
 
-  const cancelPublication = useCallback((job: PublicationJob) => {
-    if (clearPublicationJob(job)) job.reject(new DOMException('Publicação cancelada.', 'AbortError'));
-  }, [clearPublicationJob]);
-
   const menuId = workspaceData?.menu.id;
   useEffect(() => () => {
     const job = publicationJob.current;
-    if (job && job.menuId === menuId) cancelPublication(job);
-  }, [cancelPublication, menuId]);
+    if (job && job.menuId === menuId) clearPublicationJob(job);
+  }, [clearPublicationJob, menuId]);
 
-  const getOrStartPublication = (pdfOptions = false) => {
+  const getOrStartPublication = (menuSlug?: string) => {
     const pending = publicationJob.current;
     if (pending && pending.menuId === menuId) return pending.promise;
-    if (!menuId || !session) return Promise.reject(new Error('O cardápio ainda está carregando.'));
+    if (!workspaceData || !menuId || !session) return Promise.reject(new Error('O cardápio ainda está carregando.'));
 
-    let resolve!: PublicationJob['resolve'];
-    let reject!: PublicationJob['reject'];
-    const promise = new Promise<MenuPublication>((onResolve, onReject) => {
-      resolve = onResolve;
-      reject = onReject;
-    });
-    const job: PublicationJob = { menuId, promise, resolve, reject };
+    const current = publication?.menuId === menuId ? publication : null;
+    const job: PublicationJob = { menuId, promise: Promise.resolve().then(async () => {
+      if (publicationJob.current !== job) throw new DOMException('Publicação cancelada.', 'AbortError');
+      if (current?.pdfUrl && current.contentSignature === contentSignature) {
+        if (!menuSlug || current.menuSlug === menuSlug) return current;
+        return current.portableSnapshotUrl
+          ? updatePortablePublicationMenuSlug(current, menuSlug)
+          : updatePublicationMenuSlug({ publicationId: current.id, menuSlug });
+      }
+
+      const result = await getFileExports().publicationPdf();
+      if (publicationJob.current !== job) throw new DOMException('Publicação cancelada.', 'AbortError');
+      return publishWorkspaceMenu({
+        workspace: workspaceData.workspace, menu: workspaceData.menu, userId: session.user.id,
+        products, style, sortOption,
+        menuSlug: !current && menuSlug === getDefaultPublicationSlug(workspaceData.menu.name, menuId) ? undefined : menuSlug,
+        pdfBlob: result.blob, pdfFilename: result.filename, pdfOptions: {},
+      });
+    }).then(published => {
+      if (clearPublicationJob(job)) {
+        setPublication(published);
+        setPublishedLinkNotice(true);
+      }
+      return published;
+    }, error => {
+      clearPublicationJob(job);
+      throw error;
+    }) };
     publicationJob.current = job;
     setIsPublishing(true);
     setPublishedLinkNotice(false);
-    void forceSaveCurrentMenu()
-      .then(() => {
-        if (publicationJob.current === job) job.requestId = requestPrint(pdfOptions && publishOpen.current ? 'publish' : 'publish-silent');
-      })
-      .catch(error => {
-        if (clearPublicationJob(job)) job.reject(error);
-      });
-    return promise;
+    return job.promise;
   };
 
   const performPublishedLinkAction = useCallback(async (
@@ -168,11 +149,6 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
   ) => {
     const url = getPublicationUrl(published);
     const qrFilename = `qrcode-${published.menuSlug || 'cardapio'}.png`;
-
-    if (action === 'open-link') {
-      window.open(url, '_blank', 'noopener,noreferrer');
-      return;
-    }
 
     if (action === 'copy-link') {
       await copyText(url);
@@ -222,6 +198,12 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
     if (fileExportRef.current) void Promise.resolve(fileExportRef.current.pdf()).catch(() => undefined);
   }, []);
 
+  const preparePublication = useCallback(() => {
+    if (fileExportRef.current && (!publication?.pdfUrl || hasPublishedChanges)) {
+      void Promise.resolve(fileExportRef.current.publicationPdf()).catch(() => undefined);
+    }
+  }, [publication, hasPublishedChanges]);
+
   const prepareJpg = useCallback((indexes: readonly number[]) => {
     if (fileExportRef.current && indexes.length) void Promise.resolve(fileExportRef.current.jpg(indexes)).catch(() => undefined);
   }, []);
@@ -251,41 +233,14 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
     'Não foi possível exportar as imagens JPG.',
   );
 
-  const handlePublishConfirm = async ({ pdf, jpgPages, virtualLink }: PublishOptions) => {
-    if (!pdf && !virtualLink) {
-      if (jpgPages) await handleJpgAction('download', jpgPages);
-      return;
-    }
-    if (jpgPages) void handleJpgAction('download', jpgPages);
-    if (!virtualLink) {
-      setIsPublishOpen(false);
-      requestPrint('download');
-      return;
-    }
-    if (!workspaceData || publicationJob.current || actionsInProgress.current.has('save-slug')) return;
-
-    const publishingStartedAt = Date.now();
-    const canonicalUrl = publication
-      ? getPublicationUrl(publication).split('?')[0]
-      : getExpectedPublicationUrl({
-          restaurantSlug: workspaceData.workspace.slug,
-          menuName: workspaceData.menu.name,
-          menuId: workspaceData.menu.id,
-        });
-    const loadingUrl = new URL(canonicalUrl);
-    loadingUrl.searchParams.set('publishing', String(publishingStartedAt));
-    if (publication?.updatedAt) loadingUrl.searchParams.set('previousPublication', publication.updatedAt);
-    window.open(loadingUrl.toString(), '_blank', 'noopener,noreferrer');
-
-    await runAction('publish', async () => {
-      await getOrStartPublication(pdf);
-    }, 'Falha ao publicar cardápio.');
-  };
+  const handlePublishLink = (menuSlug: string) => runAction('publish', async () => {
+    await getOrStartPublication(menuSlug);
+  }, 'Falha ao publicar cardápio.');
 
   const handlePdfAction = async (action: 'options' | 'download' | 'share') => {
     setLoadError(null);
     if (action === 'options') {
-      requestPrint('download');
+      requestPrint();
       return;
     }
     await runAction(action === 'download' ? 'download-pdf' : 'share-pdf', async () => {
@@ -303,50 +258,9 @@ export function useMenuPublishing({ session, workspaceData, forceSaveCurrentMenu
     }, 'Não foi possível exportar o PDF.');
   };
 
-  const handlePublicationSlugChange = async (menuSlug: string) => {
-    if (!publication || publicationJob.current || menuSlug.trim() === publication.menuSlug) return;
-    await runAction('save-slug', async () => {
-      const updated = publication.portableSnapshotUrl
-        ? updatePortablePublicationMenuSlug(publication, menuSlug)
-        : await updatePublicationMenuSlug({ publicationId: publication.id, menuSlug });
-      setPublication(updated);
-      showPublishFeedback('Endereço atualizado');
-    }, 'Não foi possível atualizar o endereço.');
-  };
-
-  const handlePrintComplete = async (result: PdfExportResult, requestId: number) => {
-    const job = publicationJob.current;
-    if (!job || job.requestId !== requestId || job.menuId !== workspaceData?.menu.id || !session) return;
-    try {
-      const published = await publishWorkspaceMenu({
-        workspace: workspaceData.workspace,
-        menu: workspaceData.menu,
-        userId: session.user.id,
-        products,
-        style,
-        sortOption,
-        pdfBlob: result.blob,
-        pdfFilename: result.filename,
-        pdfOptions: {},
-      });
-      if (!clearPublicationJob(job)) return;
-      setPublication(published);
-      setPublishedLinkNotice(true);
-      job.resolve(published);
-    } catch (error) {
-      if (clearPublicationJob(job)) job.reject(error);
-    }
-  };
-
-  const handlePrintError = (error: unknown, requestId: number) => {
-    const job = publicationJob.current;
-    if (job?.requestId === requestId && clearPublicationJob(job)) job.reject(error);
-  };
-
   return {
-    printRequestId, printRequestMode, publication, isPublishOpen, setIsPublishOpen, isPublishing, busyActions,
-    publishFeedback, publishedLinkNotice, dismissPublishedLinkNotice: () => setPublishedLinkNotice(false), buttonResults, fileExportRef, hasPublishedChanges, requestPrint,
-    preparePdf, prepareJpg, handleLinkAction, handlePublishConfirm, handlePdfAction, handleJpgAction,
-    handlePublicationSlugChange, handlePrintComplete, handlePrintError,
+    printRequestId, publication, isPublishOpen, setIsPublishOpen, isPublishing, busyActions,
+    publishedLinkNotice, dismissPublishedLinkNotice: () => setPublishedLinkNotice(false), buttonResults, fileExportRef, hasPublishedChanges, requestPrint,
+    preparePdf, prepareJpg, preparePublication, handleLinkAction, handlePublishLink, handlePdfAction, handleJpgAction,
   };
 }

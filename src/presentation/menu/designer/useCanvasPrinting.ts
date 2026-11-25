@@ -1,9 +1,10 @@
+import { resolveImagePages, type ImagePages } from '../../../domain/publishing/imagePages';
 import { resolvePdfPageIndexes } from '../../../domain/publishing/printOptions';
 import { useCanvasFileExports } from './useCanvasFileExports';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState, type RefObject } from 'react';
 import type { MenuStyle, Product, SortOption } from '../../../domain/menu/model';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
-import type { PdfExportResult } from '../../../infrastructure/browser/pdfExport';
+import { downloadBlob } from '../../../infrastructure/browser/shareFiles';
 import type { PrintCanvasModalProps, PrintCanvasOptions, PrintPreviewPage } from './PrintCanvasModal';
 import { updateCanvasPageSetup } from './updateCanvasPageSetup';
 
@@ -50,42 +51,45 @@ interface CanvasPrintingOptions {
     style: MenuStyle;
     setStyle: React.Dispatch<React.SetStateAction<MenuStyle>>;
     sortOption: SortOption;
-    currentPrintPageIndex: number | null;
-    printRequestMode: 'download' | 'publish' | 'publish-silent';
+    selectedPages: readonly number[];
+    menuId?: string;
     printRequestId: number;
-    onPrintComplete?: (result: PdfExportResult, requestId: number) => void;
-    onPrintError?: (error: Error, requestId: number) => void;
     onPrintDownloadChange?: (active: boolean) => void;
     silentPrintOptions?: Partial<PrintCanvasOptions>;
-    clearCanvasSelection: () => void;
 }
 
+const withPageChoice = (options: PrintCanvasOptions, choice: ImagePages, indexes: readonly number[]): PrintCanvasOptions => ({
+    ...options,
+    pageMode: choice.mode === 'all' ? 'all' : 'range',
+    pageRange: choice.mode === 'all' ? '' : indexes.map(index => index + 1).join(','),
+});
+
 export function useCanvasPrinting({
-    containerRef, products, style, setStyle, sortOption, currentPrintPageIndex,
-    printRequestMode, printRequestId, onPrintComplete, onPrintError, onPrintDownloadChange, silentPrintOptions, clearCanvasSelection,
+    containerRef, products, style, setStyle, sortOption, selectedPages, menuId,
+    printRequestId, onPrintDownloadChange, silentPrintOptions,
 }: CanvasPrintingOptions) {
-    const printModalOpen = useRef(false);
     const [showPrintModal, setShowPrintModal] = useState(false);
     const [printSettings, setPrintOptions] = useState<PrintCanvasOptions>(() => getDefaultPrintOptions(style));
     const [lastCompletedPrintOptions, setLastCompletedPrintOptions] = useState<PrintCanvasOptions | null>(null);
-    const printing = useRef(false);
     const [isPrinting, setIsPrinting] = useState(false);
-    const [publicationPrintRequest, setPublicationPrintRequest] = useState<number | null>(null);
     const [printPageCount, setPrintPageCount] = useState(0);
     const [printPreviewPages, setPrintPreviewPages] = useState<PrintPreviewPage[]>([]);
-    const [selectedPrintPage, setSelectedPrintPage] = useState<number | null>(null);
-    const canvasPrintPaperDefaults = getCanvasPrintPaperDefaults(style);
-    const printOptions: PrintCanvasOptions = {
-        ...printSettings,
-        ...canvasPrintPaperDefaults,
-        pageMode: printPageCount <= 1 && printSettings.pageMode === 'range' ? 'all' : printSettings.pageMode,
-    };
+    const [pageChoice, setPageChoice] = useState<ImagePages>({ mode: 'all' });
+    const hasSelection = selectedPages.some(index => index >= 0 && index < printPageCount);
+    const choice: ImagePages = pageChoice.mode === 'selection' && !hasSelection ? { mode: 'all' } : pageChoice;
+    const chosenIndexes = resolveImagePages(choice, printPageCount, selectedPages);
+    const publicationOptions = useMemo<PrintCanvasOptions>(() => ({
+        ...getDefaultPrintOptions(style), scaleMode: 'actual',
+    }), [style]);
+    const printOptions = withPageChoice({ ...printSettings, ...getCanvasPrintPaperDefaults(style) }, choice, chosenIndexes);
+    const { pageMode, pageRange } = printOptions;
+    const directOptions = useMemo(() => ({
+        ...publicationOptions, scaleMode: 'fit' as const, ...silentPrintOptions,
+        ...lastCompletedPrintOptions, ...getCanvasPrintPaperDefaults(style), pageMode, pageRange,
+    }), [style, publicationOptions, silentPrintOptions, lastCompletedPrintOptions, pageMode, pageRange]);
+    const fileExports = useCanvasFileExports(containerRef, style, products, sortOption, directOptions, publicationOptions, printPageCount);
 
-    useEffect(() => {
-        if (printPageCount <= 1 && printSettings.pageMode === 'range') {
-            setPrintOptions(current => ({ ...current, pageMode: 'all' }));
-        }
-    }, [printPageCount, printSettings.pageMode]);
+    useEffect(() => setPageChoice({ mode: 'all' }), [menuId]);
 
     useEffect(() => {
         const warmModules = () => {
@@ -107,124 +111,49 @@ export function useCanvasPrinting({
         };
     }, []);
 
-    const handlePrint = (publicationRequest: number | null = null) => {
-        setPublicationPrintRequest(publicationRequest);
-        setSelectedPrintPage(currentPrintPageIndex);
-        clearCanvasSelection();
+    const handlePrint = () => {
         document.dispatchEvent(new Event('automenu:close-inline-formatting'));
         const pageCount = containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]').length || 0;
         setPrintPageCount(pageCount);
-        printModalOpen.current = true;
         setShowPrintModal(true);
     };
 
     useEffect(() => {
-        if (printRequestId <= 0) return;
-        if (printRequestMode !== 'publish-silent') handlePrint(printRequestMode === 'publish' ? printRequestId : null);
+        if (printRequestId > 0) handlePrint();
     }, [printRequestId]);
 
     useLayoutEffect(() => {
         if (!showPrintModal) { setPrintPreviewPages([]); return; }
         const pages = containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]');
         if (!pages) return;
-        const indexes = resolvePdfPageIndexes(printOptions, pages.length, selectedPrintPage);
+        const indexes = resolvePdfPageIndexes(printOptions, pages.length, null);
         setPrintPreviewPages(Array.from(pages).flatMap((element, index) => indexes.has(index)
             ? [{ pageNumber: index + 1, element, width: element.offsetWidth, height: element.offsetHeight }] : []));
-    }, [containerRef, showPrintModal, printPageCount, selectedPrintPage, printOptions.pageMode, printOptions.pageRange, style, products]);
-
-    const executeCanvasPrint = async () => {
-        const pageElements = Array.from(
-            containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]') || []
-        );
-        const { exportMenuPagesToPdf } = await import('../../../infrastructure/browser/pdfExport');
-
-        return exportMenuPagesToPdf({
-            pageElements,
-            options: printOptions,
-            currentPageIndex: selectedPrintPage,
-            title: style.menuTitle || 'Cardápio',
-            download: true,
-        });
-    };
-
-    const publishCanvasPdf = async (requestId: number) => {
-        try {
-            const pageElements = Array.from(
-                containerRef.current?.querySelectorAll<HTMLElement>('[data-menu-print-page="true"]') || []
-            );
-            const { exportMenuPagesToPdf } = await import('../../../infrastructure/browser/pdfExport');
-            const result = await exportMenuPagesToPdf({
-                pageElements,
-                options: { ...getDefaultPrintOptions(style), scaleMode: 'actual' },
-                currentPageIndex: null,
-                title: style.menuTitle || 'Cardápio',
-                download: false,
-            });
-            onPrintComplete?.(result, requestId);
-        } catch (error) {
-            console.error('[Publicação] Falha ao gerar PDF para o link virtual', error);
-            onPrintError?.(error instanceof Error ? error : new Error(String(error)), requestId);
-        }
-    };
-
-    useEffect(() => {
-        if (printRequestId <= 0 || printRequestMode !== 'publish-silent') return;
-        clearCanvasSelection();
-        document.dispatchEvent(new Event('automenu:close-inline-formatting'));
-        void publishCanvasPdf(printRequestId);
-    }, [printRequestId]);
-
-    const directOptions = useMemo(() => {
-        const requested = { ...getDefaultPrintOptions(style), ...silentPrintOptions,
-            ...lastCompletedPrintOptions, ...getCanvasPrintPaperDefaults(style) };
-        if (requested.pageMode === 'current' || (requested.pageMode === 'range' && !requested.pageRange.trim())) {
-            return { ...requested, pageMode: 'all' as const };
-        }
-        return requested;
-    }, [style, silentPrintOptions, lastCompletedPrintOptions]);
-    const fileExports = useCanvasFileExports(containerRef, style, products, sortOption, directOptions, printPageCount);
+    }, [containerRef, showPrintModal, printPageCount, printOptions.pageMode, printOptions.pageRange, style, products]);
 
     const printDialog: PrintCanvasModalProps | null = showPrintModal ? {
         isOpen: true,
         isPrinting,
-        awaitingPublicationPdf: publicationPrintRequest !== null,
         options: printOptions,
-        currentPageIndex: selectedPrintPage,
         totalPages: printPageCount,
+        selectedPages,
+        pageChoice: choice,
+        onPageChoiceChange: setPageChoice,
+        canPrint: chosenIndexes.length > 0,
         previewPages: printPreviewPages,
-
         onChange: setPrintOptions,
         onPageSetupChange: setup => updateCanvasPageSetup(setStyle, setup, products),
-        onClose() {
-            printModalOpen.current = false;
-            setShowPrintModal(false);
-            if (publicationPrintRequest !== null && !printing.current) {
-                void publishCanvasPdf(publicationPrintRequest);
-            }
-        },
+        onClose: () => setShowPrintModal(false),
         async onPrint() {
-            printing.current = true;
             setIsPrinting(true);
             onPrintDownloadChange?.(true);
             try {
-                return await executeCanvasPrint();
+                const result = await fileExports.configuredPdf(printOptions);
+                downloadBlob(result.blob, result.filename);
+                setLastCompletedPrintOptions(printOptions);
             } finally {
-                printing.current = false;
                 setIsPrinting(false);
                 onPrintDownloadChange?.(false);
-            }
-        },
-        onError() {
-            if (publicationPrintRequest !== null && !printModalOpen.current) {
-                void publishCanvasPdf(publicationPrintRequest);
-            }
-        },
-        onComplete() {
-            setLastCompletedPrintOptions(printOptions);
-            if (publicationPrintRequest !== null) {
-                printModalOpen.current = false;
-                setShowPrintModal(false);
-                void publishCanvasPdf(publicationPrintRequest);
             }
         },
     } : null;

@@ -10,9 +10,10 @@ export interface PublicationGateway {
     pdfBlob: Blob;
     pdfFilename: string;
     pdfOptions: Record<string, unknown>;
+    menuSlug?: string;
   }): Promise<MenuPublication>;
   loadPublicMenuPublication(input: { restaurantSlug: string; menuSlug: string; portableSnapshotUrl?: string | null }):
-    Promise<(WorkspaceMenuContent & { publication: MenuPublication }) | null>;
+    Promise<MenuPublication | null>;
   updatePublicationMenuSlug(input: { publicationId: string; menuSlug: string }): Promise<MenuPublication>;
   updatePortablePublicationMenuSlug(publication: MenuPublication, menuSlug: string): MenuPublication;
 }
