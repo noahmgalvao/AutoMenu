@@ -122,6 +122,7 @@ test('the virtual link publishes a full snapshot, keeps its address during sync,
   let uploads = 0;
   let row: Record<string, unknown> | null = null;
   let releases = 0;
+  const addressChanges: unknown[] = [];
   let releaseRequest: (() => void) | undefined;
   let hold = false;
   await page.route('**/rest/v1/menu_publications?*', async route => {
@@ -130,6 +131,12 @@ test('the virtual link publishes a full snapshot, keeps its address during sync,
       releases++;
       row = { id: 'public-id', ...route.request().postDataJSON(), updated_at: new Date().toISOString() };
       return route.fulfill({ status: 201, body: '' });
+    }
+    if (route.request().method() === 'PATCH') {
+      const change = route.request().postDataJSON();
+      addressChanges.push(change);
+      row = { ...row, ...change };
+      return route.fulfill({ status: 204 });
     }
     const slug = new URL(route.request().url()).searchParams.get('menu_slug');
     return route.fulfill({ json: !slug || slug === `eq.${row?.menu_slug}` ? row : null });
@@ -141,10 +148,11 @@ test('the virtual link publishes a full snapshot, keeps its address during sync,
 
   const dialog = await openPublishMenu(page);
   const slug = dialog.getByRole('textbox', { name: 'Final do link' });
+  await expect(slug).toHaveValue('menu-de-teste');
   await expect(dialog.getByText('Não publicado', { exact: true })).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Copiar', exact: true })).toBeDisabled();
   await slug.fill('Almoço Especial');
-  await expect(dialog.getByText(/\/cardapio\/teste\/almoco-especial$/)).toBeVisible();
+  await expect(dialog.getByText('Endereço para publicar')).toHaveCount(0);
   hold = true;
   await dialog.getByRole('button', { name: 'Publicar link', exact: true }).click();
   await expect.poll(() => Boolean(releaseRequest)).toBeTruthy();
@@ -160,12 +168,32 @@ test('the virtual link publishes a full snapshot, keeps its address during sync,
 
   await dialog.getByRole('button', { name: 'QR Code', exact: true }).click();
   await expect(dialog.getByRole('img', { name: 'QR Code do cardápio' })).toBeVisible();
+  await expect(dialog.getByText('Endereço publicado')).toHaveCount(0);
+  const versionBeforeRename = row!.published_version_id;
+  const snapshotBeforeRename = row!.snapshot;
   await slug.fill('Outro endereço');
-  await expect(dialog.getByText(/\/cardapio\/teste\/outro-endereco$/)).toBeVisible();
+  await expect(dialog.getByText('Alterações pendentes')).toBeVisible();
+  const headerPublish = page.locator('nav').getByRole('button', { name: 'Publicar', exact: true });
+  await expect(headerPublish).toHaveClass(/bg-amber-50/);
   await expect(dialog.getByRole('link', { name: 'Acessar' })).toHaveAttribute('href', /\/almoco-especial$/);
   await slug.press('Enter');
   await expect(dialog.getByRole('link', { name: 'Acessar' })).toHaveAttribute('href', /\/outro-endereco$/);
+  await expect(headerPublish).toHaveClass(/bg-emerald-50/);
+  expect(addressChanges).toEqual([{ menu_slug: 'outro-endereco' }]);
+  expect(row).toMatchObject({ published_version_id: versionBeforeRename, snapshot: snapshotBeforeRename });
   const activeAddress = await dialog.getByRole('link', { name: 'Acessar' }).getAttribute('href');
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+      writeText: async (url: string) => { document.body.dataset.copiedLink = url; },
+    } });
+    Object.defineProperty(navigator, 'share', { configurable: true, value: async ({ url }: ShareData) => {
+      document.body.dataset.sharedLink = url;
+    } });
+  });
+  await dialog.getByRole('button', { name: 'Copiar', exact: true }).click();
+  await expect(page.locator('body')).toHaveAttribute('data-copied-link', activeAddress!);
+  await dialog.getByRole('button', { name: 'Compartilhar', exact: true }).click();
+  await expect(page.locator('body')).toHaveAttribute('data-shared-link', activeAddress!);
   await dialog.getByRole('button', { name: 'Fechar publicação' }).click();
 
   const product = page.locator('[data-automenu-editor-canvas] #product-container-suco');
@@ -178,7 +206,7 @@ test('the virtual link publishes a full snapshot, keeps its address during sync,
   await dialog.getByRole('button', { name: 'Sincronizar', exact: true }).click();
   await expect(dialog.getByText('Atualizado', { exact: true })).toBeVisible();
   await expect(dialog.getByRole('link', { name: 'Acessar' })).toHaveAttribute('href', activeAddress!);
-  expect(releases).toBe(3);
+  expect(releases).toBe(2);
   expect(uploads).toBe(0);
 
   await page.goto(activeAddress!);
@@ -248,7 +276,7 @@ test('publishing and syncing use the same public file when the publication table
   await dialog.getByRole('button', { name: 'Publicar link', exact: true }).click();
   await expect(dialog.getByText('Atualizado', { exact: true })).toBeVisible();
   const access = dialog.getByRole('link', { name: 'Acessar' });
-  await expect(access).toHaveAttribute('href', /\/menu-storage\?source=/);
+  await expect(access).toHaveAttribute('href', /\/menu-storage$/);
   const originalAddress = (await access.getAttribute('href'))!;
 
   await dialog.getByRole('button', { name: 'Fechar publicação' }).click();
@@ -268,8 +296,24 @@ test('publishing and syncing use the same public file when the publication table
   expect(uploads[1]).toBe(uploads[0]);
   expect(signedLinks).toBe(1);
 
+  const beforeRename = files.get(uploads[0]) as { publication: Record<string, unknown> };
+  await dialog.getByRole('textbox', { name: 'Final do link' }).fill('Novo nome');
+  await expect(dialog.getByText('Alterações pendentes')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Sincronizar', exact: true }).click();
+  await expect(access).toHaveAttribute('href', /\/novo-nome$/);
+  expect(uploads).toHaveLength(3);
+  expect(uploads[2]).toBe(uploads[0]);
+  expect(signedLinks).toBe(1);
+  expect(files.get(uploads[0])).toEqual({ publication: {
+    ...beforeRename.publication, menuSlug: 'novo-nome', updatedAt: expect.any(String),
+  } });
+  const shortAddress = (await access.getAttribute('href'))!;
+  const source = new URL(`/storage/v1/object/sign/${uploads[0]}?token=storage-test`, shortAddress).href;
+  const publicAddress = `${shortAddress}?${new URLSearchParams({ source })}`;
+  await page.goto(shortAddress);
+  await expect(page.getByText('Suco de caju', { exact: true })).toBeVisible();
   await page.evaluate(() => localStorage.clear());
-  await page.goto(originalAddress);
+  await page.goto(publicAddress);
   await expect(page.getByRole('main', { name: 'Cardápio publicado' })).toBeVisible();
   await expect(page.getByText('Suco de caju', { exact: true })).toBeVisible();
 });
@@ -293,9 +337,8 @@ test('synchronizing a portable publication provides a short public address witho
   await expect(page.locator('nav').getByText('Menu de teste')).toBeVisible();
   const dialog = await openPublishMenu(page);
   const access = dialog.getByRole('link', { name: 'Acessar' });
-  await expect(access).toHaveAttribute('href', /\?source=/);
-  const oldAddress = (await access.getAttribute('href'))!;
-  await expect(dialog.getByRole('link', { name: /\/cardapio\/teste\/menu-legado$/ })).toBeVisible();
+  await expect(access).toHaveAttribute('href', /\/cardapio\/teste\/menu-legado$/);
+  const oldAddress = `${await access.getAttribute('href')}?${new URLSearchParams({ source })}`;
   await dialog.getByRole('button', { name: 'Sincronizar', exact: true }).click();
   await expect(access).toHaveAttribute('href', /\/cardapio\/teste\/menu-legado$/);
   const shortAddress = (await access.getAttribute('href'))!;

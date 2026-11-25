@@ -8,7 +8,7 @@ import { BooleanSwitch } from '../common/BooleanSwitch';
 import { lockModalScrolling } from '../common/modalScroll';
 import { ExportPagePicker } from './ExportPagePicker';
 import { CustomExportSettings, ExportProfilePicker } from './ExportProfiles';
-import { ActionButton, normalizedDraft, VirtualLinkSection } from './VirtualLinkSection';
+import { ActionButton, VirtualLinkSection } from './VirtualLinkSection';
 import { useButtonFeedback } from './useButtonFeedback';
 import type { MenuPublishing } from './useMenuPublishing';
 
@@ -46,13 +46,12 @@ export function PublishModal({ publishing, pageCount, selectedPages, restoreFocu
   restoreFocus: RefObject<HTMLElement | null>;
   title: string;
 }) {
-  const { isPublishOpen: open, setIsPublishOpen, fileExportRef, publication, defaultMenuSlug, contentSignature } = publishing;
+  const { isPublishOpen: open, setIsPublishOpen, fileExportRef, publication, contentSignature } = publishing;
   const [tab, setTab] = useState<typeof tabs[number]>('Link virtual');
   const [imageFormat, setImageFormat] = useState<ImageFormat>('PNG');
   const [profiles, setProfiles] = useState<ProfileState>({});
   const [pageChoice, setPageChoice] = useState<ImagePages>(allPages);
   const [alsoPublish, setAlsoPublish] = useState(false);
-  const [edited, setEdited] = useState<string>();
   const readyFiles = useRef<{ key: string; files: File[] } | undefined>(undefined);
   const [exportError, setExportError] = useState<{ key: string; message: string }>();
   const [fileAction, setFileAction] = useState<FileAction>();
@@ -60,8 +59,6 @@ export function PublishModal({ publishing, pageCount, selectedPages, restoreFocu
   const closeButton = useRef<HTMLButtonElement>(null);
   const { results, show } = useButtonFeedback();
 
-  const activeSlug = publication?.menuSlug || defaultMenuSlug;
-  const draft = edited ?? activeSlug;
   const format = tab === 'PDF' ? 'PDF' : imageFormat;
   const profileSet = exportProfiles[format];
   const state = profiles[format];
@@ -78,10 +75,6 @@ export function PublishModal({ publishing, pageCount, selectedPages, restoreFocu
     return () => target?.focus({ preventScroll: true });
   }, [open, restoreFocus]);
 
-  useEffect(() => {
-    if (publication && edited !== undefined && normalizedDraft(edited, defaultMenuSlug) === publication.menuSlug) setEdited(undefined);
-  }, [publication, edited, defaultMenuSlug]);
-
   const close = () => {
     setIsPublishOpen(false);
     setTab('Link virtual');
@@ -93,10 +86,9 @@ export function PublishModal({ publishing, pageCount, selectedPages, restoreFocu
     runningRef.current = true;
     setFileAction(action);
     setExportError(undefined);
-    const slug = normalizedDraft(draft, defaultMenuSlug);
-    if (alsoPublish && (!publication || publication.portableSnapshotUrl || publication.menuSlug !== slug || publishing.pending
+    if (alsoPublish && (!publication || publication.portableSnapshotUrl || publishing.pending
       || publishing.availability === 'offline' || publishing.publicationError)) {
-      void publishing.publish(slug).catch(() => undefined);
+      void publishing.publish().catch(() => undefined);
     }
     let preparing = true;
     try {
@@ -154,7 +146,7 @@ export function PublishModal({ publishing, pageCount, selectedPages, restoreFocu
         <Segments options={tabs} value={tab} label="Opções de publicação" onChange={setTab} />
       </header>
       <div className="min-h-0 space-y-3 overflow-y-auto overscroll-contain p-4">
-        {tab === 'Link virtual' ? <VirtualLinkSection publishing={publishing} draft={draft} onDraft={setEdited} /> : <>
+        {tab === 'Link virtual' ? <VirtualLinkSection publishing={publishing} /> : <>
           {tab === 'Imagem' && <Segments options={formats} value={imageFormat} label="Formato da imagem" onChange={setImageFormat} />}
           <ExportProfilePicker key={format} format={format} value={profile.id} custom={normalizeExportSettings(format, custom)}
             pages={indexes.flatMap(index => pageSizes[index] ? [pageSizes[index]] : [])}
@@ -170,7 +162,7 @@ export function PublishModal({ publishing, pageCount, selectedPages, restoreFocu
           <BooleanSwitch label={publication ? 'Sincronizar também o link virtual' : 'Publicar também o link virtual'}
             value={alsoPublish} onChange={setAlsoPublish} className="border-slate-200 bg-slate-50" />
           {alsoPublish && <section aria-label="Opções do link virtual" className="rounded-xl border border-slate-200 p-3">
-            <VirtualLinkSection publishing={publishing} draft={draft} onDraft={setEdited} />
+            <VirtualLinkSection publishing={publishing} />
           </section>}
         </>}
       </div>

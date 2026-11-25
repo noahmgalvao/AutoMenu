@@ -5,5 +5,4 @@ export const normalizePublicationSlug = (value: string) => value
   .replace(/[^a-z0-9]+/g, '-')
   .replace(/^-+|-+$/g, '');
 
-export const getDefaultPublicationSlug = (name: string, id: string) =>
-  `${normalizePublicationSlug(name) || 'cardapio'}-${id.slice(0, 8)}`;
+export const getDefaultPublicationSlug = (name: string) => normalizePublicationSlug(name) || 'cardapio';

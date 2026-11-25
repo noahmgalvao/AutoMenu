@@ -4,12 +4,12 @@ import { getErrorMessage } from '../../application/errorMessages';
 import type { PublicationAvailability } from '../../application/publishing/publicationGateway';
 import { getMenuContentSignature } from '../../application/workspace/state';
 import type { WorkspaceMenuContent } from '../../application/workspace/workspaceGateway';
-import { getDefaultPublicationSlug } from '../../domain/publishing/publicationSlug';
+import { getDefaultPublicationSlug, normalizePublicationSlug } from '../../domain/publishing/publicationSlug';
 import type { LoadedWorkspaceData, MenuPublication } from '../../domain/workspace/model';
 import { copyText, createQrCodeBlob, downloadBlob, shareFiles } from '../../infrastructure/browser/shareFiles';
 import { useAppServices } from '../app/AppServicesProvider';
 import type { CanvasFileExports } from '../menu/designer/useCanvasFileExports';
-import { getPublicationPrefix, getPublicationUrl } from './publicationUrl';
+import { getPublicationUrl, getShareablePublicationUrl } from './publicationUrl';
 import { useButtonFeedback } from './useButtonFeedback';
 
 export type LinkAction = 'copy-link' | 'share-link' | 'download-qr' | 'share-qr';
@@ -33,6 +33,7 @@ export function useMenuPublishing({ session, workspaceData, products, style, sor
   const menuId = workspaceData?.menu.id;
   const [isPublishOpen, setIsPublishOpen] = useState(false);
   const [state, setState] = useState<LinkState>({ menuId, record: null, availability: 'checking' });
+  const [addressDraft, setAddressDraft] = useState<{ menuId: string; value: string }>();
   const [runningMenus, setRunningMenus] = useState<ReadonlySet<string>>(() => new Set());
   const [publishedLinkNotice, setPublishedLinkNotice] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -103,25 +104,36 @@ export function useMenuPublishing({ session, workspaceData, products, style, sor
 
   const current: LinkState = state.menuId === menuId ? state : { menuId, record: null, availability: 'checking' };
   const publication = current.record;
-  const defaultMenuSlug = workspaceData ? getDefaultPublicationSlug(workspaceData.menu.name, workspaceData.menu.id) : 'cardapio';
+  const defaultMenuSlug = getDefaultPublicationSlug(workspaceData?.menu.name ?? '');
   const publicUrl = publication ? getPublicationUrl(publication) : null;
-  const linkPrefix = workspaceData ? getPublicationPrefix(publication?.restaurantSlug || workspaceData.workspace.slug) : '';
-  const pending = Boolean(publication && (current.publishedSignature ?? publication.contentSignature) !== contentSignature);
+  const sharedUrl = publication ? getShareablePublicationUrl(publication) : null;
+  const draft = addressDraft?.menuId === menuId ? addressDraft?.value : undefined;
+  const linkEnding = draft ?? publication?.menuSlug ?? defaultMenuSlug;
+  const requestedSlug = normalizePublicationSlug(linkEnding) || defaultMenuSlug;
+  const pending = Boolean(publication && (requestedSlug !== publication.menuSlug
+    || (current.publishedSignature ?? publication.contentSignature) !== contentSignature));
   const isPublishing = Boolean(menuId && runningMenus.has(menuId));
   const tone: PublicationTone = current.failure || current.availability === 'offline' ? 'failed'
     : pending ? 'pending' : current.availability === 'online' ? 'synced' : 'neutral';
 
-  const publish = (slug?: string): Promise<MenuPublication> => {
+  const updateLinkEnding = (value: string) => {
+    if (!menuId) return;
+    setAddressDraft({ menuId, value });
+    if (current.failure) setState(previous => ({ ...previous, failure: undefined }));
+  };
+
+  const publish = (): Promise<MenuPublication> => {
     if (!workspaceData || !menuId || !session) return Promise.reject(new Error('O cardápio ainda está carregando.'));
     const running = jobs.current.get(menuId);
     if (running) return running;
-    const requested = !publication && slug === defaultMenuSlug ? undefined : slug;
+    const requested = !publication && requestedSlug === defaultMenuSlug ? undefined : requestedSlug;
     const task = publications.publishWorkspaceMenu({
       workspace: workspaceData.workspace, menu: workspaceData.menu, userId: session.user.id,
       products, style, sortOption, menuSlug: requested,
     }).then(published => {
-      confirmed.current.set(menuId, published.publishedVersionId);
+      confirmed.current.set(menuId, `${published.publishedVersionId}:${published.menuSlug}`);
       if (activeMenu.current === menuId) {
+        setAddressDraft(previous => previous === addressDraft ? undefined : previous);
         lastChecked.current = { id: menuId, time: Date.now() };
         setState({ menuId, record: published, availability: 'online', publishedSignature: published.contentSignature });
         setPublishedLinkNotice(true);
@@ -145,25 +157,25 @@ export function useMenuPublishing({ session, workspaceData, products, style, sor
   };
 
   const handleLinkAction = async (action: LinkAction) => {
-    if (!publicUrl || !publication || actionRef.current) return;
+    if (!sharedUrl || !publication || actionRef.current) return;
     actionRef.current = action;
     setBusyAction(action);
     setActionError(null);
     try {
       if (action === 'share-link' && navigator.share) {
         try {
-          await navigator.share({ title: publication.pdfFilename.replace(/\.pdf$/i, ''), url: publicUrl });
+          await navigator.share({ title: publication.pdfFilename.replace(/\.pdf$/i, ''), url: sharedUrl });
           return;
         } catch (error) {
           if (error instanceof DOMException && error.name === 'AbortError') return;
         }
       }
       if (action === 'copy-link' || action === 'share-link') {
-        await copyText(publicUrl);
+        await copyText(sharedUrl);
         showButtonResult(action, 'Copiado');
         return;
       }
-      const qr = await createQrCodeBlob(publicUrl);
+      const qr = await createQrCodeBlob(sharedUrl);
       const file = new File([qr], `qrcode-${publication.menuSlug}.png`, { type: 'image/png' });
       if (action === 'share-qr') {
         try { if (await shareFiles('QR Code do cardápio', [file])) return; } catch { /* Offer the file as a download. */ }
@@ -181,7 +193,7 @@ export function useMenuPublishing({ session, workspaceData, products, style, sor
   return {
     isPublishOpen, setIsPublishOpen, isPublishing, tone, pending,
     availability: current.availability, publicationError: current.failure, linkActionError: actionError,
-    publication, publicUrl, linkPrefix, defaultMenuSlug, contentSignature, fileExportRef,
+    publication, publicUrl, sharedUrl, linkEnding, updateLinkEnding, defaultMenuSlug, contentSignature, fileExportRef,
     publishedLinkNotice, dismissPublishedLinkNotice: () => setPublishedLinkNotice(false),
     publish, handleLinkAction, busyAction, buttonResults,
   };

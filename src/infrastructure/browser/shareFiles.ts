@@ -35,10 +35,10 @@ export const createQrCodeBlob = (value: string) => {
   const cached = qrCodeBlobCache.get(value);
   if (cached) return cached;
   const task = import('qrcode').then(({ default: QRCode }) => QRCode.toDataURL(value, {
-    width: 1024,
-    margin: 2,
-    errorCorrectionLevel: 'M',
-    color: { dark: '#0f172a', light: '#ffffff' },
+    scale: 12,
+    margin: 4,
+    errorCorrectionLevel: 'L',
+    color: { dark: '#000000', light: '#ffffff' },
   })).then(async (dataUrl) => (await fetch(dataUrl)).blob());
   qrCodeBlobCache.set(value, task);
   void task.catch(() => {

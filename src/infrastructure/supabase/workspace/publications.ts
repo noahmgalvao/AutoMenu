@@ -21,6 +21,35 @@ const resolvePublicationPdfUrl = async (row: any) => {
 const lookupPublication = (menuId: string) => getSupabaseClient()
   .from('menu_publications').select('*').eq('menu_id', menuId).maybeSingle();
 
+const readPublicRow = ({ restaurantSlug, menuSlug }: PublicationAddress) => getSupabaseClient()
+  .from('menu_publications').select('*').eq('restaurant_slug', restaurantSlug).eq('menu_slug', menuSlug).abortSignal(AbortSignal.timeout(4000)).maybeSingle();
+
+async function confirmPublishedAddress(restaurantSlug: string, menuSlug: string, menuId: string) {
+  const { data, error } = await readPublicRow({ restaurantSlug, menuSlug });
+  if (error) throw error;
+  if (!data || data.menu_id !== menuId) throw new Error('Não foi possível confirmar o endereço publicado.');
+  return mapPublicationRow(data);
+}
+
+async function readStoredPublication(source: string) {
+  const response = await fetch(source, { cache: 'no-store', signal: AbortSignal.timeout(10_000) });
+  if (response.status === 404 || response.status === 410) return null;
+  if (!response.ok) throw new Error('Não foi possível verificar o link público.');
+  const { publication } = await response.json() as { publication?: MenuPublication };
+  return publication?.workspaceId && (publication.pdfUrl || Array.isArray(publication.snapshot?.products)) ? publication : null;
+}
+
+async function writePortablePublication(publication: MenuPublication, source?: string | null) {
+  const releaseId = source && new URL(source).pathname.match(/\/([\w-]+)\.json$/)?.[1];
+  const file = await uploadPortablePublication({
+    workspaceId: publication.workspaceId, menuId: publication.menuId, releaseId: releaseId || crypto.randomUUID(),
+    publication: { publication }, existingUrl: releaseId ? source : null,
+  });
+  const result = { ...publication, portableSnapshotUrl: file.url };
+  savePortablePublication({ ...result, snapshot: {} });
+  return result;
+}
+
 export const getMenuPublication: PublicationGateway['getMenuPublication'] = async menuId => {
   const { data, error } = await lookupPublication(menuId);
   if (error && isMissingSchemaObjectError(error, 'menu_publications')) return readPortablePublication(menuId);
@@ -33,10 +62,8 @@ export const publishWorkspaceMenu: PublicationGateway['publishWorkspaceMenu'] = 
 }) => {
   const supabase = getSupabaseClient();
   const customSlug = requestedSlug && normalizePublicationSlug(requestedSlug);
-  const renderSnapshot = createRenderSnapshot(products, style, sortOption);
   const contentSignature = getMenuContentSignature(products, style, sortOption);
-  const editorState = createEditorState(style, products.filter(product => product.isFreeText), sortOption);
-  const defaultSlug = getDefaultPublicationSlug(menu.name, menu.id);
+  const defaultSlug = getDefaultPublicationSlug(menu.name);
   const pdfFilename = `${menu.name || 'cardapio'}.pdf`;
 
   const { data, error: lookupError } = await lookupPublication(menu.id);
@@ -45,47 +72,66 @@ export const publishWorkspaceMenu: PublicationGateway['publishWorkspaceMenu'] = 
   const existing = data ? mapPublicationRow(data) : null;
   const portable = existing ? null : readPortablePublication(menu.id);
   const preferredSlug = customSlug || existing?.menuSlug || portable?.menuSlug;
+  const restaurantSlug = existing?.restaurantSlug ?? portable?.restaurantSlug ?? workspace.slug;
+  const candidates = preferredSlug ? [preferredSlug] :
+    [defaultSlug, ...Array.from({ length: 7 }, (_, index) => `${defaultSlug}-${index + 2}`)];
+  const addressTaken = () => new Error('Este endereço já está em uso. Escolha outro nome.');
+  const noAddressAvailable = () => new Error('Não foi possível criar um endereço disponível.');
 
   if (!useStorage && preferredSlug && existing?.menuSlug !== preferredSlug) {
-    const { data: occupied, error } = await readPublicRow({ restaurantSlug: workspace.slug, menuSlug: preferredSlug });
+    const { data: occupied, error } = await readPublicRow({ restaurantSlug, menuSlug: preferredSlug });
     if (error) throw error;
-    if (occupied && occupied.menu_id !== menu.id) throw new Error('Este endereço já está em uso. Escolha outro nome.');
+    if (occupied && occupied.menu_id !== menu.id) throw addressTaken();
+
+    if (existing?.contentSignature === contentSignature) {
+      const { error: updateError } = await supabase.from('menu_publications').update({ menu_slug: preferredSlug })
+        .eq('id', existing.id).eq('menu_slug', existing.menuSlug).eq('published_version_id', existing.publishedVersionId);
+      if (updateError?.code === '23505') throw addressTaken();
+      if (updateError) throw updateError;
+      return confirmPublishedAddress(restaurantSlug, preferredSlug, menu.id);
+    }
   }
 
+  const storageSlug = useStorage ? candidates.find(slug => {
+    const occupied = readPortablePublicationBySlug(restaurantSlug, slug);
+    return !occupied || occupied.menuId === menu.id;
+  }) : undefined;
+  if (useStorage && !storageSlug) throw preferredSlug ? addressTaken() : noAddressAvailable();
+  if (storageSlug && portable?.portableSnapshotUrl && portable.menuSlug !== storageSlug) {
+    const stored = await readStoredPublication(portable.portableSnapshotUrl);
+    if (stored?.menuId === menu.id && stored.contentSignature === contentSignature) {
+      return writePortablePublication({ ...stored, menuSlug: storageSlug, updatedAt: new Date().toISOString() }, portable.portableSnapshotUrl);
+    }
+  }
+
+  const renderSnapshot = createRenderSnapshot(products, style, sortOption);
+  const editorState = createEditorState(style, products.filter(product => product.isFreeText), sortOption);
   const { versionId } = await insertMenuVersionWithRetry({
     menuId: menu.id, userId, editorState, renderSnapshot, versionType: 'published', actionLabel: 'Cardápio publicado',
   });
   const updateMenu = () => supabase.from('menus').update({ published_version_id: versionId, status: 'published' }).eq('id', menu.id).neq('status', 'archived');
 
-  if (useStorage) {
+  if (storageSlug) {
     const now = new Date().toISOString();
     const publication: MenuPublication = {
       id: portable?.id || crypto.randomUUID(),
-      menuId: menu.id, workspaceId: workspace.id, restaurantSlug: workspace.slug,
-      menuSlug: preferredSlug || defaultSlug,
+      menuId: menu.id, workspaceId: workspace.id, restaurantSlug,
+      menuSlug: storageSlug,
       publishedVersionId: versionId, pdfAssetId: null, pdfBucket: 'menu-assets', pdfPath: null,
       pdfUrl: null, pdfFilename, pdfOptions: {}, snapshot: renderSnapshot, contentSignature,
       portableSnapshotUrl: null, createdAt: portable?.createdAt || now, updatedAt: now,
     };
-    const source = portable?.portableSnapshotUrl;
-    const releaseId = source && new URL(source).pathname.match(/\/([\w-]+)\.json$/)?.[1];
-    const file = await uploadPortablePublication({
-      workspaceId: workspace.id, menuId: menu.id, releaseId: releaseId || crypto.randomUUID(),
-      publication: { publication }, existingUrl: releaseId ? source : null,
-    });
-    const result = { ...publication, portableSnapshotUrl: file.url };
-    savePortablePublication(result);
+    const result = await writePortablePublication(publication, portable?.portableSnapshotUrl);
     void updateMenu().then(() => undefined, () => undefined);
     return result;
   }
 
   const assetIds = collectStyleAssetIds(style);
   collectProductAssetIds(products).forEach(id => assetIds.add(id));
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const slug = preferredSlug || (attempt === 0 ? defaultSlug : `${defaultSlug}-${attempt + 1}`);
+  for (const slug of candidates) {
     const payload = {
       ...(existing ? { id: existing.id } : {}),
-      menu_id: menu.id, workspace_id: workspace.id, restaurant_slug: workspace.slug, menu_slug: slug,
+      menu_id: menu.id, workspace_id: workspace.id, restaurant_slug: restaurantSlug, menu_slug: slug,
       published_version_id: versionId, pdf_asset_id: null, pdf_bucket: 'menu-assets', pdf_path: null,
       pdf_filename: pdfFilename, pdf_options: {}, snapshot: renderSnapshot,
       asset_ids: Array.from(assetIds), content_signature: contentSignature,
@@ -93,44 +139,30 @@ export const publishWorkspaceMenu: PublicationGateway['publishWorkspaceMenu'] = 
     // Verify in a separate request, after the public read policy can see the new row.
     const { error } = await supabase.from('menu_publications').upsert(payload, { onConflict: 'menu_id' });
     if (!error) {
-      const { data: published, error: verificationError } = await readPublicRow({
-        restaurantSlug: workspace.slug, menuSlug: slug,
-      });
-      if (verificationError) throw verificationError;
-      if (!published || published.menu_id !== menu.id) throw new Error('Não foi possível confirmar o endereço publicado.');
-      if (published.published_version_id === versionId) void updateMenu().then(() => undefined, () => undefined);
-      return mapPublicationRow(published);
+      const published = await confirmPublishedAddress(restaurantSlug, slug, menu.id);
+      if (published.publishedVersionId === versionId) void updateMenu().then(() => undefined, () => undefined);
+      return published;
     }
-    if (error.code === '23505' && preferredSlug) throw new Error('Este endereço já está em uso. Escolha outro nome.');
+    if (error.code === '23505' && preferredSlug) throw addressTaken();
     if (error.code !== '23505') throw new Error(getErrorMessage(error, 'Falha ao salvar o link público.'));
   }
-  throw new Error('Não foi possível criar um endereço disponível.');
+  throw noAddressAvailable();
 };
-
-const readPublicRow = ({ restaurantSlug, menuSlug }: PublicationAddress) => getSupabaseClient()
-  .from('menu_publications').select('*').eq('restaurant_slug', restaurantSlug).eq('menu_slug', menuSlug).abortSignal(AbortSignal.timeout(4000)).maybeSingle();
 
 export const loadPublicMenuPublication: PublicationGateway['loadPublicMenuPublication'] = async address => {
   if (address.portableSnapshotUrl) {
-    const response = await fetch(address.portableSnapshotUrl, { cache: 'no-store', signal: AbortSignal.timeout(10_000) });
-    if (response.status === 404 || response.status === 410) return null;
-    if (!response.ok) throw new Error('Não foi possível verificar o link público.');
-    const payload = await response.json() as { publication?: MenuPublication };
-    const publication = payload.publication;
-    if (!publication?.workspaceId || (!publication.pdfUrl && !Array.isArray(publication.snapshot?.products))) return null;
+    const publication = await readStoredPublication(address.portableSnapshotUrl);
+    if (!publication) return null;
     // Preserve already distributed portable links after the same address is republished.
     const { data } = await readPublicRow(address);
     if (data && data.menu_id === publication.menuId) return mapPublicationRow(data, await resolvePublicationPdfUrl(data));
     return { ...publication, ...address, portableSnapshotUrl: address.portableSnapshotUrl };
   }
   const { data, error } = await readPublicRow(address);
-  if (error && isMissingSchemaObjectError(error, 'menu_publications')) {
-    const portable = readPortablePublicationBySlug(address.restaurantSlug, address.menuSlug);
-    return portable ? loadPublicMenuPublication({ ...address, portableSnapshotUrl: portable.portableSnapshotUrl }) : null;
-  }
-  if (error) throw error;
-  if (!data) return null;
-  return mapPublicationRow(data, await resolvePublicationPdfUrl(data));
+  if (error && !isMissingSchemaObjectError(error, 'menu_publications')) throw error;
+  if (data) return mapPublicationRow(data, await resolvePublicationPdfUrl(data));
+  const portable = readPortablePublicationBySlug(address.restaurantSlug, address.menuSlug);
+  return portable ? loadPublicMenuPublication({ ...address, portableSnapshotUrl: portable.portableSnapshotUrl }) : null;
 };
 
 export const verifyPublicMenuPublication: PublicationGateway['verifyPublicMenuPublication'] = async address => {

@@ -1,8 +1,6 @@
 import { useEffect, useId, useState, type ReactNode } from 'react';
-import { normalizePublicationSlug } from '../../domain/publishing/publicationSlug';
 import { ArrowUpRight, Check, Copy, Download, Loader2, QrCode, RefreshCw, Share2 } from 'lucide-react';
 import { createQrCodeBlob } from '../../infrastructure/browser/shareFiles';
-import { getPublicationPrefix } from './publicationUrl';
 import type { MenuPublishing } from './useMenuPublishing';
 import type { ButtonResult } from './useButtonFeedback';
 
@@ -64,63 +62,28 @@ function PublicationStatus({ publishing, action }: { publishing: MenuPublishing;
   </div>;
 }
 
-function PublicationAddressField({ publishing, draft, onDraft }: {
-  publishing: MenuPublishing;
-  draft: string;
-  onDraft: (value: string) => void;
-}) {
-  const id = useId();
-  const { linkPrefix, defaultMenuSlug, publicUrl, publication } = publishing;
-  const normalized = normalizedDraft(draft, defaultMenuSlug);
-  const sameAddress = Boolean(publication && normalized === publication.menuSlug);
-  const activeAddress = publication && `${getPublicationPrefix(publication.restaurantSlug)}${encodeURIComponent(publication.menuSlug)}`;
-  const address = <>{linkPrefix}<span className="font-semibold">{encodeURIComponent(normalized)}</span></>;
-  return <div className="space-y-2">
-    <div className="text-xs leading-relaxed">
-      <div className="font-semibold text-slate-700">{sameAddress ? 'Endereço publicado' : 'Endereço para publicar'}</div>
-      {sameAddress && publicUrl
-        ? <a className="block break-all text-indigo-700 hover:underline" href={publicUrl} target="_blank" rel="noopener noreferrer">{address}</a>
-        : <div className="break-all text-indigo-700" data-publication-draft-url>{address}</div>}
-      {!sameAddress && activeAddress && publicUrl && <div className="mt-1 break-all text-slate-500">Ativo <a className="text-indigo-700 hover:underline" href={publicUrl} target="_blank" rel="noopener noreferrer">{activeAddress}</a></div>}
-    </div>
-    <div>
-      <label htmlFor={id} className="mb-1 block text-xs font-semibold text-slate-700">Final do link</label>
-      <input id={id} value={draft} placeholder={defaultMenuSlug} onChange={event => onDraft(event.target.value)}
-        autoCapitalize="none" spellCheck={false} autoComplete="off"
-        className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-base outline-indigo-600 sm:text-sm" />
-    </div>
-  </div>;
-}
-
-
-export const normalizedDraft = (draft: string, defaultSlug: string) => normalizePublicationSlug(draft) || defaultSlug;
-
-export function VirtualLinkSection({ publishing, draft, onDraft }: {
-  publishing: MenuPublishing;
-  draft: string;
-  onDraft: (value: string) => void;
-}) {
+export function VirtualLinkSection({ publishing }: { publishing: MenuPublishing }) {
+  const fieldId = useId();
   const [qrOpen, setQrOpen] = useState(false);
   const [qrPreview, setQrPreview] = useState<{ link: string; image: string }>();
-  const { publication, publicUrl, isPublishing, availability, pending, publicationError, linkActionError, busyAction, buttonResults, handleLinkAction } = publishing;
-  const slug = normalizedDraft(draft, publishing.defaultMenuSlug);
-  const changingAddress = Boolean(publication && slug !== publication.menuSlug);
+  const { publication, publicUrl, sharedUrl, linkEnding, updateLinkEnding, defaultMenuSlug, isPublishing,
+    availability, pending, publicationError, linkActionError, busyAction, buttonResults, handleLinkAction } = publishing;
   const canRetry = availability === 'offline' || Boolean(publicationError);
-  const inlineSync = Boolean(publication && !changingAddress && (pending || canRetry || isPublishing || publication.portableSnapshotUrl));
-  const bottomPublish = !publication || changingAddress;
-  const publish = () => void publishing.publish(slug).catch(() => undefined);
+  const inlineSync = Boolean(publication && (pending || canRetry || isPublishing || publication.portableSnapshotUrl));
+  const bottomPublish = !publication;
+  const publish = () => void publishing.publish().catch(() => undefined);
 
   useEffect(() => {
-    if (!qrOpen || !publicUrl) return;
+    if (!qrOpen || !sharedUrl) return;
     let alive = true;
     let image: string | undefined;
-    void createQrCodeBlob(publicUrl).then(blob => {
+    void createQrCodeBlob(sharedUrl).then(blob => {
       if (!alive) return;
       image = URL.createObjectURL(blob);
-      setQrPreview({ link: publicUrl, image });
+      setQrPreview({ link: sharedUrl, image });
     }).catch(() => undefined);
     return () => { alive = false; if (image) URL.revokeObjectURL(image); };
-  }, [qrOpen, publicUrl]);
+  }, [qrOpen, sharedUrl]);
 
   return <form className="space-y-3" onSubmit={event => {
     event.preventDefault();
@@ -128,7 +91,12 @@ export function VirtualLinkSection({ publishing, draft, onDraft }: {
   }}>
     <PublicationStatus publishing={publishing} action={inlineSync && <ActionButton label="Sincronizar"
       icon={<RefreshCw size={15} />} loading={isPublishing} primary onClick={publish} />} />
-    <PublicationAddressField publishing={publishing} draft={draft} onDraft={onDraft} />
+    <div>
+      <label htmlFor={fieldId} className="mb-1 block text-xs font-semibold text-slate-700">Final do link</label>
+      <input id={fieldId} value={linkEnding} placeholder={defaultMenuSlug} onChange={event => updateLinkEnding(event.target.value)}
+        autoCapitalize="none" spellCheck={false} autoComplete="off"
+        className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-base outline-indigo-600 sm:text-sm" />
+    </div>
     <div className="grid grid-cols-4 gap-1.5 [&>*]:flex-col [&>*]:gap-0.5 [&>*]:px-0.5 [&>*]:py-2 [&>*]:text-[10px] sm:[&>*]:flex-row sm:[&>*]:gap-1.5 sm:[&>*]:text-xs">
       {publicUrl ? <a href={publicUrl} target="_blank" rel="noopener noreferrer" className={`${actionClasses} flex items-center justify-center`}>
         <ArrowUpRight size={16} />Acessar</a> : <ActionButton icon={<ArrowUpRight size={16} />} label="Acessar" disabled />}
@@ -139,8 +107,9 @@ export function VirtualLinkSection({ publishing, draft, onDraft }: {
       <ActionButton icon={<QrCode size={15} />} label="QR Code" disabled={!publicUrl} expanded={qrOpen}
         onClick={() => { if (qrOpen) setQrPreview(undefined); setQrOpen(!qrOpen); }} />
     </div>
-    {qrOpen && publicUrl && <div className="space-y-2 rounded-xl border border-slate-200 p-3" aria-label="QR Code do cardápio">
-      {qrPreview?.link === publicUrl && <img src={qrPreview.image} alt="QR Code do cardápio" className="mx-auto size-28" />}
+    {qrOpen && sharedUrl && <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5" aria-label="QR Code do cardápio">
+      {qrPreview?.link === sharedUrl && <img src={qrPreview.image} alt="QR Code do cardápio"
+        className="mx-auto size-36 rounded-xl bg-white ring-1 ring-slate-200 [image-rendering:pixelated]" />}
       <div className="grid grid-cols-2 gap-2">
         <ActionButton icon={<Download size={15} />} label="Baixar QR" disabled={!!busyAction}
           result={buttonResults['download-qr']} loading={busyAction === 'download-qr'} onClick={() => void handleLinkAction('download-qr')} />
@@ -150,7 +119,7 @@ export function VirtualLinkSection({ publishing, draft, onDraft }: {
     </div>}
     {(publicationError || linkActionError) && <p role="alert" className="text-xs font-semibold text-red-700">{publicationError || linkActionError}</p>}
     {bottomPublish && <div className="grid">
-      <ActionButton label={publication ? 'Sincronizar' : 'Publicar link'} primary loading={isPublishing} onClick={publish} />
+      <ActionButton label="Publicar link" primary loading={isPublishing} onClick={publish} />
     </div>}
     {(inlineSync || bottomPublish) && <button className="sr-only" type="submit" tabIndex={-1} aria-hidden="true">Confirmar endereço</button>}
   </form>;
