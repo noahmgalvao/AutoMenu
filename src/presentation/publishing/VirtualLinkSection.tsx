@@ -2,6 +2,7 @@ import { useEffect, useId, useState, type ReactNode } from 'react';
 import { normalizePublicationSlug } from '../../domain/publishing/publicationSlug';
 import { ArrowUpRight, Check, Copy, Download, Loader2, QrCode, RefreshCw, Share2 } from 'lucide-react';
 import { createQrCodeBlob } from '../../infrastructure/browser/shareFiles';
+import { getPublicationPrefix } from './publicationUrl';
 import type { MenuPublishing } from './useMenuPublishing';
 import type { ButtonResult } from './useButtonFeedback';
 
@@ -42,7 +43,7 @@ const statusClasses = {
   failed: 'border-red-200 bg-red-50 text-red-900',
 };
 
-export function PublicationStatus({ publishing, action }: { publishing: MenuPublishing; action?: ReactNode }) {
+function PublicationStatus({ publishing, action }: { publishing: MenuPublishing; action?: ReactNode }) {
   const { pending, publication, availability, isPublishing, tone, publicationError } = publishing;
   const availabilityText = availability ? availabilityLabel[availability] : 'Não publicado';
   let syncText = '';
@@ -63,31 +64,31 @@ export function PublicationStatus({ publishing, action }: { publishing: MenuPubl
   </div>;
 }
 
-export function PublicationAddressField({ publishing, draft, onDraft, editable = true }: {
+function PublicationAddressField({ publishing, draft, onDraft }: {
   publishing: MenuPublishing;
   draft: string;
   onDraft: (value: string) => void;
-  editable?: boolean;
 }) {
   const id = useId();
   const { linkPrefix, defaultMenuSlug, publicUrl, publication } = publishing;
   const normalized = normalizedDraft(draft, defaultMenuSlug);
   const sameAddress = Boolean(publication && normalized === publication.menuSlug);
-  const address = sameAddress && publicUrl ? publicUrl : `${linkPrefix}${encodeURIComponent(normalized)}`;
+  const activeAddress = publication && `${getPublicationPrefix(publication.restaurantSlug)}${encodeURIComponent(publication.menuSlug)}`;
+  const address = <>{linkPrefix}<span className="font-semibold">{encodeURIComponent(normalized)}</span></>;
   return <div className="space-y-2">
     <div className="text-xs leading-relaxed">
       <div className="font-semibold text-slate-700">{sameAddress ? 'Endereço publicado' : 'Endereço para publicar'}</div>
-      {sameAddress
-        ? <a className="block break-all text-indigo-700 hover:underline" href={address} target="_blank" rel="noopener noreferrer">{address}</a>
+      {sameAddress && publicUrl
+        ? <a className="block break-all text-indigo-700 hover:underline" href={publicUrl} target="_blank" rel="noopener noreferrer">{address}</a>
         : <div className="break-all text-indigo-700" data-publication-draft-url>{address}</div>}
-      {!sameAddress && publicUrl && <div className="mt-1 break-all text-slate-500">Ativo <a className="text-indigo-700 hover:underline" href={publicUrl} target="_blank" rel="noopener noreferrer">{publicUrl}</a></div>}
+      {!sameAddress && activeAddress && publicUrl && <div className="mt-1 break-all text-slate-500">Ativo <a className="text-indigo-700 hover:underline" href={publicUrl} target="_blank" rel="noopener noreferrer">{activeAddress}</a></div>}
     </div>
-    {editable && <div>
+    <div>
       <label htmlFor={id} className="mb-1 block text-xs font-semibold text-slate-700">Final do link</label>
       <input id={id} value={draft} placeholder={defaultMenuSlug} onChange={event => onDraft(event.target.value)}
         autoCapitalize="none" spellCheck={false} autoComplete="off"
         className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-base outline-indigo-600 sm:text-sm" />
-    </div>}
+    </div>
   </div>;
 }
 
@@ -105,7 +106,7 @@ export function VirtualLinkSection({ publishing, draft, onDraft }: {
   const slug = normalizedDraft(draft, publishing.defaultMenuSlug);
   const changingAddress = Boolean(publication && slug !== publication.menuSlug);
   const canRetry = availability === 'offline' || Boolean(publicationError);
-  const inlineSync = Boolean(publication && !changingAddress && (pending || canRetry || isPublishing));
+  const inlineSync = Boolean(publication && !changingAddress && (pending || canRetry || isPublishing || publication.portableSnapshotUrl));
   const bottomPublish = !publication || changingAddress;
   const publish = () => void publishing.publish(slug).catch(() => undefined);
 

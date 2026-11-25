@@ -7,14 +7,16 @@ export interface ExportPageSize {
 
 export type ExportFormat = 'PDF' | 'PNG' | 'JPG' | 'TIFF';
 export type ImageFormat = Exclude<ExportFormat, 'PDF'>;
+export type ExportColor = 'RGB' | 'CMYK';
 export const EXPORT_DPI = [72, 150, 300, 450, 600] as const;
+export const supportsCmyk = (format: ExportFormat) => format === 'PDF' || format === 'TIFF';
 
 export interface ExportSettings {
   dpi: number;
   bleed: number;
   marks: boolean;
   markOffset: number;
-  color: 'RGB';
+  color: ExportColor;
   quality: number;
 }
 
@@ -29,7 +31,7 @@ export const normalizeExportSettings = (format: ExportFormat, settings: ExportSe
     bleed: format === 'PDF' || format === 'TIFF' ? clamp(settings.bleed, 0, 10, 0) : 0,
     marks,
     markOffset: marks ? clamp(settings.markOffset, 0, 10, 0) : 0,
-    color: 'RGB',
+    color: supportsCmyk(format) && settings.color === 'CMYK' ? 'CMYK' : 'RGB',
     quality: format === 'JPG' ? clamp(settings.quality, 50, 100, 100) : 100,
   };
 };
@@ -54,9 +56,9 @@ export const exportProfiles: Record<ExportFormat, { initial: string; options: re
     options: [
       digital,
       preset('office', 'Impressão comum', {}, 'Para impressoras domésticas e de escritório.'),
-      preset('professional', 'Impressão profissional', { bleed: 3, marks: true }, 'Com sangria e marcas de corte para gráfica.'),
-      preset('professional-no-marks', 'Impressão profissional sem marcas', { bleed: 3 }, 'Com sangria para gráficas que dispensam marcas de corte.'),
-      preset('offset', 'Impressão offset', { bleed: 5, marks: true, markOffset: 2 }, 'Com sangria e marcas de corte afastadas.'),
+      preset('professional', 'Impressão profissional', { bleed: 3, marks: true, color: 'CMYK' }, 'Com sangria e marcas de corte para gráfica.'),
+      preset('professional-no-marks', 'Impressão profissional sem marcas', { bleed: 3, color: 'CMYK' }, 'Com sangria para gráficas que dispensam marcas de corte.'),
+      preset('offset', 'Impressão offset', { bleed: 5, marks: true, markOffset: 2, color: 'CMYK' }, 'Com sangria e marcas de corte afastadas.'),
       custom,
     ],
   },
@@ -64,7 +66,7 @@ export const exportProfiles: Record<ExportFormat, { initial: string; options: re
   JPG: { initial: 'high', options: [{ ...digital, settings: { ...defaults, dpi: 150, quality: 85 } }, high, custom] },
   TIFF: {
     initial: 'high',
-    options: [high, preset('professional', 'Impressão profissional', { bleed: 3 }, 'Com sangria de 3 mm.'), custom],
+    options: [high, preset('professional', 'Impressão profissional', { bleed: 3, color: 'CMYK' }, 'Com sangria de 3 mm.'), custom],
   },
 };
 

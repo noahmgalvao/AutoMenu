@@ -1,5 +1,5 @@
 import { getExportGeometry, normalizeExportSettings, type ExportFormat, type ExportPageSize, type ExportSettings } from '../../domain/publishing/exportProfiles';
-import { encodeMenuImage, extendPageBleed } from './encodeMenuImage';
+import { encodeCmykPdfImage, encodeMenuImage, extendPageBleed } from './encodeMenuImage';
 import { preparePrintPageContent } from './printPageContent';
 import { rasterizePrintPage } from './rasterizePrintPage';
 import type { ProfilePdfPage } from './composeMenuPdf';
@@ -185,6 +185,8 @@ async function generateProfileFiles(
   const files: File[] = [];
   const pdfPages: ProfilePdfPage[] = [];
   const name = sanitizeFileName(title);
+  const cmykPdf = format === 'PDF' && settings.color === 'CMYK';
+  const readPixels = format === 'TIFF' || cmykPdf;
   let encodedBytes = 0;
 
   for (const { snapshot, number, size } of pages) {
@@ -203,16 +205,17 @@ async function generateProfileFiles(
       try {
         trim = await rasterizePrintPage(prepared.clone, size.width, size.height,
           (value, baseUrl) => inlineCssUrls(value, assetCache, baseUrl),
-          { width: trimPixelWidth, height: trimPixelHeight }, format === 'TIFF');
+          { width: trimPixelWidth, height: trimPixelHeight }, readPixels);
       } catch {
         throw new PdfExportError('PDF_NATIVE_RENDER_UNAVAILABLE',
           `Não foi possível capturar a página ${number} com fidelidade em ${settings.dpi} DPI neste navegador.`);
       }
       sandbox.remove();
-      output = extendPageBleed(trim, pixelWidth, pixelHeight, format === 'TIFF');
+      output = extendPageBleed(trim, pixelWidth, pixelHeight, readPixels);
       if (output !== trim) trim.width = trim.height = 1;
       const encoding = format === 'PDF' ? settings.dpi <= 150 ? 'JPG' : 'PNG' : format;
-      const image = await encodeMenuImage(output, encoding, settings.dpi, format === 'PDF' ? 92 : settings.quality);
+      const image = cmykPdf ? await encodeCmykPdfImage(output)
+        : await encodeMenuImage(output, encoding, settings.dpi, format === 'PDF' ? 92 : settings.quality, settings.color);
       encodedBytes += image.size;
       if (encodedBytes > 200_000_000) throw new PdfExportError('PDF_MEMORY_LIMIT',
         'Os arquivos excedem o limite de memória de uma exportação. Exporte menos páginas por vez.');

@@ -32,11 +32,3 @@ export const readPortablePublicationBySlug = (restaurantSlug: string, menuSlug: 
   }
   return null;
 };
-
-export const savePortablePublication = (publication: MenuPublication) => {
-  try {
-    window.localStorage.setItem(getPortablePublicationStorageKey(publication.menuId), JSON.stringify(publication));
-  } catch {
-    // The public link still works even when local preference storage is unavailable.
-  }
-};

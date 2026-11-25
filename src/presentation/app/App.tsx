@@ -143,9 +143,8 @@ const App: React.FC = () => {
   const publishControl: PublishButtonProps = {
     tone: publishing.tone,
     busy: publishing.isPublishing,
-    onClick: () => {
-      publishInvoker.current = document.activeElement instanceof HTMLElement && document.activeElement.matches('[aria-haspopup="dialog"]')
-        ? document.activeElement : publishButton.current;
+    onClick: event => {
+      publishInvoker.current = event.currentTarget;
       dismissPublishedLinkNotice();
       setIsPublishOpen(true);
     },

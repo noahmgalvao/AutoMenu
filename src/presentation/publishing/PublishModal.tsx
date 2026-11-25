@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
-import { Check, Download, Send, Share2, X } from 'lucide-react';
+import { Download, Send, Share2, X } from 'lucide-react';
 import { getErrorMessage } from '../../application/errorMessages';
 import { exportProfiles, normalizeExportSettings, type ExportFormat, type ExportSettings, type ImageFormat } from '../../domain/publishing/exportProfiles';
 import { resolveImagePages, type ImagePages } from '../../domain/publishing/imagePages';
@@ -8,7 +8,7 @@ import { BooleanSwitch } from '../common/BooleanSwitch';
 import { lockModalScrolling } from '../common/modalScroll';
 import { ExportPagePicker } from './ExportPagePicker';
 import { CustomExportSettings, ExportProfilePicker } from './ExportProfiles';
-import { ActionButton, normalizedDraft, PublicationAddressField, PublicationStatus, VirtualLinkSection } from './VirtualLinkSection';
+import { ActionButton, normalizedDraft, VirtualLinkSection } from './VirtualLinkSection';
 import { useButtonFeedback } from './useButtonFeedback';
 import type { MenuPublishing } from './useMenuPublishing';
 
@@ -37,7 +37,7 @@ function Segments<T extends string>({ options, value, label, onChange }: {
 }
 
 type ProfileState = Partial<Record<ExportFormat, { id: string; custom: ExportSettings }>>;
-interface Generated { key: string; files: File[]; paired: boolean; }
+type FileAction = 'download' | 'share';
 
 export function PublishModal({ publishing, pageCount, selectedPages, restoreFocus, title }: {
   publishing: MenuPublishing;
@@ -53,10 +53,9 @@ export function PublishModal({ publishing, pageCount, selectedPages, restoreFocu
   const [pageChoice, setPageChoice] = useState<ImagePages>(allPages);
   const [alsoPublish, setAlsoPublish] = useState(false);
   const [edited, setEdited] = useState<string>();
-  const [generated, setGenerated] = useState<Generated>();
+  const readyFiles = useRef<{ key: string; files: File[] } | undefined>(undefined);
   const [exportError, setExportError] = useState<{ key: string; message: string }>();
-  const [running, setRunning] = useState<string>();
-  const [fileAction, setFileAction] = useState<'download' | 'share'>();
+  const [fileAction, setFileAction] = useState<FileAction>();
   const runningRef = useRef(false);
   const closeButton = useRef<HTMLButtonElement>(null);
   const { results, show } = useButtonFeedback();
@@ -71,7 +70,6 @@ export function PublishModal({ publishing, pageCount, selectedPages, restoreFocu
   const settings = normalizeExportSettings(format, profile.settings ?? custom);
   const indexes = resolveImagePages(pageChoice, pageCount, selectedPages);
   const key = JSON.stringify([format, profile.id, settings, indexes, contentSignature, title]);
-  const valid = generated?.key === key ? generated : undefined;
 
   useEffect(() => {
     if (!open) return;
@@ -90,51 +88,47 @@ export function PublishModal({ publishing, pageCount, selectedPages, restoreFocu
     setImageFormat('PNG');
     setPageChoice(allPages);
   };
-  const generate = async () => {
+  const useFile = async (action: FileAction) => {
     if (runningRef.current || !indexes.length || (alsoPublish && publishing.isPublishing)) return;
     runningRef.current = true;
-    setRunning(key);
-    setGenerated(undefined);
+    setFileAction(action);
     setExportError(undefined);
-    const slug = publication?.menuSlug ?? normalizedDraft(draft, defaultMenuSlug);
-    if (alsoPublish) {
+    const slug = normalizedDraft(draft, defaultMenuSlug);
+    if (alsoPublish && (!publication || publication.portableSnapshotUrl || publication.menuSlug !== slug || publishing.pending
+      || publishing.availability === 'offline' || publishing.publicationError)) {
       void publishing.publish(slug).catch(() => undefined);
     }
+    let preparing = true;
     try {
       const exporter = fileExportRef.current;
       if (!exporter) throw new Error('O cardápio ainda está carregando.');
-      const files = await exporter.generate(format, settings, indexes);
-      setGenerated({ key, files, paired: alsoPublish });
+      if (readyFiles.current?.key !== key) {
+        readyFiles.current = undefined;
+        readyFiles.current = { key, files: await exporter.generate(format, settings, indexes) };
+      }
+      const { files } = readyFiles.current;
+      preparing = false;
+      const [first] = files;
+      if (action === 'share' && await shareFiles(first.name, files)) return;
+      await downloadImageFiles(files, first.name.replace(/-pagina-\d+\.[a-z]+$/i, ''));
+      show(`${key}:${action}`, 'Baixado');
     } catch (error) {
-      setExportError({ key, message: error instanceof Error ? error.message : 'Não foi possível gerar o arquivo.' });
+      let message = getErrorMessage(error, 'Não foi possível concluir a ação do arquivo.');
+      if (preparing && error instanceof Error) message = error.message;
+      else if (action === 'share' && error instanceof DOMException && error.name === 'NotAllowedError'
+        && navigator.userActivation?.isActive === false) {
+        message = 'Arquivo pronto. Toque novamente em Compartilhar para abrir o menu do dispositivo.';
+      }
+      setExportError({ key, message });
     } finally {
       runningRef.current = false;
-      setRunning(undefined);
-    }
-  };
-
-  const useFile = async (action: 'download' | 'share') => {
-    if (!valid || fileAction) return;
-    setFileAction(action);
-    setExportError(undefined);
-    const [first] = valid.files;
-    const archiveName = first.name.replace(/-pagina-\d+\.[a-z]+$/i, '');
-    try {
-      if (action === 'share') {
-        try { if (await shareFiles(first.name, valid.files)) return; } catch { /* Offer download instead. */ }
-      }
-      await downloadImageFiles(valid.files, archiveName);
-      show(key, 'Baixado');
-    } catch (error) {
-      setExportError({ key, message: getErrorMessage(error, 'Não foi possível concluir a ação do arquivo.') });
-    } finally {
       setFileAction(undefined);
     }
   };
 
   if (!open) return null;
   const pageSizes = tab !== 'Link virtual' ? fileExportRef.current?.pageSizes() ?? [] : [];
-  const generateLabel = `${alsoPublish ? 'Publicar e gerar' : 'Gerar'} ${format}`;
+  const disableFileActions = Boolean(fileAction) || !indexes.length || (alsoPublish && publishing.isPublishing);
 
   return <div ref={lockModalScrolling} className="fixed inset-0 z-[1200] flex items-center justify-center bg-slate-950/45 p-3"
     onPointerDown={event => { if (event.currentTarget === event.target) close(); }}>
@@ -175,33 +169,17 @@ export function PublishModal({ publishing, pageCount, selectedPages, restoreFocu
           </div>
           <BooleanSwitch label={publication ? 'Sincronizar também o link virtual' : 'Publicar também o link virtual'}
             value={alsoPublish} onChange={setAlsoPublish} className="border-slate-200 bg-slate-50" />
-          {alsoPublish && <div className="space-y-2">
-            <PublicationStatus publishing={publishing} />
-            <PublicationAddressField publishing={publishing} draft={publication?.menuSlug ?? draft} onDraft={setEdited} editable={!publication} />
-            {publishing.publicationError && <p role="alert" className="text-xs font-semibold text-red-700">{publishing.publicationError}</p>}
-          </div>}
-          {exportError?.key === key && <p role="alert" className="text-xs font-semibold text-red-700">{exportError.message}</p>}
+          {alsoPublish && <section aria-label="Opções do link virtual" className="rounded-xl border border-slate-200 p-3">
+            <VirtualLinkSection publishing={publishing} draft={draft} onDraft={setEdited} />
+          </section>}
         </>}
       </div>
-      {tab !== 'Link virtual' && <footer className="grid shrink-0 gap-2 border-t border-slate-100 bg-white p-3">
-        {(!valid || (alsoPublish && (!valid.paired || publishing.publicationError))) && <ActionButton label={generateLabel} primary loading={running === key || (alsoPublish && publishing.isPublishing)}
-          disabled={Boolean(running) || !indexes.length || (alsoPublish && publishing.isPublishing)} onClick={() => void generate()} />}
-        {valid && <div className="grid gap-2 rounded-xl bg-slate-50 p-2.5">
-          <div role="status" className="flex min-w-0 items-center gap-2 text-xs">
-            <Check size={16} className="shrink-0 text-emerald-700" />
-            <div className="min-w-0">
-              <div className="font-semibold text-slate-700">Geração concluída</div>
-              <div className="break-all text-slate-500">{valid.files.length === 1 ? valid.files[0].name
-                : `${valid.files[0].name.replace(/-pagina-\d+\.[a-z]+$/i, '')}.zip · ${valid.files.length} imagens`}</div>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <ActionButton label="Baixar" primary icon={<Download size={15} />} disabled={!!fileAction}
-              loading={fileAction === 'download'} result={results[key]} onClick={() => void useFile('download')} />
-            <ActionButton label="Compartilhar" icon={<Share2 size={15} />} disabled={!!fileAction}
-              loading={fileAction === 'share'} onClick={() => void useFile('share')} />
-          </div>
-        </div>}
+      {tab !== 'Link virtual' && <footer role="group" aria-label="Ações do arquivo" className="grid shrink-0 grid-cols-2 gap-2 border-t border-slate-100 bg-white p-3">
+        {exportError?.key === key && <p role="alert" className="col-span-2 text-xs font-semibold text-red-700">{exportError.message}</p>}
+        <ActionButton label="Baixar" primary icon={<Download size={15} />} disabled={disableFileActions}
+          loading={fileAction === 'download'} result={results[`${key}:download`]} onClick={() => void useFile('download')} />
+        <ActionButton label="Compartilhar" icon={<Share2 size={15} />} disabled={disableFileActions}
+          loading={fileAction === 'share'} result={results[`${key}:share`]} onClick={() => void useFile('share')} />
       </footer>}
     </div>
   </div>;

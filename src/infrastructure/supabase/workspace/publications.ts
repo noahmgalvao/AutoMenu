@@ -1,9 +1,9 @@
-import { resolveStorageFileUrl, resolveAssetMapForIds, uploadPortablePublication } from '../assets';
+import { resolveStorageFileUrl, resolveAssetMapForIds } from '../assets';
 import type { MenuPublication } from '../../../domain/workspace/model';
 import type { PublicationAddress, PublicationAvailability, PublicationGateway } from '../../../application/publishing/publicationGateway';
 import { getSupabaseClient } from '../client';
 import { isMissingSchemaObjectError } from './schemaCompatibility';
-import { readPortablePublication, savePortablePublication, readPortablePublicationBySlug } from '../../browser/portablePublicationCache';
+import { readPortablePublication, readPortablePublicationBySlug } from '../../browser/portablePublicationCache';
 import { mapPublicationRow } from './rowMapping';
 import { getErrorMessage } from '../../../application/errorMessages';
 import { createEditorState, createRenderSnapshot, getMenuContentSignature } from '../../../application/workspace/state';
@@ -25,7 +25,7 @@ export const getMenuPublication: PublicationGateway['getMenuPublication'] = asyn
   const { data, error } = await lookupPublication(menuId);
   if (error && isMissingSchemaObjectError(error, 'menu_publications')) return readPortablePublication(menuId);
   if (error) throw error;
-  return data ? mapPublicationRow(data) : null;
+  return data ? mapPublicationRow(data) : readPortablePublication(menuId);
 };
 
 export const publishWorkspaceMenu: PublicationGateway['publishWorkspaceMenu'] = async ({
@@ -40,12 +40,16 @@ export const publishWorkspaceMenu: PublicationGateway['publishWorkspaceMenu'] = 
   const pdfFilename = `${menu.name || 'cardapio'}.pdf`;
 
   const { data, error: lookupError } = await lookupPublication(menu.id);
-  const portable = Boolean(lookupError && isMissingSchemaObjectError(lookupError, 'menu_publications'));
-  if (lookupError && !portable) throw lookupError;
-  const existing = portable ? readPortablePublication(menu.id) : data ? mapPublicationRow(data) : null;
+  if (lookupError && isMissingSchemaObjectError(lookupError, 'menu_publications')) {
+    throw new Error('O serviço de publicação precisa ser atualizado para gerar links curtos.');
+  }
+  if (lookupError) throw lookupError;
+  const existing = data ? mapPublicationRow(data) : null;
+  const previousSlug = existing?.menuSlug ?? readPortablePublication(menu.id)?.menuSlug;
+  const preferredSlug = customSlug || previousSlug;
 
-  if (!portable && customSlug && existing?.menuSlug !== customSlug) {
-    const { data: occupied, error } = await readPublicRow({ restaurantSlug: workspace.slug, menuSlug: customSlug });
+  if (preferredSlug && existing?.menuSlug !== preferredSlug) {
+    const { data: occupied, error } = await readPublicRow({ restaurantSlug: workspace.slug, menuSlug: preferredSlug });
     if (error) throw error;
     if (occupied && occupied.menu_id !== menu.id) throw new Error('Este endereço já está em uso. Escolha outro nome.');
   }
@@ -55,32 +59,10 @@ export const publishWorkspaceMenu: PublicationGateway['publishWorkspaceMenu'] = 
   });
   const updateMenu = () => supabase.from('menus').update({ published_version_id: versionId, status: 'published' }).eq('id', menu.id).neq('status', 'archived');
 
-  if (portable) {
-    const now = new Date().toISOString();
-    const base: MenuPublication = {
-      id: existing?.id || crypto.randomUUID(),
-      menuId: menu.id, workspaceId: workspace.id, restaurantSlug: workspace.slug,
-      menuSlug: customSlug || existing?.menuSlug || defaultSlug,
-      publishedVersionId: versionId, pdfAssetId: null, pdfBucket: 'menu-assets', pdfPath: null,
-      pdfUrl: null, pdfFilename, pdfOptions: {}, snapshot: renderSnapshot, contentSignature,
-      portableSnapshotUrl: null, createdAt: existing?.createdAt || now, updatedAt: now,
-    };
-    const source = existing?.portableSnapshotUrl;
-    const releaseId = source && new URL(source).pathname.match(/\/([\w-]+)\.json$/)?.[1];
-    const file = await uploadPortablePublication({
-      workspaceId: workspace.id, menuId: menu.id, releaseId: releaseId || crypto.randomUUID(),
-      publication: { publication: base }, existingUrl: releaseId ? source : null,
-    });
-    const result = { ...base, portableSnapshotUrl: file.url };
-    await updateMenu();
-    savePortablePublication(result);
-    return result;
-  }
-
   const assetIds = collectStyleAssetIds(style);
   collectProductAssetIds(products).forEach(id => assetIds.add(id));
   for (let attempt = 0; attempt < 8; attempt++) {
-    const slug = customSlug || existing?.menuSlug || (attempt === 0 ? defaultSlug : `${defaultSlug}-${attempt + 1}`);
+    const slug = preferredSlug || (attempt === 0 ? defaultSlug : `${defaultSlug}-${attempt + 1}`);
     const payload = {
       ...(existing ? { id: existing.id } : {}),
       menu_id: menu.id, workspace_id: workspace.id, restaurant_slug: workspace.slug, menu_slug: slug,
@@ -99,8 +81,8 @@ export const publishWorkspaceMenu: PublicationGateway['publishWorkspaceMenu'] = 
       if (published.published_version_id === versionId) void updateMenu().then(() => undefined, () => undefined);
       return mapPublicationRow(published);
     }
-    if (error.code === '23505' && customSlug) throw new Error('Este endereço já está em uso. Escolha outro nome.');
-    if (existing || error.code !== '23505') throw new Error(getErrorMessage(error, 'Falha ao salvar o link público.'));
+    if (error.code === '23505' && preferredSlug) throw new Error('Este endereço já está em uso. Escolha outro nome.');
+    if (error.code !== '23505') throw new Error(getErrorMessage(error, 'Falha ao salvar o link público.'));
   }
   throw new Error('Não foi possível criar um endereço disponível.');
 };
@@ -116,6 +98,9 @@ export const loadPublicMenuPublication: PublicationGateway['loadPublicMenuPublic
     const payload = await response.json() as { publication?: MenuPublication };
     const publication = payload.publication;
     if (!publication?.workspaceId || (!publication.pdfUrl && !Array.isArray(publication.snapshot?.products))) return null;
+    // Preserve already distributed portable links after the same address is republished.
+    const { data } = await readPublicRow(address);
+    if (data && data.menu_id === publication.menuId) return mapPublicationRow(data, await resolvePublicationPdfUrl(data));
     return { ...publication, ...address, portableSnapshotUrl: address.portableSnapshotUrl };
   }
   const { data, error } = await readPublicRow(address);

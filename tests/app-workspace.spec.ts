@@ -73,12 +73,15 @@ test('the app signs in, keeps the product editor through history, and stores an 
   const dialog = page.getByRole('dialog', { name: 'Publicar' });
   await expect(dialog.getByRole('button', { name: 'Link virtual', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await dialog.getByRole('button', { name: 'PDF', exact: true }).click();
-  await expect(dialog.getByRole('button', { name: 'Gerar PDF', exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Baixar', exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Compartilhar', exact: true })).toBeVisible();
   await dialog.getByRole('button', { name: 'Fechar publicação' }).click();
-  await page.getByRole('heading', { name: 'Visual', exact: true }).locator('..')
-    .getByRole('button', { name: 'Publicar', exact: true }).click();
+  const visualPublish = page.getByRole('heading', { name: 'Visual', exact: true }).locator('..')
+    .getByRole('button', { name: 'Publicar', exact: true });
+  await visualPublish.click();
   await expect(dialog.getByRole('button', { name: 'Link virtual', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await dialog.getByRole('button', { name: 'Fechar publicação' }).click();
+  await expect(visualPublish).toBeFocused();
   await page.getByTitle('Designer de produtos').click();
   await page.getByRole('heading', { name: 'Produtos', exact: true }).locator('..')
     .getByRole('button', { name: 'Publicar', exact: true }).click();
@@ -217,6 +220,39 @@ test('a release acknowledges only the version captured when publishing started',
   expect(row).toMatchObject({ snapshot: { products: [{ name: 'Suco de uva' }] } });
 });
 
+test('synchronizing a portable publication provides a short public address without invalidating the old link', async ({ page }) => {
+  const { menuId, workspaceId } = await openWorkspace(page);
+  const source = new URL('/legacy-publication.json?token=legacy-storage-token', page.url()).href;
+  const legacy = { id: 'legacy', menuId, workspaceId, restaurantSlug: 'teste', menuSlug: 'menu-legado',
+    portableSnapshotUrl: source, pdfFilename: 'Legado.pdf', snapshot: { products: [], style: PRESET_TEMPLATES[0] } };
+  let row: Record<string, unknown> | null = null;
+  await page.evaluate(legacy => localStorage.setItem(`automenu:portable-publication:${legacy.menuId}`, JSON.stringify(legacy)), legacy);
+  await page.route('**/legacy-publication.json?*', route => route.fulfill({ json: { publication: legacy } }));
+  await page.route('**/rest/v1/menu_publications?*', route => {
+    if (route.request().method() === 'POST') {
+      row = { id: 'published-short', ...route.request().postDataJSON() };
+      return route.fulfill({ status: 201 });
+    }
+    return route.fulfill({ json: row });
+  });
+  await page.reload();
+  await expect(page.locator('nav').getByText('Menu de teste')).toBeVisible();
+  const dialog = await openPublishMenu(page);
+  const access = dialog.getByRole('link', { name: 'Acessar' });
+  await expect(access).toHaveAttribute('href', /\?source=/);
+  const oldAddress = (await access.getAttribute('href'))!;
+  await expect(dialog.getByRole('link', { name: /\/cardapio\/teste\/menu-legado$/ })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Sincronizar', exact: true }).click();
+  await expect(access).toHaveAttribute('href', /\/cardapio\/teste\/menu-legado$/);
+  const shortAddress = (await access.getAttribute('href'))!;
+  await page.evaluate(menuId => localStorage.removeItem(`automenu:portable-publication:${menuId}`), menuId);
+  for (const address of [shortAddress, oldAddress]) {
+    await page.goto(address);
+    await expect(page.getByRole('main', { name: 'Cardápio publicado' })).toBeVisible();
+    await expect(page.getByText('Suco natural', { exact: true })).toBeVisible();
+  }
+});
+
 test('publication status distinguishes an unavailable link from a connection failure', async ({ page }) => {
   const { menuId, workspaceId } = await openWorkspace(page);
   let connectionFails = true;
@@ -269,8 +305,6 @@ test('PDF and images share page selection and produce real PDF, JPG, PNG and TIF
   await expect(jpgPages.getByRole('button', { name: 'Todas as páginas' })).toHaveAttribute('aria-pressed', 'true');
   await jpgPages.getByRole('button', { name: 'Seleção', exact: true }).click();
   await selectProfile('Compartilhamento digital');
-  await dialog.getByRole('button', { name: 'Gerar JPG', exact: true }).click();
-  await expect(dialog.getByText(/-pagina-2\.jpg$/)).toBeVisible();
   const jpg = await getBytes();
   expect(jpg.readUInt16BE(0)).toBe(0xffd8);
   expect(jpg.readUInt16BE(14)).toBe(150);
@@ -282,18 +316,31 @@ test('PDF and images share page selection and produce real PDF, JPG, PNG and TIF
   await pdfPages.getByRole('button', { name: 'Página 3', exact: true }).click();
   await pdfPages.getByRole('button', { name: 'Página 1', exact: true }).click();
   await expect(pdfPages.getByRole('button', { name: 'Seleção', exact: true })).toHaveAttribute('aria-pressed', 'false');
-  await dialog.getByRole('button', { name: 'Gerar PDF', exact: true }).click();
   const pdfBytes = await getBytes();
   await testInfo.attach('impressao-profissional.pdf', { body: pdfBytes, contentType: 'application/pdf' });
   const pdf = pdfBytes.toString('latin1');
   expect(pdf).toMatch(/\/Count 2\b/);
   expect(pdf).toMatch(/\/TrimBox \[/);
   expect(pdf).toMatch(/\/BleedBox \[/);
+  expect(pdf).toMatch(/\/ColorSpace \/DeviceCMYK/);
+  expect(pdf).not.toContain('/ColorSpace /DeviceRGB');
+  await selectProfile('Personalizado');
+  await dialog.getByLabel('Modo de cor').selectOption('RGB');
+  const rgbPdf = (await getBytes()).toString('latin1');
+  expect(rgbPdf).toMatch(/\/ColorSpace \/DeviceRGB/);
+  expect(rgbPdf).not.toContain('/ColorSpace /DeviceCMYK');
 
   await dialog.getByRole('button', { name: 'Imagem', exact: true }).click();
   await dialog.getByRole('button', { name: 'TIFF', exact: true }).click();
   await selectProfile('Impressão profissional');
-  await dialog.getByRole('button', { name: 'Gerar TIFF', exact: true }).click();
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'canShare', { configurable: true, value: ({ files }: ShareData) => files?.length === 2 });
+    Object.defineProperty(navigator, 'share', { configurable: true, value: async ({ files }: ShareData) => {
+      document.body.dataset.sharedFiles = files?.map(file => file.type).join(',');
+    } });
+  });
+  await dialog.getByRole('button', { name: 'Compartilhar', exact: true }).click();
+  await expect(page.locator('body')).toHaveAttribute('data-shared-files', 'image/tiff,image/tiff');
   const archive = await getBytes();
   const tiffs = unzipSync(archive);
   await testInfo.attach('imagens-tiff.zip', { body: archive, contentType: 'application/zip' });
@@ -304,18 +351,10 @@ test('PDF and images share page selection and produce real PDF, JPG, PNG and TIF
     const ifd = tiff.readUInt32LE(4);
     expect(tiff.readUInt32LE(ifd + 10)).toBe(Math.round(81 / 25.4 * 300));
     expect(tiff.readUInt32LE(ifd + 22)).toBe(Math.round(56 / 25.4 * 300));
+    expect(tiff.readUInt16LE(ifd + 2 + 4 * 12 + 8)).toBe(5); // PhotometricInterpretation: Separated
+    expect(tiff.readUInt16LE(ifd + 2 + 6 * 12 + 8)).toBe(4); // SamplesPerPixel
   }
-
-  await page.evaluate(() => {
-    Object.defineProperty(navigator, 'canShare', { configurable: true, value: ({ files }: ShareData) => files?.length === 2 });
-    Object.defineProperty(navigator, 'share', { configurable: true, value: async ({ files }: ShareData) => {
-      document.body.dataset.sharedFiles = files?.map(file => file.type).join(',');
-    } });
-  });
-  await dialog.getByRole('button', { name: 'Compartilhar', exact: true }).click();
-  await expect(page.locator('body')).toHaveAttribute('data-shared-files', 'image/tiff,image/tiff');
   await pngTab.click();
-  await dialog.getByRole('button', { name: 'Gerar PNG', exact: true }).click();
   const pngs = unzipSync(await getBytes());
   const firstPng = Buffer.from(Object.values(pngs)[0]);
   expect(firstPng.readUInt32BE(16)).toBe(Math.round(75 / 25.4 * 300));
@@ -338,6 +377,7 @@ test('profile help works by tap on mobile and customized settings inherit the pr
   const tooltip = dialog.getByRole('tooltip');
   await expect(tooltip.getByText('+2 mm da sangria', { exact: true })).toBeVisible();
   await expect(tooltip.getByText('220 × 307 mm', { exact: true })).toBeVisible();
+  await expect(tooltip.getByText('CMYK', { exact: true })).toBeAttached();
   await expect(picker).toHaveAccessibleName('Perfil de exportação Impressão profissional');
   const bounds = (await tooltip.boundingBox())!;
   expect(bounds.x).toBeGreaterThanOrEqual(0);
@@ -352,6 +392,10 @@ test('profile help works by tap on mobile and customized settings inherit the pr
   await dialog.getByRole('button', { name: 'Personalizado', exact: true }).click();
   await expect(dialog.getByRole('spinbutton', { name: 'Sangria (mm)' })).toHaveValue('5');
   await expect(dialog.getByRole('spinbutton', { name: 'Afastamento adicional (mm)' })).toHaveValue('2');
+  const color = dialog.getByLabel('Modo de cor');
+  await expect(color).toHaveValue('CMYK');
+  await color.selectOption('RGB');
+  await expect(color).toHaveValue('RGB');
   await dialog.getByRole('switch', { name: 'Marcas de corte' }).click();
   await expect(dialog.getByRole('spinbutton', { name: 'Afastamento adicional (mm)' })).toHaveCount(0);
 });
@@ -369,19 +413,26 @@ test('file generation survives publication failure and publication survives expo
   const dialog = await openPublishMenu(page);
   await dialog.getByRole('button', { name: 'Imagem', exact: true }).click();
   await dialog.getByRole('switch', { name: 'Publicar também o link virtual' }).click();
-  await dialog.getByRole('textbox', { name: 'Final do link' }).fill('menu-pareado');
-  await dialog.getByRole('button', { name: 'Publicar e gerar PNG' }).click();
-  await expect(dialog.getByText('Geração concluída')).toBeVisible();
+  const link = dialog.getByRole('region', { name: 'Opções do link virtual' });
+  const fileActions = dialog.getByRole('group', { name: 'Ações do arquivo' });
+  const download = fileActions.getByRole('button', { name: 'Baixar', exact: true });
+  await link.getByRole('textbox', { name: 'Final do link' }).fill('menu-pareado');
+  const [png] = await Promise.all([page.waitForEvent('download'), download.click()]);
+  expect(png.suggestedFilename()).toMatch(/\.png$/);
   await expect(dialog.getByText('Este endereço já está em uso. Escolha outro nome.')).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Baixar', exact: true })).toBeEnabled();
 
   await dialog.getByRole('button', { name: 'JPG', exact: true }).click();
   failPublication = false;
   await page.locator('[data-menu-print-page]').first().evaluate(el => { (el as HTMLElement).dataset.menuPageWidthMm = '4200'; });
-  await dialog.getByRole('button', { name: 'Publicar e gerar JPG' }).click();
+  await download.click();
   await expect(dialog.getByText(/excede o limite de memória/)).toBeVisible();
   await expect(dialog.getByText('Atualizado', { exact: true })).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Publicar e gerar JPG' })).toBeEnabled();
+  await expect(download).toBeEnabled();
+  await expect(link.getByRole('link', { name: 'Acessar' })).toHaveAttribute('href', /\/menu-pareado$/);
+  await expect(link.getByRole('button', { name: 'Copiar', exact: true })).toBeEnabled();
+  await expect(link.getByRole('button', { name: 'Compartilhar', exact: true })).toBeEnabled();
+  await link.getByRole('button', { name: 'QR Code', exact: true }).click();
+  await expect(link.getByRole('img', { name: 'QR Code do cardápio' })).toBeVisible();
 });
 
 test('product analytics labels the category bar count in Portuguese', async ({ page }) => {
@@ -681,6 +732,22 @@ test('mobile header returns after scrolling and stays accessible above either ex
 
 test.describe('mobile designer panels', () => {
   test.use({ viewport: { width: 390, height: 800 }, hasTouch: true, isMobile: true });
+
+  test('publishing from either designer opens the complete menu with a tap', async ({ page, context }) => {
+    await openWorkspace(page);
+    for (const name of ['Produtos', 'Visual']) {
+      const tab = page.locator('[data-mobile-designer-tab]').getByText(name, { exact: true }).locator('..');
+      const sheet = page.locator('#' + await tab.getAttribute('aria-controls'));
+      await tab.tap();
+      await sheet.getByRole('button', { name: 'Publicar', exact: true }).tap();
+      const dialog = publishDialog(page);
+      await expect(dialog.getByRole('button', { name: 'Link virtual', exact: true })).toBeVisible();
+      await expect(dialog.getByRole('button', { name: 'PDF', exact: true })).toBeVisible();
+      await expect(dialog.getByRole('button', { name: 'Imagem', exact: true })).toBeVisible();
+      expect(context.pages()).toHaveLength(1);
+      await dialog.getByRole('button', { name: 'Fechar publicação' }).tap();
+    }
+  });
 
   test('both panels open, resize on the compositor and dismiss by touch', async ({ page, context }) => {
     await openWorkspace(page);

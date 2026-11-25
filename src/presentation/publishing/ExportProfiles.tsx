@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, CircleHelp } from 'lucide-react';
-import { exportProfiles, EXPORT_DPI, getExportGeometry, type ExportPageSize, type ExportFormat, type ExportSettings } from '../../domain/publishing/exportProfiles';
+import { exportProfiles, EXPORT_DPI, getExportGeometry, supportsCmyk, type ExportColor, type ExportPageSize, type ExportFormat, type ExportSettings } from '../../domain/publishing/exportProfiles';
 import { BooleanSwitch } from '../common/BooleanSwitch';
 import { DisclosureChevron } from '../common/DisclosureChevron';
 import { FontSizeInput } from '../menu/designer/FontSizeInput';
@@ -177,9 +177,14 @@ export function CustomExportSettings({ format, settings, onChange }: {
       onChange={bleed => update({ bleed })} />}
     {format === 'JPG' && <Parameter label="Qualidade JPG (%)" min={50} max={100} value={settings.quality}
       onChange={quality => update({ quality })} />}
-    {supportsBleed && <div className="space-y-1 text-xs font-semibold text-slate-700">
-      <div>Modo de cor</div><div className="flex min-h-10 items-center rounded-lg border border-slate-200 bg-slate-50 px-2">RGB</div>
-    </div>}
+    {supportsCmyk(format) && <label className="flex min-w-0 flex-col gap-1 text-xs font-semibold text-slate-700">
+      Modo de cor
+      <select value={settings.color} onChange={event => update({ color: event.target.value as ExportColor })}
+        className="min-h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700">
+        <option value="RGB">RGB</option>
+        <option value="CMYK">CMYK</option>
+      </select>
+    </label>}
     {format === 'PDF' && <div className="col-span-2">
       <BooleanSwitch label="Marcas de corte" value={settings.marks} onChange={marks => update({ marks })} />
     </div>}

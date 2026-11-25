@@ -1,6 +1,19 @@
 import { CROP_MARK_LENGTH_MM, getExportGeometry, type ExportSettings } from '../../domain/publishing/exportProfiles';
 import { jsPDF } from 'jspdf';
 import type { ExportPageSize } from '../../domain/publishing/exportProfiles';
+import { strFromU8 } from 'fflate';
+
+// Register the compressed four-channel image format with jsPDF's addImage plugin.
+Object.assign(jsPDF.API, {
+  processCMYK(bytes: Uint8Array, index: number, alias: string) {
+    const dimensions = new DataView(bytes.buffer, bytes.byteOffset, 8);
+    return {
+      width: dimensions.getUint32(0), height: dimensions.getUint32(4),
+      data: strFromU8(bytes.subarray(8), true), colorSpace: 'DeviceCMYK',
+      bitsPerComponent: 8, filter: 'FlateDecode', index, alias,
+    };
+  },
+});
 
 const drawCropMarks = (
   pdf: jsPDF,
@@ -10,8 +23,10 @@ const drawCropMarks = (
   trimHeight: number,
   length: number,
   gap: number,
+  color: ExportSettings['color'],
 ) => {
-  pdf.setDrawColor(17, 24, 39);
+  if (color === 'CMYK') pdf.setDrawColor(0, 0, 0, 1);
+  else pdf.setDrawColor(17, 24, 39);
   pdf.setLineWidth(0.2);
 
   const corners = [
@@ -51,9 +66,10 @@ export async function composeMenuPdf(pages: ProfilePdfPage[], settings: ExportSe
     const context = pdf.getCurrentPageInfo().pageContext;
     context.trimBox = box(trim, trimWidth, trimHeight);
     context.bleedBox = box(margin, bleedWidth, bleedHeight);
-    pdf.addImage(new Uint8Array(await page.image.arrayBuffer()), page.image.type === 'image/png' ? 'PNG' : 'JPEG', margin, margin, bleedWidth, bleedHeight, `menu-${index}`);
+    const format = settings.color === 'CMYK' ? 'CMYK' : page.image.type === 'image/png' ? 'PNG' : 'JPEG';
+    pdf.addImage(new Uint8Array(await page.image.arrayBuffer()), format, margin, margin, bleedWidth, bleedHeight, `menu-${index}`);
     if (settings.marks) {
-      drawCropMarks(pdf, trim, trim, trimWidth, trimHeight, CROP_MARK_LENGTH_MM, settings.bleed + settings.markOffset);
+      drawCropMarks(pdf, trim, trim, trimWidth, trimHeight, CROP_MARK_LENGTH_MM, settings.bleed + settings.markOffset, settings.color);
     }
   }
   return pdf.output('blob');

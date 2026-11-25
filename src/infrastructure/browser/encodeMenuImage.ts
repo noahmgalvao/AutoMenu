@@ -1,4 +1,5 @@
-import type { ImageFormat } from '../../domain/publishing/exportProfiles';
+import { Zlib } from 'fflate';
+import type { ExportColor, ImageFormat } from '../../domain/publishing/exportProfiles';
 
 export function extendPageBleed(source: HTMLCanvasElement, width: number, height: number, readPixels: boolean) {
   if (source.width === width && source.height === height) return source;
@@ -32,15 +33,55 @@ export function extendPageBleed(source: HTMLCanvasElement, width: number, height
   return output;
 }
 
-async function encodeTiff(canvas: HTMLCanvasElement, dpi: number) {
+function writeCmyk(rgba: Uint8ClampedArray, output: Uint8Array, offset = 0, inverted = false) {
+  const sample = (ink: number) => inverted ? 255 - ink : ink;
+  for (let i = 0; i < rgba.length; i += 4) {
+    const alpha = rgba[i + 3] / 255;
+    const r = 255 - (255 - rgba[i]) * alpha;
+    const g = 255 - (255 - rgba[i + 1]) * alpha;
+    const b = 255 - (255 - rgba[i + 2]) * alpha;
+    const max = Math.max(r, g, b);
+    const scale = max ? 255 / max : 0;
+    output[offset++] = sample(Math.round((max - r) * scale));
+    output[offset++] = sample(Math.round((max - g) * scale));
+    output[offset++] = sample(Math.round((max - b) * scale));
+    output[offset++] = sample(Math.round(255 - max));
+  }
+}
+
+export async function encodeCmykPdfImage(canvas: HTMLCanvasElement) {
+  const { width, height } = canvas;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('O navegador não conseguiu preparar a imagem CMYK do PDF.');
+  const header = new DataView(new ArrayBuffer(8));
+  header.setUint32(0, width);
+  header.setUint32(4, height);
+  const parts: BlobPart[] = [header.buffer];
+  const compressor = new Zlib({ level: 3 }, chunk => parts.push(chunk));
+  const rowsPerChunk = Math.max(1, Math.floor(262_144 / (width * 4)));
+  for (let row = 0; row < height; row += rowsPerChunk) {
+    const end = Math.min(row + rowsPerChunk, height);
+    const rgba = context.getImageData(0, row, width, end - row).data;
+    const cmyk = new Uint8Array(rgba.length);
+    // jsPDF writes a reversed Decode array for DeviceCMYK image samples.
+    writeCmyk(rgba, cmyk, 0, true);
+    compressor.push(cmyk, end === height);
+    if (end < height && row % (rowsPerChunk * 12) === 0) await new Promise(resolve => setTimeout(resolve, 0));
+  }
+  return new Blob(parts);
+}
+
+async function encodeTiff(canvas: HTMLCanvasElement, dpi: number, color: ExportColor) {
   const { width, height } = canvas;
   const context = canvas.getContext('2d');
   if (!context) throw new Error('O navegador não conseguiu preparar o TIFF.');
-  const rowsPerStrip = Math.min(height, Math.max(1, Math.floor(64_000 / (width * 3))));
+  const cmyk = color === 'CMYK';
+  const channels = cmyk ? 4 : 3;
+  const rowsPerStrip = Math.min(height, Math.max(1, Math.floor(64_000 / (width * channels))));
   const strips = Math.ceil(height / rowsPerStrip);
-  const tags = 13;
+  const tags = cmyk ? 14 : 13;
   const bitsOffset = 8 + 2 + tags * 12 + 4;
-  const xResolution = bitsOffset + 6;
+  const xResolution = bitsOffset + channels * 2;
   const yResolution = xResolution + 8;
   const offsets = yResolution + 8;
   const counts = offsets + (strips > 1 ? strips * 4 : 0);
@@ -54,11 +95,12 @@ async function encodeTiff(canvas: HTMLCanvasElement, dpi: number) {
   long(4, 8);
   short(8, tags);
   const entries = [
-    [256, 4, 1, width], [257, 4, 1, height], [258, 3, 3, bitsOffset],
-    [259, 3, 1, 1], [262, 3, 1, 2], [273, 4, strips, strips === 1 ? start : offsets],
-    [277, 3, 1, 3], [278, 4, 1, rowsPerStrip],
-    [279, 4, strips, strips === 1 ? width * height * 3 : counts],
+    [256, 4, 1, width], [257, 4, 1, height], [258, 3, channels, bitsOffset],
+    [259, 3, 1, 1], [262, 3, 1, cmyk ? 5 : 2], [273, 4, strips, strips === 1 ? start : offsets],
+    [277, 3, 1, channels], [278, 4, 1, rowsPerStrip],
+    [279, 4, strips, strips === 1 ? width * height * channels : counts],
     [282, 5, 1, xResolution], [283, 5, 1, yResolution], [284, 3, 1, 1], [296, 3, 1, 2],
+    ...(cmyk ? [[332, 3, 1, 1]] : []), // CMYK ink set for Separated photometric interpretation.
   ];
   entries.forEach(([tag, type, count, value], i) => {
     const position = 10 + i * 12;
@@ -67,25 +109,30 @@ async function encodeTiff(canvas: HTMLCanvasElement, dpi: number) {
     long(position + 4, count);
     long(position + 8, value);
   });
-  for (let channel = 0; channel < 3; channel++) short(bitsOffset + channel * 2, 8);
+  for (let channel = 0; channel < channels; channel++) short(bitsOffset + channel * 2, 8);
   for (const offset of [xResolution, yResolution]) {
     long(offset, dpi);
     long(offset + 4, 1);
   }
 
-  const data = new Uint8Array(width * height * 3);
+  const data = new Uint8Array(width * height * channels);
   for (let i = 0, written = 0; i < strips; i++) {
     const y = i * rowsPerStrip;
     const rgba = context.getImageData(0, y, width, Math.min(height - y, rowsPerStrip)).data;
-    const length = rgba.length / 4 * 3;
+    const length = rgba.length / 4 * channels;
     if (strips > 1) {
       long(offsets + i * 4, start + written);
       long(counts + i * 4, length);
     }
-    for (let from = 0; from < rgba.length; from += 4) {
-      data[written++] = rgba[from];
-      data[written++] = rgba[from + 1];
-      data[written++] = rgba[from + 2];
+    if (cmyk) {
+      writeCmyk(rgba, data, written);
+      written += length;
+    } else {
+      for (let from = 0; from < rgba.length; from += 4) {
+        data[written++] = rgba[from];
+        data[written++] = rgba[from + 1];
+        data[written++] = rgba[from + 2];
+      }
     }
     if ((i + 1) % 128 === 0) await new Promise(resolve => setTimeout(resolve, 0));
   }
@@ -131,8 +178,8 @@ async function jpegDensity(blob: Blob, dpi: number) {
   return new Blob([header, blob.slice(jfif ? 20 : 2)], { type: blob.type });
 }
 
-export async function encodeMenuImage(canvas: HTMLCanvasElement, format: ImageFormat, dpi: number, quality: number) {
-  if (format === 'TIFF') return encodeTiff(canvas, dpi);
+export async function encodeMenuImage(canvas: HTMLCanvasElement, format: ImageFormat, dpi: number, quality: number, color: ExportColor = 'RGB') {
+  if (format === 'TIFF') return encodeTiff(canvas, dpi, color);
   const mime = format === 'PNG' ? 'image/png' : 'image/jpeg';
   const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
     result => result?.type === mime ? resolve(result) : reject(new Error('O navegador não conseguiu codificar a página nesta resolução.')),
