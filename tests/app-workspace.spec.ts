@@ -220,6 +220,60 @@ test('a release acknowledges only the version captured when publishing started',
   expect(row).toMatchObject({ snapshot: { products: [{ name: 'Suco de uva' }] } });
 });
 
+test('publishing and syncing use the same public file when the publication table is missing', async ({ page }) => {
+  const { menuId, workspaceId } = await openWorkspace(page);
+  await page.route('**/rest/v1/menu_publications?*', route => route.fulfill({ status: 404, json: {
+    code: 'PGRST205', message: "Could not find the table 'public.menu_publications' in the schema cache",
+  } }));
+  let signedLinks = 0;
+  const uploads: string[] = [];
+  const files = new Map<string, unknown>();
+  await page.route('**/storage/v1/object/**', route => {
+    const path = new URL(route.request().url()).pathname.replace('/storage/v1/object/', '');
+    if (!path.startsWith('sign/')) {
+      files.set(path, route.request().postDataJSON());
+      uploads.push(path);
+      return route.fulfill({ json: { Key: path } });
+    }
+    if (route.request().method() === 'POST') {
+      signedLinks++;
+      return route.fulfill({ json: { signedURL: `/object/${path}?token=storage-test` } });
+    }
+    const publication = files.get(path.slice('sign/'.length));
+    return publication ? route.fulfill({ json: publication }) : route.fulfill({ status: 404 });
+  });
+
+  const dialog = await openPublishMenu(page);
+  await dialog.getByRole('textbox', { name: 'Final do link' }).fill('menu-storage');
+  await dialog.getByRole('button', { name: 'Publicar link', exact: true }).click();
+  await expect(dialog.getByText('Atualizado', { exact: true })).toBeVisible();
+  const access = dialog.getByRole('link', { name: 'Acessar' });
+  await expect(access).toHaveAttribute('href', /\/menu-storage\?source=/);
+  const originalAddress = (await access.getAttribute('href'))!;
+
+  await dialog.getByRole('button', { name: 'Fechar publicação' }).click();
+  const product = page.locator('[data-automenu-editor-canvas] #product-container-suco');
+  const heading = product.getByRole('heading');
+  await heading.click();
+  await shortcutsFor(product).getByRole('button', { name: 'Editar produto' }).click();
+  await heading.fill('Suco de caju');
+  await heading.press('Enter');
+  await openPublishMenu(page);
+  await expect(dialog.getByText('Alterações pendentes')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Sincronizar', exact: true }).click();
+  await expect(dialog.getByText('Atualizado', { exact: true })).toBeVisible();
+  await expect(access).toHaveAttribute('href', originalAddress);
+  expect(uploads).toHaveLength(2);
+  expect(uploads[0]).toContain(`menu-assets/${workspaceId}/published-menus/${menuId}/`);
+  expect(uploads[1]).toBe(uploads[0]);
+  expect(signedLinks).toBe(1);
+
+  await page.evaluate(() => localStorage.clear());
+  await page.goto(originalAddress);
+  await expect(page.getByRole('main', { name: 'Cardápio publicado' })).toBeVisible();
+  await expect(page.getByText('Suco de caju', { exact: true })).toBeVisible();
+});
+
 test('synchronizing a portable publication provides a short public address without invalidating the old link', async ({ page }) => {
   const { menuId, workspaceId } = await openWorkspace(page);
   const source = new URL('/legacy-publication.json?token=legacy-storage-token', page.url()).href;

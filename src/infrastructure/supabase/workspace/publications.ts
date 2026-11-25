@@ -1,9 +1,9 @@
-import { resolveStorageFileUrl, resolveAssetMapForIds } from '../assets';
+import { resolveStorageFileUrl, resolveAssetMapForIds, uploadPortablePublication } from '../assets';
 import type { MenuPublication } from '../../../domain/workspace/model';
 import type { PublicationAddress, PublicationAvailability, PublicationGateway } from '../../../application/publishing/publicationGateway';
 import { getSupabaseClient } from '../client';
 import { isMissingSchemaObjectError } from './schemaCompatibility';
-import { readPortablePublication, readPortablePublicationBySlug } from '../../browser/portablePublicationCache';
+import { readPortablePublication, readPortablePublicationBySlug, savePortablePublication } from '../../browser/portablePublicationCache';
 import { mapPublicationRow } from './rowMapping';
 import { getErrorMessage } from '../../../application/errorMessages';
 import { createEditorState, createRenderSnapshot, getMenuContentSignature } from '../../../application/workspace/state';
@@ -40,15 +40,13 @@ export const publishWorkspaceMenu: PublicationGateway['publishWorkspaceMenu'] = 
   const pdfFilename = `${menu.name || 'cardapio'}.pdf`;
 
   const { data, error: lookupError } = await lookupPublication(menu.id);
-  if (lookupError && isMissingSchemaObjectError(lookupError, 'menu_publications')) {
-    throw new Error('O serviço de publicação precisa ser atualizado para gerar links curtos.');
-  }
-  if (lookupError) throw lookupError;
+  const useStorage = Boolean(lookupError && isMissingSchemaObjectError(lookupError, 'menu_publications'));
+  if (lookupError && !useStorage) throw lookupError;
   const existing = data ? mapPublicationRow(data) : null;
-  const previousSlug = existing?.menuSlug ?? readPortablePublication(menu.id)?.menuSlug;
-  const preferredSlug = customSlug || previousSlug;
+  const portable = existing ? null : readPortablePublication(menu.id);
+  const preferredSlug = customSlug || existing?.menuSlug || portable?.menuSlug;
 
-  if (preferredSlug && existing?.menuSlug !== preferredSlug) {
+  if (!useStorage && preferredSlug && existing?.menuSlug !== preferredSlug) {
     const { data: occupied, error } = await readPublicRow({ restaurantSlug: workspace.slug, menuSlug: preferredSlug });
     if (error) throw error;
     if (occupied && occupied.menu_id !== menu.id) throw new Error('Este endereço já está em uso. Escolha outro nome.');
@@ -58,6 +56,28 @@ export const publishWorkspaceMenu: PublicationGateway['publishWorkspaceMenu'] = 
     menuId: menu.id, userId, editorState, renderSnapshot, versionType: 'published', actionLabel: 'Cardápio publicado',
   });
   const updateMenu = () => supabase.from('menus').update({ published_version_id: versionId, status: 'published' }).eq('id', menu.id).neq('status', 'archived');
+
+  if (useStorage) {
+    const now = new Date().toISOString();
+    const publication: MenuPublication = {
+      id: portable?.id || crypto.randomUUID(),
+      menuId: menu.id, workspaceId: workspace.id, restaurantSlug: workspace.slug,
+      menuSlug: preferredSlug || defaultSlug,
+      publishedVersionId: versionId, pdfAssetId: null, pdfBucket: 'menu-assets', pdfPath: null,
+      pdfUrl: null, pdfFilename, pdfOptions: {}, snapshot: renderSnapshot, contentSignature,
+      portableSnapshotUrl: null, createdAt: portable?.createdAt || now, updatedAt: now,
+    };
+    const source = portable?.portableSnapshotUrl;
+    const releaseId = source && new URL(source).pathname.match(/\/([\w-]+)\.json$/)?.[1];
+    const file = await uploadPortablePublication({
+      workspaceId: workspace.id, menuId: menu.id, releaseId: releaseId || crypto.randomUUID(),
+      publication: { publication }, existingUrl: releaseId ? source : null,
+    });
+    const result = { ...publication, portableSnapshotUrl: file.url };
+    savePortablePublication(result);
+    void updateMenu().then(() => undefined, () => undefined);
+    return result;
+  }
 
   const assetIds = collectStyleAssetIds(style);
   collectProductAssetIds(products).forEach(id => assetIds.add(id));

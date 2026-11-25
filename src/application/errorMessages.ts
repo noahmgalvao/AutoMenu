@@ -13,7 +13,6 @@ const SAFE_MESSAGES = new Set([
   'A área de recorte é muito pequena.',
   'O link público expirou ou está indisponível. Publique o cardápio novamente.',
   'Este endereço já está em uso. Escolha outro nome.',
-  'O serviço de publicação precisa ser atualizado para gerar links curtos.',
 ]);
 
 export const getErrorMessage = (error: unknown, fallback: string) => {
