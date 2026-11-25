@@ -6,7 +6,7 @@ import { resolveMenuMargins, resolveMinimumFontSize, resolveMenuContentSpacing, 
 import { resolveMenuPageDimensions } from './pageSetup';
 import { normalizeColumnWidths } from './categoryColumns';
 import { templateHeaderExtra, templateCategoryExtra } from '../templates/templateDesign';
-import { FREE_TEXT_PREFIX, CATEGORY_CHUNK_GAP_PX } from './flow';
+import { FREE_TEXT_PREFIX, CATEGORY_CHUNK_GAP_PX, getCategoryChunkGap } from './flow';
 import { formatMenuPrice, resolveMenuPriceDecimalPlaces } from './price';
 
 const PRODUCT_GRID_GAP_PX = 24;
@@ -534,6 +534,10 @@ const buildLockedPagination = (
             columnIndex: Number.isFinite(columnIndex) ? Math.max(0, Math.min(categoryColumnCount - 1, Math.floor(columnIndex))) : 0,
         };
     };
+    const spacing = resolveMenuContentSpacing(style);
+    const lastFlowCategory = new WeakMap<PageColumnLayout, string>();
+    const gapBefore = (column: PageColumnLayout, category: string, startsCategory: boolean) =>
+        getCategoryChunkGap(spacing, lastFlowCategory.get(column), category, startsCategory);
     const getLockedPageColumnCount = (_pageIndex: number) => categoryColumnCount;
     const pages: PageLayout[] = [createLockedPage(getLockedPageColumnCount(0), getPageHeader(style, 0))];
     const getNextChunkId = createCategoryChunkIdFactory();
@@ -565,7 +569,7 @@ const buildLockedPagination = (
 
         const contentStartY = margins.top + headerHeight(page);
         const requestedOffset = Math.max(0, requestedPosition.y - contentStartY);
-        const normalGap = hasChunks(column) ? CATEGORY_CHUNK_GAP_PX : 0;
+        const normalGap = gapBefore(column, category, true);
         const naturalOffset = column.estimatedHeight + normalGap;
         const remainingHeight = baseColumnHeight - headerHeight(page) - naturalOffset;
         return Math.max(0, Math.min(requestedOffset - naturalOffset, remainingHeight - height));
@@ -581,7 +585,7 @@ const buildLockedPagination = (
     ) => {
         const page = ensurePage(placement.pageIndex);
         const column = page.columns[Math.max(0, Math.min(placement.columnIndex, page.columns.length - 1))];
-        const gapBeforeChunk = hasChunks(column) ? CATEGORY_CHUNK_GAP_PX : 0;
+        const gapBeforeChunk = gapBefore(column, category, startsCategory);
 
         column.chunks.push({
             chunkId: getNextChunkId(category),
@@ -593,6 +597,7 @@ const buildLockedPagination = (
             flowOffsetBefore,
         });
         column.estimatedHeight += estimatedHeight + gapBeforeChunk + flowOffsetBefore;
+        lastFlowCategory.set(column, category);
     };
 
     const advancePlacement = (placement: CategoryPlacementAssignment): CategoryPlacementAssignment => {
@@ -602,11 +607,11 @@ const buildLockedPagination = (
             : { pageIndex: placement.pageIndex + 1, columnIndex: 0 };
     };
 
-    const getRemainingHeight = (placement: CategoryPlacementAssignment) => {
+    const getRemainingHeight = (placement: CategoryPlacementAssignment, category: string, startsCategory: boolean) => {
         const page = ensurePage(placement.pageIndex);
         const column = page.columns[Math.max(0, Math.min(placement.columnIndex, page.columns.length - 1))];
         const columnLimit = baseColumnHeight - headerHeight(page);
-        const gapBeforeChunk = hasChunks(column) ? CATEGORY_CHUNK_GAP_PX : 0;
+        const gapBeforeChunk = gapBefore(column, category, startsCategory);
         return columnLimit - column.estimatedHeight - gapBeforeChunk;
     };
 
@@ -655,7 +660,7 @@ const buildLockedPagination = (
             }
 
             while (remainingItems.length > 0) {
-                const availableHeight = getRemainingHeight(currentPlacement);
+                const availableHeight = getRemainingHeight(currentPlacement, category, false);
                 const page = ensurePage(currentPlacement.pageIndex);
                 const column = page.columns[Math.max(0, Math.min(currentPlacement.columnIndex, page.columns.length - 1))];
                 if (availableHeight <= 0 && hasChunks(column)) {
@@ -727,7 +732,7 @@ const buildLockedPagination = (
                 return keepTogether ? fullHeights[index] : calculateHeight(headerItem) + firstItemHeight;
             };
             const fittingColumn = findCategoryColumn(page.columns, currentPlacement.columnIndex, emptyColumnHeight, requiredHeight,
-                (columnIndex) => getRemainingHeight({ pageIndex: currentPlacement.pageIndex, columnIndex }));
+                (columnIndex) => getRemainingHeight({ pageIndex: currentPlacement.pageIndex, columnIndex }, category, startsCategory));
             if (fittingColumn === undefined) {
                 currentPlacement = { pageIndex: currentPlacement.pageIndex + 1, columnIndex: 0 };
                 continue;
@@ -737,7 +742,7 @@ const buildLockedPagination = (
             const column = page.columns[currentPlacement.columnIndex];
             const currentCalculator = calculators[currentPlacement.columnIndex];
             const currentHeaderItemHeight = startsCategory ? currentCalculator(headerItem) : 0;
-            const naturalHeight = getRemainingHeight(currentPlacement);
+            const naturalHeight = getRemainingHeight(currentPlacement, category, startsCategory);
             const positionReservedHeight = startsCategory && fullHeights[currentPlacement.columnIndex] <= naturalHeight
                 ? fullHeights[currentPlacement.columnIndex]
                 : requiredHeight(currentPlacement.columnIndex);
@@ -930,6 +935,10 @@ export const calculatePagination = (
         return balanceColumns(finalizedPage);
     };
 
+    const spacing = resolveMenuContentSpacing(style);
+    const gapBefore = (column: PageColumnLayout, category: string, startsCategory: boolean) =>
+        getCategoryChunkGap(spacing, column.chunks[column.chunks.length - 1]?.category, category, startsCategory);
+
     const balanceColumns = (page: PageLayout): PageLayout => {
         if (!style.design || page.columns.length < 2 || style.categoryColumnWidths?.length && !style.productPhotoRatio
             || Object.keys(style.categoryPositions || {}).length) return page;
@@ -938,22 +947,28 @@ export const calculatePagination = (
         if (lanes < 2) return page;
         const columns = page.columns.map((column) => ({ ...column, chunks: [] as CategoryChunkLayout[], estimatedHeight: 0 }));
         let index = 0;
-        let remainingHeight = chunks.reduce((sum, chunk) => sum + chunk.estimatedHeight + CATEGORY_CHUNK_GAP_PX, 0);
+        const flowHeights = chunks.map((chunk, position) => {
+            const next = chunks[position + 1];
+            return chunk.estimatedHeight + (next
+                ? getCategoryChunkGap(spacing, chunk.category, next.category, next.startsCategory)
+                : CATEGORY_CHUNK_GAP_PX);
+        });
+        let remainingHeight = flowHeights.reduce((sum, height) => sum + height, 0);
         let targetHeight = remainingHeight / lanes;
         chunks.forEach((chunk, position) => {
             const current = columns[index];
             const heightAt = (lane: number) => style.categoryColumnWidths?.length
                 ? chunk.items.reduce((height, item) => height + calculators[lane](item), 0) : chunk.estimatedHeight;
-            const overflow = current.estimatedHeight + heightAt(index) + CATEGORY_CHUNK_GAP_PX > targetHeight;
+            const overflow = current.estimatedHeight + heightAt(index) + gapBefore(current, chunk.category, chunk.startsCategory) > targetHeight;
             if (current.chunks.length && index + 1 < lanes && (overflow || chunks.length - position === lanes - index - 1)) {
                 index++;
                 targetHeight = remainingHeight / (lanes - index);
             }
             const column = columns[index];
             const estimatedHeight = heightAt(index);
-            column.estimatedHeight += estimatedHeight + (column.chunks.length ? CATEGORY_CHUNK_GAP_PX : 0);
+            column.estimatedHeight += estimatedHeight + gapBefore(column, chunk.category, chunk.startsCategory);
             column.chunks.push({ ...chunk, columnIndex: index, estimatedHeight });
-            remainingHeight -= chunk.estimatedHeight + CATEGORY_CHUNK_GAP_PX;
+            remainingHeight -= flowHeights[position];
         });
         const limit = baseColumnHeight - headerHeight(page);
         if (columns.some((column) => column.estimatedHeight > limit)) return page;
@@ -971,9 +986,9 @@ export const calculatePagination = (
 
     const getColumnLimit = (page: MutablePage) => baseColumnHeight - headerHeight(page);
     const getCurrentColumnHeight = () => currentPage._columnHeights[currentColumnIndex];
-    const getRemainingHeight = (index = currentColumnIndex) => {
+    const getRemainingHeight = (category: string, startsCategory: boolean, index = currentColumnIndex) => {
         const column = currentPage.columns[index];
-        const nextChunkGap = column.chunks.length > 0 ? CATEGORY_CHUNK_GAP_PX : 0;
+        const nextChunkGap = gapBefore(column, category, startsCategory);
         return getColumnLimit(currentPage) - currentPage._columnHeights[index] - nextChunkGap;
     };
     const pageHasAnyContent = (page: MutablePage) =>
@@ -1004,7 +1019,7 @@ export const calculatePagination = (
         };
 
         const column = currentPage.columns[currentColumnIndex];
-        const gapBeforeChunk = column.chunks.length > 0 ? CATEGORY_CHUNK_GAP_PX : 0;
+        const gapBeforeChunk = gapBefore(column, category, startsCategory);
         column.chunks.push(chunk);
         column.estimatedHeight += estimatedHeight + gapBeforeChunk;
         currentPage._columnHeights[currentColumnIndex] += estimatedHeight + gapBeforeChunk;
@@ -1019,12 +1034,12 @@ export const calculatePagination = (
                 startNextPage();
             }
 
-            if (getRemainingHeight() <= 0 && getCurrentColumnHeight() > 0) {
+            if (getRemainingHeight(category, false) <= 0 && getCurrentColumnHeight() > 0) {
                 moveToNextColumnOrPage();
             }
 
             const columnWasEmpty = getCurrentColumnHeight() === 0;
-            const availableHeight = getRemainingHeight();
+            const availableHeight = getRemainingHeight(category, false);
             const chunkItems: PageItem[] = [];
             let chunkHeight = 0;
 
@@ -1078,14 +1093,15 @@ export const calculatePagination = (
                 if (!startsCategory) return firstItemHeight;
                 return keepTogether ? fullHeights[index] : calculateHeight(headerItem) + firstItemHeight;
             };
-            const fittingColumn = findCategoryColumn(currentPage.columns, currentColumnIndex, emptyColumnHeight, requiredHeight, getRemainingHeight);
+            const fittingColumn = findCategoryColumn(currentPage.columns, currentColumnIndex, emptyColumnHeight, requiredHeight,
+                columnIndex => getRemainingHeight(category, startsCategory, columnIndex));
             if (fittingColumn === undefined) {
                 startNextPage();
                 continue;
             }
             currentColumnIndex = fittingColumn;
 
-            const availableHeight = getRemainingHeight() + FIT_TOLERANCE_PX;
+            const availableHeight = getRemainingHeight(category, startsCategory) + FIT_TOLERANCE_PX;
             const chunkItems: PageItem[] = startsCategory ? [headerItem] : [];
             let chunkHeight = startsCategory ? getItemHeight(headerItem) : 0;
 

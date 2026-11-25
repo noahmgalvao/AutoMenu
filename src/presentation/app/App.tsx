@@ -57,7 +57,7 @@ function PublishedLinkNotice({ button, onDismiss }: {
 }
 
 const App: React.FC = () => {
-  const [isProductRulesLayoutEditing, setProductRulesLayoutEditing] = useState(false);
+  const [isRulesLayoutEditing, setRulesLayoutEditing] = useState(false);
   const [activePanel, setActivePanel] = useState<'product' | 'style' | null>('style');
   const [hasOpenedProductDesigner, setHasOpenedProductDesigner] = useState(false);
   const [isCreateMenuOpen, setIsCreateMenuOpen] = useState(false);
@@ -398,7 +398,7 @@ const App: React.FC = () => {
               setStyle={setStyle}
               setTemplates={setTemplates}
               templates={templates}
-              onRulesLayoutEditingChange={setProductRulesLayoutEditing}
+              onRulesLayoutEditingChange={setRulesLayoutEditing}
               sortOption={sortOption}
               isOpen={activePanel === 'product'}
               onClose={() => setActivePanel(null)}
@@ -430,7 +430,7 @@ const App: React.FC = () => {
             canRedo={canRedo}
             isOpen={activePanel === 'style'}
             isProductDesignerOpen={activePanel === 'product'}
-            isProductRulesLayoutEditing={activePanel === 'product' && isProductRulesLayoutEditing}
+            onRulesLayoutEditingChange={setRulesLayoutEditing}
             onOpenVisual={() => setActivePanel('style')}
             printRequestId={printRequestId}
             printRequestMode={printRequestMode}
@@ -452,7 +452,8 @@ const App: React.FC = () => {
       </div>
 
       <div
-        className={`md:hidden fixed bottom-0 left-0 right-0 flex h-16 bg-white border-t border-slate-200 z-50 transition-transform duration-300 ${isScrolling && !activePanel ? 'translate-y-full' : 'translate-y-0'}`}
+        data-mobile-designer-navigation
+        className={`md:hidden fixed bottom-0 left-0 right-0 ${isRulesLayoutEditing ? 'hidden' : 'flex'} h-16 bg-white border-t border-slate-200 z-50 transition-transform duration-300 ${isScrolling && !activePanel ? 'translate-y-full' : 'translate-y-0'}`}
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
         <DesignerTapButton type="button" data-mobile-designer-tab aria-controls="designer-sheet-visual"

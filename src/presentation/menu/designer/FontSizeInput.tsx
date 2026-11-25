@@ -15,6 +15,7 @@ interface FontSizeInputProps {
     commitOnBlur?: boolean;
     showStepButtons?: boolean;
     stepSubject?: string;
+    variant?: 'layout';
 }
 
 const toInputValue = (value?: number): string => Number.isFinite(value) ? String(value) : '';
@@ -31,7 +32,9 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
     commitOnBlur = false,
     showStepButtons = false,
     stepSubject = 'tamanho da fonte',
+    variant,
 }) => {
+    const layoutStepper = variant === 'layout';
     const inputRef = useRef<HTMLInputElement>(null);
     const repeatTimer = useRef<number | undefined>(undefined);
     const normalizeValue = (nextValue: number) => {
@@ -90,7 +93,8 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
     const renderStep = (direction: 1 | -1, Icon: typeof ChevronUp, title: string, side = false) => (
         <button type="button" aria-label={[title, side && stepSubject, label].filter(Boolean).join(' ')}
             className={`grid touch-none place-items-center text-slate-600 hover:bg-indigo-100 focus-visible:bg-indigo-100 ${side
-                ? 'size-6 rounded border border-slate-200 bg-white' : 'h-3.5 w-4 rounded-sm'}`}
+                ? layoutStepper ? 'size-9 shrink-0 rounded-lg' : 'size-6 rounded border border-slate-200 bg-white'
+                : 'h-3.5 w-4 rounded-sm'}`}
             onPointerDown={(event) => {
                 if (event.button !== 0 || repeatTimer.current !== undefined) return;
                 event.preventDefault();
@@ -112,9 +116,11 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
     );
 
     return (
-        <span className="inline-flex shrink-0 items-center gap-0.5">
+        <span className={layoutStepper
+            ? 'flex w-full items-center rounded-xl border border-slate-200 bg-slate-50/80'
+            : 'inline-flex shrink-0 items-center gap-0.5'}>
         {showStepButtons && renderStep(-1, Minus, 'Diminuir', true)}
-        <span className="relative inline-flex">
+        <span className={`relative inline-flex ${layoutStepper ? 'min-w-0 flex-1' : ''}`}>
         <input
             ref={inputRef}
             type="number"
@@ -122,7 +128,9 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
             max={max}
             step={1}
             inputMode="decimal"
-            className={`automenu-font-size-input h-8 w-16 rounded border border-slate-200 pl-1.5 text-xs [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${showStepButtons ? 'pr-1.5' : 'pr-5'} ${className}`}
+            className={`automenu-font-size-input ${layoutStepper
+                ? 'h-9 w-full min-w-0 rounded-lg border border-transparent bg-transparent p-0 text-center text-sm font-semibold tabular-nums text-slate-900 focus-visible:border-indigo-300 focus-visible:bg-white focus-visible:outline-none'
+                : 'h-8 w-16 rounded border border-slate-200 pl-1.5 text-xs'} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${layoutStepper ? '' : showStepButtons ? 'pr-1.5' : 'pr-5'} ${className}`}
             value={draftValue}
             placeholder={placeholder}
             aria-label={label}

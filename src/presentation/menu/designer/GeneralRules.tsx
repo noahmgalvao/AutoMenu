@@ -1,5 +1,5 @@
-import { useEffect, useId, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { Check, Pencil, RotateCcw, Settings, X } from 'lucide-react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { Check, ChevronRight, Columns2, PanelBottom, PanelLeft, PanelRight, PanelTop, Pencil, RotateCcw, Settings, X } from 'lucide-react';
 import { BooleanSwitch } from '../../common/BooleanSwitch';
 import type { FontSizeLimitKey, MenuContentSpacing, MenuMargins, MenuStyle } from '../../../domain/menu/model';
 import {
@@ -15,19 +15,27 @@ const sectionNames = { spacing: 'Espaçamentos', margins: 'Margens' } as const;
 const layoutSections = ['spacing', 'margins'] as const;
 const tabs = ['Layout', 'Avançadas'] as const;
 const spacingRows = [
-  ['headerToContent', 'Cabeçalho → primeira categoria'],
-  ['categoryToProduct', 'Categoria → produto'],
-  ['productNameToDescription', 'Produto → descrição'],
-  ['betweenProducts', 'Entre produtos'],
-  ['productNameToPrice', 'Nome → preço (horizontal)'],
-] as const satisfies ReadonlyArray<readonly [keyof MenuContentSpacing, string]>;
+  { key: 'headerToContent', label: 'Cabeçalho', next: 'Primeira categoria' },
+  { key: 'categoryToProduct', label: 'Categoria', next: 'Produto' },
+  { key: 'productNameToDescription', label: 'Nome', next: 'Descrição' },
+  { key: 'betweenProducts', label: 'Entre produtos' },
+  { key: 'productToNextCategory', label: 'Produto', next: 'Próxima categoria' },
+  { key: 'productNameToPrice', label: 'Nome', next: 'Preço' },
+] satisfies ReadonlyArray<{ key: keyof MenuContentSpacing; label: string; next?: string }>;
 const marginRows = [
-  ['top', 'Superior'],
-  ['bottom', 'Inferior'],
-  ['left', 'Esquerda'],
-  ['right', 'Direita'],
-  ['columnGap', 'Entre colunas'],
-] as const satisfies ReadonlyArray<readonly [keyof MenuMargins, string]>;
+  { key: 'top', label: 'Superior', Icon: PanelTop },
+  { key: 'bottom', label: 'Inferior', Icon: PanelBottom },
+  { key: 'left', label: 'Esquerda', Icon: PanelLeft },
+  { key: 'right', label: 'Direita', Icon: PanelRight },
+  { key: 'columnGap', label: 'Entre colunas', Icon: Columns2 },
+] satisfies ReadonlyArray<{ key: keyof MenuMargins; label: string; Icon: typeof PanelTop }>;
+
+type LayoutRow = { key: string; label: string; next?: string; Icon?: typeof PanelTop; value: number };
+type LayoutValues = Pick<MenuStyle, 'margins' | 'pagePadding' | 'contentSpacing' | 'itemGap'>;
+
+const layoutValues = ({ margins, pagePadding, contentSpacing, itemGap }: MenuStyle): LayoutValues =>
+  ({ margins, pagePadding, contentSpacing, itemGap });
+
 
 type RulesProps = {
   style: MenuStyle;
@@ -146,13 +154,24 @@ function AdvancedRules({ style, setStyle }: RulesProps) {
   );
 }
 
-function layoutRows(style: MenuStyle, section: RulesLayoutSection) {
+function layoutRows(style: MenuStyle, section: RulesLayoutSection): LayoutRow[] {
   if (section === 'spacing') {
     const spacing = resolveMenuContentSpacing(style);
-    return spacingRows.map(([key, label]) => ({ key, label, value: spacing[key] }));
+    return spacingRows.map(row => ({ ...row, value: spacing[row.key] }));
   }
   const margins = resolveMenuMargins(style);
-  return marginRows.map(([key, label]) => ({ key, label, value: margins[key] }));
+  return marginRows.map(row => ({ ...row, value: margins[row.key] }));
+}
+
+function LayoutLabel({ row: { label, next, Icon } }: { row: LayoutRow }) {
+  return <span className="inline-flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5">
+    {Icon && <Icon size={14} className="shrink-0 text-indigo-500" aria-hidden="true" />}
+    <span>{label}</span>
+    {next && <span className="inline-flex min-w-0 items-start gap-0.5">
+      <ChevronRight size={13} strokeWidth={2.5} className="mt-0.5 shrink-0 text-indigo-500" aria-hidden="true" />
+      <span>{next}</span>
+    </span>}
+  </span>;
 }
 
 const iconButton = 'grid size-9 shrink-0 place-items-center rounded-lg text-slate-600 hover:bg-slate-100';
@@ -233,10 +252,10 @@ function GeneralRulesDialog({
                 </div>
               </header>
               <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
-                {layoutRows(style, section).map(({ key, label, value }) =>
-                  <div key={key} className="flex items-baseline justify-between gap-1.5 text-xs">
-                    <dt className="text-slate-600">{label}</dt>
-                    <dd className="font-semibold tabular-nums text-slate-800">{value}</dd>
+                {layoutRows(style, section).map(row =>
+                  <div key={row.key} className="flex items-baseline justify-between gap-1.5 text-xs">
+                    <dt className="text-slate-600"><LayoutLabel row={row} /></dt>
+                    <dd className="font-semibold tabular-nums text-slate-800">{row.value}</dd>
                   </div>
                 )}
               </dl>
@@ -249,39 +268,80 @@ function GeneralRulesDialog({
 }
 
 function RulesLayoutEditor({
-  style, setStyle, section, reset, close, confirm,
+  style, setStyle, section, changeSection, reset, close, cancel, confirm,
 }: RulesProps & {
   section: RulesLayoutSection;
+  changeSection: (section: RulesLayoutSection) => void;
   reset: () => void;
   close: () => void;
+  cancel: () => void;
   confirm: () => void;
 }) {
-  const titleId = useId();
-  return <section aria-labelledby={titleId} className="flex min-h-0 flex-1 flex-col text-slate-800">
-    <header className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-1.5">
-      <h2 id={titleId} className="text-sm font-semibold">{sectionNames[section]}</h2>
-      <div className="flex gap-1">
+  const id = useId();
+  const sectionOrder = ['margins', 'spacing'] as const;
+  const tabId = (target: RulesLayoutSection) => `${id}-${target}`;
+  const panelId = `${id}-fields`;
+  const fields = useRef<HTMLDivElement>(null);
+
+  const selectTab = (target: RulesLayoutSection) => {
+    changeSection(target);
+    if (fields.current) fields.current.scrollTop = 0;
+  };
+
+  return <section aria-labelledby={tabId(section)} className="flex min-h-0 flex-1 flex-col bg-slate-50 text-slate-800">
+    <header className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-2.5">
+      <div role="tablist" aria-label="Edição de layout" className="flex min-w-0 gap-0.5 rounded-xl bg-slate-100 p-1"
+        onKeyDown={event => {
+          if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+          event.preventDefault();
+          const next = section === 'margins' ? 'spacing' : 'margins';
+          selectTab(next);
+          document.getElementById(tabId(next))?.focus();
+        }}
+      >
+        {sectionOrder.map(target => (
+          <button key={target} type="button" role="tab" id={tabId(target)}
+            aria-selected={section === target} aria-controls={panelId} autoFocus={section === target} tabIndex={section === target ? 0 : -1}
+            onClick={() => selectTab(target)}
+            className={`min-h-8 rounded-lg px-2 text-xs font-semibold tracking-tight sm:px-3 sm:text-sm ${section === target
+              ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200/80' : 'text-slate-600 hover:bg-white/60 hover:text-slate-900'}`}>
+            {sectionNames[target]}
+          </button>
+        ))}
+      </div>
+      <div className="flex shrink-0 gap-0.5">
         <ResetSectionButton section={section} reset={reset} />
-        <button type="button" autoFocus onClick={close} aria-label="Fechar regras gerais" title="Fechar regras gerais"
+        <button type="button" onClick={close} aria-label="Fechar regras gerais" title="Fechar regras gerais"
           className={iconButton}><X size={18} /></button>
       </div>
     </header>
-    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-2">
-      <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
-        {layoutRows(style, section).map(({ key, label, value }) =>
-          <RuleNumberInput key={key} label={label} value={value} max={section === 'spacing' ? 200 : 300}
-            onChange={next => setStyle(previous => section === 'spacing' ? {
-              ...previous, name: 'Custom', contentSpacing: { ...resolveMenuContentSpacing(previous), [key]: next },
-            } : {
-              ...previous, name: 'Custom', margins: { ...resolveMenuMargins(previous), [key]: next },
-            })}
-          />
-        )}
+    <div ref={fields} role="tabpanel" id={panelId} aria-labelledby={tabId(section)}
+      className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
+      <div key={section} className="grid grid-cols-2 gap-2.5">
+        {layoutRows(style, section).map(row => (
+          <div key={row.key} className="grid min-w-0 content-between gap-2 rounded-xl border border-slate-200/80 bg-white p-2.5 shadow-xs">
+            <div className="text-xs font-semibold leading-snug text-slate-700"><LayoutLabel row={row} /></div>
+            <FontSizeInput variant="layout" label={row.next ? `${row.label} até ${row.next.toLowerCase()}` : row.label}
+              value={row.value} min={0} max={section === 'spacing' ? 200 : 300} showStepButtons stepSubject=""
+              onChange={next => setStyle(previous => section === 'spacing' ? {
+                ...previous, name: 'Custom', contentSpacing: { ...resolveMenuContentSpacing(previous), [row.key]: next },
+              } : {
+                ...previous, name: 'Custom', margins: { ...resolveMenuMargins(previous), [row.key]: next },
+              })}
+            />
+          </div>
+        ))}
       </div>
     </div>
-    <footer className="flex shrink-0 justify-end border-t border-slate-200 px-4 pb-[4.375rem] pt-1.5 md:pb-1.5">
-      <button type="button" onClick={confirm} aria-label="Confirmar e voltar às regras gerais" title="Voltar às regras gerais"
-        className="grid size-9 place-items-center rounded-full bg-emerald-600 text-white hover:bg-emerald-700"><Check size={19} /></button>
+    <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2.5 md:pb-2.5">
+      <button type="button" onClick={cancel}
+        className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+        Cancelar
+      </button>
+      <button type="button" onClick={confirm} title="Voltar às regras gerais"
+        className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800">
+        <Check size={17} strokeWidth={2.5} /> Confirmar
+      </button>
     </footer>
   </section>;
 }
@@ -303,17 +363,17 @@ export function useGeneralRules({
   onLayoutEditingChange?: (editing: boolean) => void;
 }) {
   const [snapshot, setSnapshot] = useState<MenuStyle | null>(null);
-  const [section, setSection] = useState<RulesLayoutSection | null>(null);
+  const [edit, setEdit] = useState<{ section: RulesLayoutSection; original: LayoutValues } | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
       setSnapshot(null);
-      setSection(null);
+      setEdit(null);
     }
   }, [isOpen]);
 
-  const editing = isOpen && snapshot !== null && section !== null;
-  useEffect(() => {
+  const editing = isOpen && snapshot !== null && edit !== null;
+  useLayoutEffect(() => {
     if (!editing) return;
     onLayoutEditingChange?.(true);
     return () => onLayoutEditingChange?.(false);
@@ -321,7 +381,7 @@ export function useGeneralRules({
 
   const close = () => {
     setSnapshot(null);
-    setSection(null);
+    setEdit(null);
   };
 
   const reset = (target: RulesLayoutSection) => {
@@ -335,15 +395,26 @@ export function useGeneralRules({
     }
   };
 
+  const cancelEdit = () => {
+    if (!edit) return;
+    const { original } = edit;
+    if (style.margins !== original.margins || style.pagePadding !== original.pagePadding
+      || style.contentSpacing !== original.contentSpacing || style.itemGap !== original.itemGap) {
+      setStyle(current => ({ ...current, ...original }));
+    }
+    setEdit(null);
+  };
+
   return {
     open: () => setSnapshot(style),
     editor: editing && <RulesLayoutEditor
-      style={style} setStyle={setStyle} section={section}
-      reset={() => reset(section)} close={close} confirm={() => setSection(null)}
+      style={style} setStyle={setStyle} section={edit.section}
+      changeSection={section => setEdit({ ...edit, section })}
+      reset={() => reset(edit.section)} close={close} cancel={cancelEdit} confirm={() => setEdit(null)}
     />,
-    dialog: isOpen && snapshot && !section && <GeneralRulesDialog
+    dialog: isOpen && snapshot && !edit && <GeneralRulesDialog
       style={style} setStyle={setStyle} close={close} reset={reset} restoreDefaults={restoreDefaults}
-      edit={target => { prepareEditor(); setSection(target); }}
+      edit={section => { prepareEditor(); setEdit({ section, original: layoutValues(style) }); }}
     />,
   };
 }

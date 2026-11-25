@@ -16,12 +16,12 @@ import { Resizable } from 're-resizable';
 import { MenuItem } from './MenuItem';
 import { CanvasActionGroup, CanvasFlowActions, canvasActionButtonClass } from './CanvasControls';
 import type { PageLayout, CategoryChunkLayout, PageItem } from '../../../domain/menu/menuPagination';
-import { FREE_TEXT_PREFIX } from '../../../domain/menu/flow';
+import { CATEGORY_CHUNK_GAP_PX, FREE_TEXT_PREFIX, getCategoryChunkGap } from '../../../domain/menu/flow';
 import { selectionLayerClasses } from './selectionLayers';
 import { getDirectionLabel, type FlowDirection } from './flowControls';
 import { resolveTexture } from '../../../domain/menu/defaults';
 import { InlineStyleToolbar } from '../designer/InlineStyleToolbar';
-import { resolveMenuMargins, resolveMinimumFontSize, roundFontSize } from '../../../domain/menu/styleRules';
+import { resolveMenuContentSpacing, resolveMenuMargins, resolveMinimumFontSize, roundFontSize } from '../../../domain/menu/styleRules';
 import { getColumnGridTemplate, getPageColumnWidths } from '../../../domain/menu/categoryColumns';
 import { ColumnResizeHandles } from './ColumnResizeHandles';
 import { isMiniFoodKind, MINI_FOODS } from '../../../domain/menu/miniFoods';
@@ -49,13 +49,14 @@ const PositionedCategoryChunk: React.FC<
         desiredPageX?: number;
         absolutePageX?: number;
         flowOffsetBefore?: number;
+        gapAdjustment?: number;
         detachedForDrag?: boolean;
         detachedFromFlow?: boolean;
         fitContent?: boolean;
         pageIndex: number;
         layoutKey: string;
     }
-> = ({ desiredPageY, desiredPageX, absolutePageX, flowOffsetBefore = 0, detachedForDrag = false, detachedFromFlow = false, fitContent = false, pageIndex, layoutKey, style, children, ...props }) => {
+> = ({ desiredPageY, desiredPageX, absolutePageX, flowOffsetBefore = 0, gapAdjustment = 0, detachedForDrag = false, detachedFromFlow = false, fitContent = false, pageIndex, layoutKey, style, children, ...props }) => {
     const elementRef = React.useRef<HTMLDivElement>(null);
     const [position, setPosition] = React.useState({ top: 0, left: 0 });
     const isFreePositioned = detachedFromFlow && Number.isFinite(desiredPageY);
@@ -97,7 +98,7 @@ const PositionedCategoryChunk: React.FC<
             data-category-flow-offset={flowOffsetBefore || undefined}
             style={{
                 ...style,
-                marginTop: flowOffsetBefore || undefined,
+                marginTop: (flowOffsetBefore + gapAdjustment) || undefined,
                 zIndex: detachedForDrag ? 40 : undefined,
                 ...(isFreePositioned ? {
                     position: 'absolute',
@@ -226,7 +227,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
         WebkitUserSelect: 'none',
     };
 
-    const renderChunk = (chunk: CategoryChunkLayout) => {
+    const renderChunk = (chunk: CategoryChunkLayout, gapAdjustment = 0) => {
         const renderItems = chunk.items.reduce<PageItem[]>((items, item) => {
             const previousItem = items[items.length - 1];
             if (item.type === 'product-row' && previousItem?.type === 'product-row') {
@@ -297,6 +298,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 desiredPageX={isFreeTextTarget ? categoryPosition?.x : undefined}
                 absolutePageX={categoryPosition?.pageX}
                 flowOffsetBefore={chunk.flowOffsetBefore}
+                gapAdjustment={gapAdjustment}
                 detachedForDrag={isCategoryDragged}
                 fitContent={isFreeTextTarget}
                 detachedFromFlow={isFreeTextTarget || categoryPosition?.pageX !== undefined}
@@ -398,29 +400,42 @@ export const MenuPage: React.FC<MenuPageProps> = ({
 
         const columnCount = renderedColumnCount;
         const columns = page.columns;
+        const spacing = resolveMenuContentSpacing(style);
+        const effectivePositions = handlers.liveCategoryPositions ?? style.categoryPositions;
         const renderColumnChunks = (chunks: CategoryChunkLayout[]) => {
             const rendered: React.ReactNode[] = [];
             let looseFreeTexts: CategoryChunkLayout[] = [];
+            let lastFlowCategory: string | undefined;
             const flushLooseFreeTexts = () => {
                 if (looseFreeTexts.length === 0) return;
                 const row = looseFreeTexts;
                 looseFreeTexts = [];
+                lastFlowCategory = row[row.length - 1].category;
                 rendered.push(
                     <div key={`free-text-flow-${row.map((chunk) => chunk.chunkId).join('-')}`} className="flex min-w-0 flex-wrap items-start gap-2">
-                        {row.map(renderChunk)}
+                        {row.map(chunk => renderChunk(chunk))}
                     </div>
                 );
             };
             chunks.forEach((chunk) => {
-                const effectivePositions = handlers.liveCategoryPositions ?? style.categoryPositions;
                 const isLooseFreeText = chunk.category.startsWith(FREE_TEXT_PREFIX)
                     && !effectivePositions?.[chunk.category];
                 if (isLooseFreeText) {
                     looseFreeTexts.push(chunk);
                     return;
                 }
+                const position = effectivePositions?.[chunk.category];
+                const detached = position?.pageIndex === pageIndex && position.columnIndex === chunk.columnIndex
+                    && (chunk.category.startsWith(FREE_TEXT_PREFIX) || chunk.startsCategory && position.pageX !== undefined);
+                if (detached) {
+                    rendered.push(renderChunk(chunk));
+                    return;
+                }
                 flushLooseFreeTexts();
-                rendered.push(renderChunk(chunk));
+                const gapAdjustment = lastFlowCategory === undefined ? 0
+                    : getCategoryChunkGap(spacing, lastFlowCategory, chunk.category, chunk.startsCategory) - CATEGORY_CHUNK_GAP_PX;
+                rendered.push(renderChunk(chunk, gapAdjustment));
+                lastFlowCategory = chunk.category;
             });
             flushLooseFreeTexts();
             return rendered;
@@ -446,7 +461,8 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                         data-drag-page-index={pageIndex}
                         data-drag-column-index={column.columnIndex}
                         onDragOver={(e) => handlers.handleDragOverItem?.(e)}
-                        className="relative min-w-0 min-h-full flex flex-col gap-4 [&>*]:shrink-0"
+                        className="relative min-w-0 min-h-full flex flex-col [&>*]:shrink-0"
+                        style={{ rowGap: CATEGORY_CHUNK_GAP_PX }}
                     >
                         {renderColumnChunks(column.chunks)}
                     </div>

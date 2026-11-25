@@ -48,6 +48,7 @@ export interface MenuContentSpacing {
   categoryToProduct: number;
   productNameToDescription: number;
   betweenProducts: number;
+  productToNextCategory?: number;
   productNameToPrice: number;
 }
 

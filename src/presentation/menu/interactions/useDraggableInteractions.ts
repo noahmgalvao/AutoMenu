@@ -5,7 +5,7 @@ import type { CategoryPosition, Product } from '../../../domain/menu/model';
 import { InteractionProps, SelectionItem, TOUCH_LONG_PRESS_MS } from './types';
 import { isDraggableSelectionItem, keepSelectedOrder, moveSelectedProducts, preventCanvasDragClick } from './canvasSelectionDrag';
 import { alignLayerMove, captureImageDrag, getRenderedImageDragPages, IMAGE_DRAG_THRESHOLD_PX, moveDraggedLayers, type CanvasLayerPositions, type ImageDragMotion, type LayerDragMove } from './imageDragMotion';
-import { CATEGORY_CHUNK_GAP_PX, FREE_TEXT_PREFIX, STANDARD_GAP } from '../../../domain/menu/flow';
+import { CATEGORY_CHUNK_GAP_PX, FREE_TEXT_PREFIX, getCategoryChunkGap, STANDARD_GAP } from '../../../domain/menu/flow';
 import { getPaginationBottomInset, type CategoryPlacementAssignment } from '../../../domain/menu/menuPagination';
 import {
     getCollisionSafeFreeTextTop,
@@ -16,7 +16,7 @@ import {
     swapFreeTextItems,
     type FreeTextCategoryPlacement,
 } from './freeTextMovement';
-import { resolveMenuMargins } from '../../../domain/menu/styleRules';
+import { resolveMenuContentSpacing, resolveMenuMargins } from '../../../domain/menu/styleRules';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 
 type DragType = 'category' | 'product' | 'addedImage';
@@ -325,6 +325,7 @@ export const useDraggableInteractions = (
     collapseSelection?: (type: 'product' | 'category' | 'freeText' | 'addedImage', id: string) => void,
 ) => {
     const { products, style, onCommitCategoryOrder, onCommitProductOrder, onStyleUpdate, onUpdateProduct, onUpdateProducts } = props;
+    const contentSpacing = useMemo(() => resolveMenuContentSpacing(style), [style]);
     const { heightPx: pageHeightPx } = resolveMenuPageDimensions(style);
 
     const dragScope = useRef(`drag-scope-${Math.random().toString(36).slice(2)}`).current;
@@ -1389,24 +1390,33 @@ export const useDraggableInteractions = (
             ...page.querySelectorAll<HTMLElement>('[data-category-chunk][data-free-positioned="true"]'),
         ]
             .filter((chunk) => chunk.dataset.categoryChunk !== categoryId)
-            .map((chunk) => ({ id: chunk.dataset.categoryChunk!, rect: chunk.getBoundingClientRect() }))
+            .map(chunk => ({
+                id: chunk.dataset.categoryChunk!,
+                rect: chunk.getBoundingClientRect(),
+                detached: chunk.hasAttribute('data-free-positioned'),
+            }))
             .filter(({ rect }) => rect.left < lane.rect.right && rect.right > lane.rect.left)
             .sort((left, right) => left.rect.top - right.rect.top);
-        const gap = CATEGORY_CHUNK_GAP_PX * scale;
+        const gapWith = (obstacle: (typeof obstacles)[number], afterObstacle: boolean) => {
+            const gap = obstacle.detached ? CATEGORY_CHUNK_GAP_PX
+                : afterObstacle ? getCategoryChunkGap(contentSpacing, obstacle.id, categoryId, true)
+                    : getCategoryChunkGap(contentSpacing, categoryId, obstacle.id, !obstacle.id.startsWith(FREE_TEXT_PREFIX));
+            return gap * scale;
+        };
         const currentIndex = currentOrder.indexOf(categoryId);
         let firstTop = minimumTop;
         let lastBottom = maximumBottom;
         for (const obstacle of obstacles) {
             if (!isSelectedCategoryTarget(obstacle.id)) continue;
             const peerIndex = currentOrder.indexOf(obstacle.id);
-            if (peerIndex < currentIndex) firstTop = Math.max(firstTop, obstacle.rect.bottom + gap);
-            else if (peerIndex > currentIndex) lastBottom = Math.min(lastBottom, obstacle.rect.top - gap);
+            if (peerIndex < currentIndex) firstTop = Math.max(firstTop, obstacle.rect.bottom + gapWith(obstacle, true));
+            else if (peerIndex > currentIndex) lastBottom = Math.min(lastBottom, obstacle.rect.top - gapWith(obstacle, false));
         }
         let gapStart = minimumTop;
         let nearestSlot: { top: number; nextCategory?: string } | undefined;
         for (const obstacle of [...obstacles, null]) {
             const start = Math.max(gapStart, firstTop);
-            const end = Math.min(obstacle ? obstacle.rect.top - gap : maximumBottom, lastBottom);
+            const end = Math.min(obstacle ? obstacle.rect.top - gapWith(obstacle, false) : maximumBottom, lastBottom);
             const lastTop = end - elementHeight;
             if (lastTop + 0.25 >= start) {
                 const top = Math.max(start, Math.min(lastTop, desiredTop));
@@ -1414,7 +1424,7 @@ export const useDraggableInteractions = (
                     nearestSlot = { top, nextCategory: obstacle?.id };
                 }
             }
-            if (obstacle) gapStart = Math.max(gapStart, obstacle.rect.bottom + gap);
+            if (obstacle) gapStart = Math.max(gapStart, obstacle.rect.bottom + gapWith(obstacle, true));
         }
         if (!nearestSlot) return false;
 
@@ -1464,7 +1474,7 @@ export const useDraggableInteractions = (
         setLiveCategoryPositions(nextPositions);
         hasDragMutationRef.current = true;
         return true;
-    }, [dragScope, getCategoryLanes, getRenderedDragElement, isSelectedCategoryTarget, style.categoryPositions]);
+    }, [contentSpacing, dragScope, getCategoryLanes, getRenderedDragElement, isSelectedCategoryTarget, style.categoryPositions]);
 
     const ensureFreeTextCategoryDragState = useCallback(
         (

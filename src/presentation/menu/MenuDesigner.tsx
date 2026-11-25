@@ -60,7 +60,7 @@ interface MenuDesignerProps {
     canRedo?: boolean;
     isOpen?: boolean;
     isProductDesignerOpen?: boolean;
-    isProductRulesLayoutEditing?: boolean;
+    onRulesLayoutEditingChange?: (editing: boolean) => void;
     printRequestId?: number;
     printRequestMode?: 'download' | 'publish' | 'publish-silent';
     onPrintComplete?: (result: PdfExportResult, requestId: number) => void;
@@ -158,7 +158,7 @@ const formatLayoutIssueBreakdown = (categories: number, products: number, freeTe
     return `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`;
 };
 
-const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, onProductEditChange, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, isProductRulesLayoutEditing = false, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintDownloadChange, silentPrintOptions, virtualLinkControls, fileExportRef, onExportablePagesChange, onSelectedPagesChange, onClose, onOpenVisual, onCanvasScroll, workspaceId, currentUserId, currentMenuId, onSaveTemplate, onPublishTemplate, splitCategoryAcrossPages: legacySplit = false, productsCanChangeCategory: legacyDrag = false }) => {
+const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, onProductEditChange, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, onRulesLayoutEditingChange, printRequestId = 0, printRequestMode = 'download', onPrintComplete, onPrintError, onPrintDownloadChange, silentPrintOptions, virtualLinkControls, fileExportRef, onExportablePagesChange, onSelectedPagesChange, onClose, onOpenVisual, onCanvasScroll, workspaceId, currentUserId, currentMenuId, onSaveTemplate, onPublishTemplate, splitCategoryAcrossPages: legacySplit = false, productsCanChangeCategory: legacyDrag = false }) => {
     const { assets: { uploadFileAsset } } = useAppServices();
     const restoreTemplateSettings = useRestoreTemplateSettings(style, setStyle, templates, workspaceId);
     const splitCategoryAcrossPages = style.splitCategoryAcrossPages ?? legacySplit;
@@ -271,14 +271,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 : next;
         });
     }, []);
-    const [isVisualRulesLayoutEditing, setVisualRulesLayoutEditing] = useState(false);
-    const rulesLayoutEditing = isVisualRulesLayoutEditing || isProductRulesLayoutEditing;
-    React.useLayoutEffect(() => {
-        if (rulesLayoutEditing) {
-            changeSelection({ type: null, id: null });
-            setTipsOpen(false);
-        }
-    }, [changeSelection, rulesLayoutEditing]);
     const handleCanvasSelectedItems = useCallback((items: SelectionItem[]) => {
         onSelectedPagesChange?.(items.filter(item => item.type === 'page').map(item => Number(item.id)));
         const targeted = items.filter(item => item.type === 'category' || item.type === 'product');
@@ -2022,7 +2014,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 />
 
                 <div ref={tipsAnchorRef} className="absolute left-4 top-20 z-[80] flex items-start">
-                    {!rulesLayoutEditing && hasVisibleTips && (
+                    {hasVisibleTips && (
                         <button
                             type="button"
                             onClick={() => setTipsOpen(current => !current)}
@@ -2271,7 +2263,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                             event.stopPropagation();
                             return;
                         }
-                        if (rulesLayoutEditing) return;
                         const target = event.target;
                         if (target instanceof Element && event.currentTarget.contains(target)
                             && !target.closest('[data-menu-print-page], [data-print-control], button, input, textarea, select, [contenteditable="true"]')) {
@@ -2295,7 +2286,6 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                         >
                             <div ref={zoomLayerRef}
                                 data-canvas-zoom-layer
-                                inert={rulesLayoutEditing}
                                 style={{ transform: `scale(${renderScale})`, minWidth: `${resolveMenuPageDimensions(style).widthPx}px` }}
                                 className="absolute left-0 top-0 w-max origin-top-left"
                                 onClick={(e) => e.stopPropagation()}
@@ -2349,7 +2339,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                         </div>
                     </div>
                 </div>
-                <div data-canvas-control-overlay inert={rulesLayoutEditing} className="pointer-events-none absolute inset-0 z-[71] [overflow:clip]" />
+                <div data-canvas-control-overlay className="pointer-events-none absolute inset-0 z-[71] [overflow:clip]" />
             </div>
 
             {/* 2. SIDEBAR EDITOR */}
@@ -2359,7 +2349,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 onPdfClick={() => handlePrint()}
                 handleResetDesign={handleResetDesign}
                 restoreRuleDefaults={() => void restoreRuleDefaults()}
-                onRulesLayoutEditingChange={setVisualRulesLayoutEditing}
+                onRulesLayoutEditingChange={onRulesLayoutEditingChange}
                 style={style}
                 setStyle={setStyle}
                 templates={templates}

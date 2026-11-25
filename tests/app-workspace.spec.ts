@@ -350,9 +350,12 @@ test('the Product Designer opens the shared general rules and keeps live changes
   const rules = page.getByRole('dialog', { name: 'Regras gerais' });
   await rules.getByRole('button', { name: 'Editar margens' }).click();
   const editor = product.getByRole('region', { name: 'Margens' });
-  await expect(page.locator('[data-canvas-zoom-layer]')).toHaveAttribute('inert', '');
+  const selected = page.locator('[data-automenu-editor-canvas] #product-container-suco');
+  await selected.getByRole('heading').click();
+  await expect(selected.locator('[data-canvas-selection-outline]')).toBeVisible();
+  await expect(editor).toBeVisible();
   await editor.getByRole('spinbutton', { name: 'Superior', exact: true }).fill('20');
-  await editor.getByRole('button', { name: 'Confirmar e voltar às regras gerais' }).click();
+  await editor.getByRole('button', { name: 'Confirmar', exact: true }).click();
   await rules.getByRole('button', { name: 'Fechar', exact: true }).click();
   await expect(page.locator('[data-canvas-zoom-layer]')).not.toHaveAttribute('inert', '');
   await page.getByTitle('Designer visual', { exact: true }).click();
@@ -370,18 +373,34 @@ test('editing layout updates the canvas before confirmation and can reset the op
   await editSpacing.click();
   await expect(rules).toHaveCount(0);
   const layer = page.locator('[data-canvas-zoom-layer]');
-  await expect(layer).toHaveAttribute('inert', '');
+  await expect(layer).not.toHaveAttribute('inert', '');
   const editor = page.getByRole('region', { name: 'Espaçamentos' });
   const betweenProducts = editor.getByRole('spinbutton', { name: 'Entre produtos', exact: true });
   const previousSpacing = await betweenProducts.inputValue();
-  const priceSpacing = editor.getByRole('spinbutton', { name: 'Nome → preço (horizontal)', exact: true });
+  const priceSpacing = editor.getByRole('spinbutton', { name: 'Nome até preço', exact: true });
   const row = layer.locator('[data-product-text-row]').first();
+  const nextCategorySpacing = editor.getByRole('spinbutton', { name: 'Produto até próxima categoria' });
+  const originalCategorySpacing = await nextCategorySpacing.inputValue();
+  await nextCategorySpacing.fill('36');
+  await editor.getByRole('tab', { name: 'Margens' }).click();
+  const margins = page.getByRole('region', { name: 'Margens' });
+  const topMargin = margins.getByRole('spinbutton', { name: 'Superior', exact: true });
+  const originalTop = await topMargin.inputValue();
+  await topMargin.fill('35');
+  await margins.getByRole('tab', { name: 'Espaçamentos' }).click();
+  await expect(nextCategorySpacing).toHaveValue('36');
+  await editor.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  await editSpacing.click();
+  await expect(nextCategorySpacing).toHaveValue(originalCategorySpacing);
+  await editor.getByRole('tab', { name: 'Margens' }).click();
+  await expect(topMargin).toHaveValue(originalTop);
+  await margins.getByRole('tab', { name: 'Espaçamentos' }).click();
   await betweenProducts.fill('0');
   await expect(layer.locator('[data-pagination-grid]').first()).toHaveCSS('row-gap', '0px');
   await priceSpacing.fill('0');
   await expect(row).toHaveCSS('column-gap', '0px');
   await expect(row).toHaveAttribute('data-compact-price-gap', /^(start|end)$/);
-  await editor.getByRole('button', { name: 'Confirmar e voltar às regras gerais' }).click();
+  await editor.getByRole('button', { name: 'Confirmar', exact: true }).click();
   await expect(rules).toBeVisible();
   await editSpacing.click();
   await expect(betweenProducts).toHaveValue('0');
@@ -393,6 +412,24 @@ test('editing layout updates the canvas before confirmation and can reset the op
   await expect(rules).toHaveCount(0);
   await expect(layer).not.toHaveAttribute('inert', '');
   await expect(row).toHaveCSS('column-gap', '20px');
+});
+
+test('mobile layout editing replaces the Visual and Produtos navigation with its own footer', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await openWorkspace(page);
+  const navigation = page.locator('[data-mobile-designer-navigation]');
+  for (const panel of ['visual', 'products']) {
+    if (panel === 'products') await navigation.getByRole('button', { name: 'Produtos', exact: true }).click();
+    await page.locator(`#designer-sheet-${panel}`).getByRole('button', { name: 'Configurações do cardápio' }).click();
+    const rules = page.getByRole('dialog', { name: 'Regras gerais' });
+    await rules.getByRole('button', { name: 'Editar espaçamentos' }).click();
+    const editor = page.getByRole('region', { name: 'Espaçamentos' });
+    await expect(navigation).toBeHidden();
+    await expect(editor.getByRole('button', { name: 'Confirmar', exact: true })).toBeInViewport();
+    await editor.getByRole('button', { name: 'Cancelar', exact: true }).click();
+    await rules.getByRole('button', { name: 'Fechar', exact: true }).click();
+    await expect(navigation).toBeVisible();
+  }
 });
 
 test('mobile header returns after scrolling and stays accessible above either expanded panel', async ({ page }) => {

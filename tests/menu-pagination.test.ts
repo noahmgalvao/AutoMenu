@@ -14,7 +14,7 @@ import { FREE_TEXT_PREFIX } from '../src/domain/menu/flow';
 import { resolveMenuPageDimensions } from '../src/domain/menu/pageSetup';
 import { convertMenuPageSetup } from '../src/domain/menu/convertMenuPageSetup';
 import { findSplitCategorySwap } from '../src/domain/menu/splitCategorySwap';
-import { resolveMenuMargins } from '../src/domain/menu/styleRules';
+import { resolveMenuContentSpacing, resolveMenuMargins } from '../src/domain/menu/styleRules';
 import { PRESET_TEMPLATES } from '../src/domain/templates/templateCatalog';
 
 const style: MenuStyle = { ...PRESET_TEMPLATES[0], templateHeadingVisibility: undefined, splitCategoryAcrossPages: undefined, categoryColumnCount: 2, columnCount: 1, layoutMode: 'list' };
@@ -45,6 +45,20 @@ test('a full preferred column tries the other column before creating a page', ()
     assert.deepEqual(pages[0].columns.map((column) => column.chunks.map((chunk) => chunk.category)), [['B'], ['A']]);
     assert.equal(pages[1].columns[0].chunks[0].category, 'C');
     assert.equal(pages.length, 2);
+});
+
+test('the distance from a product to the next category participates in column fit', () => {
+    const preferences = { A: { pageIndex: 0, columnIndex: 0 }, B: { pageIndex: 0, columnIndex: 0 } };
+    const singleColumn: MenuStyle = { ...style, categoryColumnCount: 1, categoryPlacements: preferences };
+    const spacing = resolveMenuContentSpacing(singleColumn);
+    const compact = { ...singleColumn, contentSpacing: { ...spacing, productToNextCategory: 0 } };
+    const spacious = { ...singleColumn, contentSpacing: { ...spacing, productToNextCategory: 100 } };
+    const height = (menu: MenuStyle) => layOut(['A', 'B'], menu, 100)[0].columns[0].estimatedHeight;
+    assert.equal(height(singleColumn) - height(compact), spacing.productToNextCategory);
+    assert.equal(height(spacious) - height(compact), 100);
+    const automatic = { ...singleColumn, categoryPlacements: undefined };
+    assert.equal(height({ ...automatic, contentSpacing: spacious.contentSpacing })
+        - height({ ...automatic, contentSpacing: compact.contentSpacing }), 100);
 });
 
 test('a saved vertical offset yields to a category that fits in the column', () => {

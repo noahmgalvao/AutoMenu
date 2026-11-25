@@ -26,7 +26,7 @@ interface MenuSidebarProps {
     onPdfClick?: () => void;
     handleResetDesign: () => void;
     restoreRuleDefaults: () => void;
-    onRulesLayoutEditingChange: (editing: boolean) => void;
+    onRulesLayoutEditingChange?: (editing: boolean) => void;
     
     // Data Props
     style: MenuStyle;

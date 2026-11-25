@@ -1,3 +1,4 @@
+import { CATEGORY_CHUNK_GAP_PX } from './flow';
 import {
   DEFAULT_FONT_SIZE_LIMITS,
   DEFAULT_MINIMUM_FONT_SIZE,
@@ -58,28 +59,35 @@ export const resolveMenuMargins = (style: MenuStyle): MenuMargins => {
   };
 };
 
-export const resolveMenuContentSpacing = (style: MenuStyle): MenuContentSpacing => ({
-  headerToContent: positiveNumber(
-    style.contentSpacing?.headerToContent,
-    style.elementStyles?.menuSubtitle?.marginBottom ?? DEFAULT_MENU_CONTENT_SPACING.headerToContent,
-  ),
-  categoryToProduct: positiveNumber(
-    style.contentSpacing?.categoryToProduct,
-    style.elementStyles?.category?.marginBottom ?? DEFAULT_MENU_CONTENT_SPACING.categoryToProduct,
-  ),
-  productNameToDescription: positiveNumber(
-    style.contentSpacing?.productNameToDescription,
-    DEFAULT_MENU_CONTENT_SPACING.productNameToDescription,
-  ),
-  betweenProducts: positiveNumber(
+export const resolveMenuContentSpacing = (style: MenuStyle): Required<MenuContentSpacing> => {
+  const betweenProducts = positiveNumber(
     style.contentSpacing?.betweenProducts,
     style.itemGap ?? DEFAULT_MENU_CONTENT_SPACING.betweenProducts,
-  ),
-  productNameToPrice: positiveNumber(
-    style.contentSpacing?.productNameToPrice,
-    DEFAULT_MENU_CONTENT_SPACING.productNameToPrice,
-  ),
-});
+  );
+  return {
+    headerToContent: positiveNumber(
+      style.contentSpacing?.headerToContent,
+      style.elementStyles?.menuSubtitle?.marginBottom ?? DEFAULT_MENU_CONTENT_SPACING.headerToContent,
+    ),
+    categoryToProduct: positiveNumber(
+      style.contentSpacing?.categoryToProduct,
+      style.elementStyles?.category?.marginBottom ?? DEFAULT_MENU_CONTENT_SPACING.categoryToProduct,
+    ),
+    productNameToDescription: positiveNumber(
+      style.contentSpacing?.productNameToDescription,
+      DEFAULT_MENU_CONTENT_SPACING.productNameToDescription,
+    ),
+    betweenProducts,
+    productToNextCategory: positiveNumber(
+      style.contentSpacing?.productToNextCategory,
+      betweenProducts + CATEGORY_CHUNK_GAP_PX,
+    ),
+    productNameToPrice: positiveNumber(
+      style.contentSpacing?.productNameToPrice,
+      DEFAULT_MENU_CONTENT_SPACING.productNameToPrice,
+    ),
+  };
+};
 
 export const clampFontSize = (
   style: MenuStyle,
