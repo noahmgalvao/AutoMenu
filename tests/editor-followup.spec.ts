@@ -151,3 +151,31 @@ test('each add shape click inserts a square with its remove shortcut before More
   await expect(shortcuts.nth(-2)).toHaveAttribute('title', 'Remover forma');
   await expect(shortcuts.last()).toHaveAttribute('title', 'Mais opções');
 });
+
+test('landscape can use five columns and changing a selected category leaves others alone', async ({ page }) => {
+  await page.goto(fixture + '?general-rules&photos=top&cols=1&landscape&keep-categories&no-photos');
+  const productColumns = page.getByRole('group', { name: 'Colunas de produtos' });
+  const categoryColumns = page.getByRole('group', { name: 'Colunas de categorias' });
+  await expect(productColumns.getByRole('button', { name: '5', exact: true })).toBeVisible();
+  await expect(categoryColumns.getByRole('button', { name: '5', exact: true })).toBeVisible();
+  await page.locator('[data-category-chunk="Entradas"] h2').click();
+  await productColumns.getByRole('button', { name: '2', exact: true }).click();
+  await expect(page.locator('[data-category-chunk="Entradas"] [data-pagination-grid]')).toHaveAttribute('data-pagination-columns', '2');
+  await expect(page.locator('[data-category-chunk="Principais"] [data-pagination-grid]')).toHaveAttribute('data-pagination-columns', '1');
+  await page.getByRole('button', { name: 'Abrir dicas do cardápio' }).click();
+  await expect(page.getByRole('button', { name: 'Padronizar colunas de produtos' })).toBeVisible();
+});
+
+test('word width blocks narrow columns and a reduction applies to matching product names', async ({ page }) => {
+  await page.goto(fixture + '?general-rules&photos=top&cols=1&long-name&no-photos');
+  const columns = page.getByRole('group', { name: 'Colunas de produtos' });
+  await expect(columns.getByRole('button', { name: '3', exact: true })).toBeDisabled();
+  await columns.getByRole('button', { name: 'Ajuda sobre colunas de produtos' }).click();
+  await expect(columns.getByRole('tooltip')).toContainText('limitado pelas definições de fonte');
+  const names = page.locator('[data-word-fit-scope="productName"]');
+  for (const name of await names.all()) {
+    await expect(name).toHaveAttribute('data-word-fit-minimum', '13');
+    await expect(name).toHaveCSS('font-size', '13px');
+    await expect(name).toHaveCSS('overflow-wrap', 'normal');
+  }
+});

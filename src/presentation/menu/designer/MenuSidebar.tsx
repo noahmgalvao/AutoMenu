@@ -178,7 +178,9 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
 
           <hr className="border-slate-100" />
 
-          <LayoutSection 
+          <LayoutSection
+            selectedCategory={selection.type === 'category' ? selection.id ?? undefined : undefined}
+            products={products}
             style={style}
             setStyle={setStyle}
           />

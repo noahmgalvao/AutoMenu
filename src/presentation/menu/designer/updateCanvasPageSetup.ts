@@ -1,3 +1,4 @@
+import { canApplyCanvasColumnCounts } from '../canvas/textFit';
 import type { Dispatch, SetStateAction } from 'react';
 import type { MenuStyle, Product } from '../../../domain/menu/model';
 import type { MenuPageSetup } from '../../../domain/menu/pageModel';
@@ -22,5 +23,6 @@ const getRenderedAddedImageAspectRatios = () => {
 
 export function updateCanvasPageSetup(setStyle: Dispatch<SetStateAction<MenuStyle>>, nextSetup: MenuPageSetup, products: readonly Product[]) {
   const ratios = getRenderedAddedImageAspectRatios();
-  setStyle(previous => convertMenuPageSetup(previous, nextSetup, ratios, products));
+  setStyle(previous => convertMenuPageSetup(previous, nextSetup, ratios, products,
+    count => canApplyCanvasColumnCounts(previous, count, undefined, undefined, { ...previous, pageSetup: nextSetup })));
 }

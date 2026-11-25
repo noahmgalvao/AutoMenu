@@ -39,11 +39,11 @@ export const resolveFontSizeLimits = (style: MenuStyle): FontSizeLimits => {
   };
 };
 
-export const MIN_CONFIGURABLE_FONT_SIZE = 1;
+export const MIN_CONFIGURABLE_FONT_SIZE = DEFAULT_MINIMUM_FONT_SIZE;
 
 export const resolveMinimumFontSize = (style: MenuStyle): number => {
   const parsed = Number(style.minimumFontSize);
-  return Number.isFinite(parsed) && parsed >= MIN_CONFIGURABLE_FONT_SIZE
+  return Number.isFinite(parsed) && parsed >= MIN_CONFIGURABLE_FONT_SIZE && (parsed !== 15 || style.revisedMinimumFontSize === true)
     ? roundFontSize(Math.min(300, parsed), DEFAULT_MINIMUM_FONT_SIZE)
     : DEFAULT_MINIMUM_FONT_SIZE;
 };

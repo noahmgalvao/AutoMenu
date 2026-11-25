@@ -13,6 +13,7 @@ import { PublishModal } from '../publishing/PublishModal';
 import { CreateMenuModal } from './CreateMenuModal';
 import { RevisionHistoryModal } from './RevisionHistoryModal';
 import { useMenuPublishing } from '../publishing/useMenuPublishing';
+import { AppRecovery, PanelLoading } from './AppRecovery';
 import { useWorkspaceEditor } from './useWorkspaceEditor';
 const loadProductDesigner = () => import('../products/ProductDesigner').then((module) => ({
   default: module.ProductDesigner,
@@ -113,7 +114,7 @@ const App: React.FC = () => {
     let cancelled = false;
     void loadProductDesigner().then(() => {
       if (!cancelled) setHasOpenedProductDesigner(true);
-    });
+    }).catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -176,7 +177,7 @@ const App: React.FC = () => {
   }
 
   if (!session) {
-    return <AuthScreen onSignIn={handleSignIn} onSignUp={handleSignUp} loading={isAuthSubmitting} error={authError} />;
+    return <AuthScreen onSignIn={handleSignIn} onSignUp={handleSignUp} loading={isAuthSubmitting} error={authError ?? loadError} />;
   }
 
   if (!workspaceData) {
@@ -299,7 +300,7 @@ const App: React.FC = () => {
       />
 
       {isSettingsOpen && (
-        <React.Suspense fallback={null}>
+        <AppRecovery close={() => setIsSettingsOpen(false)}><React.Suspense fallback={<PanelLoading />}>
           <SettingsModal
             open
             profile={workspaceData.profile}
@@ -311,7 +312,7 @@ const App: React.FC = () => {
             onRequestPasswordReset={handleRequestPasswordReset}
             onUpdatePassword={handleUpdatePassword}
           />
-        </React.Suspense>
+        </React.Suspense></AppRecovery>
       )}
 
       {loadError && !isPublishOpen && (
@@ -352,7 +353,7 @@ const App: React.FC = () => {
         </div>
 
         {hasOpenedProductDesigner && (
-          <React.Suspense fallback={null}>
+          <AppRecovery close={() => { setHasOpenedProductDesigner(false); setActivePanel(null); }}><React.Suspense fallback={<PanelLoading />}>
             <ProductDesigner
               products={products}
               setProducts={setProducts}
@@ -370,7 +371,7 @@ const App: React.FC = () => {
               publishControl={publishControl}
               onImportVisibilityChange={setIsMenuImportOpen}
             />
-          </React.Suspense>
+          </React.Suspense></AppRecovery>
         )}
 
         <div className="flex-1 min-w-0 h-full relative">

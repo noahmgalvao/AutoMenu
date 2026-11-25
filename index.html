@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
@@ -26,7 +26,21 @@
 </script>
 </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <main style="min-height:90vh;display:grid;place-content:center;text-align:center;font:16px system-ui;color:#334155">
+        <p id="startup-status" role="status">Carregando AutoMenu…</p>
+        <button id="startup-retry" type="button" hidden>Recarregar</button>
+      </main>
+    </div>
+    <script>
+      document.getElementById('startup-retry').addEventListener('click', () => location.reload());
+      setTimeout(() => {
+        const status = document.getElementById('startup-status');
+        if (!status) return;
+        status.textContent = 'O AutoMenu está demorando para carregar.';
+        document.getElementById('startup-retry').hidden = false;
+      }, 10000);
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

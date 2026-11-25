@@ -4,7 +4,7 @@ import { categoryName } from './categoryName';
 import type { Product, MenuStyle } from './model';
 import { resolveMenuMargins, resolveMinimumFontSize, resolveMenuContentSpacing, clampFontSize, resolveProductImageFrame } from './styleRules';
 import { resolveMenuPageDimensions } from './pageSetup';
-import { normalizeColumnWidths } from './categoryColumns';
+import { getProductColumnCount, normalizeColumnWidths } from './categoryColumns';
 import { templateHeaderExtra, templateCategoryExtra } from '../templates/templateDesign';
 import { FREE_TEXT_PREFIX, CATEGORY_CHUNK_GAP_PX, getCategoryChunkGap } from './flow';
 import { formatMenuPrice, resolveMenuPriceDecimalPlaces } from './price';
@@ -102,9 +102,7 @@ const getSafeLineCount = (text: string, usableWidth: number, charWidth: number) 
             }
 
             if (lineLength > 0) lines += 1;
-            const additionalLines = Math.floor((word.length - 1) / charsPerLine);
-            lines += additionalLines;
-            lineLength = word.length - (additionalLines * charsPerLine);
+            lineLength = word.length;
         });
 
         return total + lines;
@@ -116,7 +114,7 @@ const getSafeCustomMarginTop = (product: Product) => {
     return Number.isFinite(margin) ? Math.max(0, margin) : 0;
 };
 
-const getProductGridGap = (style: MenuStyle) => {
+export const getProductGridGap = (style: MenuStyle) => {
     const productColumnCount = style.columnCount || 1;
     const categoryColumnCount = style.categoryColumnCount || 1;
     if (categoryColumnCount > 1) return productColumnCount > 2 ? 4 : 8;
@@ -410,7 +408,6 @@ const createPageItemHeightCalculator = (
     measuredHeights?: PaginationOptions['measuredHeights'],
 ) => {
     const spacing = resolveMenuContentSpacing(style);
-    const productColumnCount = style.columnCount || 1;
     const categoryColumnCount = categoryColumnCountOverride || style.categoryColumnCount || 1;
     const categoryColumnWidth = getCategoryColumnWidth(style, categoryColumnCount, categoryColumnIndex);
 
@@ -443,7 +440,7 @@ const createPageItemHeightCalculator = (
             return (centeredPhoto && imageHeight ? textHeight + imageHeight + 4 : Math.max(textHeight, imageHeight))
                 + spacing.categoryToProduct + 8 + templateCategoryExtra(style);
         }
-        if (item.type === 'product-item') return calculateItemHeight(item.data, style, false, 1, categoryColumnWidth, categoryColumnCount);
+        if (item.type === 'product-item') return calculateItemHeight(item.data, { ...style, columnCount: getProductColumnCount(style, item.category) }, false, 1, categoryColumnWidth, categoryColumnCount);
         if (item.type === 'free-text-row') {
             const horizontalGap = 8;
             let rowWidth = 0;
@@ -465,8 +462,10 @@ const createPageItemHeightCalculator = (
             return totalHeight + rowHeight;
         }
         if (item.type === 'product-row') {
+            const productColumnCount = getProductColumnCount(style, item.category);
+            const categoryStyle = { ...style, columnCount: productColumnCount };
             const rowHeight = Math.max(
-                ...(item.data as Product[]).map((product) => calculateItemHeight(product, style, true, productColumnCount, categoryColumnWidth, categoryColumnCount))
+                ...(item.data as Product[]).map((product) => calculateItemHeight(product, categoryStyle, true, productColumnCount, categoryColumnWidth, categoryColumnCount))
             );
             return rowHeight;
         }
@@ -692,8 +691,8 @@ const buildLockedPagination = (
             return;
         }
 
-        const isRowLayout = style.layoutMode === 'grid' || style.layoutMode === 'cards' || (style.columnCount || 1) > 1;
-        const productColumnCount = style.columnCount || 1;
+        const productColumnCount = getProductColumnCount(style, category);
+        const isRowLayout = style.layoutMode === 'grid' || style.layoutMode === 'cards' || productColumnCount > 1;
         const contentItems = buildCategoryProductItems(visibleProducts, category, isRowLayout, productColumnCount);
 
         const headerItem: PageItem = { type: 'category-header', data: category, category };
@@ -1141,8 +1140,8 @@ export const calculatePagination = (
             return;
         }
 
-        const isRowLayout = style.layoutMode === 'grid' || style.layoutMode === 'cards' || (style.columnCount || 1) > 1;
-        const productColumnCount = style.columnCount || 1;
+        const productColumnCount = getProductColumnCount(style, category);
+        const isRowLayout = style.layoutMode === 'grid' || style.layoutMode === 'cards' || productColumnCount > 1;
         const items = buildCategoryProductItems(visibleProducts, category, isRowLayout, productColumnCount);
 
         placeCategory(category, items);

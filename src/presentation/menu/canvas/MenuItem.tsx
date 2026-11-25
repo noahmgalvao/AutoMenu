@@ -24,7 +24,7 @@ import { getProductCardRadius, getProductPhotoFrameRadius, getProductCardCornerR
 import { AutoFitText } from './AutoFitText';
 import { CanvasTextDivider } from './CanvasTextDivider';
 import { isHeadingTextHit } from './menuHeadingHit';
-import { getPaginationItemKey, getProductCardImageLimit, getProductListImageLimit, getCategoryPhotoSizing } from '../../../domain/menu/menuPagination';
+import { getPaginationItemKey, getProductGridGap, getProductCardImageLimit, getProductListImageLimit, getCategoryPhotoSizing } from '../../../domain/menu/menuPagination';
 import { ProductControls, FreeTextResizeHandles, getFreeTextMaximumWidth, getFreeTextContentWidth } from './ProductCanvasControls';
 import { DEFAULT_MENU_CONTENT_SPACING } from '../../../domain/menu/defaults';
 import { FREE_TEXT_PREFIX } from '../../../domain/menu/flow';
@@ -114,7 +114,6 @@ export const MenuItem: React.FC<MenuItemProps> = ({
     };
     const fontSizeLimits = resolveFontSizeLimits(style);
     const minimumFontSize = resolveMinimumFontSize(style);
-    const allowSameWordBreak = style.allowSameWordBreak === true;
     const contentSpacing = resolveMenuContentSpacing(style);
     const replacePriceOnNextInputRef = React.useRef(new Set<string>());
     const editedPricesRef = React.useRef(new Set<string>());
@@ -302,7 +301,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 color: `var(--automenu-preview-text, ${priceStyle.color || style.textColor})`,
                 ...getTextOutlineStyle(priceStyle.textOutline),
                 fontFamily: templateFontStack(style, priceStyle.fontFamily),
-                fontSize: baseSize,
+                fontSize: `var(--automenu-price-fit-size, ${baseSize}px)`,
                 fontWeight: priceStyle.fontWeight,
                 fontStyle: priceStyle.italic ? 'italic' : 'normal',
                 textDecoration: priceStyle.underline ? 'underline' : 'none',
@@ -448,7 +447,6 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                         text={title ? style.menuTitle ?? 'MENU' : hasSubtitle ? style.menuSubtitle : ''}
                         baseFontSize={fontSize}
                         minimumFontSize={minimumFontSize}
-                        allowSameWordBreak={allowSameWordBreak}
                         fitScope={field}
                         widthMode="parent"
                         id={handlers.readOnly ? undefined : elementId}
@@ -612,7 +610,6 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                         text={categoryName(item.data)}
                         baseFontSize={clampFontSize(style, 'category', catStyle.fontSize, 24)}
                         minimumFontSize={minimumFontSize}
-                        allowSameWordBreak={allowSameWordBreak}
                         fitScope="category"
                         data-divider-title="true"
                         widthMode="flex"
@@ -756,9 +753,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             text={product.name}
                             baseFontSize={clampFontSize(style, 'freeText', nameStyle.fontSize, 18)}
                             minimumFontSize={minimumFontSize}
-                            allowSameWordBreak={allowSameWordBreak}
                             fitScope="freeText"
-                            disableAutoFit
                             containerSelector={`#product-container-${product.id}`}
                             id={handlers.readOnly || !primary ? undefined : `product-name-${product.id}`} data-product-edit-id={product.id} data-placeholder-field="free-text" className={`whitespace-pre-wrap break-words [overflow-wrap:anywhere] outline-none rounded ${isEditable ? editableTextClassName : ''}`}
                             style={{ 
@@ -813,7 +808,6 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                     text={product.name}
                                     baseFontSize={clampFontSize(style, 'productName', nameStyle.fontSize, 18)}
                                     minimumFontSize={minimumFontSize}
-                                    allowSameWordBreak={allowSameWordBreak}
                                     fitScope="productName"
                                     data-divider-title="true"
                                     widthMode="flex"
@@ -845,7 +839,6 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             text={product.description}
                             baseFontSize={clampFontSize(style, 'productDescription', descStyle.fontSize, 14)}
                             minimumFontSize={minimumFontSize}
-                            allowSameWordBreak={allowSameWordBreak}
                             fitScope="productDescription"
                             widthMode="parent"
                             data-template-description id={handlers.readOnly ? undefined : `product-description-${product.id}`} data-product-edit-id={product.id} data-placeholder-field="product-description" className={`max-w-full opacity-80 break-words [overflow-wrap:anywhere] [word-break:normal] leading-relaxed outline-none rounded ${isEditable ? `min-h-[1.5em] ${editableTextClassName}` : ''}`}
@@ -900,18 +893,12 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             : 8;
         const compactControls = categoryColumnCount > 1 || productColumnCount > 1;
         const cardImageHeight = getProductCardImageLimit(style);
-        const productGridGap = categoryColumnCount > 1
-            ? (productColumnCount > 2 ? 4 : 8)
-            : productColumnCount > 2
-                ? 8
-                : productColumnCount > 1
-                    ? 12
-                    : 24;
+        const productGridGap = getProductGridGap(style);
         
         return (
             <div
                 key={`row-${idx}`}
-                data-pagination-grid="true"
+                data-pagination-grid="true" data-pagination-columns={productColumnCount}
                 className="grid"
                 style={{
                     gridTemplateColumns: `repeat(${productColumnCount}, minmax(0, 1fr))`,
@@ -1025,7 +1012,6 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                         text={product.name}
                                                         baseFontSize={clampFontSize(style, 'productName', nameStyle.fontSize, 18)}
                                                         minimumFontSize={minimumFontSize}
-                                                        allowSameWordBreak={allowSameWordBreak}
                                                         fitScope="productName"
                                                         data-divider-title="true"
                                                         widthMode="flex"
@@ -1057,7 +1043,6 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                 text={product.description}
                                                 baseFontSize={clampFontSize(style, 'productDescription', descStyle.fontSize, 14)}
                                                 minimumFontSize={minimumFontSize}
-                                                allowSameWordBreak={allowSameWordBreak}
                                                 fitScope="productDescription"
                                                 widthMode="parent"
                                                 data-template-description id={handlers.readOnly ? undefined : `product-description-${product.id}`}

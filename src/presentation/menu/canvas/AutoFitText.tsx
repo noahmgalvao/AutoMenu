@@ -7,12 +7,10 @@ interface AutoFitTextProps extends React.HTMLAttributes<HTMLElement> {
   text: string;
   baseFontSize: number;
   minimumFontSize: number;
-  allowSameWordBreak: boolean;
   fitScope: WordFitScope;
   widthMode?: 'self' | 'parent' | 'flex';
   containerSelector?: string;
   availableWidthInset?: number;
-  disableAutoFit?: boolean;
 }
 
 export const AutoFitText: React.FC<AutoFitTextProps> = ({
@@ -20,12 +18,10 @@ export const AutoFitText: React.FC<AutoFitTextProps> = ({
   text,
   baseFontSize,
   minimumFontSize,
-  allowSameWordBreak,
   fitScope,
   widthMode = 'flex',
   containerSelector,
   availableWidthInset = 0,
-  disableAutoFit = false,
   style,
   className = '',
   onInput,
@@ -38,13 +34,6 @@ export const AutoFitText: React.FC<AutoFitTextProps> = ({
   const evaluate = useCallback((textOverride?: string) => {
     const element = elementRef.current;
     if (!element) return;
-    if (disableAutoFit) {
-      element.dataset.wordOverflow = 'false';
-      setFit((current) => current.fontSize === baseFontSize && current.fits
-        ? current
-        : { fontSize: baseFontSize, fits: true });
-      return;
-    }
     const result = measureWordFitElement(element, {
       text: textOverride,
       baseFontSize,
@@ -53,13 +42,12 @@ export const AutoFitText: React.FC<AutoFitTextProps> = ({
     setFit((current) => (
       current.fontSize === result.fontSize && current.fits === result.fits ? current : result
     ));
-  }, [baseFontSize, disableAutoFit]);
+  }, [baseFontSize]);
 
   useLayoutEffect(() => {
     const element = elementRef.current;
     if (!element) return;
     evaluate();
-    if (disableAutoFit) return;
     const container = getWordFitWidthContainer(element);
     let width = getElementAvailableWidth(element);
     const observer = new ResizeObserver(() => {
@@ -75,7 +63,7 @@ export const AutoFitText: React.FC<AutoFitTextProps> = ({
       observer.disconnect();
       document.fonts?.removeEventListener('loadingdone', fontLoaded);
     };
-  }, [allowSameWordBreak, availableWidthInset, containerSelector, disableAutoFit, evaluate, minimumFontSize, text, widthMode, style?.fontFamily, style?.fontWeight, style?.fontStyle, style?.letterSpacing, style?.textTransform]);
+  }, [availableWidthInset, containerSelector, evaluate, minimumFontSize, text, widthMode, style?.fontFamily, style?.fontWeight, style?.fontStyle, style?.letterSpacing, style?.textTransform]);
 
   const editableTextColor = rest.contentEditable && typeof style?.color === 'string'
     ? style.color
@@ -95,7 +83,6 @@ export const AutoFitText: React.FC<AutoFitTextProps> = ({
     'data-word-fit-size': fit.fontSize,
     'data-word-fit-reduced': fit.fontSize < baseFontSize,
     'data-word-fit-minimum': minimumFontSize,
-    'data-word-fit-allow-break': allowSameWordBreak,
     'data-word-fit-width-mode': widthMode,
     'data-word-fit-container': containerSelector,
     'data-word-fit-width-inset': availableWidthInset,
@@ -104,10 +91,10 @@ export const AutoFitText: React.FC<AutoFitTextProps> = ({
     'data-word-fit-font-style': style?.fontStyle,
     'data-word-fit-letter-spacing': style?.letterSpacing,
     'data-word-fit-text-transform': style?.textTransform as ElementStyle['textTransform'],
-    className: `${!fit.fits && !disableAutoFit ? 'automenu-word-wrap' : allowSameWordBreak ? '' : 'automenu-word-safe'} ${className}`,
+    className: `automenu-word-safe ${className}`,
     style: {
       ...style,
-      fontSize: `${fit.fontSize}px`,
+      fontSize: `min(${fit.fontSize}px, var(--automenu-word-group-size, ${fit.fontSize}px))`,
       ...editableColorStyle,
     },
     onInput: (event: React.InputEvent<HTMLElement>) => {

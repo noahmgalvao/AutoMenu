@@ -1,3 +1,4 @@
+import { getMenuColumnLimit, resolveMenuColumnCount } from '../../domain/menu/categoryColumns';
 import type { SortOption, Product, MenuStyle } from '../../domain/menu/model';
 import type { WorkspaceBootstrapData, MenuEditorState } from '../../domain/workspace/model';
 import { PRESET_TEMPLATES, createClassicMenuStyle } from '../../domain/menu/defaults';
@@ -88,6 +89,8 @@ export const withStyleDefaults = (style: MenuStyle | null | undefined): MenuStyl
     ...base,
     ...source,
     layoutMode,
+    columnCount: resolveMenuColumnCount(source.columnCount ?? base.columnCount, getMenuColumnLimit(source)),
+    categoryColumnCount: resolveMenuColumnCount(source.categoryColumnCount ?? base.categoryColumnCount, getMenuColumnLimit(source)),
     appliedTemplateId: style ? source.appliedTemplateId : base.appliedTemplateId,
     splitCategoryAcrossPages: style ? source.splitCategoryAcrossPages : base.splitCategoryAcrossPages,
     productsCanChangeCategory: style ? source.productsCanChangeCategory : base.productsCanChangeCategory,
@@ -120,7 +123,7 @@ export const withStyleDefaults = (style: MenuStyle | null | undefined): MenuStyl
     },
     revisedFontSizeDefaults: true,
     minimumFontSize: resolveMinimumFontSize({ ...base, ...source } as MenuStyle),
-    allowSameWordBreak: source.allowSameWordBreak === true,
+    revisedMinimumFontSize: true,
     priceDecimalPlaces: resolvePriceDecimalPlaces(source.priceDecimalPlaces),
     priceDecimalSeparator: resolvePriceDecimalSeparator(source.priceDecimalSeparator),
     priceCurrencySymbol: resolvePriceCurrencySymbol(source.priceCurrencySymbol),

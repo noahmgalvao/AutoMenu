@@ -1,3 +1,4 @@
+import { getProductColumnCount } from '../../domain/menu/categoryColumns';
 import { useCanvasFileExports, type CanvasFileExports } from './designer/useCanvasFileExports';
 import { formattingLabels, getFormattingGroups, getFormattingItems, getItemFormattingStyle, setElementFormatting, standardizeItemFormatting, updateItemFormatting, type FormattingKind, type FormattingScope } from '../../domain/menu/itemFormatting';
 import { MenuFontContext } from './designer/SearchableSelects';
@@ -22,6 +23,7 @@ import { bindCanvasZoomGestures, getZoomAnchor, restoreZoomAnchor, type CanvasPo
 import { MenuColorContext, getMenuPalette } from './designer/ColorPicker';
 import { getImageLayerIndexes, moveImageToMenuBackground } from '../../domain/menu/imageLayers';
 import {
+    canApplyCanvasColumnCounts,
     canIncreaseCanvasFontSize,
     getLargestSafeFontSizeForElements,
     type WordFitScope,
@@ -312,6 +314,12 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         updateScopedFormatting(kind, id, previous => typeof update === 'function' ? update(previous) : update);
     };
     const kindsWithDifferences = (['category', 'product'] as const).filter(kind => formattingGroups[kind].length > 1);
+    const columnSettings = [...new Set(formattingItems.category.map(category => getProductColumnCount(style, category)))];
+    const [preferredProductColumns, setPreferredProductColumns] = useState<number>();
+    const standardProductColumns = columnSettings.find(count => count === preferredProductColumns) ?? columnSettings[0];
+    const hasMixedProductColumns = columnSettings.length > 1;
+    const canStandardizeProductColumns = () => hasMixedProductColumns
+        && canApplyCanvasColumnCounts(style, style.categoryColumnCount || 1, standardProductColumns);
     const standardizationSource = (kind: FormattingKind) => {
         const representatives = formattingGroups[kind].map(group => group[0]);
         return representatives.find(id => id === standardization[kind]) ?? representatives[0];
@@ -335,7 +343,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const configuredCanvasFonts = React.useMemo(() => getConfiguredCanvasFonts(style, products), [style, products]);
     const showMixedFontTip = configuredCanvasFonts.length > 1 && !dismissedTips.has('mixed-fonts');
     const hasVisibleTips = visibleFontTips.length > 0 || showMixedFontTip || showOverlapTip || showOffCanvasTip
-        || showPositionedCategoryTip || Boolean(visibleSplitCategorySwap) || contrastTips.length > 0 || backgroundOverlapTips.length > 0 || kindsWithDifferences.length > 0;
+        || showPositionedCategoryTip || Boolean(visibleSplitCategorySwap) || contrastTips.length > 0 || backgroundOverlapTips.length > 0 || kindsWithDifferences.length > 0 || hasMixedProductColumns;
 
     useEffect(() => {
         const root = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas]');
@@ -1491,8 +1499,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             || 18,
         );
         if (
-            !style.allowSameWordBreak
-            && Number.isFinite(nextFontSize)
+            Number.isFinite(nextFontSize)
             && nextFontSize > currentFontSize
             && !canIncreaseCanvasFontSize('freeText', nextFontSize, `product-name-${id}`)
         ) {
@@ -1842,6 +1849,10 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             if (source) nextStyle = standardizeItemFormatting(nextStyle, kind, source);
         }
 
+        if (canStandardizeProductColumns()) {
+            nextStyle = { ...nextStyle, columnCount: standardProductColumns, categoryProductColumnCounts: undefined, pageBreaks: [], name: 'Custom' };
+        }
+
         if (showMixedFontTip) {
             nextStyle = applyFontToMenuStyle(nextStyle, style.fontFamily);
             nextProducts = applyFontToFreeTexts(nextProducts, style.fontFamily);
@@ -2026,7 +2037,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                 </div>
 
                                 <div className="max-h-[min(60vh,32rem)] space-y-4 overflow-y-auto p-4">
-                                    {kindsWithDifferences.length > 0 && <section className="space-y-2">
+                                    {(kindsWithDifferences.length > 0 || hasMixedProductColumns) && <section className="space-y-2">
                                         <h3 className="text-xs font-semibold text-slate-800">Sugestão para manter todos no padrão</h3>
                                         {kindsWithDifferences.map(kind => (
                                             <div key={kind} className="flex items-end gap-2 rounded-xl bg-indigo-50 p-3 text-xs">
@@ -2050,6 +2061,24 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                                 </button>
                                             </div>
                                         ))}
+                                        {hasMixedProductColumns && <div className="flex items-end gap-2 rounded-xl bg-indigo-50 p-3 text-xs">
+                                            <label className="min-w-0 flex-1 space-y-1 font-semibold text-slate-700">
+                                                Colunas de produtos
+                                                <select className="w-full rounded-lg border border-indigo-200 bg-white p-1.5"
+                                                    value={standardProductColumns} onChange={event => setPreferredProductColumns(Number(event.target.value))}>
+                                                    {columnSettings.map(count => <option key={count} value={count}>{count}</option>)}
+                                                </select>
+                                            </label>
+                                            <button type="button" aria-label="Padronizar colunas de produtos" disabled={!canStandardizeProductColumns()}
+                                                className="rounded-lg bg-indigo-700 px-2.5 py-1.5 font-semibold text-white disabled:opacity-40"
+                                                onClick={() => {
+                                                    if (canStandardizeProductColumns()) setStyle(previous => ({
+                                                        ...previous, columnCount: standardProductColumns, categoryProductColumnCounts: undefined, pageBreaks: [], name: 'Custom',
+                                                    }));
+                                                }}>
+                                                Padronizar
+                                            </button>
+                                        </div>}
                                     </section>}
                                     {backgroundOverlapTips.length > 0 && <section>
                                         <h3 className="mb-2 text-xs font-semibold text-slate-800">Textos sobrepostos no plano de fundo</h3>

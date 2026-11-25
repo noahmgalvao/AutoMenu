@@ -734,10 +734,10 @@ test('general rules save immediately and reopen on Layout', async ({ page }) => 
   await gear.click();
   await expect(rules.getByRole('tab', { name: 'Layout' })).toHaveAttribute('aria-selected', 'true');
   await advanced.click();
-  await expect(minimum).toHaveValue('8');
+  await expect(minimum).toHaveValue('13');
   await expect(split).toBeChecked();
   await rules.getByRole('button', { name: 'Restaurar Padrão', exact: true }).click();
-  await expect(minimum).toHaveValue(String(PRESET_TEMPLATES[0].minimumFontSize ?? 15));
+  await expect(minimum).toHaveValue('13');
   await expect(split).not.toBeChecked();
   await rules.getByRole('button', { name: 'Fechar', exact: true }).click();
   await expect(rules).toHaveCount(0);
@@ -1020,4 +1020,24 @@ test('saving a workspace model is durable, retries the same ID and reappears aft
     await page.getByRole('textbox', { name: 'Pesquisar modelos' }).fill('preferencias');
     await expect(page.getByRole('button', { name: 'Modelo de Menu de teste', exact: true })).toBeVisible();
   }
+});
+
+test('a blocked startup bundle leaves a visible reload action', async ({ page }) => {
+  await page.clock.install();
+  await page.route('**/src/main.tsx', route => route.abort());
+  await page.goto('/');
+  await expect(page.getByText('Carregando AutoMenu…')).toBeVisible();
+  await page.clock.fastForward(10000);
+  await expect(page.getByRole('button', { name: 'Recarregar' })).toBeVisible();
+});
+
+test('returning to the editor checks whether the persisted session still exists', async ({ page }) => {
+  await openWorkspace(page);
+  await expect(page.getByRole('button', { name: 'Meu perfil' })).toBeVisible();
+  await page.evaluate(() => {
+    Object.keys(localStorage).filter(key => key.startsWith('sb-') && key.endsWith('-auth-token'))
+      .forEach(key => localStorage.removeItem(key));
+    document.dispatchEvent(new Event('resume'));
+  });
+  await expect(page.getByPlaceholder('email@empresa.com')).toBeVisible();
 });

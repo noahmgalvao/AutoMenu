@@ -1,3 +1,4 @@
+import { getProductColumnCount } from '../../../domain/menu/categoryColumns';
 import { alignCanvasBox, clearCanvasAlignment, showCanvasAlignment } from './canvasAlignment';
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { flushSync } from 'react-dom';
@@ -2429,8 +2430,9 @@ export const useDraggableInteractions = (
             const directProduct = productTargets[0];
 
             if (directProduct) {
-                const positionValue = (style.columnCount || 1) > 1 ? pointer.x : pointer.y;
-                const targetCenter = (style.columnCount || 1) > 1
+                const multipleColumns = getProductColumnCount(style, directProduct.category) > 1;
+                const positionValue = multipleColumns ? pointer.x : pointer.y;
+                const targetCenter = multipleColumns
                     ? directProduct.rect.left + (directProduct.rect.width / 2)
                     : directProduct.rect.top + (directProduct.rect.height / 2);
                 return {
@@ -2518,7 +2520,7 @@ export const useDraggableInteractions = (
                     targetRect: categoryProducts[categoryProducts.length - 1].rect,
                 };
         },
-        [dragScope, isSelectedCategoryTarget, isSelectedProductTarget, style.columnCount]
+        [dragScope, isSelectedCategoryTarget, isSelectedProductTarget, style]
     );
 
     const getFreeTextSwapTargetForMovement = useCallback(({

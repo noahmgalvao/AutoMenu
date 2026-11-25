@@ -1,4 +1,4 @@
-import type { MenuStyle } from './model';
+import type { MenuColumnCount, MenuStyle } from './model';
 
 const MIN_COLUMN_RATIO = 0.12;
 
@@ -34,4 +34,16 @@ export const getPageColumnWidths = (
 
 export const getColumnGridTemplate = (widths: number[]) => (
   widths.map((width) => `minmax(0, ${Math.max(0.001, width)}fr)`).join(' ')
+);
+
+export const getMenuColumnLimit = (style: Pick<MenuStyle, 'pageSetup'>) =>
+  style.pageSetup?.orientation === 'landscape' ? 5 : 3;
+
+export const resolveMenuColumnCount = (value: unknown, maximum: number): MenuColumnCount =>
+  Math.max(1, Math.min(maximum, Math.floor(Number(value) || 1))) as MenuColumnCount;
+
+export const getProductColumnCount = (style: MenuStyle, category?: string) => resolveMenuColumnCount(
+  (category && style.categoryProductColumnCounts && Object.prototype.hasOwnProperty.call(style.categoryProductColumnCounts, category)
+    ? style.categoryProductColumnCounts?.[category] : undefined) ?? style.columnCount,
+  getMenuColumnLimit(style),
 );

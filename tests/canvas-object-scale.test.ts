@@ -12,6 +12,7 @@ test('a product group continues growing after its description and photo reach th
         showImages: true,
         imageScale: 2,
         minimumFontSize: 15,
+        revisedMinimumFontSize: true as const,
         fontSizeLimits: { ...resolveFontSizeLimits(template), productName: 60, productDescription: 19, productPrice: 50 },
         elementStyles: {
             ...template.elementStyles,

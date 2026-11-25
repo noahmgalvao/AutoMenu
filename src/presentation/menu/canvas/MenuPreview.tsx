@@ -1,3 +1,4 @@
+import { getProductColumnCount } from '../../../domain/menu/categoryColumns';
 import { lockModalScrolling } from '../../common/modalScroll';
 import { setElementFormatting, type FormattingKind } from '../../../domain/menu/itemFormatting';
 import { reindexMenuPages } from '../../../domain/menu/reindexMenuPages';
@@ -949,7 +950,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             const index = productOrder.indexOf(id);
             const previous = index > 0 ? productPositions.get(productOrder[index - 1]) : undefined;
             const next = index >= 0 ? productPositions.get(productOrder[index + 1]) : undefined;
-            const productColumnCount = style.columnCount || 1;
+            const productColumnCount = getProductColumnCount(style, product?.category);
             const expectedAfter: FlowDirection = current && productColumnCount > 1 && current.subColumnIndex < productColumnCount - 1
                 ? 'right'
                 : 'bottom';
@@ -982,8 +983,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
                 || 18,
             );
             if (
-                !style.allowSameWordBreak
-                && Number.isFinite(nextFontSize)
+                Number.isFinite(nextFontSize)
                 && nextFontSize > currentFontSize
                 && !canIncreaseCanvasFontSize('freeText', nextFontSize, target.elementId)
             ) return false;

@@ -1,5 +1,7 @@
 import type { FormattingKind, FormattingScope } from '../../../domain/menu/itemFormatting';
-import { triggerLimitFeedback } from '../canvas/textFit';
+import { getMenuColumnLimit, getProductColumnCount } from '../../../domain/menu/categoryColumns';
+import type { MenuColumnCount } from '../../../domain/menu/model';
+import { canApplyCanvasColumnCounts, triggerLimitFeedback } from '../canvas/textFit';
 import { canMoveImageLayer } from '../../../domain/menu/imageLayers';
 import { MINI_FOOD_INK } from '../../../domain/menu/miniFoods';
 import { HoldStepButton } from '../../common/HoldStepButton';
@@ -24,7 +26,7 @@ import { CategoryDividerPicker } from './CategoryDividerPicker';
 import { getProductCardRadius, PRODUCT_CARD_SHAPES, PRODUCT_IMAGE_FRAMES } from '../canvas/templateStyles';
 import { 
   Type, ImagePlus, Loader2, Minus, Plus, ChevronDown,
-  Layout, List, Maximize, Palette, ArrowUpAZ, SortAsc, SortDesc, BringToFront, SendToBack,
+  Layout, List, Maximize, Palette, CircleHelp, ArrowUpAZ, SortAsc, SortDesc, BringToFront, SendToBack,
   Wallpaper, ImageIcon, Eye, EyeOff, FileCog, RectangleHorizontal, RectangleVertical
 } from 'lucide-react';
 
@@ -482,9 +484,52 @@ export const PageSection: React.FC<PageSectionProps> = ({ style, setStyle, produ
 interface LayoutSectionProps {
   style: MenuStyle;
   setStyle: React.Dispatch<React.SetStateAction<MenuStyle>>;
+  selectedCategory?: string;
+  products: Product[];
 }
 
-export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle }) => {
+const columnCounts: MenuColumnCount[] = [1, 2, 3, 4, 5];
+
+export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle, selectedCategory, products }) => {
+  const [limits, setLimits] = React.useState<{ products: number[]; categories: number[] }>({ products: [], categories: [] });
+  const [help, setHelp] = React.useState<'products' | 'categories'>();
+  const helpId = React.useId();
+  const categoryCount = style.categoryColumnCount || 1;
+  const productCount = getProductColumnCount(style, selectedCategory);
+  const choices = columnCounts.slice(0, getMenuColumnLimit(style));
+  React.useLayoutEffect(() => {
+    const root = document.querySelector('[data-automenu-editor-canvas="true"]');
+    if (!root) return;
+    let frame = 0;
+    let cancelled = false;
+    const measure = () => {
+      const counts = columnCounts.slice(0, getMenuColumnLimit(style));
+      const blocked = {
+        products: counts.filter(count => !canApplyCanvasColumnCounts(style, categoryCount, count, selectedCategory)),
+        categories: counts.filter(count => count > categoryCount && !canApplyCanvasColumnCounts(style, count)),
+      };
+      setLimits(previous => previous.products.join() === blocked.products.join() && previous.categories.join() === blocked.categories.join()
+        ? previous : blocked);
+    };
+    const schedule = () => {
+      if (cancelled) return;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    };
+    const observer = new MutationObserver(schedule);
+    observer.observe(root, { childList: true, subtree: true, characterData: true, attributes: true,
+      attributeFilter: ['data-word-fit-size', 'data-word-fit-base-size', 'data-word-fit-minimum'] });
+    document.fonts?.addEventListener('loadingdone', schedule);
+    document.fonts?.ready.then(schedule);
+    measure();
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+      document.fonts?.removeEventListener('loadingdone', schedule);
+    };
+  }, [style, products, productCount, categoryCount, selectedCategory]);
+
   const scaleValues = React.useRef<Partial<Record<'imageScale' | 'categoryImageScale', HTMLSpanElement | null>>>({});
   const updateImageScale = (field: 'imageScale' | 'categoryImageScale', delta: number) => {
     const current = style[field] || 1;
@@ -495,24 +540,32 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle })
     return next > MIN_PHOTO_SCALE && next < MAX_PHOTO_SCALE;
   };
 
-  const updateColumnCounts = (
-    event: React.MouseEvent<HTMLButtonElement>,
-    nextCategoryColumnCount: number,
-    nextProductColumnCount: number,
-  ) => {
-    setStyle((previous) => ({
+  const updateColumnCounts = (type: 'products' | 'categories', count: MenuColumnCount) => {
+    if (type === 'products') {
+      if (!canApplyCanvasColumnCounts(style, categoryCount, count, selectedCategory)) return;
+      setStyle(previous => {
+        const overrides = { ...previous.categoryProductColumnCounts, ...(selectedCategory ? { [selectedCategory]: count } : {}) };
+        if (selectedCategory && count === previous.columnCount) delete overrides[selectedCategory];
+        return {
+          ...previous,
+          columnCount: selectedCategory ? previous.columnCount : count,
+          categoryProductColumnCounts: selectedCategory ? overrides : undefined,
+          pageBreaks: [],
+          name: 'Custom',
+        };
+      });
+      return;
+    }
+    if (count > categoryCount && !canApplyCanvasColumnCounts(style, count)) return;
+    if (count === categoryCount) return;
+    setStyle(previous => ({
       ...previous,
-      columnCount: nextProductColumnCount as 1 | 2 | 3,
-      categoryColumnCount: nextCategoryColumnCount as 1 | 2 | 3,
+      categoryColumnCount: count,
       categoryPlacements: {},
-      categoryPositions: nextCategoryColumnCount !== (previous.categoryColumnCount || 1)
-        ? Object.fromEntries(Object.entries(previous.categoryPositions || {})
-          .filter(([, position]) => position.pageX !== undefined)
-          .map(([category, position]) => [category, { ...position, columnIndex: Math.min(position.columnIndex, nextCategoryColumnCount - 1) }]))
-        : previous.categoryPositions,
-      categoryColumnWidths: nextCategoryColumnCount !== (previous.categoryColumnCount || 1)
-        ? []
-        : previous.categoryColumnWidths,
+      categoryPositions: Object.fromEntries(Object.entries(previous.categoryPositions || {})
+        .filter(([, position]) => position.pageX !== undefined)
+        .map(([category, position]) => [category, { ...position, columnIndex: Math.min(position.columnIndex, count - 1) }])),
+      categoryColumnWidths: [],
       pageBreaks: [],
       name: 'Custom',
     }));
@@ -552,19 +605,32 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle })
         </div>
     )}
     
-    <div className="flex gap-2">
-        <div className="flex-1 bg-slate-50 p-2 rounded border border-slate-100">
-            <label className="text-[10px] text-slate-500 font-bold block mb-1">Colunas de produtos</label>
-            <div className="flex gap-1">
-                {[1, 2, 3].map(cols => ( <button key={cols} onClick={(event) => updateColumnCounts(event, style.categoryColumnCount || 1, cols)} className={`flex-1 h-6 text-xs font-bold rounded ${style.columnCount === cols ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}> {cols} </button> ))}
+    <div className="flex flex-wrap gap-2">
+        {([
+          ['products', 'Colunas de produtos', productCount],
+          ['categories', 'Colunas de categorias', categoryCount],
+        ] as const).map(([type, label, current]) => (
+          <div key={type} role="group" aria-label={label} className="min-w-[8rem] flex-1 rounded border border-slate-100 bg-slate-50 p-2">
+            <div className="mb-1 flex items-center gap-1 text-[10px] font-bold text-slate-500">
+              <span>{label}</span>
+              {limits[type].length > 0 && <button type="button" aria-label={`Ajuda sobre ${label.toLowerCase()}`}
+                aria-expanded={help === type} aria-describedby={help === type ? helpId : undefined}
+                onClick={() => setHelp(value => value === type ? undefined : type)}
+                onKeyDown={event => { if (event.key === 'Escape') setHelp(undefined); }}
+                className="text-indigo-700"><CircleHelp size={14} /></button>}
             </div>
-        </div>
-        <div className="flex-1 bg-slate-50 p-2 rounded border border-slate-100">
-            <label className="text-[10px] text-slate-500 font-bold block mb-1">Colunas de categorias</label>
+            {help === type && limits[type].length > 0 && <p role="tooltip" id={helpId} className="mb-1 rounded bg-indigo-50 p-1.5 text-[11px] text-slate-700">
+              O número de colunas foi limitado pelas definições de fonte e pelos caracteres do texto do cardápio.
+            </p>}
             <div className="flex gap-1">
-                            {[1, 2, 3].map(cols => ( <button key={cols} onClick={(event) => updateColumnCounts(event, cols, style.columnCount || 1)} className={`flex-1 h-6 text-xs font-bold rounded ${(style.categoryColumnCount || 1) === cols ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}> {cols} </button> ))}
+              {choices.map(count => <button key={count} type="button" aria-pressed={current === count} disabled={limits[type].includes(count)}
+                onClick={() => updateColumnCounts(type, count)}
+                className={`h-6 flex-1 rounded text-xs font-bold disabled:opacity-40 ${current === count ? 'bg-indigo-600 text-white' : 'border border-slate-200 bg-white text-slate-600'}`}>
+                {count}
+              </button>)}
             </div>
-        </div>
+          </div>
+        ))}
     </div>
     <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
         <div className="flex items-center gap-2 px-1 text-xs font-bold uppercase text-slate-500">

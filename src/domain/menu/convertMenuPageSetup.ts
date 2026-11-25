@@ -1,3 +1,4 @@
+import { resolveMenuColumnCount } from './categoryColumns';
 import type { CategoryPosition, MenuStyle, Product } from './model';
 import type { MenuPageSetup } from './pageModel';
 import { normalizeMenuPageSetup, resolveMenuPageDimensions } from './pageSetup';
@@ -41,7 +42,7 @@ const getSafePageMargins = (
   heightPx: number,
 ) => {
   const margins = resolveMenuMargins(style);
-  const columnCount = Math.max(1, Math.min(3, Math.floor(style.categoryColumnCount || 1)));
+  const columnCount = Math.max(1, Math.min(style.pageSetup?.orientation === 'landscape' ? 5 : 3, Math.floor(style.categoryColumnCount || 1)));
   const minimumContentWidth = Math.min(
     widthPx,
     Math.max(
@@ -97,6 +98,7 @@ export function convertMenuPageSetup(
     proposed: MenuPageSetup,
     renderedImageAspectRatios: ReadonlyMap<string, number>,
     products: readonly Product[],
+    canIncreaseCategoryColumns: (count: number) => boolean = () => true,
 ): MenuStyle {
     const normalizedNextSetup = normalizeMenuPageSetup(proposed);
     const currentDimensions = resolveMenuPageDimensions(previous);
@@ -105,8 +107,12 @@ export function convertMenuPageSetup(
     const portraitLayout = previous.portraitPageLayout;
     const restore = currentDimensions.setup.orientation === 'landscape' && normalizedNextSetup.orientation === 'portrait'
       ? portraitLayout : undefined;
-    const categoryColumnCount = restore ? restore.categoryColumnCount
-      : toLandscape ? getLandscapeCategoryColumns(previous, products) : previous.categoryColumnCount;
+    const maximum = normalizedNextSetup.orientation === 'landscape' ? 5 : 3;
+    let categoryColumnCount = resolveMenuColumnCount(restore ? restore.categoryColumnCount
+      : toLandscape ? getLandscapeCategoryColumns(previous, products) : previous.categoryColumnCount, maximum);
+    while (categoryColumnCount > (previous.categoryColumnCount || 1) && !canIncreaseCategoryColumns(categoryColumnCount)) {
+      categoryColumnCount = resolveMenuColumnCount(categoryColumnCount - 1, maximum);
+    }
     const changedColumnCount = (categoryColumnCount || 1) !== (previous.categoryColumnCount || 1);
     const categoryColumnWidths = restore ? restore.categoryColumnWidths : changedColumnCount ? undefined : previous.categoryColumnWidths;
     const lastColumn = (categoryColumnCount || 1) - 1;
@@ -120,7 +126,7 @@ export function convertMenuPageSetup(
     const restoreMargins = Boolean(restore && samePortraitSize && savedMargins);
     const marginStyle = restoreMargins ? { ...previous, margins: savedMargins?.portrait, pagePadding: savedMargins?.portraitPadding } : previous;
     const safeMargins = getSafePageMargins(
-      { ...marginStyle, categoryColumnCount },
+      { ...marginStyle, categoryColumnCount, pageSetup: normalizedNextSetup },
       nextDimensions.widthPx,
       nextDimensions.heightPx,
     );
@@ -236,7 +242,7 @@ export function convertMenuPageSetup(
         portraitPageLayout: nextPortraitLayout,
         categoryColumnCount,
         categoryColumnWidths,
-        columnCount: restore?.columnCount ?? previous.columnCount,
+        columnCount: resolveMenuColumnCount(restore?.columnCount ?? previous.columnCount, maximum),
         categoryPlacements: restore && previous.categoryPlacements
           ? Object.fromEntries(Object.entries(previous.categoryPlacements).map(([category, placement]) => [
             category, placement.columnIndex > lastColumn ? { ...placement, columnIndex: lastColumn } : placement,

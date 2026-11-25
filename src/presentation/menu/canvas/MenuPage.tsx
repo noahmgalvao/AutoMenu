@@ -22,7 +22,7 @@ import { getDirectionLabel, type FlowDirection } from './flowControls';
 import { resolveTexture } from '../../../domain/menu/defaults';
 import { InlineStyleToolbar } from '../designer/InlineStyleToolbar';
 import { resolveMenuContentSpacing, resolveMenuMargins, resolveMinimumFontSize, roundFontSize } from '../../../domain/menu/styleRules';
-import { getColumnGridTemplate, getPageColumnWidths } from '../../../domain/menu/categoryColumns';
+import { getProductColumnCount, resolveMenuColumnCount, getColumnGridTemplate, getPageColumnWidths } from '../../../domain/menu/categoryColumns';
 import { ColumnResizeHandles } from './ColumnResizeHandles';
 import { isMiniFoodKind, MINI_FOODS } from '../../../domain/menu/miniFoods';
 import { canvasShapeUrl, applyCanvasShapeParameters, getSelectedLayerIds, getShapeTextStyle } from '../../../domain/menu/canvasShapes';
@@ -169,7 +169,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
     const renderedColumnCount = page.columnCount || page.columns.length || style.categoryColumnCount || 1;
     const renderedStyle = renderedColumnCount === (style.categoryColumnCount || 1)
         ? style
-        : { ...style, categoryColumnCount: renderedColumnCount as 1 | 2 | 3 };
+        : { ...style, categoryColumnCount: resolveMenuColumnCount(renderedColumnCount, 5) };
     const pageNumberStyle = style.elementStyles?.pageNumber || {};
     const priceDecimalPlaces = React.useMemo(() => resolveMenuPriceDecimalPlaces(style, products), [style.priceDecimalPlaces, products]);
     const minimumFontSize = resolveMinimumFontSize(style);
@@ -228,6 +228,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
     };
 
     const renderChunk = (chunk: CategoryChunkLayout, gapAdjustment = 0) => {
+        const chunkStyle = { ...renderedStyle, columnCount: getProductColumnCount(renderedStyle, chunk.category) };
         const renderItems = chunk.items.reduce<PageItem[]>((items, item) => {
             const previousItem = items[items.length - 1];
             if (item.type === 'product-row' && previousItem?.type === 'product-row') {
@@ -365,7 +366,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                                         : `${chunk.chunkId}-${item.type}-${idx}`}
                             item={item}
                             idx={idx}
-                            style={renderedStyle}
+                            style={chunkStyle}
                             priceDecimalPlaces={priceDecimalPlaces}
                             handlers={handlers}
                             products={products}

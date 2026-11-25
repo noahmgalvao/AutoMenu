@@ -15,7 +15,7 @@ export const restoreGeneralRules = (current: MenuStyle, template: MenuStyle): Me
   showPrices: template.showPrices ?? true,
   splitCategoryAcrossPages: template.splitCategoryAcrossPages ?? INITIAL_STYLE.splitCategoryAcrossPages,
   productsCanChangeCategory: template.productsCanChangeCategory ?? INITIAL_STYLE.productsCanChangeCategory,
-  allowSameWordBreak: template.allowSameWordBreak ?? false,
+  revisedMinimumFontSize: true,
   minimumFontSize: resolveMinimumFontSize(template),
   fontSizeLimits: resolveFontSizeLimits(template),
 });

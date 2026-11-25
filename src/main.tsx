@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { browserServices } from './composition/browserServices';
+import { AppRecovery } from './presentation/app/AppRecovery';
 import App from './presentation/app/App';
 import { AppServicesProvider } from './presentation/app/AppServicesProvider';
 import { PublicMenuPage } from './presentation/publishing/PublicMenuPage';
@@ -18,10 +19,23 @@ document.addEventListener('contextmenu', event => {
     event.preventDefault();
   }
 });
+window.addEventListener('vite:preloadError', event => {
+  if (!navigator.onLine) return;
+  try {
+    const key = 'automenu:chunk-reload';
+    if (Date.now() - Number(sessionStorage.getItem(key)) < 60_000) return;
+    sessionStorage.setItem(key, String(Date.now()));
+    event.preventDefault();
+    window.location.reload();
+  } catch {
+    // The error boundary still offers reload when session storage is unavailable.
+  }
+});
+
 root.render(
   <React.StrictMode>
     <AppServicesProvider services={browserServices}>
-      {isPublicMenu ? <PublicMenuPage /> : <App />}
+      <AppRecovery>{isPublicMenu ? <PublicMenuPage /> : <App />}</AppRecovery>
     </AppServicesProvider>
   </React.StrictMode>
 );

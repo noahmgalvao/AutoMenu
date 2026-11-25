@@ -268,8 +268,9 @@ body:has([data-canvas-zooming]) :is([data-inline-format-toolbar], [data-canvas-o
 
 [data-price-stacked] > :is([data-price-symbol], [data-price-value]) {
   max-width: 100%;
-  overflow-wrap: anywhere;
-  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .automenu-word-safe {
@@ -278,9 +279,9 @@ body:has([data-canvas-zooming]) :is([data-inline-format-toolbar], [data-canvas-o
   hyphens: none !important;
 }
 
-.automenu-word-wrap {
-  overflow-wrap: anywhere !important;
-  white-space: pre-wrap !important;
+.automenu-word-safe[data-word-overflow="true"] {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .automenu-limit-feedback {

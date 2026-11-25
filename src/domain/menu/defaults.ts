@@ -12,7 +12,7 @@ export const DEFAULT_FONT_SIZE_LIMITS: FontSizeLimits = {
   freeText: 70,
 };
 
-export const DEFAULT_MINIMUM_FONT_SIZE = 15;
+export const DEFAULT_MINIMUM_FONT_SIZE = 13;
 
 export const DEFAULT_MENU_MARGINS: MenuMargins = {
   top: 48,
@@ -110,7 +110,7 @@ export const INITIAL_STYLE: MenuStyle = {
   margins: { top: 56, right: 56, bottom: 56, left: 56, columnGap: DEFAULT_MENU_MARGINS.columnGap },
   contentSpacing: { ...DEFAULT_MENU_CONTENT_SPACING, headerToContent: 28, categoryToProduct: 14, betweenProducts: 18 },
   minimumFontSize: DEFAULT_MINIMUM_FONT_SIZE, fontSizeLimits: DEFAULT_FONT_SIZE_LIMITS, revisedFontSizeDefaults: true,
-  allowSameWordBreak: false, splitCategoryAcrossPages: false, productsCanChangeCategory: false,
+  splitCategoryAcrossPages: false, productsCanChangeCategory: false,
   elementStyles: {
     menuTitle: { fontSize: 44, fontWeight: '700', color: '#111827', textAlign: 'center', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 },
     menuSubtitle: { fontSize: 16, fontWeight: '500', color: '#4b5563', textAlign: 'center', marginBottom: 28 },

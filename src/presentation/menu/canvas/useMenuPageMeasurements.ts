@@ -1,3 +1,4 @@
+import { applyGroupedWordFit } from './textFit';
 import { useLayoutEffect, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import { getPaginationHeightKey, type PageLayout } from '../../../domain/menu/menuPagination';
 import { livePhotoScaleVariable } from './photoSizing';
@@ -14,6 +15,7 @@ export function useMenuPageMeasurements(rootRef: RefObject<HTMLElement | null>, 
         let frame = 0;
         const measure = () => {
             if (root.style.getPropertyValue(livePhotoScaleVariable('product')) || root.style.getPropertyValue(livePhotoScaleVariable('category'))) return;
+            applyGroupedWordFit(root);
             const next = new Map<string, number>();
             for (const header of headers) {
                 if (header.offsetWidth && header.dataset.headingMeasurement) {
@@ -36,8 +38,9 @@ export function useMenuPageMeasurements(rootRef: RefObject<HTMLElement | null>, 
                 // The grid renders consecutive pagination rows as one element.
                 const tracks = css.gridTemplateRows.split(' ').map(parseFloat);
                 const children = Array.from(item.children) as HTMLElement[];
+                const columns = Number(item.dataset.paginationColumns) || columnCount;
                 tracks.forEach((height, row) => {
-                    const ids = children.slice(row * columnCount, (row + 1) * columnCount).map((child) => child.dataset.dragId);
+                    const ids = children.slice(row * columns, (row + 1) * columns).map((child) => child.dataset.dragId);
                     if (!ids.length || !Number.isFinite(height)) return;
                     const key = getPaginationHeightKey(JSON.stringify(['product-row', ids]), width);
                     const gap = row === tracks.length - 1 ? bottomMargin : parseFloat(css.rowGap) || 0;
@@ -55,9 +58,15 @@ export function useMenuPageMeasurements(rootRef: RefObject<HTMLElement | null>, 
         });
         headers.forEach(header => observer.observe(header));
         items.forEach((item) => observer.observe(item));
+        const wordChanges = new MutationObserver(() => {
+            cancelAnimationFrame(frame);
+            frame = requestAnimationFrame(measure);
+        });
+        wordChanges.observe(root, { subtree: true, attributes: true, attributeFilter: ['data-word-fit-size', 'data-word-fit-reduced'] });
         measure();
         return () => {
             observer.disconnect();
+            wordChanges.disconnect();
             cancelAnimationFrame(frame);
         };
     }, [rootRef, pages, columnCount, visiblePage, setMeasuredHeights]);

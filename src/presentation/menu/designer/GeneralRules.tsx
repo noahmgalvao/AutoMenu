@@ -97,10 +97,8 @@ function AdvancedRules({ style, setStyle }: RulesProps) {
         ['showPrices', 'Mostrar preços no cardápio', true],
         ['splitCategoryAcrossPages', 'Continuar categoria na página seguinte', false],
         ['productsCanChangeCategory', 'Permitir mudar produto de categoria ao arrastar', false],
-        ['allowSameWordBreak', 'Permitir quebra de linha na mesma palavra', false,
-          'Ex.: permitir “HAMBU” / “RGUER” em duas linhas.'],
-      ] as const).map(([key, label, fallback, description]) => (
-        <BooleanSwitch key={key} label={label} value={style[key] ?? fallback} description={description}
+      ] as const).map(([key, label, fallback]) => (
+        <BooleanSwitch key={key} label={label} value={style[key] ?? fallback}
           className="border-slate-200 bg-slate-50"
           onChange={value => setStyle(previous => ({ ...previous, [key]: value, name: 'Custom' }))} />
       ))}
@@ -117,6 +115,7 @@ function AdvancedRules({ style, setStyle }: RulesProps) {
             onChange={(value) => setStyle((previous) => ({
               ...previous,
               minimumFontSize: value,
+              revisedMinimumFontSize: true,
               fontSizeLimits: (() => {
                 const limits = resolveFontSizeLimits(previous);
                 return {

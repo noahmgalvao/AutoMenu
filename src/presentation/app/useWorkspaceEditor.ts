@@ -322,34 +322,60 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
       return;
     }
 
-    let isMounted = true;
-    getInitialSession()
-      .then((currentSession) => {
-        if (isMounted) {
-          setSession(currentSession);
-        }
-      })
-      .catch((error) => {
-        if (isMounted) {
-          setLoadError(getErrorMessage(error, 'Falha ao iniciar sessão.'));
-        }
-      })
-      .finally(() => {
-        if (isMounted) {
-          setIsAuthLoading(false);
-        }
+    let mounted = true;
+    let revision = 0;
+    let inFlight = false;
+    let deadline: number | undefined;
+    const refresh = () => {
+      if (inFlight || document.visibilityState === 'hidden') return;
+      inFlight = true;
+      const request = ++revision;
+      deadline = window.setTimeout(() => {
+        if (!mounted || request !== revision) return;
+        inFlight = false;
+        revision++;
+        setIsAuthLoading(false);
+        setLoadError('A conexão demorou para responder. Verifique a internet e tente novamente.');
+      }, 12000);
+      void getInitialSession().then(current => {
+        if (!mounted || request !== revision) return;
+        setSession(current);
+        if (current) setLoadError(null);
+      }).catch(error => {
+        if (mounted && request === revision) setLoadError(getErrorMessage(error, 'Falha ao verificar a sessão.'));
+      }).finally(() => {
+        if (!mounted || request !== revision) return;
+        window.clearTimeout(deadline);
+        inFlight = false;
+        setIsAuthLoading(false);
       });
-
-    const unsubscribe = subscribeToAuth((nextSession) => {
+    };
+    const unsubscribe = subscribeToAuth(nextSession => {
+      if (!mounted) return;
+      revision++;
+      window.clearTimeout(deadline);
+      inFlight = false;
+      setIsAuthLoading(false);
       setSession(nextSession);
       setAuthError(null);
+      if (nextSession) setLoadError(null);
     });
 
+    refresh();
+    document.addEventListener('visibilitychange', refresh);
+    document.addEventListener('resume', refresh);
+    window.addEventListener('pageshow', refresh);
+    window.addEventListener('online', refresh);
     return () => {
-      isMounted = false;
+      mounted = false;
+      window.clearTimeout(deadline);
       unsubscribe();
+      document.removeEventListener('visibilitychange', refresh);
+      document.removeEventListener('resume', refresh);
+      window.removeEventListener('pageshow', refresh);
+      window.removeEventListener('online', refresh);
     };
-  }, []);
+  }, [getInitialSession, isConfigured, subscribeToAuth]);
 
   const authenticatedUserId = session?.user.id || null;
 
@@ -628,8 +654,18 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
       event.returnValue = '';
     };
 
+    const saveWhenHidden = () => {
+      if (document.visibilityState === 'hidden') flushPendingSaveRef.current();
+    };
+    const saveOnPageHide = () => flushPendingSaveRef.current();
     window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', saveOnPageHide);
+    document.addEventListener('visibilitychange', saveWhenHidden);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', saveOnPageHide);
+      document.removeEventListener('visibilitychange', saveWhenHidden);
+    };
   }, []);
 
   useEffect(() => {

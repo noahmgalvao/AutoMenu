@@ -209,6 +209,8 @@ export interface BlankPageSlot {
   copiedLayout?: CopiedPageLayout;
 }
 
+export type MenuColumnCount = 1 | 2 | 3 | 4 | 5;
+
 export interface MenuStyle {
   design?: TemplateDesign;
   borders?: Partial<Record<Exclude<MenuBorderScope, 'freeText'>, MenuBorder>>;
@@ -264,8 +266,9 @@ export interface MenuStyle {
   productPhotoCrops?: Record<string, { x: number; y: number }>;
   imageScale?: number;
   categoryImageScale?: number;
-  columnCount: 1 | 2 | 3;
-  categoryColumnCount?: 1 | 2 | 3;
+  columnCount: MenuColumnCount;
+  categoryColumnCount?: MenuColumnCount;
+  categoryProductColumnCounts?: Record<string, MenuColumnCount>;
   categoryColumnWidths?: number[];
   categoryDividerStyles?: Record<string, CategoryDividerStyle>;
   productDividerStyle?: CategoryDividerStyle;
@@ -284,8 +287,8 @@ export interface MenuStyle {
   pageSetup?: MenuPageSetup;
   portraitPageLayout?: {
     setup: MenuPageSetup;
-    categoryColumnCount?: 1 | 2 | 3;
-    columnCount: 1 | 2 | 3;
+    categoryColumnCount?: MenuColumnCount;
+    columnCount: MenuColumnCount;
     categoryColumnWidths?: number[];
     positions?: Record<string, { portrait: CategoryPosition; landscape: CategoryPosition }>;
     margins?: {
@@ -304,6 +307,7 @@ export interface MenuStyle {
   fontSizeLimits?: FontSizeLimits;
   revisedFontSizeDefaults?: true;
   minimumFontSize?: number;
+  revisedMinimumFontSize?: true;
   allowSameWordBreak?: boolean;
   splitCategoryAcrossPages?: boolean;
   productsCanChangeCategory?: boolean;

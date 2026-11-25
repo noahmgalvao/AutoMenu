@@ -1,11 +1,12 @@
 import { hasMenuContentMutation } from './menuContentMutations';
 import { useLayoutEffect, useRef, type RefObject } from 'react';
 import type { MenuStyle } from '../../../domain/menu/model';
-import { measureRenderedText } from './textFit';
+import { resolveMinimumFontSize } from '../../../domain/menu/styleRules';
+import { fitTextToUnbrokenWords, measureRenderedText } from './textFit';
 
 const px = (value: string) => parseFloat(value) || 0;
 
-function measurePriceRow(row: HTMLElement) {
+function measurePriceRow(row: HTMLElement, minimum: number) {
     const title = row.querySelector<HTMLElement>('[data-divider-title]');
     const price = row.querySelector<HTMLElement>('[data-template-price]');
     const value = price?.querySelector<HTMLElement>('[data-price-value]');
@@ -28,8 +29,12 @@ function measurePriceRow(row: HTMLElement) {
     const rowGap = px(getComputedStyle(row).columnGap);
     const dividerGap = row.hasAttribute('data-product-leader') ? rowGap : 0;
     const inlineWidth = row.clientWidth - nameWidth - rowGap - dividerGap;
-    const width = measurePrice(base);
-    return { row, price, width, wrapped: width > inlineWidth + .5 };
+    const size = fitTextToUnbrokenWords(amount, Math.max(1, row.clientWidth - priceInset), base, minimum, {
+        fontFamily: priceCss.fontFamily, fontWeight: priceCss.fontWeight, fontStyle: priceCss.fontStyle,
+        letterSpacing: px(priceCss.letterSpacing),
+    }).fontSize;
+    const group = JSON.stringify([base, priceCss.fontFamily, priceCss.fontWeight, priceCss.fontStyle, priceCss.letterSpacing]);
+    return { row, price, measurePrice, inlineWidth, size, group };
 }
 
 function measureWrappedPriceSpace(row: HTMLElement, slot: HTMLElement | null) {
@@ -49,6 +54,7 @@ function measureWrappedPriceSpace(row: HTMLElement, slot: HTMLElement | null) {
 
 export function useResponsivePrices(rootRef: RefObject<HTMLElement | null>, style: MenuStyle) {
     const refresh = useRef<() => void>(undefined);
+    const minimum = resolveMinimumFontSize(style);
     const [name, price] = [style.elementStyles.productName, style.elementStyles.productPrice];
     const textMetrics = JSON.stringify([
         style.fontFamily, style.minimumFontSize, style.fontSizeLimits, style.contentSpacing?.productNameToPrice,
@@ -75,13 +81,25 @@ export function useResponsivePrices(rootRef: RefObject<HTMLElement | null>, styl
                     resize.observe(row);
                     observed.add(row);
                 }
-                const metric = measurePriceRow(row);
+                const metric = measurePriceRow(row, minimum);
                 if (!metric && !row.querySelector('[data-template-price]')) row.removeAttribute('data-price-wrap');
                 return metric;
             }).filter(metric => metric !== null);
 
-            for (const { row, wrapped } of metrics) row.toggleAttribute('data-price-wrap', wrapped);
-            const layouts = metrics.map(metric => {
+            const sizesByGroup = new Map<string, number>();
+            for (const { size, group } of metrics) sizesByGroup.set(group, Math.min(size, sizesByGroup.get(group) ?? size));
+            const aligned = metrics.map(metric => {
+                const size = sizesByGroup.get(metric.group)!;
+                const value = `${size}px`;
+                if (metric.price.style.getPropertyValue('--automenu-price-fit-size') !== value) {
+                    metric.price.style.setProperty('--automenu-price-fit-size', value);
+                }
+                const width = metric.measurePrice(size);
+                const wrapped = width > metric.inlineWidth + .5;
+                metric.row.toggleAttribute('data-price-wrap', wrapped);
+                return { ...metric, wrapped, width };
+            });
+            const layouts = aligned.map(metric => {
                 const { row, price, wrapped, width } = metric;
                 const slot = price.closest<HTMLElement>('[data-product-price-slot]');
                 const { left, right } = wrapped ? measureWrappedPriceSpace(row, slot) : { left: 0, right: 0 };
@@ -118,6 +136,6 @@ export function useResponsivePrices(rootRef: RefObject<HTMLElement | null>, styl
             document.fonts?.removeEventListener('loadingdone', schedule);
             cancelAnimationFrame(frame);
         };
-    }, [rootRef]);
+    }, [rootRef, minimum]);
     useLayoutEffect(() => refresh.current?.(), [textMetrics, style.itemFormattingOverrides]);
 }

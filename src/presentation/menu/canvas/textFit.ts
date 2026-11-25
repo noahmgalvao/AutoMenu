@@ -1,6 +1,8 @@
+import { getProductGridGap } from '../../../domain/menu/menuPagination';
+import { getProductColumnCount } from '../../../domain/menu/categoryColumns';
 import type { ElementStyle, MenuStyle } from '../../../domain/menu/model';
 import { DEFAULT_MINIMUM_FONT_SIZE } from '../../../domain/menu/defaults';
-import { resolveMenuMargins } from '../../../domain/menu/styleRules';
+import { resolveMenuMargins, resolveMinimumFontSize } from '../../../domain/menu/styleRules';
 import { normalizeColumnWidths } from '../../../domain/menu/categoryColumns';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 
@@ -76,23 +78,26 @@ export const fitTextToUnbrokenWords = (
   availableWidth: number,
   baseFontSize: number,
   minimumFontSize: number,
-  allowSameWordBreak: boolean,
   options: MeasureOptions = {},
 ): WordFitMeasurement => {
   const minimum = Math.max(1, Number(minimumFontSize) || DEFAULT_MINIMUM_FONT_SIZE);
   const base = Math.max(minimum, Number(baseFontSize) || minimum);
-  if (allowSameWordBreak || !text.trim() || availableWidth <= 0) {
+  if (!text.trim() || availableWidth <= 0) {
     return { fontSize: base, fits: true };
   }
 
-  const safeWidth = Math.max(1, availableWidth + 1);
-  const widthAtBase = getLongestWordWidth(text, base, options);
-  if (widthAtBase <= safeWidth) return { fontSize: base, fits: true };
+  const safeWidth = Math.max(1, availableWidth);
+  if (getLongestWordWidth(text, base, options) <= safeWidth) return { fontSize: base, fits: true };
+  if (getLongestWordWidth(text, minimum, options) > safeWidth) return { fontSize: minimum, fits: false };
 
-  const requiredSize = Math.floor((base * safeWidth) / Math.max(1, widthAtBase));
-  const fittedSize = Math.max(minimum, Math.min(base, requiredSize));
-  const widthAtMinimum = getLongestWordWidth(text, minimum, options);
-  return { fontSize: fittedSize, fits: widthAtMinimum <= safeWidth };
+  let low = minimum;
+  let high = Math.floor(base);
+  while (high - low >= 1) {
+    const candidate = Math.ceil((low + high) / 2);
+    if (getLongestWordWidth(text, candidate, options) <= safeWidth) low = candidate;
+    else high = candidate - 1;
+  }
+  return { fontSize: low, fits: true };
 };
 
 export const getWordFitWidthContainer = (element: HTMLElement) => {
@@ -140,7 +145,6 @@ export const measureWordFitElement = (
   options.availableWidth ?? getElementAvailableWidth(element),
   options.baseFontSize ?? Number(element.dataset.wordFitBaseSize),
   Number(element.dataset.wordFitMinimum) || DEFAULT_MINIMUM_FONT_SIZE,
-  element.dataset.wordFitAllowBreak === 'true',
   readElementOptions(element),
 );
 
@@ -152,16 +156,8 @@ export const getLargestSafeFontSizeForElements = (
   const maximum = Math.max(minimumFontSize, Math.floor(Number(maximumFontSize) || minimumFontSize));
   const minimum = Math.max(1, Math.ceil(Number(minimumFontSize) || DEFAULT_MINIMUM_FONT_SIZE));
 
-  for (let fontSize = maximum; fontSize >= minimum; fontSize -= 1) {
-    const allFit = elements.every((element) => {
-      if (element.dataset.wordFitAllowBreak === 'true') return true;
-      const result = measureWordFitElement(element, { baseFontSize: fontSize });
-      return result.fits && result.fontSize >= fontSize;
-    });
-    if (allFit) return fontSize;
-  }
-
-  return minimum;
+  return elements.reduce((size, element) => Math.max(minimum,
+    Math.min(size, measureWordFitElement(element, { baseFontSize: size }).fontSize)), maximum);
 };
 
 const getCanvasWordFitElements = () => Array.from(
@@ -179,7 +175,6 @@ export const canIncreaseCanvasFontSize = (
     && (!targetElementId || element.id === targetElementId)
   ));
   return elements.every((element) => {
-    if (element.dataset.wordFitAllowBreak === 'true') return true;
     const result = measureWordFitElement(element, { baseFontSize: fontSize });
     return result.fits && result.fontSize >= fontSize;
   });
@@ -188,42 +183,86 @@ export const canIncreaseCanvasFontSize = (
 export const canApplyCanvasColumnCounts = (
   style: MenuStyle,
   nextCategoryColumnCount: number,
-  nextProductColumnCount: number,
+  nextProductColumnCount?: number,
+  selectedCategory?: string,
+  targetStyle = style,
 ) => {
-  if (typeof document === 'undefined' || style.allowSameWordBreak) return true;
-  const margins = resolveMenuMargins(style);
-  const usableWidth = resolveMenuPageDimensions(style).widthPx - margins.left - margins.right;
-  const categoryContentWidth = Math.max(1, usableWidth - (margins.columnGap * (nextCategoryColumnCount - 1)));
-  const categoryWidthRatios = normalizeColumnWidths(
-    nextCategoryColumnCount === (style.categoryColumnCount || 1) ? style.categoryColumnWidths : undefined,
+  if (typeof document === 'undefined') return true;
+  const currentCategoryCount = style.categoryColumnCount || 1;
+  const margins = resolveMenuMargins(targetStyle);
+  const usableWidth = resolveMenuPageDimensions(targetStyle).widthPx - margins.left - margins.right;
+  const categoryContentWidth = usableWidth - margins.columnGap * (nextCategoryColumnCount - 1);
+  const ratios = normalizeColumnWidths(
+    nextCategoryColumnCount === currentCategoryCount ? style.categoryColumnWidths : undefined,
     nextCategoryColumnCount,
   );
-  const productGridGap = nextCategoryColumnCount > 1
-    ? (nextProductColumnCount > 2 ? 4 : 8)
-    : nextProductColumnCount > 2
-      ? 8
-      : nextProductColumnCount > 1
-        ? 12
-        : 0;
 
-  return getCanvasWordFitElements().every((element) => {
+  const elements = [...getCanvasWordFitElements(), ...document.querySelectorAll<HTMLElement>(
+    '[data-automenu-editor-canvas="true"] [data-template-price]',
+  )];
+  return elements.every(element => {
     const scope = element.dataset.wordFitScope as WordFitScope;
-    if (element.dataset.wordFitAllowBreak === 'true' || scope === 'menuTitle' || scope === 'menuSubtitle') return true;
+    if (scope === 'menuTitle' || scope === 'menuSubtitle') return true;
     const lane = element.closest<HTMLElement>('[data-drag-column-container="category"]');
-    const currentColumnIndex = Number(lane?.dataset.dragColumnIndex || 0);
-    const nextColumnIndex = Math.max(0, Math.min(nextCategoryColumnCount - 1, currentColumnIndex));
-    const categoryWidth = categoryContentWidth * categoryWidthRatios[nextColumnIndex];
-    const productWidth = Math.max(
-      1,
-      (categoryWidth - (productGridGap * (nextProductColumnCount - 1))) / nextProductColumnCount,
-    );
-    const availableWidth = scope === 'category' || scope === 'freeText'
-      ? Math.max(1, categoryWidth - 8)
-      : Math.max(1, productWidth - 16);
-    const result = measureWordFitElement(element, { availableWidth });
-    return result.fits;
+    const chunk = element.closest<HTMLElement>('[data-category-chunk]');
+    const category = chunk?.dataset.categoryChunk;
+    if (selectedCategory && category !== selectedCategory) return true;
+    const product = element.closest<HTMLElement>('[id^="product-container-"]');
+    const isProduct = Boolean(product && scope !== 'freeText');
+    const currentProductCount = getProductColumnCount(style, category);
+    const nextProductCount = isProduct ? nextProductColumnCount ?? currentProductCount : currentProductCount;
+    if (nextCategoryColumnCount === currentCategoryCount && nextProductCount <= currentProductCount) return true;
+
+    const currentWidth = getElementAvailableWidth(element);
+    const laneIndex = Number(lane?.dataset.dragColumnIndex || 0);
+    const nextLaneWidth = categoryContentWidth * (ratios[laneIndex] ?? ratios[0]);
+    const currentLaneWidth = lane?.clientWidth || chunk?.clientWidth || nextLaneWidth;
+    // Preserve the space used by offsets, borders, images, dividers and prices in the rendered card.
+    const chunkInset = Math.max(0, currentLaneWidth - (chunk?.clientWidth || currentLaneWidth));
+    const nextChunkWidth = nextLaneWidth - chunkInset;
+    const nextStyle = { ...style, categoryColumnCount: nextCategoryColumnCount, columnCount: nextProductCount } as MenuStyle;
+    const candidateWidth = isProduct
+      ? (nextChunkWidth - getProductGridGap(nextStyle) * (nextProductCount - 1)) / nextProductCount
+      : nextChunkWidth;
+    const currentContainerWidth = (isProduct ? product?.clientWidth : chunk?.clientWidth) || currentLaneWidth;
+    const layoutInset = isProduct && nextProductCount > 1 ? 16 : 0;
+    if (element.hasAttribute('data-template-price')) {
+      const value = element.querySelector<HTMLElement>('[data-price-value]')?.innerText ?? '';
+      const css = getComputedStyle(element);
+      const padding = (parseFloat(css.paddingLeft) || 0) + (parseFloat(css.paddingRight) || 0)
+        + (parseFloat(css.borderLeftWidth) || 0) + (parseFloat(css.borderRightWidth) || 0);
+      return measureRenderedText(value, resolveMinimumFontSize(style), css) <= candidateWidth - layoutInset - padding;
+    }
+    const reserve = Math.max(layoutInset, currentContainerWidth - currentWidth);
+    return measureWordFitElement(element, { availableWidth: Math.max(1, candidateWidth - reserve) }).fits;
   });
 };
+
+export function applyGroupedWordFit(root: HTMLElement) {
+  const groups = new Map<string, { nodes: HTMLElement[]; size: number; reduced: boolean }>();
+  root.querySelectorAll<HTMLElement>('[data-word-fit="true"]').forEach(element => {
+    if (!element.getClientRects().length) return;
+    const data = element.dataset;
+    const key = JSON.stringify([data.wordFitScope, data.wordFitBaseSize, data.wordFitFontFamily,
+      data.wordFitFontWeight, data.wordFitFontStyle, data.wordFitLetterSpacing, data.wordFitTextTransform]);
+    const size = Number(data.wordFitSize);
+    if (!(size > 0)) return;
+    const group = groups.get(key);
+    if (group) {
+      group.nodes.push(element);
+      group.size = Math.min(size, group.size);
+      group.reduced ||= data.wordFitReduced === 'true';
+    } else groups.set(key, { nodes: [element], size, reduced: data.wordFitReduced === 'true' });
+  });
+  for (const { nodes, size, reduced } of groups.values()) {
+    const value = reduced ? `${size}px` : '';
+    for (const element of nodes) {
+      if (element.style.getPropertyValue('--automenu-word-group-size') !== value) {
+        element.style.setProperty('--automenu-word-group-size', value);
+      }
+    }
+  }
+}
 
 export const canApplyLiveColumnWidths = (
   grid: HTMLElement,
@@ -235,7 +274,6 @@ export const canApplyLiveColumnWidths = (
     const columnIndex = Number(lane.dataset.dragColumnIndex || 0);
     const ratio = (nextWidths[columnIndex] || 0) / Math.max(0.0001, currentWidths[columnIndex] || 0);
     return Array.from(lane.querySelectorAll<HTMLElement>('[data-word-fit="true"]')).every((element) => {
-      if (element.dataset.wordFitAllowBreak === 'true') return true;
       const result = measureWordFitElement(element, {
         availableWidth: getElementAvailableWidth(element) * ratio,
       });

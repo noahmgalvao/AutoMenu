@@ -184,8 +184,7 @@ export const useCategoryColumnResize = (
                 const isInitialState = candidateWidths.every((width, index) => Math.abs(width - session.initialWidths[index]) < 0.00005);
                 if (isInitialState) return true;
                 const nextStyle = { ...style, categoryColumnWidths: candidateWidths };
-                const keepsTextReadable = style.allowSameWordBreak
-                    || canApplyLiveColumnWidths(session.grid, currentWidths, candidateWidths);
+                const keepsTextReadable = canApplyLiveColumnWidths(session.grid, currentWidths, candidateWidths);
                 const keepsPagination = !context
                     || getPaginationSignature(nextStyle, context) === session.paginationSignature;
                 return keepsTextReadable && keepsPagination;
