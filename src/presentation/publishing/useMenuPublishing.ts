@@ -157,21 +157,21 @@ export function useMenuPublishing({ session, workspaceData, products, style, sor
   };
 
   const handleLinkAction = async (action: LinkAction) => {
-    if (!sharedUrl || !publication || actionRef.current) return;
+    if (!publicUrl || !sharedUrl || !publication || actionRef.current) return;
     actionRef.current = action;
     setBusyAction(action);
     setActionError(null);
     try {
       if (action === 'share-link' && navigator.share) {
         try {
-          await navigator.share({ title: publication.pdfFilename.replace(/\.pdf$/i, ''), url: sharedUrl });
+          await navigator.share({ title: publication.pdfFilename.replace(/\.pdf$/i, ''), url: publicUrl });
           return;
         } catch (error) {
           if (error instanceof DOMException && error.name === 'AbortError') return;
         }
       }
       if (action === 'copy-link' || action === 'share-link') {
-        await copyText(sharedUrl);
+        await copyText(publicUrl);
         showButtonResult(action, 'Copiado');
         return;
       }

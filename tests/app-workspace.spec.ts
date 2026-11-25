@@ -278,6 +278,18 @@ test('publishing and syncing use the same public file when the publication table
   const access = dialog.getByRole('link', { name: 'Acessar' });
   await expect(access).toHaveAttribute('href', /\/menu-storage$/);
   const originalAddress = (await access.getAttribute('href'))!;
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+      writeText: async (url: string) => { document.body.dataset.copiedLink = url; },
+    } });
+    Object.defineProperty(navigator, 'share', { configurable: true, value: async ({ url }: ShareData) => {
+      document.body.dataset.sharedLink = url;
+    } });
+  });
+  await dialog.getByRole('button', { name: 'Copiar', exact: true }).click();
+  await expect(page.locator('body')).toHaveAttribute('data-copied-link', originalAddress);
+  await dialog.getByRole('button', { name: 'Compartilhar', exact: true }).click();
+  await expect(page.locator('body')).toHaveAttribute('data-shared-link', originalAddress);
 
   await dialog.getByRole('button', { name: 'Fechar publicação' }).click();
   const product = page.locator('[data-automenu-editor-canvas] #product-container-suco');
@@ -313,6 +325,8 @@ test('publishing and syncing use the same public file when the publication table
   await page.goto(shortAddress);
   await expect(page.getByText('Suco de caju', { exact: true })).toBeVisible();
   await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Cardápio indisponível' })).toBeVisible();
   await page.goto(publicAddress);
   await expect(page.getByRole('main', { name: 'Cardápio publicado' })).toBeVisible();
   await expect(page.getByText('Suco de caju', { exact: true })).toBeVisible();
@@ -722,6 +736,20 @@ test('the Product Designer opens the shared general rules and keeps live changes
   await visualGear.click();
   await rules.getByRole('button', { name: 'Editar margens' }).click();
   await expect(page.getByRole('spinbutton', { name: 'Superior', exact: true })).toHaveValue('20');
+});
+
+test('layout editing shows spacing first and can return to general rules from the header', async ({ page }) => {
+  await page.goto('/tests/fixtures/template-editor.html?cols=2&lanes=2&general-rules');
+  await page.getByRole('button', { name: 'Configurações do cardápio' }).click();
+  const rules = page.getByRole('dialog', { name: 'Regras gerais' });
+  await rules.getByRole('button', { name: 'Editar margens' }).click();
+  const editor = page.getByRole('region', { name: 'Margens' });
+  await expect(editor.getByRole('tab')).toHaveText(['Espaçamentos', 'Margens']);
+  await expect(editor.getByRole('tab', { name: 'Margens' })).toHaveAttribute('aria-selected', 'true');
+  const button = editor.getByRole('button', { name: 'Configurações do cardápio' });
+  await expect(button.locator('xpath=following-sibling::button[1]')).toHaveAccessibleName('Reiniciar margens');
+  await button.click();
+  await expect(rules).toBeVisible();
 });
 
 test('editing layout updates the canvas before confirmation and can reset the opening values', async ({ page }) => {

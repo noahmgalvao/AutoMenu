@@ -278,7 +278,6 @@ function RulesLayoutEditor({
   confirm: () => void;
 }) {
   const id = useId();
-  const sectionOrder = ['margins', 'spacing'] as const;
   const tabId = (target: RulesLayoutSection) => `${id}-${target}`;
   const panelId = `${id}-fields`;
   const fields = useRef<HTMLDivElement>(null);
@@ -299,7 +298,7 @@ function RulesLayoutEditor({
           document.getElementById(tabId(next))?.focus();
         }}
       >
-        {sectionOrder.map(target => (
+        {layoutSections.map(target => (
           <button key={target} type="button" role="tab" id={tabId(target)}
             aria-selected={section === target} aria-controls={panelId} autoFocus={section === target} tabIndex={section === target ? 0 : -1}
             onClick={() => selectTab(target)}
@@ -310,6 +309,7 @@ function RulesLayoutEditor({
         ))}
       </div>
       <div className="flex shrink-0 gap-0.5">
+        <GeneralRulesButton open={confirm} />
         <ResetSectionButton section={section} reset={reset} />
         <button type="button" onClick={close} aria-label="Fechar regras gerais" title="Fechar regras gerais"
           className={iconButton}><X size={18} /></button>
