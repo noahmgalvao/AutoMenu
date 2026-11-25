@@ -54,8 +54,6 @@ const getCaptureScale = ({ width, height }: PdfPageSizePx) => Math.min(
   MAX_EXPORT_DIMENSION / Math.max(width, height),
 );
 
-const TRANSPARENT_PIXEL_DATA_URL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
-
 const normalizePageDimension = (value: number) => (
   Number.isFinite(value) && value > 0 ? Math.round(value) : 0
 );
@@ -177,16 +175,17 @@ const waitWithTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, timeo
 };
 
 const waitForImageReady = async (image: HTMLImageElement) => {
-  if (!image.complete || image.naturalWidth === 0) {
+  if (!image.complete) {
     await new Promise<void>((resolve, reject) => {
       image.addEventListener('load', () => resolve(), { once: true });
       image.addEventListener('error', () => reject(new Error('Falha ao carregar imagem para o PDF.')), { once: true });
     });
   }
 
-  if (typeof image.decode === 'function') {
-    await image.decode().catch(() => undefined);
+  if (!image.naturalWidth) {
+    throw new PdfExportError('PDF_IMAGE_UNAVAILABLE', 'assets', 'Uma imagem da prévia não pôde ser carregada para exportação.');
   }
+  if (typeof image.decode === 'function') await image.decode();
 };
 
 export type PrintAssetCache = Map<string, Promise<string>>;
@@ -203,11 +202,11 @@ const inlineAsset = async (url: string, cache: PrintAssetCache, onDebug?: PdfDeb
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return await readBlobAsDataUrl(await response.blob());
     } catch (error) {
-      emitDebug(onDebug, 'warning', 'assets', 'PDF_ASSET_BLOCKED', 'Um recurso externo ficou indisponível para exportação.', {
-        url: safeAssetUrl(absoluteUrl),
-        reason: error instanceof Error ? error.message : String(error),
-      });
-      return TRANSPARENT_PIXEL_DATA_URL;
+      cache.delete(absoluteUrl);
+      const details = { url: safeAssetUrl(absoluteUrl), reason: error instanceof Error ? error.message : String(error) };
+      emitDebug(onDebug, 'error', 'assets', 'PDF_ASSET_BLOCKED', 'Um recurso da prévia não pôde ser carregado para exportação.', details);
+      throw new PdfExportError('PDF_ASSET_BLOCKED', 'assets',
+        'Não foi possível carregar uma fonte ou imagem da prévia. Tente exportar novamente.', details, error);
     }
   })();
   cache.set(absoluteUrl, request);
@@ -283,11 +282,11 @@ const preparePageClone = async (
       );
     }));
 
-    await waitWithTimeout(document.fonts?.ready || Promise.resolve(), 5000, 'Tempo excedido ao carregar fontes.').catch((error) => {
-      emitDebug(onDebug, 'warning', 'assets', 'PDF_FONT_TIMEOUT', 'As fontes demoraram para carregar; o PDF usara a melhor fonte disponivel.', {
-        reason: error instanceof Error ? error.message : String(error),
-      });
-    });
+    try {
+      await waitWithTimeout(document.fonts?.ready || Promise.resolve(), 8000, 'Tempo excedido ao carregar fontes.');
+    } catch (error) {
+      throw new PdfExportError('PDF_FONT_TIMEOUT', 'assets', 'As fontes da prévia ainda estão carregando. Tente exportar novamente.', undefined, error);
+    }
 
     return { sandbox, clone };
   } catch (error) {
@@ -392,39 +391,10 @@ const renderPageAsJpeg = async (
       canvas = await rasterizePrintPage(clone, pageSize.width, pageSize.height, captureScale,
         (value, baseUrl) => inlineCssUrls(value, assetCache, onDebug, baseUrl));
     } catch (error) {
-      // Keep file generation available on browsers that block SVG HTML capture.
-      emitDebug(onDebug, 'warning', 'capture', 'PDF_NATIVE_RENDER_UNAVAILABLE', 'O navegador usou o renderizador de compatibilidade.', {
-        reason: error instanceof Error ? error.message : String(error),
-      });
-      const styledElements = [clone, ...Array.from(clone.querySelectorAll<HTMLElement>('*'))];
-      await Promise.all(styledElements.map(async (element) => {
-        const computedBackground = window.getComputedStyle(element).backgroundImage;
-        if (!computedBackground || computedBackground === 'none') return;
-        element.style.backgroundImage = await inlineCssUrls(computedBackground, assetCache, onDebug);
-      }));
-
-      const { default: html2canvas } = await import('html2canvas-pro');
-      clone.querySelectorAll<HTMLElement>('[style*="rotate:"]').forEach(node => {
-        if (!node.style.rotate || node.style.rotate === 'none') return;
-        node.style.transform = `rotate(${node.style.rotate}) ${node.style.transform || ''}`;
-        node.style.removeProperty('rotate');
-      });
-      canvas = await html2canvas(clone, {
-        ignoreElements: element => element.parentElement === document.body
-          && element !== sandbox && element.tagName !== 'STYLE' && element.tagName !== 'LINK',
-        backgroundColor: '#ffffff',
-        scale: captureScale,
-        useCORS: true,
-        logging: false,
-        imageTimeout: 15000,
-        width: pageSize.width,
-        height: pageSize.height,
-        // Retain the same responsive breakpoints as the page on screen.
-        windowWidth: window.innerWidth,
-        windowHeight: window.innerHeight,
-        scrollX: 0,
-        scrollY: 0,
-      });
+      if (error instanceof PdfExportError) throw error;
+      throw new PdfExportError('PDF_NATIVE_RENDER_UNAVAILABLE', 'capture',
+        'Não foi possível capturar a prévia com fidelidade neste navegador.',
+        { reason: error instanceof Error ? error.message : String(error) }, error);
     }
 
     if (!canvas.width || !canvas.height) {

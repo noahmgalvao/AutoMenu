@@ -1,4 +1,5 @@
 import { embedPrintFonts } from './printFonts';
+import { applyPrintTextLines, measurePrintTextLines, type PrintTextLine } from './printTextLayout';
 
 const svgNamespace = 'http://www.w3.org/2000/svg';
 
@@ -13,11 +14,11 @@ const paintProperties = `
   grid-template-columns grid-template-rows grid-template-areas grid-auto-columns grid-auto-rows grid-auto-flow
   grid-column-start grid-column-end grid-row-start grid-row-end row-gap column-gap
   align-content align-items align-self justify-content justify-items justify-self
-  font-family font-size font-weight font-style font-stretch font-kerning font-feature-settings
-  font-optical-sizing font-variation-settings font-variant-caps font-variant-numeric line-height
+  font-family font-size font-size-adjust font-weight font-style font-stretch font-kerning font-feature-settings
+  font-optical-sizing font-variation-settings font-synthesis font-variant-caps font-variant-numeric font-variant-ligatures line-height
   color direction unicode-bidi writing-mode text-align text-align-last text-indent text-transform
   text-decoration-line text-decoration-style text-decoration-color text-decoration-thickness
-  text-underline-offset text-shadow letter-spacing word-spacing white-space overflow-wrap word-break
+  text-underline-offset text-shadow letter-spacing word-spacing white-space white-space-collapse text-wrap-style overflow-wrap word-break
   tab-size hyphens text-size-adjust -webkit-text-size-adjust -webkit-line-clamp -webkit-box-orient -webkit-text-stroke-width
   -webkit-text-stroke-color -webkit-text-fill-color
   background-image background-color background-size background-position background-repeat
@@ -31,6 +32,9 @@ const paintProperties = `
   fill fill-opacity fill-rule stroke stroke-width stroke-opacity stroke-dasharray
   stroke-dashoffset stroke-linecap stroke-linejoin paint-order vector-effect
 `.trim().split(/\s+/);
+
+const isFlexItem = (css: CSSStyleDeclaration, parentDisplay: string) =>
+  parentDisplay.includes('flex') && css.position !== 'absolute' && css.position !== 'fixed';
 
 const snapshotStyle = (style: CSSStyleDeclaration) => paintProperties.flatMap(property => {
   const value = style.getPropertyValue(property);
@@ -47,23 +51,60 @@ export async function rasterizePrintPage(
   const families = new Set<string>();
   const pseudoRules: string[] = [];
 
-  // Read the whole page before writing styles to the detached replica.
+  const textLines = new Map<number, PrintTextLine[]>();
+  const transformed: { element: HTMLElement; inlineStyle: string | null }[] = [];
+  const displays = new Map<Element, string>();
+  // Freeze used boxes in flex rows so the intrinsic widths aren't used to
+  // shrink an already laid-out name or price a second time.
   const styledNodes = sources.map((source, index) => {
     const css = getComputedStyle(source);
+    const parentDisplay = source.parentElement ? displays.get(source.parentElement) ?? '' : '';
+    const flexItem = isFlexItem(css, parentDisplay);
+    displays.set(source, css.display);
     css.fontFamily.split(',').forEach(family => families.add(family));
+    if (source instanceof HTMLElement && [css.transform, css.rotate, css.translate, css.scale]
+      .some(value => value && value !== 'none')) {
+      transformed.push({ element: source, inlineStyle: source.getAttribute('style') });
+    }
     for (const pseudo of ['before', 'after']) {
       const style = getComputedStyle(source, `::${pseudo}`);
       if (!style.content || style.content === 'none' || style.content === 'normal') continue;
       targets[index].setAttribute('data-export-pseudo', String(index));
-      pseudoRules.push(`[data-export-pseudo="${index}"]::${pseudo}{content:${style.content};${snapshotStyle(style)}}`);
+      pseudoRules.push(`[data-export-pseudo="${index}"]::${pseudo}{content:${style.content};${snapshotStyle(style)}${isFlexItem(style, css.display) ? 'flex:none;' : ''}}`);
     }
-    return snapshotStyle(css);
+    return snapshotStyle(css) + (flexItem ? 'flex:none;' : '');
   });
+
+  // The sandbox is already unzoomed. Temporarily turn off object transforms to
+  // measure the local line boxes, then paint them with the original transforms.
+  try {
+    for (const { element } of transformed) {
+      element.style.setProperty('transition', 'none', 'important');
+      element.style.setProperty('transform', 'translate(0)', 'important');
+      for (const property of ['rotate', 'translate', 'scale']) element.style.setProperty(property, 'none', 'important');
+    }
+    sources.forEach((element, index) => {
+      if (!(element instanceof HTMLElement) || element.childNodes.length !== 1 || !(element.firstChild instanceof Text)) return;
+      const css = getComputedStyle(element);
+      // Line clamping is drawn directly by the browser so its ellipsis is retained.
+      if (Number(css.webkitLineClamp) > 0 && element.scrollHeight > element.clientHeight + 1) return;
+      const lines = measurePrintTextLines(element, css);
+      if (lines.length) textLines.set(index, lines);
+    });
+  } finally {
+    for (const { element, inlineStyle } of transformed) {
+      if (inlineStyle === null) element.removeAttribute('style');
+      else element.setAttribute('style', inlineStyle);
+    }
+  }
   const [fonts, pseudoCss] = await Promise.all([
     embedPrintFonts(families, inlineUrls),
     inlineUrls(pseudoRules.join('\n'), document.baseURI),
     ...styledNodes.map(async (style, index) => {
-      targets[index].setAttribute('style', await inlineUrls(style, document.baseURI));
+      const target = targets[index];
+      target.setAttribute('style', await inlineUrls(style, document.baseURI));
+      const lines = textLines.get(index);
+      if (target instanceof HTMLElement && lines) applyPrintTextLines(target, lines);
     }),
   ]);
 
