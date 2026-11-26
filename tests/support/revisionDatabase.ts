@@ -26,6 +26,8 @@ export async function revisionDatabase() {
     const { readdir } = await import('node:fs/promises');
     const conflictFile = (await readdir('supabase/migrations')).find(name => name.endsWith('_revision_history_conflict_response.sql'))!;
     await db.exec(await readFile(`supabase/migrations/${conflictFile}`,'utf8'));
+    await db.exec(await readFile('supabase/migrations/20261126214159_revision_history_worker_admission.sql','utf8'));
+    await db.exec(await readFile('supabase/migrations/20261126214703_revision_history_claim_materialization.sql','utf8'));
     await db.exec('update public.revision_config set enabled=true');
     return db;
 }

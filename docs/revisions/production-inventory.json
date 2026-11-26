@@ -1,0 +1,201 @@
+{
+  "config": {
+    "enabled": true,
+    "capacityLevel": 0,
+    "maxWorkerConcurrency": 3,
+    "assetInventoryComplete": false
+  },
+  "legacy": {
+    "versions": 641,
+    "indexBytes": 1089536,
+    "snapshotP50": 9292,
+    "snapshotP95": 12490,
+    "relationBytes": 11722752,
+    "snapshotTextBytes": 5950525
+  },
+  "states": [
+    {
+      "count": 224,
+      "maxdepth": 2,
+      "payloadbytes": 93088,
+      "representation": "delta",
+      "rawpayloadbytes": 255796
+    },
+    {
+      "count": 325,
+      "maxdepth": 0,
+      "payloadbytes": 757882,
+      "representation": "snapshot",
+      "rawpayloadbytes": 2521508
+    }
+  ],
+  "storage": [
+    {
+      "bytes": 27079415,
+      "objects": 184,
+      "bucket_id": "ai-imports"
+    },
+    {
+      "bytes": 57863582,
+      "objects": 136,
+      "bucket_id": "menu-assets"
+    },
+    {
+      "bytes": 37363295,
+      "objects": 13,
+      "bucket_id": "product-images"
+    },
+    {
+      "bytes": 850970,
+      "objects": 549,
+      "bucket_id": "revision-blobs"
+    }
+  ],
+  "revisions": {
+    "legacyMapped": 641,
+    "logicalCount": 641,
+    "originalCount": 10,
+    "userProtectedCount": 0
+  },
+  "scheduler": [
+    {
+      "active": true,
+      "schedule": "* * * * *"
+    }
+  ],
+  "failedJobs": 0,
+  "observedAt": "2026-11-26T21:53:43.558684+00:00",
+  "pendingJobs": 0,
+  "unavailable": [
+    "physicalDiskIncludingWal",
+    "organizationEgressCached",
+    "organizationEgressUncached",
+    "providerCpu",
+    "providerMemory",
+    "externalBackupRpoRto"
+  ],
+  "fixtureUsers": 0,
+  "databaseBytes": 34966675,
+  "eligibleMenus": 10,
+  "migratedMenus": 10,
+  "historyRelations": [
+    {
+      "bytes": 884736,
+      "relname": "menu_revisions",
+      "indexbytes": 466944
+    },
+    {
+      "bytes": 983040,
+      "relname": "revision_asset_refs",
+      "indexbytes": 516096
+    },
+    {
+      "bytes": 16384,
+      "relname": "revision_blob_locations",
+      "indexbytes": 8192
+    },
+    {
+      "bytes": 655360,
+      "relname": "revision_blobs",
+      "indexbytes": 253952
+    },
+    {
+      "bytes": 24576,
+      "relname": "revision_capacity_alerts",
+      "indexbytes": 16384
+    },
+    {
+      "bytes": 32768,
+      "relname": "revision_config",
+      "indexbytes": 16384
+    },
+    {
+      "bytes": 98304,
+      "relname": "revision_jobs",
+      "indexbytes": 49152
+    },
+    {
+      "bytes": 122880,
+      "relname": "revision_leases",
+      "indexbytes": 32768
+    },
+    {
+      "bytes": 114688,
+      "relname": "revision_menu_state",
+      "indexbytes": 16384
+    },
+    {
+      "bytes": 360448,
+      "relname": "revision_operations",
+      "indexbytes": 155648
+    },
+    {
+      "bytes": 16384,
+      "relname": "revision_publication_events",
+      "indexbytes": 8192
+    },
+    {
+      "bytes": 65536,
+      "relname": "revision_rate_windows",
+      "indexbytes": 16384
+    },
+    {
+      "bytes": 65536,
+      "relname": "revision_reservations",
+      "indexbytes": 32768
+    },
+    {
+      "bytes": 704512,
+      "relname": "revision_states",
+      "indexbytes": 352256
+    },
+    {
+      "bytes": 32768,
+      "relname": "revision_telemetry",
+      "indexbytes": 16384
+    }
+  ],
+  "baseline": {
+    "databaseBytes": 28404883,
+    "storageBytes": 122305589,
+    "legacyVersions": 641,
+    "legacySnapshotTextBytes": 5950525,
+    "legacyRelationBytes": 11722752,
+    "legacyIndexBytes": 1089536
+  },
+  "historyRelationsTotalBytes": 4177920,
+  "historyIndexesTotalBytes": 1957888,
+  "storageTotalBytes": 123157262,
+  "hostedMigrations": [
+    {
+      "version": "20261126212040",
+      "name": "revision_history_v12"
+    },
+    {
+      "version": "20261126212108",
+      "name": "revision_history_edge_runtime"
+    },
+    {
+      "version": "20261126213034",
+      "name": "revision_history_conflict_response"
+    },
+    {
+      "version": "20261126214331",
+      "name": "revision_history_worker_admission"
+    },
+    {
+      "version": "20261126214832",
+      "name": "revision_history_claim_materialization"
+    }
+  ],
+  "storageDecision": "Private Supabase Storage binary blobs; gzip-v1/raw-v1 snapshots and deterministic deltas, SHA-256 within authorized workspace. Existing legacy JSON was preserved, so storage is temporarily additive.",
+  "gcEnabled": false,
+  "notes": [
+    "All 641 legacy versions mapped, no age-based deletion; 10 originals protected.",
+    "One of 11 menu records has no current draft and no versions to convert.",
+    "History payload bytes are deduplicated physical bytes, not comparable to raw legacy bytes as a compression ratio.",
+    "Metadata sizes include indexes/allocated PostgreSQL pages. No VACUUM FULL, legacy cleanup, paid service or external backup was performed.",
+    "No production document or existing user was deleted; disposable test accounts were cleaned up.",
+    "Unknown provider and organization metrics remain unavailable; quantity limits do not guarantee Free-plan capacity."
+  ]
+}

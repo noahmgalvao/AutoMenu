@@ -356,3 +356,20 @@ test('Edge telemetry distinguishes unavailable CPU/memory from measured zero', a
  assert.deepEqual(measured,{samples:2,cpu_samples:1,memory_samples:1});
  }finally{await db.close();}
 });
+
+test('global worker admission counts other workers leases and prioritizes persisted editing over legacy backfill', async () => {
+ const db=await revisionDatabase();try{
+ await commit(db,0,{original:true});
+ await db.exec("update public.revision_menu_state set migrated=true where menu_id='m';update public.revision_config set max_worker_concurrency=2;insert into public.revision_jobs(menu_id,due_at) values('m',now()-interval '1 second'),('foreign',now()-interval '1 hour') on conflict(menu_id) do update set due_at=excluded.due_at;");
+ const first=await db.query<{menu_id:string}>("select * from public.revision_claim_jobs('worker-a',1)");
+ assert.equal(first.rows[0].menu_id,'m');
+ const second=await db.query<{menu_id:string}>("select * from public.revision_claim_jobs('worker-b',20)");
+ assert.deepEqual(second.rows.map(r=>r.menu_id),['foreign']);
+ assert.equal((await db.query("select * from public.revision_claim_jobs('worker-c',20)")).rows.length,0);
+ await db.exec("update public.revision_jobs set lease_until=null,lease_token=null;update public.revision_config set capacity_level=85;");
+ assert.equal((await db.query("select * from public.revision_claim_jobs('worker-d',20)")).rows.length,1);
+ assert.equal((await db.query("select * from public.revision_claim_jobs('worker-e',20)")).rows.length,0);
+ await db.exec('update public.revision_config set capacity_level=95');
+ assert.equal((await db.query("select * from public.revision_claim_jobs('worker-f',20)")).rows.length,0);
+ }finally{await db.close();}
+});

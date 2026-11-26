@@ -56,9 +56,13 @@ Pendências: fontes e URLs externas mutáveis; corrida real entre dois aparelhos
 ## Resumo da execução final
 
 - TypeScript e build de produção: aprovados.
-- Suíte Node completa: 76 testes aprovados, incluindo serviço/repositório reais ligados ao PostgreSQL isolado por uma ponte de testes compatível com PostgREST; Storage é um adapter de fixture, não Supabase ao vivo.
+- Suíte Node completa: 77 testes aprovados, incluindo serviço/repositório reais ligados ao PostgreSQL isolado por uma ponte de testes compatível com PostgREST; Storage é um adapter de fixture, não Supabase ao vivo.
 - Histórico no navegador: 4 casos aprovados (393 px, 1280 px, restauração/todas as páginas, teclado/cancelamento rápido).
 - Fidelidade de exportação: 3 casos aprovados. Login/offline e recuperação de bundle também passaram em repetição dirigida.
 - Suíte antiga de workspace: 15 aprovados / 14 falhas na execução ampla (inclui três casos novos de histórico nessa contagem inicial). Comparação limpa da main anterior: 12 aprovados / 14 falhas; 13 falhas se repetem entre as execuções. O caso de startup que falhou nesta execução passou ao repetir isoladamente; o login que falhou no baseline também passou na execução dirigida atual. Não se declara a suíte antiga integralmente verde.
 - Backup/asset inventory em dry-run: executados sem conexão/transferência externa.
 - Migrations, bucket privado, configuração de orçamentos e cron central instalados no Supabase; teste real detalhado em `production-validation.json`. Backup externo/GC de produção/migração de provedor não executados. O estado final do cron/backfill consta em `production-inventory.json`.
+
+Validação adicional de admissão: o teste detectou que candidatos poderiam ser reavaliados durante o UPDATE de leases. A migration corretiva usa CTE MATERIALIZED antes da alteração e testa limite global, leases de outras invocações, prioridade do estado persistido e modo de 85%/95%. O esquema completo aplica as duas migrations em ordem; a falha intermediária foi corrigida e a suíte final passou. Validação de rede adicional: escritores simultâneos, URL assinada autorizada/recusa por namespace e cron após desconexão. As fixtures Auth/Storage foram removidas ao final; usuários/documentos existentes não foram excluídos.
+
+Fechamento real: 641 versões mapeadas, 10 cardápios convertidos, fila vazia, nenhum erro de job e nenhuma fixture Auth remanescente. Artefatos: `production-inventory.json` (bytes e migrations) e `production-validation.json` (operações pela rede/cron e limitações da amostra). O teste do cron teve pausa deliberada de despacho durante correção SQL; registra 90 s de prazo no outbox e 305,5 s até o checkpoint observado, sem alegar SLA normal de 90 s. A Vercel reportou sucesso e o bundle público entrega o novo gateway.

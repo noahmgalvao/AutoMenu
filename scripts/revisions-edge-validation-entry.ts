@@ -1,2 +1,2 @@
 export * from '../src/infrastructure/revisions/http';
-export { validateLiveRevisions } from './revisions-live-validation';
+export { validateLiveRevisions, validateScheduledCheckpoint } from './revisions-live-validation';

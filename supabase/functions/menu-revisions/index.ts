@@ -21,7 +21,7 @@ Deno.serve(async request => {
             const service=configuredRevisionService();
             const token=request.headers.get('authorization')?.replace(/^Bearer /i,'')||'';
             if(!/^[a-f0-9]{64}$/.test(token)||!await service.repo.rpc('revision_worker_authorized',{p_token:token})) return json({error:'Acesso negado.'},401);
-            const jobs=await service.runJobs(1);
+            const jobs=await service.runJobs(3);
             return json({jobs,gcEnabled:false});
         }
         let status=200, result:unknown, extra:Record<string,string>={};

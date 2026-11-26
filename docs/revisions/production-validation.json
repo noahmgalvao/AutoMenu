@@ -1,6 +1,6 @@
 {
   "date": "2026-11-26",
-  "scope": "Isolated disposable fixture in the actual Supabase project; not a statistical benchmark",
+  "scope": "Disposable fixtures in the actual Supabase project. One sample per operation, not a statistical benchmark.",
   "ok": true,
   "checks": [
     "http-migrate-200",
@@ -22,20 +22,23 @@
     "http-copy-200",
     "independent-copy",
     "copy-roundtrip",
+    "concurrent-network-writer-cas",
     "anon-rls-denied",
     "owner-rls-visible",
+    "authorized-signed-read",
+    "foreign-signed-read-denied",
     "public-blob-denied",
     "service-rpc-denied-to-user",
     "cross-account-denied",
     "svg-original-lossless-private"
   ],
   "times": {
-    "migrateMs": 2266.304002,
-    "saveMs": 409.8273140000001,
-    "manualMs": 1024.4675409999995,
-    "restoreMs": 520.8596450000005
+    "migrateMs": 1604.18618,
+    "saveMs": 316.764412,
+    "manualMs": 995.0027500000001,
+    "restoreMs": 460.22879699999976
   },
-  "totalMs": 6787.120362,
+  "totalMs": 6312.5651769999995,
   "fixture": {
     "logicalStates": 2,
     "compressedBytes": 378,
@@ -43,9 +46,24 @@
     "blobCount": 2
   },
   "capacity": {
-    "observedAt": "2026-11-26T21:33:04.979384+00:00",
-    "storageBytes": 122306077,
-    "databaseBytes": 29912211,
+    "observedAt": "2026-11-26T21:45:46.089344+00:00",
+    "storageBytes": 122801668,
+    "databaseBytes": 33164435,
     "storageMissingSizes": 0
+  },
+  "scheduled": {
+    "ok": true,
+    "createdAt": "2026-11-26T21:49:44.712095+00:00",
+    "checks": [
+      "durable-autosave",
+      "90s-outbox-deadline",
+      "central-cron-without-open-client",
+      "checkpoint-from-persisted-state",
+      "private-blob-roundtrip"
+    ],
+    "persistedAt": "2026-11-26T21:44:39.201134+00:00",
+    "dueAt": "2026-11-26T21:46:09.201134+00:00",
+    "observedElapsedSeconds": 305.511,
+    "note": "Dispatch was deliberately paused while validating the SQL admission fix. This is proof of durable background consolidation, not a 90-second end-to-end latency measurement."
   }
 }

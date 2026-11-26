@@ -38,10 +38,15 @@ export async function validateLiveRevisions(service:RevisionService) {
   check(canonicalize((await service.repo.current(menuId)).document)===canonicalize(doc(0)),'restore-current');
   check((await invoke('page')).items.some((r:any)=>r.id===manual.id),'restore-keeps-future');
   const copied=await invoke('copy',{revisionId:manual.id});check(copied.menuId!==menuId,'independent-copy');check(canonicalize((await service.repo.current(copied.menuId)).document)===canonicalize(doc(1)),'copy-roundtrip');
-  console.info('revision-validation: '+phase);phase='rls-and-bucket';const unauthorized=createClient(process.env.SUPABASE_URL!,key,{auth:{persistSession:false}});
+  console.info('revision-validation: '+phase);phase='rls-and-bucket';
+  const race=await Promise.all([2,3].map(async n=>{const response=await fetch(endpoint,{signal:AbortSignal.timeout(15000),method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({action:'save',menuId,operationId:`${Date.now()}_${crypto.randomUUID()}`,expectedWrite:2,snapshot:doc(n),editor:editorOf(doc(n))})});await response.json();return response.status;}));
+  check(race.filter(s=>s===200).length===1&&race.filter(s=>s===409).length===1,'concurrent-network-writer-cas');const unauthorized=createClient(process.env.SUPABASE_URL!,key,{auth:{persistSession:false}});
   const anon=await unauthorized.from('menu_revisions').select('id').eq('menu_id',menuId);check(!!anon.error||anon.data?.length===0,'anon-rls-denied');
   const visible=await client.from('menu_revisions').select('id').eq('menu_id',menuId);check(!visible.error&&!!visible.data?.length,'owner-rls-visible');
   const blobs=await resultOf(db.from('revision_blobs').select('*').eq('namespace',workspace));const first=blobs[0];
+  const store=service.repo.stores.writer(),access=await store.createReadAccess(first,60,{namespace:workspace!});
+  const signed=await fetch(String(access));check(signed.ok&&new Uint8Array(await signed.arrayBuffer()).length===Number(first.byte_length),'authorized-signed-read');
+  let accessDenied=false;try{await store.createReadAccess(first,60,{namespace:'wrong-namespace'});}catch{accessDenied=true;}check(accessDenied,'foreign-signed-read-denied');
   const publicAccess=await fetch(`${process.env.SUPABASE_URL}/storage/v1/object/public/${first.bucket}/${first.object_key}`);check(!publicAccess.ok,'public-blob-denied');
   const forbidden=await client.rpc('revision_assert_actor',{p_menu:menuId,p_actor:actor});check(!!forbidden.error,'service-rpc-denied-to-user');
   let denied=false;try{await service.repo.authorize(menuId,crypto.randomUUID());}catch{denied=true;}check(denied,'cross-account-denied');
@@ -60,4 +65,45 @@ export async function validateLiveRevisions(service:RevisionService) {
   if(workspace){for(const bucket of ['revision-blobs','menu-assets']){const prefix=bucket==='menu-assets'?`${workspace}/revision-assets`:workspace;const listed=await db.storage.from(bucket).list(prefix,{limit:1000});const names=(listed.data||[]).filter(o=>o.id).map(o=>`${prefix}/${o.name}`);if(names.length){const removed=await db.storage.from(bucket).remove(names);if(removed.error)throw new Error('Fixture object cleanup failed');}}}
   if(actor){const removed=await db.auth.admin.deleteUser(actor);if(removed.error)throw new Error(`Fixture user cleanup failed: ${removed.error.code}`);}
  }
+}
+
+/** Two-phase scheduler probe: prepare returns immediately; verify after the 90s deadline + cron interval.
+ * The live Edge deployment must remove this administrative harness after testing. */
+export async function validateScheduledCheckpoint(service:RevisionService,mode:'prepare'|'verify',runId:string) {
+ if(!/^[a-zA-Z0-9-]{8,80}$/.test(runId))throw new Error('Invalid fixture run');
+ const db=service.repo.db,name=`Revision scheduled fixture ${runId}`;
+ const document={products:[{id:'p',name:'Fixture',price:1,category:'Categoria'}],style:{menuTitle:name},sortOption:{field:'name',direction:'asc'}};
+ const cleanup=async(workspace:string,actor:string)=>{
+  const blobs=await db.storage.from('revision-blobs').list(workspace,{limit:1000});
+  const names=(blobs.data||[]).filter(o=>o.id).map(o=>`${workspace}/${o.name}`);
+  if(names.length)await resultOf(db.storage.from('revision-blobs').remove(names));
+  const removed=await db.auth.admin.deleteUser(actor);if(removed.error)throw new Error('Scheduled fixture cleanup failed');
+ };
+ if(mode==='prepare') {
+  const u=await db.auth.admin.createUser({email:`revision-scheduled-${runId}@example.invalid`,password:crypto.randomUUID()+crypto.randomUUID(),email_confirm:true,user_metadata:{workspace_name:name,revision_validation_run:runId}});if(u.error)throw u.error;
+  const actor=u.data.user.id;let workspace:string|undefined;
+  try{
+   workspace=(await resultOf(db.from('workspace_members').select('workspace_id').eq('user_id',actor).single())).workspace_id;
+   const menu=crypto.randomUUID(),v=crypto.randomUUID(),original={...document,products:[{...document.products[0],price:0}]};
+   await resultOf(db.from('menus').insert({id:menu,workspace_id:workspace,name}));
+   await resultOf(db.from('menu_versions').insert({id:v,menu_id:menu,version_number:1,version_type:'draft',editor_state:editorOf(original),render_snapshot:original,created_by:actor,action_label:'Cardápio criado'}));
+   await resultOf(db.from('menus').update({current_draft_version_id:v}).eq('id',menu));
+   await service.migrateBatch(menu,actor);
+   await service.save(menu,actor,{expectedWrite:0,operationId:`scheduled:${runId}`,snapshot:document,editor:editorOf(document)});
+   const runtime=await service.repo.runtime(menu),job=await resultOf(db.from('revision_jobs').select('due_at').eq('menu_id',menu).single());
+   return {prepared:true,runId,persistedAt:runtime.pending_last,dueAt:job.due_at};
+  }catch(error){if(workspace)await cleanup(workspace,actor);else await db.auth.admin.deleteUser(actor);throw error;}
+ }
+ const workspace=await resultOf(db.from('workspaces').select('id,owner_user_id').eq('name',name).single());
+ const user=await db.auth.admin.getUserById(workspace.owner_user_id);
+ if(user.error||user.data.user.user_metadata.revision_validation_run!==runId)throw new Error('Fixture identity mismatch');
+ const menu=await resultOf(db.from('menus').select('id').eq('workspace_id',workspace.id).single());
+ const runtime=await service.repo.runtime(menu.id),page=await service.repo.page(menu.id,'all');
+ const checkpoint=page.items.find(r=>r.protection!=='original'&&r.kind==='checkpoint');
+ if(!checkpoint||runtime.pending_first)return {ok:false,pending:true,runId};
+ const restored=await service.repo.read(checkpoint.state_id,workspace.id);
+ if(canonicalize(restored)!==canonicalize(document))throw new Error('Scheduled checkpoint mismatch');
+ const result={ok:true,runId,createdAt:checkpoint.created_at,checks:['durable-autosave','90s-outbox-deadline','central-cron-without-open-client','checkpoint-from-persisted-state','private-blob-roundtrip']};
+ await cleanup(workspace.id,workspace.owner_user_id);
+ return result;
 }
