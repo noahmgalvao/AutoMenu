@@ -385,7 +385,12 @@ export const useKeyboardMovement = (
         }
 
         deletedProductIds.forEach(productId => onDeleteProduct?.(productId));
-        clearMultiSelectionTo?.(null, null);
+        const currentIndex = visualList.findIndex(item => item.type === 'product' && item.id === id);
+        const next = type === 'product' && !clickedProduct?.isFreeText
+            ? visualList.slice(currentIndex + 1).find(item => item.type === 'product' && !item.product?.isFreeText
+                && !deletedProductIds.has(item.id) && !style.hiddenProductIds?.includes(item.id))
+            : undefined;
+        clearMultiSelectionTo?.(next ? 'product' : null, next?.id ?? null);
     };
     
     // Wrapper for add functionality if handlers needs to expose it for MenuItem convenience

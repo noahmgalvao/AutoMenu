@@ -54,7 +54,7 @@ function productTextRowStyle(spacing: ReturnType<typeof resolveMenuContentSpacin
         columnGap: gap,
         rowGap: 2,
         '--product-price-gap': `${gap}px`,
-        '--product-price-space-share': gap / DEFAULT_MENU_CONTENT_SPACING.productNameToPrice,
+        '--product-price-space-share': Math.min(1, Math.max(0, gap / DEFAULT_MENU_CONTENT_SPACING.productNameToPrice)),
     } as React.CSSProperties;
 }
 

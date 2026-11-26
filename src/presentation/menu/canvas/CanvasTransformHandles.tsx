@@ -18,6 +18,8 @@ type Gesture = {
     finish: (committed: boolean) => void;
 };
 
+let activeTransformPointer: number | undefined;
+
 type StartGesture = (event: React.PointerEvent<HTMLButtonElement>) => Gesture | undefined;
 
 function TransformHandle({ label, className, start, children, kind }: {
@@ -30,12 +32,13 @@ function TransformHandle({ label, className, start, children, kind }: {
     const cleanupRef = React.useRef<() => void>(undefined);
 
     const pointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
-        if (!event.isPrimary || event.button !== 0 || cleanupRef.current) return;
+        if (!event.isPrimary || event.button !== 0 || cleanupRef.current || activeTransformPointer !== undefined) return;
         event.preventDefault();
         event.stopPropagation();
         const gesture = start(event);
         if (!gesture) return;
 
+        activeTransformPointer = event.pointerId;
         const button = event.currentTarget;
         const capture = button.closest<HTMLElement>('[data-menu-preview-canvas]') ?? button;
         const pointer = event.pointerId;
@@ -52,6 +55,7 @@ function TransformHandle({ label, className, start, children, kind }: {
                 window.setTimeout(() => capture.removeEventListener('click', ignoreClick, true), 0);
             }
             cleanupRef.current = undefined;
+            activeTransformPointer = undefined;
             if (capture.hasPointerCapture(pointer)) capture.releasePointerCapture(pointer);
             if (commit && latest) gesture.preview(latest);
             gesture.finish(commit);
@@ -65,6 +69,7 @@ function TransformHandle({ label, className, start, children, kind }: {
         }
         capture.addEventListener('pointermove', event => {
             if (event.pointerId !== pointer) return;
+            event.stopPropagation();
             latest = event;
             if (frame) return;
             frame = requestAnimationFrame(() => {
@@ -73,7 +78,7 @@ function TransformHandle({ label, className, start, children, kind }: {
             });
         }, options);
         capture.addEventListener('pointerup', event => {
-            if (event.pointerId === pointer) cleanup(true);
+            if (event.pointerId === pointer) { event.stopPropagation(); cleanup(true); }
         }, options);
         const cancel = (event: PointerEvent) => {
             if (event.pointerId === pointer) cleanup(false);

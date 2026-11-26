@@ -25,8 +25,8 @@ interface EditorHistoryOptions {
 }
 
 const categorySizingFields = [
-  'minimumFontSize', 'revisedMinimumFontSize', 'columnCount', 'categoryColumnCount', 'categoryColumnWidths',
-  'categoryProductColumnCounts', 'layoutMode', 'margins', 'pagePadding', 'pageSetup', 'contentSpacing', 'itemGap',
+  'minimumFontSize', 'revisedMinimumFontSize',
+  'layoutMode',
   'imageScale', 'categoryImageScale', 'productPhotoRatio', 'categoryPhotoRatio', 'productPhotoAlignments',
   'productPhotoAlignmentDefault', 'categoryPhotoAlignmentDefault', 'productImageFrame', 'categoryImages',
   'showImages', 'showCategoryImages', 'showPrices', 'hiddenProductIds', 'menuTitle', 'menuSubtitle', 'headingPages',

@@ -6,6 +6,8 @@ import {
   MIN_CONFIGURABLE_FONT_SIZE, resolveFontSizeLimits, resolveMenuContentSpacing,
   resolveMenuMargins, resolveMinimumFontSize, roundFontSize,
 } from '../../../domain/menu/styleRules';
+import { getCategoryFitRegression } from '../../../domain/menu/menuPagination';
+import type { Product } from '../../../domain/menu/model';
 import { FontSizeInput } from './FontSizeInput';
 import { MenuDesignDialog, designDialogButton } from './MenuDesignDialog';
 
@@ -15,12 +17,12 @@ const sectionNames = { spacing: 'Espaçamentos', margins: 'Margens' } as const;
 const layoutSections = ['spacing', 'margins'] as const;
 const tabs = ['Layout', 'Avançadas'] as const;
 const spacingRows = [
-  { key: 'headerToContent', label: 'Cabeçalho', next: 'Primeira categoria' },
+  { key: 'headerToContent', label: 'Título', next: 'Primeira categoria' },
   { key: 'categoryToProduct', label: 'Categoria', next: 'Produto' },
-  { key: 'productNameToDescription', label: 'Nome', next: 'Descrição' },
+  { key: 'productNameToDescription', label: 'Produto', next: 'Descrição' },
   { key: 'betweenProducts', label: 'Entre produtos' },
   { key: 'productToNextCategory', label: 'Produto', next: 'Próxima categoria' },
-  { key: 'productNameToPrice', label: 'Nome', next: 'Preço' },
+  { key: 'productNameToPrice', label: 'Produto', next: 'Preço' },
 ] satisfies ReadonlyArray<{ key: keyof MenuContentSpacing; label: string; next?: string }>;
 const marginRows = [
   { key: 'top', label: 'Superior', Icon: PanelTop },
@@ -266,8 +268,9 @@ function GeneralRulesDialog({
 }
 
 function RulesLayoutEditor({
-  style, setStyle, section, changeSection, reset, close, cancel, confirm,
+  style, setStyle, section, changeSection, reset, close, cancel, confirm, products,
 }: RulesProps & {
+  products: Product[];
   section: RulesLayoutSection;
   changeSection: (section: RulesLayoutSection) => void;
   reset: () => void;
@@ -317,15 +320,20 @@ function RulesLayoutEditor({
       className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
       <div key={section} className="grid grid-cols-2 gap-2.5">
         {layoutRows(style, section).map(row => (
-          <div key={row.key} className="grid min-w-0 content-between gap-2 rounded-xl border border-slate-200/80 bg-white p-2.5 shadow-xs">
+          <div key={row.key} className={`${row.key === 'columnGap' && (style.categoryColumnCount || 1) <= 1 && (style.columnCount || 1) <= 1 && !Object.values(style.categoryProductColumnCounts || {}).some(count => count > 1) ? 'opacity-40' : ''} grid min-w-0 content-between gap-2 rounded-xl border border-slate-200/80 bg-white p-2.5 shadow-xs`}>
             <div className="text-xs font-semibold leading-snug text-slate-700"><LayoutLabel row={row} /></div>
             <FontSizeInput variant="layout" label={row.next ? `${row.label} até ${row.next.toLowerCase()}` : row.label}
-              value={row.value} min={0} max={section === 'spacing' ? 200 : 300} showStepButtons stepSubject=""
-              onChange={next => setStyle(previous => section === 'spacing' ? {
-                ...previous, name: 'Custom', contentSpacing: { ...resolveMenuContentSpacing(previous), [row.key]: next },
-              } : {
-                ...previous, name: 'Custom', margins: { ...resolveMenuMargins(previous), [row.key]: next },
-              })}
+              disabled={row.key === 'columnGap' && (style.categoryColumnCount || 1) <= 1 && (style.columnCount || 1) <= 1 && !Object.values(style.categoryProductColumnCounts || {}).some(count => count > 1)}
+              step={row.key === 'productNameToDescription' ? 0.5 : 1}
+              value={row.value} min={row.key === 'productNameToDescription' ? -2 : 0} max={section === 'spacing' ? 200 : 300} showStepButtons stepSubject=""
+              onChange={next => {
+                const proposed = section === 'spacing'
+                  ? { ...style, name: 'Custom', contentSpacing: { ...resolveMenuContentSpacing(style), [row.key]: next } }
+                  : { ...style, name: 'Custom', margins: { ...resolveMenuMargins(style), [row.key]: next } };
+                if (next > row.value && getCategoryFitRegression(products, style, products, proposed, { field: 'name', direction: 'asc' })) return false;
+                setStyle(proposed);
+                return true;
+              }}
             />
           </div>
         ))}
@@ -353,8 +361,9 @@ export function GeneralRulesButton({ open }: { open: () => void }) {
 }
 
 export function useGeneralRules({
-  style, setStyle, isOpen, restoreDefaults, prepareEditor, onLayoutEditingChange,
+  style, setStyle, isOpen, restoreDefaults, prepareEditor, onLayoutEditingChange, products = [],
 }: RulesProps & {
+  products?: Product[];
   isOpen: boolean;
   restoreDefaults: () => void;
   prepareEditor: () => void;
@@ -406,7 +415,7 @@ export function useGeneralRules({
   return {
     open: () => setSnapshot(style),
     editor: editing && <RulesLayoutEditor
-      style={style} setStyle={setStyle} section={edit.section}
+      style={style} setStyle={setStyle} products={products} section={edit.section}
       changeSection={section => setEdit({ ...edit, section })}
       reset={() => reset(edit.section)} close={close} cancel={cancelEdit} confirm={() => setEdit(null)}
     />,

@@ -16,6 +16,8 @@ interface FontSizeInputProps {
     showStepButtons?: boolean;
     stepSubject?: string;
     variant?: 'layout';
+    disabled?: boolean;
+    step?: number;
 }
 
 const toInputValue = (value?: number): string => Number.isFinite(value) ? String(value) : '';
@@ -33,6 +35,8 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
     showStepButtons = false,
     stepSubject = 'tamanho da fonte',
     variant,
+    disabled = false,
+    step = 1,
 }) => {
     const layoutStepper = variant === 'layout';
     const inputRef = useRef<HTMLInputElement>(null);
@@ -61,6 +65,7 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
 
     const applyValue = (nextValue: number) => {
         const normalizedValue = normalizeValue(nextValue);
+        if (normalizedValue === min || normalizedValue === max || normalizedValue !== nextValue) triggerLimitFeedback(inputRef.current);
         const accepted = onChange(normalizedValue);
         if (accepted === false) {
             triggerLimitFeedback(inputRef.current);
@@ -71,7 +76,7 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
     };
     stepRef.current = (direction) => {
         const current = stepValueRef.current ?? min;
-        const next = normalizeValue(current + direction);
+        const next = normalizeValue(current + direction * step);
         if (next === current && stepValueRef.current !== undefined) {
             if (!inputRef.current?.classList.contains('automenu-limit-feedback')) triggerLimitFeedback(inputRef.current);
             return;
@@ -91,8 +96,8 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
     useEffect(() => () => window.clearTimeout(repeatTimer.current), []);
 
     const renderStep = (direction: 1 | -1, Icon: typeof ChevronUp, title: string, side = false) => (
-        <button type="button" aria-label={[title, side && stepSubject, label].filter(Boolean).join(' ')}
-            className={`grid touch-none place-items-center text-slate-600 hover:bg-indigo-100 focus-visible:bg-indigo-100 ${side
+        <button type="button" disabled={disabled} aria-label={[title, side && stepSubject, label].filter(Boolean).join(' ')}
+            className={`grid touch-none place-items-center text-slate-600 disabled:text-slate-300 disabled:bg-slate-100 hover:bg-indigo-100 focus-visible:bg-indigo-100 ${side
                 ? layoutStepper ? 'size-9 shrink-0 rounded-lg' : 'size-6 rounded border border-slate-200 bg-white'
                 : 'h-3.5 w-4 rounded-sm'}`}
             onPointerDown={(event) => {
@@ -126,7 +131,8 @@ export const FontSizeInput: React.FC<FontSizeInputProps> = ({
             type="number"
             min={min}
             max={max}
-            step={1}
+            step={step}
+            disabled={disabled}
             inputMode="decimal"
             className={`automenu-font-size-input ${layoutStepper
                 ? 'h-9 w-full min-w-0 rounded-lg border border-transparent bg-transparent p-0 text-center text-sm font-semibold tabular-nums text-slate-900 focus-visible:border-indigo-300 focus-visible:bg-white focus-visible:outline-none'

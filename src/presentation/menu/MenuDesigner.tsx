@@ -1,3 +1,4 @@
+import { resolveMenuContentSpacing } from '../../domain/menu/styleRules';
 import { getCategoryFitRegression } from '../../domain/menu/menuPagination';
 import { getProductColumnCount } from '../../domain/menu/categoryColumns';
 import { useCanvasFileExports, type CanvasFileExports } from './designer/useCanvasFileExports';
@@ -339,7 +340,17 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         && !dismissedTips.has('free-categories');
     const configuredCanvasFonts = React.useMemo(() => getConfiguredCanvasFonts(style, products), [style, products]);
     const showMixedFontTip = configuredCanvasFonts.length > 1 && !dismissedTips.has('mixed-fonts');
-    const hasVisibleTips = visibleFontTips.length > 0 || showMixedFontTip || showOverlapTip || showOffCanvasTip
+    const excessiveSpacing = Object.entries(resolveMenuContentSpacing(style))
+        .filter(([key, value]) => key !== 'productNameToPrice' && value > 35).map(([key]) => key);
+    const showSpacingTip = excessiveSpacing.length > 0 && !dismissedTips.has('spacing');
+    const resetExcessiveSpacing = () => restoreTemplateSettings((current, template) => {
+        const defaults = resolveMenuContentSpacing(template);
+        const spacing = resolveMenuContentSpacing(current);
+        return { ...current, name: 'Custom', contentSpacing: {
+            ...spacing, ...Object.fromEntries(excessiveSpacing.map(key => [key, defaults[key as keyof typeof defaults]])),
+        } };
+    });
+    const hasVisibleTips = showSpacingTip || visibleFontTips.length > 0 || showMixedFontTip || showOverlapTip || showOffCanvasTip
         || showPositionedCategoryTip || contrastTips.length > 0 || backgroundOverlapTips.length > 0 || kindsWithDifferences.length > 0 || hasMixedProductColumns;
 
     useEffect(() => {
@@ -613,6 +624,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
     useEffect(() => {
         const activeKeys = new Set(fontTips.map(tip => `font:${tip.scope}`));
+        if (excessiveSpacing.length) activeKeys.add('spacing');
         if (configuredCanvasFonts.length > 1) activeKeys.add('mixed-fonts');
         if (positionedCategoryIds.length > 0) activeKeys.add('free-categories');
         if (layoutDiagnostics.hasColumnGap) activeKeys.add('free-categories');
@@ -622,7 +634,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             const next = new Set(Array.from(current).filter(key => activeKeys.has(key)));
             return next.size === current.size ? current : next;
         });
-    }, [configuredCanvasFonts.length, fontTips, layoutDiagnostics.hasColumnGap, offCanvasIssueCount, overlapIssueCount, positionedCategorySignature]);
+    }, [excessiveSpacing.join(), configuredCanvasFonts.length, fontTips, layoutDiagnostics.hasColumnGap, offCanvasIssueCount, overlapIssueCount, positionedCategorySignature]);
 
     useEffect(() => {
         const root = containerRef.current;
@@ -1831,6 +1843,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     };
 
     const applyAllSuggestions = () => {
+        if (showSpacingTip) void resetExcessiveSpacing();
         let nextProducts = products;
         let nextStyle = style;
         const appliedFontScopes = new Set<WordFitScope>();
@@ -2024,6 +2037,14 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                 </div>
 
                                 <div className="max-h-[min(60vh,32rem)] space-y-4 overflow-y-auto p-4">
+                                    {showSpacingTip && <section className="rounded-xl bg-indigo-50 p-3 text-xs text-slate-700">
+                                        <p>Alguns espaçamentos estão acima de 35. Reduza-os para aproveitar melhor a página.</p>
+                                        <div className="mt-2 flex gap-2">
+                                            <button type="button" onClick={() => void resetExcessiveSpacing()}
+                                                className="rounded-lg bg-indigo-700 px-3 py-2 font-semibold text-white">Usar espaçamentos do modelo</button>
+                                            <button type="button" onClick={() => dismissTip('spacing')} className="rounded-lg bg-white px-3 py-2">Dispensar</button>
+                                        </div>
+                                    </section>}
                                     {(kindsWithDifferences.length > 0 || hasMixedProductColumns) && <section className="space-y-2">
                                         <h3 className="text-xs font-semibold text-slate-800">Sugestão para manter todos no padrão</h3>
                                         {kindsWithDifferences.map(kind => (

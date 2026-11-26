@@ -17,7 +17,7 @@ import React, { useMemo, useEffect, useRef, useCallback, useState } from 'react'
 import { createPortal, flushSync } from 'react-dom';
 import type { CategoryPosition, ElementStyle, Product, MenuStyle, SortOption } from '../../../domain/menu/model';
 import { Crop, AlertTriangle, BringToFront, Copy, CopyCheck, CopyPlus, Edit3, EyeOff, Wallpaper, FlipHorizontal2, FlipVertical2, Images, Layers, Paintbrush, Clipboard, Plus, Scissors, SendToBack, Trash2 } from 'lucide-react';
-import { calculatePagination, finalizeMenuPages, getCategoryFitRegression, getMenuTypographyScale, getSavedCategoryPlacements, reflowPositionsForMenuHeadings } from '../../../domain/menu/menuPagination';
+import { calculatePagination, finalizeMenuPages, getCategoryFitRegression, getMenuTypographyScale, getFittedMenuSpacing, getFittedMenuProducts, getTypicalMenuFontSize, getSavedCategoryPlacements, reflowPositionsForMenuHeadings } from '../../../domain/menu/menuPagination';
 import { FREE_TEXT_PREFIX, SAFETY_BUFFER } from '../../../domain/menu/flow';
 import { isPristineNewCategory, isPristineNewProduct } from '../../../domain/menu/pristineItems';
 import { useMenuInteractions } from '../interactions/useMenuInteractions';
@@ -739,7 +739,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         if (!frame) return;
         const scale = getCanvasDragScale(frame);
         const startY = event.clientY;
-        const gestureHeight = Math.max(44, frame.offsetHeight);
+        const gestureHeight = Math.max(120, frame.offsetHeight * 1.8);
         const handle = event.currentTarget;
         const selection = handlers.selectedItems.length > 1 ? handlers.selectedItems : undefined;
         const scaleObject = captureCanvasObjectScale(style, target, products, frame.offsetWidth, () => {
@@ -805,7 +805,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
     // 4. Pagination
     const layoutStyle = useMemo(() => scalePreview?.style ? { ...style, ...scalePreview.style } : style, [style, scalePreview]);
-    const layoutProducts = useMemo(() => scalePreview?.products
+    const unfitLayoutProducts = useMemo(() => scalePreview?.products
         ? products.map(product => {
             const change = scalePreview.products!.get(product.id);
             return change ? { ...product, ...change } : product;
@@ -821,33 +821,44 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
     }, [handlers.groupedProducts, scalePreview]);
     const typographyScale = useMemo(() => getMenuTypographyScale(layoutStyle, layoutGroups, handlers.sortedCategories),
         [layoutStyle, layoutGroups, handlers.sortedCategories]);
-    const paginationOptions = useMemo(() => ({ measuredHeights, typographyScale }), [measuredHeights, typographyScale]);
+    const fittedLayoutStyle = useMemo(() => getFittedMenuSpacing(layoutStyle, typographyScale), [layoutStyle, typographyScale]);
+    const layoutProducts = useMemo(() => getFittedMenuProducts(unfitLayoutProducts, typographyScale), [unfitLayoutProducts, typographyScale]);
+    const measurementConfig = useRef({ style: layoutStyle, products: unfitLayoutProducts, scale: typographyScale });
+    const metricsChanged = measurementConfig.current.style !== layoutStyle
+        || measurementConfig.current.products !== unfitLayoutProducts || measurementConfig.current.scale !== typographyScale;
+    React.useLayoutEffect(() => {
+        if (!metricsChanged) return;
+        measurementConfig.current = { style: layoutStyle, products: unfitLayoutProducts, scale: typographyScale };
+        setMeasuredHeights(new Map());
+    }, [layoutStyle, unfitLayoutProducts, typographyScale, metricsChanged]);
+    const paginationOptions = useMemo(() => ({ measuredHeights: metricsChanged ? undefined : measuredHeights, typographyScale }),
+        [measuredHeights, typographyScale, metricsChanged]);
     const basePages = useMemo(() => {
         const effectiveCategoryPositions = handlers.liveCategoryPositions || layoutStyle.categoryPositions;
         const effectiveStyle = effectiveCategoryPositions === layoutStyle.categoryPositions
             ? layoutStyle
             : { ...layoutStyle, categoryPositions: effectiveCategoryPositions };
         return calculatePagination(
-            layoutProducts,
+            unfitLayoutProducts,
             effectiveStyle,
             layoutGroups,
             handlers.sortedCategories,
             handlers.liveCategoryPageAssignments || getSavedCategoryPlacements(effectiveStyle),
             paginationOptions,
         );
-    }, [layoutProducts, paginationOptions, layoutStyle, layoutGroups, handlers.sortedCategories, handlers.liveCategoryPageAssignments, handlers.liveCategoryPositions]);
+    }, [unfitLayoutProducts, paginationOptions, layoutStyle, layoutGroups, handlers.sortedCategories, handlers.liveCategoryPageAssignments, handlers.liveCategoryPositions]);
 
     const canvasStyle = useMemo(() => {
-        const current = handlers.liveCanvasLayers ? { ...layoutStyle, ...handlers.liveCanvasLayers } : layoutStyle;
+        const current = handlers.liveCanvasLayers ? { ...fittedLayoutStyle, ...handlers.liveCanvasLayers } : fittedLayoutStyle;
         if (rotationPreview?.type !== 'addedImage') return current;
         return { ...current, addedImages: current.addedImages?.map(image =>
             image.id === rotationPreview.id ? rotateCanvasShape(image, rotationPreview.rotation) : image) };
-    }, [handlers.liveCanvasLayers, layoutStyle, rotationPreview]);
+    }, [handlers.liveCanvasLayers, fittedLayoutStyle, rotationPreview]);
     const pages = useMemo(() => finalizeMenuPages(basePages, handlers.liveCategoryPositions
         ? { ...canvasStyle, categoryPositions: handlers.liveCategoryPositions } : canvasStyle, layoutProducts),
     [basePages, canvasStyle, handlers.liveCategoryPositions, layoutProducts]);
 
-    useMenuPageMeasurements(previewRootRef, pages, style.columnCount, setMeasuredHeights, typographyScale);
+    useMenuPageMeasurements(previewRootRef, pages, style.columnCount, setMeasuredHeights, typographyScale, getTypicalMenuFontSize(style));
 
     useEffect(() => {
         onPageCountChange?.(pages.length);
@@ -2292,6 +2303,15 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         return true;
     }, [handlers, onStyleUpdate, products]);
 
+    const selectProductAfter = (items: ObjectSelectionItem[]) => {
+        const removed = new Set(items.filter(item => item.type === 'product').map(item => item.id));
+        if (!removed.size) return;
+        const ordered = handlers.sortedCategories.flatMap(category => handlers.groupedProducts[category] || [])
+            .filter(product => !product.isFreeText && !style.hiddenProductIds?.includes(product.id));
+        const index = ordered.findIndex(product => product.id === handlers.selectedId);
+        const next = ordered.slice(index + 1).find(product => !removed.has(product.id));
+        handlers.clearMultiSelectionTo(next ? 'product' : null, next?.id ?? null);
+    };
     const runObjectAction = useCallback(async (action: 'copy' | 'copyFormat' | 'paste' | 'pasteFormat' | 'cut' | 'duplicate' | 'delete' | 'hide' | 'front' | 'back', targetItem?: ObjectSelectionItem | null) => {
         const items = getActiveObjectItems(targetItem);
         let handled = false;
@@ -2315,7 +2335,10 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         if (action === 'front') handled = layerObjectItems(items, 'front');
         if (action === 'back') handled = layerObjectItems(items, 'back');
 
-        if (handled) setObjectMenu(null);
+        if (handled) {
+            if (action === 'delete' || action === 'hide') selectProductAfter(items);
+            setObjectMenu(null);
+        }
         return handled;
     }, [buildClipboardItems, copyFormatting, copyItems, deleteObjectItems, duplicateClipboardItems, getActiveObjectItems, getFreeTextPastePlacement, hideObjectItems, layerObjectItems, pasteClipboard, pasteFormattingClipboard]);
 

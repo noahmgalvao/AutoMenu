@@ -1,3 +1,4 @@
+import { getFittedFontSize } from '../../../domain/menu/menuPagination';
 import { getProductGridGap } from '../../../domain/menu/menuPagination';
 import { getProductColumnCount } from '../../../domain/menu/categoryColumns';
 import type { ElementStyle, MenuStyle } from '../../../domain/menu/model';
@@ -242,7 +243,7 @@ export function measurePriceWidth(price: HTMLElement, size: number, css = getCom
   return measureRenderedText(symbol, size, css) + measureRenderedText(value, size, css) + inset;
 }
 
-export function applyGroupedWordFit(root: HTMLElement, heightScale: number) {
+export function applyGroupedWordFit(root: HTMLElement, heightScale: number, typical = Infinity) {
   const elements = Array.from(root.querySelectorAll<HTMLElement>('[data-word-fit="true"], [data-price-base-size]'))
     .filter(element => {
       if (element.closest('[data-canvas-background-layer]')) {
@@ -262,7 +263,7 @@ export function applyGroupedWordFit(root: HTMLElement, heightScale: number) {
     const { wordFitBaseSize, priceBaseSize, wordFitMinimum, priceMinimum } = element.dataset;
     const base = Number(wordFitBaseSize ?? priceBaseSize);
     const minimum = Number(wordFitMinimum ?? priceMinimum) || DEFAULT_MINIMUM_FONT_SIZE;
-    const size = `${Math.max(minimum, base * scale)}px`;
+    const size = `${getFittedFontSize(base, minimum, scale, typical)}px`;
     if (element.style.getPropertyValue('--automenu-fitted-font-size') !== size) {
       element.style.setProperty('--automenu-fitted-font-size', size);
     }

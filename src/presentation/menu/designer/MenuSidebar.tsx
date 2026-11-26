@@ -77,7 +77,7 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
     const [savedTemplate, setSavedTemplate] = useState(false);
     const { sheetRef, height, isMobile, isExpanded, openPartial, toggleExpanded, dragHandlers } = useBottomSheetDrag(isOpen, onClose);
     const rules = useGeneralRules({
-        style, setStyle, isOpen, restoreDefaults: restoreRuleDefaults, onLayoutEditingChange: onRulesLayoutEditingChange,
+        style, setStyle, products, isOpen, restoreDefaults: restoreRuleDefaults, onLayoutEditingChange: onRulesLayoutEditingChange,
         prepareEditor: () => { if (isExpanded) openPartial(); },
     });
 

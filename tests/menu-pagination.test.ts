@@ -6,6 +6,7 @@ import {
   getPaginationBottomInset,
   getCategoryFitRegression,
   getMenuTypographyScale,
+  getFittedMenuSpacing,
   getPaginationHeightKey,
   getPaginationItemKey,
   type PageItem,
@@ -181,4 +182,19 @@ test('shrinks tall categories under the title and accepts three-column additions
     assert.equal(getCategoryFitRegression(products, layoutStyle, more, layoutStyle, sort), undefined);
     const full = Array.from({ length: 180 }, (_, id) => ({ ...products[0], id: String(id) }));
     assert.equal(getCategoryFitRegression(more, layoutStyle, full, layoutStyle, sort), 'A');
+});
+
+
+test('spacing and a saved empty cover yield to the first complete category', () => {
+    const products = Array.from({ length: 7 }, (_, id) => ({ ...product('A'), id: String(id), customMarginTop: 80 }));
+    const layoutStyle: MenuStyle = { ...style, categoryColumnCount: 1, columnCount: 1,
+        categoryPlacements: { A: { pageIndex: 1, columnIndex: 0 } }, pageBreaks: ['A'],
+        contentSpacing: { headerToContent: 190, categoryToProduct: 150, betweenProducts: 90,
+            productNameToDescription: 100, productNameToPrice: 4 } };
+    const scale = getMenuTypographyScale(layoutStyle, { A: products }, ['A']);
+    assert.ok(scale < 1);
+    assert.ok(getFittedMenuSpacing(layoutStyle, scale).contentSpacing!.headerToContent < 190 * scale);
+    const pages = calculatePagination(products, layoutStyle, { A: products }, ['A'], layoutStyle.categoryPlacements);
+    assert.equal(pages[0].columns[0].chunks[0].category, 'A');
+    assert.equal(pages[0].columns[0].chunks[0].items.length, 8);
 });

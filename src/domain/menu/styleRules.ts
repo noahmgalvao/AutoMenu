@@ -73,10 +73,8 @@ export const resolveMenuContentSpacing = (style: MenuStyle): Required<MenuConten
       style.contentSpacing?.categoryToProduct,
       style.elementStyles?.category?.marginBottom ?? DEFAULT_MENU_CONTENT_SPACING.categoryToProduct,
     ),
-    productNameToDescription: positiveNumber(
-      style.contentSpacing?.productNameToDescription,
-      DEFAULT_MENU_CONTENT_SPACING.productNameToDescription,
-    ),
+    productNameToDescription: Math.max(-2, Number.isFinite(Number(style.contentSpacing?.productNameToDescription))
+      ? Number(style.contentSpacing?.productNameToDescription) : DEFAULT_MENU_CONTENT_SPACING.productNameToDescription),
     betweenProducts,
     productToNextCategory: positiveNumber(
       style.contentSpacing?.productToNextCategory,
@@ -84,7 +82,10 @@ export const resolveMenuContentSpacing = (style: MenuStyle): Required<MenuConten
     ),
     productNameToPrice: positiveNumber(
       style.contentSpacing?.productNameToPrice,
-      DEFAULT_MENU_CONTENT_SPACING.productNameToPrice,
+      Math.max(4, Math.min(12, Math.round(Math.min(
+        Number(style.elementStyles?.productName?.fontSize) || 18,
+        Number(style.elementStyles?.productPrice?.fontSize) || 18,
+      ) / 4))),
     ),
   };
 };

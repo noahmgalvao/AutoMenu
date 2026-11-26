@@ -172,9 +172,50 @@ const getPageHeader = (style: MenuStyle, index: number, legacyCopy = false): Ext
     return title || subtitle ? { type: 'main-header', title, subtitle } : null;
 };
 
+export function getFittedMenuSpacing(style: MenuStyle, scale: number): MenuStyle {
+    if (scale >= 1) return style;
+    const spacing = resolveMenuContentSpacing(style);
+    const reduce = (value: number) => (Math.min(value, 35) + Math.max(0, value - 35) * scale) * scale;
+    return {
+        ...style,
+        categoryPositions: style.categoryPositions && Object.fromEntries(Object.entries(style.categoryPositions).map(([category, position]) => [
+            category, category.startsWith(FREE_TEXT_PREFIX) ? position : {
+                ...position, y: resolveMenuMargins(style).top
+                    + Math.max(0, position.y - resolveMenuMargins(style).top) * scale * scale,
+            },
+        ])),
+        contentSpacing: {
+            headerToContent: reduce(spacing.headerToContent), categoryToProduct: reduce(spacing.categoryToProduct),
+            productNameToDescription: reduce(spacing.productNameToDescription), betweenProducts: reduce(spacing.betweenProducts),
+            productToNextCategory: reduce(spacing.productToNextCategory), productNameToPrice: reduce(spacing.productNameToPrice),
+        },
+        elementStyles: { ...style.elementStyles,
+            menuTitle: { ...style.elementStyles.menuTitle,
+                marginBottom: reduce(style.elementStyles.menuTitle?.marginBottom ?? 10) },
+        },
+    };
+}
+
+export function getFittedMenuProducts(products: Product[], scale: number) {
+    if (scale >= 1) return products;
+    return products.map(product => product.customMarginTop && product.customMarginTop > 0
+        ? { ...product, customMarginTop: product.customMarginTop * scale * scale } : product);
+}
+
+export function getFittedFontSize(base: number, minimum: number, scale: number, typical = base) {
+    const adjusted = Math.min(base, typical * 2) + Math.max(0, base - typical * 2) * scale;
+    return Math.max(minimum, adjusted * scale);
+}
+
 const getLayoutFontSize = (
     scale: number, style: MenuStyle, scope: Parameters<typeof clampFontSize>[1], size: unknown, fallback: number,
-) => Math.max(resolveMinimumFontSize(style), clampFontSize(style, scope, size, fallback) * scale);
+) => getFittedFontSize(clampFontSize(style, scope, size, fallback), resolveMinimumFontSize(style), scale, getTypicalMenuFontSize(style));
+
+export function getTypicalMenuFontSize(style: MenuStyle) {
+    const sizes = ['category', 'productName', 'productDescription', 'productPrice']
+        .map(key => Number(style.elementStyles[key as keyof MenuStyle['elementStyles']]?.fontSize) || 18).sort((a, b) => a - b);
+    return (sizes[1] + sizes[2]) / 2;
+}
 
 const getMainHeaderHeight = (style: MenuStyle, header: PageItem | null, measuredHeights?: PaginationOptions['measuredHeights'], scale = 1) => {
     if (header?.type !== 'main-header') return 0;
@@ -531,6 +572,7 @@ const buildCategoryItems = (style: MenuStyle, category: string, products: Produc
 function getCategoryOverflows(
     style: MenuStyle, groups: Record<string, Product[]>, order: string[], scale: number,
 ) {
+    style = getFittedMenuSpacing(style, scale);
     const columns = style.categoryColumnCount || 1;
     const pageHeight = getPaginationContentHeight(style);
     const emptyHeight = getEmptyColumnHeight(style, pageHeight, { typographyScale: scale });
@@ -542,14 +584,14 @@ function getCategoryOverflows(
     let first = true;
     for (const category of order) {
         if (category.startsWith(FREE_TEXT_PREFIX)) continue;
-        const visible = (groups[category] || []).filter(product => !hidden.has(product.id));
+        const visible = getFittedMenuProducts((groups[category] || []).filter(product => !hidden.has(product.id)), scale);
         if (!visible.length) continue;
 
         const items = buildCategoryItems(style, category, visible);
         const position = style.categoryPositions?.[category];
         const placement = position ?? placements?.[category];
         const page = placement?.pageIndex ?? 0;
-        const startsUnderHeading = first && !style.pageBreaks?.includes(category) && page === 0;
+        const startsUnderHeading = first || page === 0 && style.headingPages?.menuTitle === 'all';
         const height = startsUnderHeading ? pageHeight - getMainHeaderHeight(style, getPageHeader(style, 0), undefined, scale) : emptyHeight;
         const overflow = position?.pageX !== undefined
             ? items.reduce((sum, item) => sum + calculators[Math.max(0, Math.min(columns - 1, position.columnIndex))](item), 0)
@@ -799,7 +841,9 @@ const buildLockedPagination = (
 
         for (;;) {
             const page = ensurePage(currentPlacement.pageIndex);
-            const fittingColumn = findCategoryColumn(page.columns, currentPlacement.columnIndex, emptyColumnHeight, heights,
+            const fittingColumn = findCategoryColumn(page.columns, currentPlacement.columnIndex,
+                currentPlacement.pageIndex === 0 && !page.columns.some(column => column.chunks.length)
+                    ? baseColumnHeight - headerHeight(page) : emptyColumnHeight, heights,
                 columnIndex => getRemainingHeight({ pageIndex: currentPlacement.pageIndex, columnIndex }, category, true));
             if (fittingColumn === undefined) {
                 currentPlacement = { pageIndex: currentPlacement.pageIndex + 1, columnIndex: 0 };
@@ -920,6 +964,21 @@ export const calculatePagination = (
 
     if (options.typographyScale === undefined) {
         options = { ...options, typographyScale: getMenuTypographyScale(style, groupedProducts, sortedCategories) };
+    }
+    style = getFittedMenuSpacing(style, options.typographyScale ?? 1);
+    groupedProducts = Object.fromEntries(Object.entries(groupedProducts).map(([category, items]) =>
+        [category, getFittedMenuProducts(items, options.typographyScale ?? 1)]));
+    // The first category accompanies the title even when older saved placements left an empty cover.
+    const firstCategory = sortedCategories.find(category => !category.startsWith(FREE_TEXT_PREFIX)
+        && groupedProducts[category]?.some(product => !style.hiddenProductIds?.includes(product.id)));
+    if (firstCategory) {
+        style = { ...style, pageBreaks: style.pageBreaks?.filter(category => category !== firstCategory) };
+        if ((categoryPlacementAssignments?.[firstCategory]?.pageIndex ?? 0) > 0) {
+            categoryPlacementAssignments = { ...categoryPlacementAssignments, [firstCategory]: { pageIndex: 0, columnIndex: 0 } };
+            const position = style.categoryPositions?.[firstCategory];
+            if (position) style = { ...style, categoryPositions: { ...style.categoryPositions,
+                [firstCategory]: { ...position, pageIndex: 0, y: resolveMenuMargins(style).top } } };
+        }
     }
     const categoryColumnCount = style.categoryColumnCount || 1;
     const baseColumnHeight = getPaginationContentHeight(style);
@@ -1115,7 +1174,8 @@ export const calculatePagination = (
 
         const heights = calculators.map(calculate => items.reduce((sum, item) => sum + calculate(item), 0));
         for (;;) {
-            const fittingColumn = findCategoryColumn(currentPage.columns, currentColumnIndex, emptyColumnHeight, heights,
+            const fittingColumn = findCategoryColumn(currentPage.columns, currentColumnIndex,
+                category === firstCategory && pages.length === 0 ? getColumnLimit(currentPage) : emptyColumnHeight, heights,
                 columnIndex => getRemainingHeight(category, true, columnIndex));
             if (fittingColumn === undefined) {
                 startNextPage();

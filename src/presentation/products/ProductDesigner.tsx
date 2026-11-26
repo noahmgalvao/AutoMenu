@@ -142,7 +142,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
     const { sheetRef, height, isMobile, isExpanded, openPartial, toggleExpanded, dragHandlers } = useBottomSheetDrag(isOpen, onClose);
     const restoreTemplateSettings = useRestoreTemplateSettings(style, setStyle, templates, workspaceId);
     const rules = useGeneralRules({
-        style, setStyle, isOpen, restoreDefaults: () => void restoreTemplateSettings(restoreGeneralRules),
+        style, setStyle, products, isOpen, restoreDefaults: () => void restoreTemplateSettings(restoreGeneralRules),
         onLayoutEditingChange: onRulesLayoutEditingChange,
         prepareEditor: () => { if (isExpanded) openPartial(); },
     });

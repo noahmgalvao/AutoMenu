@@ -798,7 +798,7 @@ test('page setup updates the editor and restores the portrait columns', async ({
 });
 
 test('the editor uses one landscape column for a single category and restores portrait settings', async ({ page }) => {
-  await page.goto(`${url}?photos=list&lanes=2`);
+  await page.goto(`${url}?photos=list&lanes=2&general-rules`);
   const canvasPage = page.locator('[data-menu-print-page]').first();
   const columns = canvasPage.locator('[data-drag-column-container="category"]');
   await expect(columns).toHaveCount(2);

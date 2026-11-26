@@ -216,7 +216,7 @@ test('height fitting keeps a whole category below the title and scales foregroun
     const page = element.closest('[data-menu-print-page]')!;
     return element.getBoundingClientRect().bottom <= page.getBoundingClientRect().bottom;
   })).toBe(true);
-  const fontRatios = firstPage.locator('[data-word-fit="true"]:not([data-canvas-background-layer] *), [data-price-base-size]');
+  const fontRatios = firstPage.locator('[data-word-fit="true"]:not([data-canvas-background-layer] *):not([data-word-fit-scope="menuTitle"]), [data-price-base-size]');
   await expect.poll(() => fontRatios.evaluateAll(elements => {
     const sizes = elements.map(element => {
       const data = (element as HTMLElement).dataset;
@@ -228,4 +228,50 @@ test('height fitting keeps a whole category below the title and scales foregroun
     return scale < 0.99 && sizes.every(({ size, base, minimum }) => Math.abs(size - Math.max(minimum, base * scale)) < .06);
   })).toBe(true);
   await expect(firstPage.locator('[data-canvas-background-layer] [data-word-fit]')).toHaveCSS('font-size', '34px');
+});
+
+
+test('spacing uses product labels, disables an unused column gap and signals limits', async ({ page }) => {
+  await page.goto(fixture + '?general-rules&photos=list&no-photos&cols=1');
+  await page.getByRole('button', { name: 'Configurações do cardápio', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Editar margens', exact: true }).click();
+  await expect(page.getByRole('spinbutton', { name: 'Entre colunas', exact: true })).toBeDisabled();
+  await page.getByRole('tab', { name: 'Espaçamentos', exact: true }).click();
+  const input = page.getByRole('spinbutton', { name: 'Produto até descrição', exact: true });
+  await expect(input).toBeVisible();
+  await input.fill('-2');
+  await input.blur();
+  await page.getByRole('button', { name: 'Diminuir Produto até descrição', exact: true }).click();
+  await expect(input).toHaveClass(/automenu-limit-feedback/);
+});
+
+test('removing a selected product selects its next visible product', async ({ page }) => {
+  await page.goto(fixture + '?photos=list&no-photos');
+  const product = page.locator('#product-container-1');
+  await product.getByRole('heading').click();
+  const id = await product.locator('[data-canvas-action-anchor="quick"]').getAttribute('aria-controls');
+  await page.locator('[id="' + id + '"]').getByTitle('Remover', { exact: true }).click();
+  await expect(product).toHaveCount(0);
+  await expect(page.locator('#product-container-2 [data-canvas-selection-outline]')).toHaveCount(1);
+});
+
+
+test('a scale gesture keeps the original base handle while crossing the top handle', async ({ page }) => {
+  await page.goto(fixture + '?photos=list&no-photos');
+  const product = page.locator('#product-container-1');
+  await product.getByRole('heading').click();
+  const base = product.getByRole('button', { name: 'Redimensionar pela base' });
+  const top = product.getByRole('button', { name: 'Redimensionar pelo topo' });
+  const box = (await base.boundingBox())!;
+  const upper = (await top.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(upper.x + upper.width / 2, upper.y - 10, { steps: 8 });
+  await page.mouse.move(upper.x + upper.width / 2, upper.y - 35, { steps: 4 });
+  await page.mouse.up();
+  await expect(product).toBeVisible();
+  const name = product.locator('[data-word-fit-scope="productName"]');
+  const shrunk = await name.getAttribute('data-word-fit-base-size');
+  await page.mouse.move(upper.x, upper.y - 65);
+  expect(await name.getAttribute('data-word-fit-base-size')).toBe(shrunk);
 });

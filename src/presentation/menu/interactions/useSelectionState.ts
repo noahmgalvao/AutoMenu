@@ -384,6 +384,19 @@ export const useSelectionState = (
         emitSelection(type, id);
     }, [emitSelection, getSingleSelectionItem]);
 
+    const previousVisibleProducts = useRef<string[]>([]);
+    React.useEffect(() => {
+        const order = sortedCategories.flatMap(category => groupedProducts[category] || [])
+            .filter(product => !product.isFreeText && !style.hiddenProductIds?.includes(product.id)).map(product => product.id);
+        const previous = previousVisibleProducts.current;
+        previousVisibleProducts.current = order;
+        if (!selectedItems.some(item => item.type === 'product' && item.id === selectedId)
+            || !selectedId || order.includes(selectedId)) return;
+        const index = previous.indexOf(selectedId);
+        const next = index >= 0 ? previous.slice(index + 1).find(id => order.includes(id)) : undefined;
+        clearMultiSelectionTo(next ? 'product' : null, next ?? null);
+    }, [products, style.hiddenProductIds, sortedCategories, groupedProducts, selectedId, selectedItems, clearMultiSelectionTo]);
+
     const replaceSelectedItems = useCallback((items: SelectionItem[], enableMultiSelect = false) => {
         const nextItems = uniqueSelectionItems(items);
         const activeItem = nextItems[nextItems.length - 1] || null;
