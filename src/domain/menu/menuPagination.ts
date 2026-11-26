@@ -180,8 +180,12 @@ export function getFittedMenuSpacing(style: MenuStyle, scale: number): MenuStyle
         ...style,
         categoryPositions: style.categoryPositions && Object.fromEntries(Object.entries(style.categoryPositions).map(([category, position]) => [
             category, category.startsWith(FREE_TEXT_PREFIX) ? position : {
-                ...position, y: resolveMenuMargins(style).top
-                    + Math.max(0, position.y - resolveMenuMargins(style).top) * scale * scale,
+                ...position, y: Math.max(
+                    resolveMenuMargins(style).top + getMainHeaderHeight({
+                        ...style, contentSpacing: { ...spacing, headerToContent: reduce(spacing.headerToContent) },
+                    }, getPageHeader(style, position.pageIndex), undefined, scale),
+                    resolveMenuMargins(style).top + Math.max(0, position.y - resolveMenuMargins(style).top) * scale * scale,
+                ),
             },
         ])),
         contentSpacing: {
