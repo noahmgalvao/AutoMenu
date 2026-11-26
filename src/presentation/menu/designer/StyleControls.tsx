@@ -1,3 +1,4 @@
+import { useRenderedTextControls } from './useRenderedTextControls';
 import { TextOutlinePicker } from './TextOutlinePicker';
 
 import { ColorPicker } from './ColorPicker';
@@ -16,6 +17,7 @@ interface StyleControlsProps {
   minFontSize?: number;
   fallbackFontFamily?: string;
   header?: React.ReactNode;
+  fontSelector?: string;
 }
 
 export const StyleControls: React.FC<StyleControlsProps> = ({ 
@@ -27,7 +29,9 @@ export const StyleControls: React.FC<StyleControlsProps> = ({
   minFontSize,
   fallbackFontFamily,
   header,
+  fontSelector,
 }) => {
+    const rendered = useRenderedTextControls(fontSelector, value.fontSize);
     return (
         <div className={`space-y-2 p-3 bg-slate-50 rounded-lg border border-slate-100 ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
             {header ?? <label className="text-xs font-bold text-slate-500 uppercase">{label}</label>}
@@ -43,8 +47,8 @@ export const StyleControls: React.FC<StyleControlsProps> = ({
                     />
                 </div>
                 <FontSizeInput showStepButtons
-                    value={value.fontSize}
-                    onChange={(fontSize) => onChange({...value, fontSize})}
+                    value={rendered.size}
+                    onChange={(fontSize) => rendered.canSetSize(fontSize) && onChange({...value, fontSize})}
                     max={maxFontSize}
                     min={minFontSize}
                 />
@@ -60,9 +64,10 @@ export const StyleControls: React.FC<StyleControlsProps> = ({
                         <button type="button"
                             key={align}
                             aria-label={align === 'left' ? 'Alinhar à esquerda' : align === 'center' ? 'Centralizar texto' : 'Alinhar à direita'}
-                            aria-pressed={value.textAlign === align}
+                            aria-pressed={(rendered.priceAlignmentDisabled ? 'right' : value.textAlign || rendered.priceAlignment) === align}
+                            disabled={rendered.priceAlignmentDisabled}
                             onClick={() => onChange({...value, textAlign: align})}
-                            className={`p-1.5 hover:bg-slate-100 ${value.textAlign === align ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500'}`}
+                            className={`p-1.5 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 ${value.textAlign === align ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500'}`}
                         >
                             {align === 'left' && <AlignLeft size={14} />}
                             {align === 'center' && <AlignCenter size={14} />}

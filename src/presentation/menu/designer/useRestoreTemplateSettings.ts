@@ -12,6 +12,7 @@ export const restoreGeneralRules = (current: MenuStyle, template: MenuStyle): Me
   name: 'Custom',
   margins: resolveMenuMargins(template),
   contentSpacing: resolveMenuContentSpacing(template),
+  priceSpacingReference: template.priceSpacingReference,
   showPrices: template.showPrices ?? true,
   splitCategoryAcrossPages: template.splitCategoryAcrossPages ?? INITIAL_STYLE.splitCategoryAcrossPages,
   productsCanChangeCategory: template.productsCanChangeCategory ?? INITIAL_STYLE.productsCanChangeCategory,

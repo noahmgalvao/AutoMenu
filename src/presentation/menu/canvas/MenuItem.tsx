@@ -47,13 +47,15 @@ interface MenuItemProps {
     backgroundText?: { pageIndex: number; primary: boolean; selected: boolean };
 }
 
-function productTextRowStyle(spacing: ReturnType<typeof resolveMenuContentSpacing>): React.CSSProperties {
-    const gap = spacing.productNameToPrice;
+function productTextRowStyle(spacing: ReturnType<typeof resolveMenuContentSpacing>, reference: number): React.CSSProperties {
+    const gap = 4 + spacing.productNameToPrice;
     return {
         marginBottom: spacing.productNameToDescription,
         columnGap: gap,
-        rowGap: 2,
+        rowGap: 'var(--product-price-row-gap, 2px)',
         '--product-price-gap': `${gap}px`,
+        '--product-price-control': spacing.productNameToPrice,
+        '--product-price-reference': Math.max(1, reference),
         '--product-price-space-share': Math.min(1, Math.max(0, gap / DEFAULT_MENU_CONTENT_SPACING.productNameToPrice)),
     } as React.CSSProperties;
 }
@@ -797,7 +799,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                             data-compact-price-gap={style.showPrices !== false && contentSpacing.productNameToPrice < DEFAULT_MENU_CONTENT_SPACING.productNameToPrice
                                 ? isNameRight ? 'start' : 'end' : undefined}
                             className={`relative flex min-w-0 ${showProductDivider || isNameCentered ? 'items-center' : 'items-start'}`}
-                            style={productTextRowStyle(contentSpacing)}
+                            style={productTextRowStyle(contentSpacing, style.priceSpacingReference ?? contentSpacing.productNameToPrice)}
                          >
                             <div data-product-title-group className={`flex min-w-0 items-center gap-2 ${isNameCentered ? 'justify-center' : isNameRight ? 'justify-end' : ''}`} style={{ flexGrow: showProductDivider ? 0 : 1 }}>
                                 <MenuMarkerGlyph marker={getMarker(style, 'product')} fontSize={clampFontSize(style, 'productName', nameStyle.fontSize, 18)}
@@ -1001,7 +1003,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                                                 data-compact-price-gap={style.showPrices !== false && contentSpacing.productNameToPrice < DEFAULT_MENU_CONTENT_SPACING.productNameToPrice
                                                     ? nameStyle.textAlign === 'right' ? 'start' : 'end' : undefined}
                                                 className={`relative flex min-w-0 ${showProductDivider ? 'items-center' : 'items-start'}`}
-                                                style={productTextRowStyle(contentSpacing)}
+                                                style={productTextRowStyle(contentSpacing, style.priceSpacingReference ?? contentSpacing.productNameToPrice)}
                                             >
                                                 <div data-product-title-group className={`flex min-w-0 items-center gap-1 ${nameStyle.textAlign === 'center' ? 'justify-center' : nameStyle.textAlign === 'right' ? 'justify-end' : 'justify-start'}`} style={{ flexGrow: showProductDivider ? 0 : 1 }}>
                                                     <MenuMarkerGlyph marker={getMarker(style, 'product')} fontSize={clampFontSize(style, 'productName', nameStyle.fontSize, 18)}

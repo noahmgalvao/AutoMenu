@@ -1143,7 +1143,7 @@ test('list photos release the space below and can move to either edge or above t
   }).toBe(true);
 });
 
-test('inline prices center in the space after the name and accept left alignment on a new line', async ({ page }) => {
+test('inline prices can stay near the name, center in the remaining space or wrap as a whole', async ({ page }) => {
   await page.goto('/tests/fixtures/template-editor.html?photos=list&no-photos&single-product');
   const product = page.locator('#product-container-1');
   const price = product.locator('[data-price-value]');
@@ -1153,7 +1153,8 @@ test('inline prices center in the space after the name and accept left alignment
   await price.focus();
   const toolbar = page.locator('[data-inline-format-toolbar]');
   const left = toolbar.getByRole('button', { name: 'Alinhar à esquerda' });
-  await expect(left).toBeDisabled();
+  await expect(left).toBeEnabled();
+  await left.click();
   await toolbar.getByRole('button', { name: 'Centralizar texto' }).click();
   await expect.poll(() => row.evaluate(element => {
     const bounds = element.getBoundingClientRect();
@@ -1168,8 +1169,10 @@ test('inline prices center in the space after the name and accept left alignment
   await expect.poll(async () => {
     const price = (await product.locator('[data-template-price]').boundingBox())!;
     const bounds = (await row.boundingBox())!;
-    return Math.abs(price.x - bounds.x);
-  }).toBeLessThan(2);
+    const scale = await row.evaluate(element => element.getBoundingClientRect().width / (element as HTMLElement).offsetWidth);
+    const gap = await row.evaluate(element => parseFloat(getComputedStyle(element).columnGap));
+    return Math.abs(Math.abs(price.x - bounds.x) / scale - gap);
+  }).toBeLessThan(.1);
 });
 
 

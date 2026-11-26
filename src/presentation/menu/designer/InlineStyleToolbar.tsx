@@ -1,3 +1,4 @@
+import { useRenderedTextControls } from './useRenderedTextControls';
 import { TextOutlinePicker } from './TextOutlinePicker';
 import { HoldStepButton } from '../../common/HoldStepButton';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -37,17 +38,8 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
     const contentRef = useRef<HTMLDivElement>(null);
     const [position, setPosition] = useState<React.CSSProperties>({ left: 8, top: 8, width: 270 });
     const [groupBorderOpen, setGroupBorderOpen] = useState(false);
-    const [priceCanAlignLeft, setPriceCanAlignLeft] = useState(!priceAlignment);
-    React.useLayoutEffect(() => {
-        if (!priceAlignment) { setPriceCanAlignLeft(true); return; }
-        const row = document.getElementById(targetElementId)?.closest('[data-product-text-row]');
-        const refresh = () => setPriceCanAlignLeft(Boolean(row?.hasAttribute('data-price-wrap')));
-        refresh();
-        if (!row) return;
-        const observer = new MutationObserver(refresh);
-        observer.observe(row, { attributes: true, attributeFilter: ['data-price-wrap'] });
-        return () => observer.disconnect();
-    }, [priceAlignment, targetElementId]);
+    const rendered = useRenderedTextControls(
+        `[id="${CSS.escape(targetElementId)}"]`, value?.fontSize);
     const [priceAdjustment, setPriceAdjustment] = useState('10');
     const [priceAdjustmentMode, setPriceAdjustmentMode] = useState<PriceAdjustmentMode>('percentage');
     const isSizeColorOnly = controls === 'sizeColor';
@@ -229,11 +221,11 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                     </div>
                 )}
                 <FontSizeInput showStepButtons
-                    value={value.fontSize}
+                    value={rendered.size}
                     max={maxFontSize}
                     min={minFontSize}
                     className={compact ? '!w-14' : undefined}
-                    onChange={(fontSize) => onChange({ ...value, fontSize })}
+                    onChange={(fontSize) => rendered.canSetSize(fontSize) && onChange({ ...value, fontSize })}
                 />
                 <ColorPicker value={value.color} onChange={color => onChange({ ...value, color })} />
                 <TextOutlinePicker value={value.textOutline} onChange={textOutline => onChange({ ...value, textOutline })} />
@@ -245,8 +237,8 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                             type="button"
                             key={align}
                             aria-label={align === 'left' ? 'Alinhar à esquerda' : align === 'center' ? 'Centralizar texto' : 'Alinhar à direita'}
-                            aria-pressed={value.textAlign === align}
-                            disabled={priceAlignment && align === 'left' && !priceCanAlignLeft}
+                            aria-pressed={(rendered.priceAlignmentDisabled ? 'right' : value.textAlign || rendered.priceAlignment) === align}
+                            disabled={priceAlignment && rendered.priceAlignmentDisabled}
                             onClick={() => onChange({ ...value, textAlign: align })}
                             className={`rounded border p-1 disabled:opacity-40 ${value.textAlign === align ? 'border-indigo-200 bg-indigo-50 text-indigo-600' : 'border-slate-200 text-slate-500'}`}
                         >

@@ -33,7 +33,14 @@ function measurePriceRow(row: HTMLElement, minimum: number) {
     const rowGap = px(getComputedStyle(row).columnGap);
     const dividerGap = row.hasAttribute('data-product-leader') ? rowGap : 0;
     const inlineWidth = row.clientWidth - nameWidth - rowGap - dividerGap;
-    return { row, price, widthScale: String(low / base), wrapped: measurePrice(px(priceCss.fontSize)) > inlineWidth + .5 };
+    const priceWidth = measurePrice(px(priceCss.fontSize));
+    const nameAlignment = titleCss.textAlign;
+    const gap = Math.max(4, rowGap);
+    const rowCss = getComputedStyle(row);
+    const spacingShare = Math.min(1, Math.max(0, px(rowCss.getPropertyValue('--product-price-control'))
+        / Math.max(1, px(rowCss.getPropertyValue('--product-price-reference')))));
+    return { row, price, titleGroup, nameWidth, priceWidth, nameAlignment, gap, spacingShare,
+        widthScale: String(low / base), wrapped: priceWidth > inlineWidth + .5 };
 }
 
 function measureWrappedPriceSpace(row: HTMLElement, slot: HTMLElement | null) {
@@ -58,7 +65,7 @@ export function useResponsivePrices(rootRef: RefObject<HTMLElement | null>, styl
     const textMetrics = JSON.stringify([
         style.fontFamily, style.minimumFontSize, style.fontSizeLimits, style.contentSpacing?.productNameToPrice,
         style.design?.price, style.productPhotoAlignments, price?.textAlign,
-        name?.fontFamily, name?.fontWeight, name?.italic, name?.fontSize, name?.textTransform, name?.letterSpacing,
+        name?.textAlign, name?.fontFamily, name?.fontWeight, name?.italic, name?.fontSize, name?.textTransform, name?.letterSpacing,
         price?.fontFamily, price?.fontWeight, price?.italic, price?.fontSize,
     ]);
     useLayoutEffect(() => {
@@ -89,11 +96,29 @@ export function useResponsivePrices(rootRef: RefObject<HTMLElement | null>, styl
                 if (price.dataset.priceWidthScale !== widthScale) price.dataset.priceWidthScale = widthScale;
                 row.toggleAttribute('data-price-wrap', wrapped);
             }
-            for (const { row, price, wrapped } of metrics) {
+            for (const { row, price, titleGroup, nameWidth, priceWidth, nameAlignment, gap, spacingShare, wrapped } of metrics) {
                 const slot = price.closest<HTMLElement>('[data-product-price-slot]');
+                if (!slot || !titleGroup) continue;
+                const alignment = nameAlignment === 'right' ? 'right' : slot.dataset.priceAlignment || 'right';
+                const spare = Math.max(0, row.clientWidth - nameWidth - priceWidth - gap);
+                const leading = nameAlignment === 'right' ? spare : nameAlignment === 'center' ? spare / 2 : 0;
+                const maximumGap = Math.max(gap, row.clientWidth - leading - nameWidth - priceWidth);
+                const far = gap + (maximumGap - gap) * spacingShare;
+                const distance = alignment === 'left' ? gap : alignment === 'center' ? (gap + far) / 2 : far;
+                titleGroup.style.setProperty('--automenu-title-width', `${Math.min(nameWidth, row.clientWidth)}px`);
+                titleGroup.style.setProperty('--automenu-title-leading', `${wrapped ? 0 : leading}px`);
+                slot.style.setProperty('--automenu-price-offset', `${Math.max(0, distance - gap)}px`);
                 const { left, right } = wrapped ? measureWrappedPriceSpace(row, slot) : { left: 0, right: 0 };
-                slot?.style.setProperty('--automenu-price-left', `${left}px`);
-                slot?.style.setProperty('--automenu-price-right', `${right}px`);
+                const wrappedAlignment = nameAlignment === 'center' && alignment === 'left' ? 'center' : alignment;
+                slot.style.justifyContent = wrapped ? wrappedAlignment === 'left' ? 'flex-start'
+                    : wrappedAlignment === 'center' ? 'center' : 'flex-end' : 'flex-start';
+                const wrappedWidth = row.clientWidth + left + right;
+                const inset = nameAlignment === 'center' && alignment === 'center'
+                    ? Math.max(0, (wrappedWidth - priceWidth) / 2)
+                    : alignment === 'left' && nameAlignment !== 'center' ? Math.min(gap, Math.max(0, wrappedWidth - priceWidth)) : 0;
+                slot.style.paddingInlineStart = wrapped ? `${inset}px` : '';
+                slot.style.setProperty('--automenu-price-left', `${left}px`);
+                slot.style.setProperty('--automenu-price-right', `${right}px`);
             }
         };
         const schedule = () => { if (!frame) frame = requestAnimationFrame(measure); };

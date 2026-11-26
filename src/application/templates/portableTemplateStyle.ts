@@ -10,7 +10,7 @@ const portableKeys = [
   'productCardShape', 'cardBackgroundColor', 'cardBackgroundColorOverride', 'columnCount', 'categoryColumnCount',
   'categoryColumnWidths', 'pageSetup', 'pagePadding', 'margins', 'contentSpacing', 'itemGap', 'globalRadius',
   'borders', 'fills', 'markers', 'productDividerStyle', 'categoryDividerStyle', 'textContrastFills',
-  'fontSizeLimits', 'minimumFontSize', 'revisedFontSizeDefaults', 'revisedMinimumFontSize', 'splitCategoryAcrossPages',
+  'priceSpacingReference', 'fontSizeLimits', 'minimumFontSize', 'revisedFontSizeDefaults', 'revisedMinimumFontSize', 'splitCategoryAcrossPages',
   'productsCanChangeCategory', 'priceDecimalPlaces', 'priceDecimalSeparator', 'priceCurrencySymbol', 'showPrices',
   'showCurrencySymbol', 'showPageNumbers', 'elementStyles', 'elementColorOverrides', 'contentLayer',
 ] as const satisfies readonly (keyof MenuStyle)[];

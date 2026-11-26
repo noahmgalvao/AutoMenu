@@ -212,6 +212,7 @@ export interface BlankPageSlot {
 export type MenuColumnCount = 1 | 2 | 3 | 4 | 5;
 
 export interface MenuStyle {
+  priceSpacingReference?: number;
   design?: TemplateDesign;
   borders?: Partial<Record<Exclude<MenuBorderScope, 'freeText'>, MenuBorder>>;
   freeTextBorders?: Record<string, MenuBorder>;

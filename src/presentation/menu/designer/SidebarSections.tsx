@@ -140,6 +140,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
             <div className="animate-fade-in border-l-2 border-indigo-500 pl-2">
                 <StyleControls
                     label="Estilo do título"
+                    fontSelector={`[data-word-fit-scope='menuTitle']`}
                     value={safeStyles.menuTitle || {}}
                     onChange={(s) => updateGlobalElementStyle('menuTitle', s)}
                     maxFontSize={fontSizeLimits.menuTitle}
@@ -151,6 +152,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
             <div className="animate-fade-in border-l-2 border-indigo-500 pl-2">
                 <StyleControls
                     label="Estilo do subtítulo"
+                    fontSelector={`[data-word-fit-scope='menuSubtitle']`}
                     value={safeStyles.menuSubtitle || {}}
                     onChange={(s) => updateGlobalElementStyle('menuSubtitle', s)}
                     maxFontSize={fontSizeLimits.menuSubtitle}
@@ -163,6 +165,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                 <p className="text-xs text-indigo-600 font-medium mb-2">Ajuste local apenas deste item</p>
                 <StyleControls 
                 label="Estilo do texto livre"
+                    fontSelector={`[id="product-name-${CSS.escape(selectedFreeText.id)}"]`}
                 value={selectedFreeText.styles || {}}
                 onChange={(newStyle) => updateFreeTextStyle(selectedFreeText.id, newStyle)}
                 maxFontSize={fontSizeLimits.freeText}
@@ -251,6 +254,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                 <>
                     <StyleControls 
                         label="Títulos das categorias"
+                    fontSelector={`${selection.type === 'category' && selection.id ? `[data-category-chunk="${CSS.escape(selection.id)}"] ` : ''}[data-word-fit-scope='category']`}
                         value={categoryStyle.elementStyles.category || safeStyles.category}
                         onChange={(s) => updateGlobalElementStyle('category', s)}
                         maxFontSize={fontSizeLimits.category}
@@ -280,6 +284,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                     <>
                     {safeStyles.productName && <StyleControls 
                         label="Nomes dos produtos"
+                    fontSelector={`${selection.type === 'product' && selection.id ? `[id="product-container-${CSS.escape(selection.id)}"] ` : ''}[data-word-fit-scope='productName']`}
                         value={productStyle.elementStyles.productName || safeStyles.productName}
                         onChange={(s) => updateGlobalElementStyle('productName', s)}
                     maxFontSize={fontSizeLimits.productName}
@@ -288,6 +293,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                     />}
                     {safeStyles.productPrice && <StyleControls 
                         label="Preços dos produtos"
+                    fontSelector={`${selection.type === 'product' && selection.id ? `[id="product-container-${CSS.escape(selection.id)}"] ` : ''}[data-template-price]`}
                         header={<PriceFormatSettings style={style} setStyle={setStyle}>
                             <span className="text-xs font-bold uppercase text-slate-500">Preços dos produtos</span>
                         </PriceFormatSettings>}
@@ -299,6 +305,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
                     />}
                     {safeStyles.productDescription && <StyleControls 
                         label="Descrições dos produtos"
+                    fontSelector={`${selection.type === 'product' && selection.id ? `[id="product-container-${CSS.escape(selection.id)}"] ` : ''}[data-word-fit-scope='productDescription']`}
                         value={productStyle.elementStyles.productDescription || safeStyles.productDescription}
                         onChange={(s) => updateGlobalElementStyle('productDescription', s)}
                     maxFontSize={fontSizeLimits.productDescription}

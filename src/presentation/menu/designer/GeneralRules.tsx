@@ -33,10 +33,10 @@ const marginRows = [
 ] satisfies ReadonlyArray<{ key: keyof MenuMargins; label: string; Icon: typeof PanelTop }>;
 
 type LayoutRow = { key: string; label: string; next?: string; Icon?: typeof PanelTop; value: number };
-type LayoutValues = Pick<MenuStyle, 'margins' | 'pagePadding' | 'contentSpacing' | 'itemGap'>;
+type LayoutValues = Pick<MenuStyle, 'margins' | 'pagePadding' | 'contentSpacing' | 'itemGap' | 'priceSpacingReference'>;
 
-const layoutValues = ({ margins, pagePadding, contentSpacing, itemGap }: MenuStyle): LayoutValues =>
-  ({ margins, pagePadding, contentSpacing, itemGap });
+const layoutValues = ({ margins, pagePadding, contentSpacing, itemGap, priceSpacingReference }: MenuStyle): LayoutValues =>
+  ({ margins, pagePadding, contentSpacing, itemGap, priceSpacingReference });
 
 
 type RulesProps = {
@@ -327,8 +327,21 @@ function RulesLayoutEditor({
               step={row.key === 'productNameToDescription' ? 0.5 : 1}
               value={row.value} min={row.key === 'productNameToDescription' ? -2 : 0} max={section === 'spacing' ? 200 : 300} showStepButtons stepSubject=""
               onChange={next => {
+                if (row.key === 'productNameToPrice' && next > row.value && row.value >= Math.max(1, style.priceSpacingReference ?? row.value)) {
+                  const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-automenu-editor-canvas] [data-product-text-row]'));
+                  const pinned = rows.length > 0 && rows.every(element => {
+                    const title = element.querySelector<HTMLElement>('[data-divider-title]');
+                    const price = element.querySelector<HTMLElement>('[data-product-price-slot]');
+                    return title && price && !element.hasAttribute('data-price-wrap')
+                      && ['left', 'start'].includes(getComputedStyle(title).textAlign)
+                      && (price.dataset.priceAlignment || 'right') === 'right';
+                  });
+                  if (pinned) return false;
+                }
                 const proposed = section === 'spacing'
-                  ? { ...style, name: 'Custom', contentSpacing: { ...resolveMenuContentSpacing(style), [row.key]: next } }
+                  ? { ...style, name: 'Custom', contentSpacing: { ...resolveMenuContentSpacing(style), [row.key]: next },
+                      priceSpacingReference: row.key === 'productNameToPrice'
+                        ? style.priceSpacingReference ?? resolveMenuContentSpacing(style).productNameToPrice : style.priceSpacingReference }
                   : { ...style, name: 'Custom', margins: { ...resolveMenuMargins(style), [row.key]: next } };
                 if (next > row.value && getCategoryFitRegression(products, style, products, proposed, { field: 'name', direction: 'asc' })) return false;
                 setStyle(proposed);
@@ -398,7 +411,7 @@ export function useGeneralRules({
       setStyle(current => ({ ...current, margins: snapshot.margins, pagePadding: snapshot.pagePadding, name: 'Custom' }));
     } else {
       if (style.contentSpacing === snapshot.contentSpacing && style.itemGap === snapshot.itemGap) return;
-      setStyle(current => ({ ...current, contentSpacing: snapshot.contentSpacing, itemGap: snapshot.itemGap, name: 'Custom' }));
+      setStyle(current => ({ ...current, contentSpacing: snapshot.contentSpacing, itemGap: snapshot.itemGap, priceSpacingReference: snapshot.priceSpacingReference, name: 'Custom' }));
     }
   };
 

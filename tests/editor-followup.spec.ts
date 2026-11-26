@@ -369,3 +369,69 @@ test('tips keep a compact header and matching cards on a narrow phone', async ({
   expect(await dialog.getByRole('status').evaluate(element => element.clientWidth)).toBeGreaterThan(280);
   await page.screenshot({ path: '/tmp/automenu-review-phone.png' });
 });
+
+
+test('font controls show the fitted size and reject a hidden increase', async ({ page }) => {
+  await page.goto(fixture + '?general-rules&photos=cards&cols=3&no-photos&height-fit');
+  const name = page.locator('#product-name-fit-0');
+  await name.click();
+  const section = page.getByText('Nomes dos produtos', { exact: true }).locator('..');
+  const input = section.getByRole('spinbutton');
+  const displayed = await name.evaluate(element => Math.round(parseFloat(getComputedStyle(element).fontSize) * 10) / 10);
+  await expect(input).toHaveValue(String(displayed));
+  const original = await name.getAttribute('data-word-fit-base-size');
+  await section.getByRole('button', { name: 'Aumentar tamanho da fonte', exact: true }).click();
+  await expect(input).toHaveValue(String(displayed));
+  await expect(name).toHaveAttribute('data-word-fit-base-size', original!);
+  await expect(input).toHaveClass(/automenu-limit-feedback/);
+  const product = page.locator('#product-container-fit-0');
+  const quickId = await product.locator('[data-canvas-action-anchor="quick"]').getAttribute('aria-controls');
+  await page.locator('[id="' + quickId + '"]').getByTitle('Editar produto').click();
+  await name.focus();
+  const toolbar = page.locator('[data-inline-format-toolbar]');
+  const inlineSize = toolbar.getByRole('spinbutton').first();
+  await expect(inlineSize).toHaveValue(String(displayed));
+  await toolbar.getByRole('button', { name: 'Aumentar tamanho da fonte', exact: true }).click();
+  await expect(inlineSize).toHaveValue(String(displayed));
+});
+
+for (const layout of ['list', 'cards', 'cards&cols=3&lanes=2']) {
+  test('price positions follow all name alignments in ' + layout, async ({ page }) => {
+    await page.goto(fixture + '?photos=' + layout + '&cols=1&no-photos');
+    const row = page.locator('#product-container-1 [data-product-text-row]');
+    const sample = async (nameAlign: string, priceAlign: string, gap = 4) => {
+      await row.evaluate((element, values) => {
+        const title = element.querySelector<HTMLElement>('[data-divider-title]')!;
+        const slot = element.querySelector<HTMLElement>('[data-product-price-slot]')!;
+        const price = element.querySelector<HTMLElement>('[data-template-price]')!;
+        title.style.textAlign = values.nameAlign;
+        slot.dataset.priceAlignment = values.priceAlign;
+        element.style.columnGap = values.gap + 'px';
+        element.style.setProperty('--product-price-control', String(values.gap));
+        element.style.setProperty('--product-price-reference', '4');
+        price.dataset.priceBaseSize = price.dataset.priceBaseSize!;
+      }, { nameAlign, priceAlign, gap });
+      await page.waitForTimeout(80);
+      return row.evaluate(element => {
+        const name = element.querySelector('[data-divider-title]')!.getBoundingClientRect();
+        const price = element.querySelector('[data-template-price]')!.getBoundingClientRect();
+        const bounds = element.getBoundingClientRect();
+        return { gap: price.left - name.right, vertical: price.top - name.bottom, left: price.left, right: price.right, edge: bounds.right };
+      });
+    };
+    for (const name of ['left', 'center']) {
+      const near = await sample(name, 'left');
+      const middle = await sample(name, 'center');
+      const far = await sample(name, 'right');
+      expect(near.left).toBeLessThan(middle.left);
+      expect(middle.left).toBeLessThan(far.left);
+      expect(Math.abs(far.right - far.edge)).toBeLessThan(2);
+      const spaced = await sample(name, 'left', 20);
+      expect(spaced.gap > near.gap || spaced.vertical > near.vertical).toBe(true);
+    }
+    const right = await sample('right', 'right');
+    const forced = await sample('right', 'left');
+    expect(forced.left).toBeCloseTo(right.left, 0);
+    await page.screenshot({ path: '/tmp/automenu-price-' + layout.replace(/[^a-z0-9]/g, '-') + '.png' });
+  });
+}

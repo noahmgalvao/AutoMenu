@@ -202,6 +202,7 @@ body:has([data-canvas-zooming]) :is([data-inline-format-toolbar], [data-canvas-o
 }
 
 [data-price-wrap] {
+  --product-price-row-gap: calc(2px + var(--product-price-control, 0) * 1px);
   flex-wrap: wrap;
 }
 
@@ -216,25 +217,16 @@ body:has([data-canvas-zooming]) :is([data-inline-format-toolbar], [data-canvas-o
   margin-inline-start: auto;
   justify-content: flex-end;
 }
-[data-product-price-slot][data-price-alignment="center"] { flex: 1 0 auto; justify-content: center; }
-[data-product-text-row]:has(> [data-product-price-slot][data-price-alignment="center"]) > [data-product-title-group] {
-  flex-grow: 0 !important;
+[data-product-text-row]:has(> [data-product-price-slot]):not([data-price-wrap]) > [data-product-title-group] {
+  flex: 0 1 var(--automenu-title-width, auto) !important;
+  margin-inline-start: var(--automenu-title-leading, 0px);
 }
-/* Compact spacing moves spare width outside the name and price. */
-[data-compact-price-gap="end"]:not([data-price-wrap])::after,
-[data-compact-price-gap="start"]:not([data-price-wrap])::before {
-  content: "";
-  flex: calc(1 - var(--product-price-space-share)) 0 0px;
+[data-product-text-row]:has(> [data-product-price-slot]):not([data-price-wrap]) > [data-product-price-slot] {
+  flex: 0 0 auto;
+  margin-inline-start: var(--automenu-price-offset, auto);
 }
-[data-compact-price-gap="end"]:not([data-price-wrap])::after { margin-inline-start: calc(-1 * var(--product-price-gap)); }
-[data-compact-price-gap="start"]:not([data-price-wrap])::before { margin-inline-end: calc(-1 * var(--product-price-gap)); }
-[data-compact-price-gap]:not([data-price-wrap]) > [data-product-price-slot] { margin-inline-start: 0; }
-[data-compact-price-gap]:not([data-price-wrap]):has(> [data-product-price-slot]:not([data-price-alignment="center"])) > [data-product-title-group] {
-  flex-grow: var(--product-price-space-share) !important;
-}
-[data-compact-price-gap]:not([data-price-wrap]) > [data-product-price-slot][data-price-alignment="center"] {
-  flex-grow: var(--product-price-space-share);
-}
+[data-price-wrap] > [data-product-title-group] { margin-inline-start: 0; }
+
 [data-price-wrap] > [data-product-price-slot] {
   flex: 0 0 calc(100% + var(--automenu-price-left, 0px) + var(--automenu-price-right, 0px));
   margin-inline: calc(-1 * var(--automenu-price-left, 0px)) calc(-1 * var(--automenu-price-right, 0px));
