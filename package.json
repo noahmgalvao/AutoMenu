@@ -11,7 +11,16 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
     "test:e2e": "playwright test",
-    "templates:seed": "node --import tsx scripts/generate-template-catalog.mjs"
+    "templates:seed": "node --import tsx scripts/generate-template-catalog.mjs",
+    "history:benchmark": "node --import tsx scripts/revisions-benchmark.ts",
+    "history:benchmark:metadata": "node --import tsx scripts/revisions-metadata-benchmark.ts",
+    "history:inventory": "node --import tsx scripts/revisions-inventory.ts",
+    "history:inventory:assets": "node --import tsx scripts/revisions-inventory-assets.ts",
+    "history:worker": "node --import tsx scripts/revisions-worker.ts",
+    "history:backup": "node --import tsx scripts/revisions-backup.ts",
+    "history:migrate-provider": "node --import tsx scripts/revisions-migrate-provider.ts",
+    "history:backfill": "node --import tsx scripts/revisions-backfill.ts",
+    "history:build:edge": "node scripts/revisions-build-edge.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.0.8",

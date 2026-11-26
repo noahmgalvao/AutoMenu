@@ -1,0 +1,158 @@
+{
+  "version": 1,
+  "measuredAt": "2026-11-26T17:04:26.140Z",
+  "node": "v24.22.3",
+  "source": "Synthetic representative fixtures; no production documents or quota access.",
+  "limitations": [
+    "Payload bytes only; excludes PostgreSQL physical tables/indexes/WAL, object metadata and assets.",
+    "RSS is cumulative process high-water, not isolated per document.",
+    "Timing includes local Node codec and reconstruct; excludes Supabase network/egress and mobile render.",
+    "No provider cost/cache-hit/RPO/RTO measurements."
+  ],
+  "results": [
+    {
+      "fixture": "small",
+      "products": 15,
+      "states": 65,
+      "rawPayloadBytes": 365638,
+      "compressedSnapshotBytes": 86544,
+      "hybridBytes": 23268,
+      "savingsVsCompressedSnapshots": 0.7311425402107599,
+      "anchors": 2,
+      "deltas": 63,
+      "maxDepth": 49,
+      "snapshotBytes": {
+        "p50": 1332,
+        "p95": 1335,
+        "max": 1337
+      },
+      "hybridStateBytes": {
+        "p50": 328,
+        "p95": 337,
+        "max": 1331
+      },
+      "snapshotEncodeMs": {
+        "p50": 0.5838790000000245,
+        "p95": 4.781493999999952,
+        "max": 5.988069999999993
+      },
+      "hybridEncodeMs": {
+        "p50": 1.2716739999999618,
+        "p95": 4.169002999999975,
+        "max": 8.457206000000042
+      },
+      "reconstructionMs": {
+        "p50": 10.948664999999949,
+        "p95": 24.639183000000003,
+        "max": 46.4785149999999
+      },
+      "hybridCpuMicros": {
+        "p50": 1392,
+        "p95": 6850,
+        "max": 18211
+      },
+      "rebaseMs": 0.42628100000001723,
+      "rebaseNewBytes": 1332,
+      "physicalPayloadPeakDuringRebase": 24600,
+      "codecBuffersPeakBytes": 13908,
+      "processRssBytes": 125018112,
+      "processMaxRssBytes": 125726720
+    },
+    {
+      "fixture": "medium",
+      "products": 180,
+      "states": 65,
+      "rawPayloadBytes": 3024919,
+      "compressedSnapshotBytes": 309730,
+      "hybridBytes": 34653,
+      "savingsVsCompressedSnapshots": 0.88811868401511,
+      "anchors": 3,
+      "deltas": 62,
+      "maxDepth": 28,
+      "snapshotBytes": {
+        "p50": 4765,
+        "p95": 4769,
+        "max": 4771
+      },
+      "hybridStateBytes": {
+        "p50": 329,
+        "p95": 337,
+        "max": 4766
+      },
+      "snapshotEncodeMs": {
+        "p50": 1.8766230000001087,
+        "p95": 6.213909999999942,
+        "max": 11.530109000000266
+      },
+      "hybridEncodeMs": {
+        "p50": 5.759226000000126,
+        "p95": 8.94479999999976,
+        "max": 23.41261799999984
+      },
+      "reconstructionMs": {
+        "p50": 28.847305000000233,
+        "p95": 64.05175599999984,
+        "max": 145.14096700000027
+      },
+      "hybridCpuMicros": {
+        "p50": 5935,
+        "p95": 17738,
+        "max": 23782
+      },
+      "rebaseMs": 1.888531999999941,
+      "rebaseNewBytes": 4765,
+      "physicalPayloadPeakDuringRebase": 39418,
+      "codecBuffersPeakBytes": 102618,
+      "processRssBytes": 233910272,
+      "processMaxRssBytes": 235274240
+    },
+    {
+      "fixture": "large",
+      "products": 900,
+      "states": 65,
+      "rawPayloadBytes": 14717314,
+      "compressedSnapshotBytes": 1186872,
+      "hybridBytes": 164785,
+      "savingsVsCompressedSnapshots": 0.8611602599100829,
+      "anchors": 8,
+      "deltas": 57,
+      "maxDepth": 9,
+      "snapshotBytes": {
+        "p50": 18260,
+        "p95": 18264,
+        "max": 18266
+      },
+      "hybridStateBytes": {
+        "p50": 330,
+        "p95": 18260,
+        "max": 18266
+      },
+      "snapshotEncodeMs": {
+        "p50": 8.19387900000038,
+        "p95": 12.6095320000004,
+        "max": 13.925162000000455
+      },
+      "hybridEncodeMs": {
+        "p50": 26.856599000000642,
+        "p95": 35.5274559999998,
+        "max": 47.399569000000156
+      },
+      "reconstructionMs": {
+        "p50": 55.753749000000425,
+        "p95": 106.80536399999983,
+        "max": 111.22438300000067
+      },
+      "hybridCpuMicros": {
+        "p50": 27130,
+        "p95": 47218,
+        "max": 65978
+      },
+      "rebaseMs": 9.226152000001093,
+      "rebaseNewBytes": 18260,
+      "physicalPayloadPeakDuringRebase": 183045,
+      "codecBuffersPeakBytes": 489394,
+      "processRssBytes": 252678144,
+      "processMaxRssBytes": 273924096
+    }
+  ]
+}

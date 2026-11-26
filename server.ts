@@ -4,12 +4,17 @@ import { createServer as createViteServer } from "vite";
 import { generateMenuAnalysis } from './src/infrastructure/gemini/generateMenuAnalysis';
 import { createAnalyzeMenuRoute } from './src/infrastructure/http/analyzeMenuRoute';
 
+import { revisionHandler, revisionWorkerHandler } from './src/infrastructure/revisions/http';
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   // Increase payload limit for base64 image data
   app.use(express.json({ limit: "50mb" }));
+
+  app.all('/api/revisions', express.json({limit:'10mb'}), revisionHandler);
+  app.all('/api/revisions-worker', revisionWorkerHandler);
 
   app.post('/api/analyze-menu', createAnalyzeMenuRoute(generateMenuAnalysis));
 

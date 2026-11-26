@@ -88,7 +88,7 @@ const App: React.FC = () => {
     workspaceData, products, style, templates, sortOption, setSortOption, isSettingsSaving, isMenuActionLoading,
     setProducts, setStyle, setProductsAndStyle, setTemplates, undo, redo, canUndo, canRedo, handleProductEditChange,
     handleSignIn, handleSignUp, handleSignOut, handleSaveSettings, handleSaveTemplate, onPublishTemplate, handleRequestPasswordReset, handleUpdatePassword,
-    handleSelectMenu, performCreateMenu, handleRenameMenu, handleDeleteMenus,
+    handleSelectMenu, performCreateMenu, handleRenameMenu, handleDeleteMenus, forceSaveCurrentMenu, reloadCurrentMenu, resolveWriteConflict, refreshMenuList, saveStatus, historyNotice, setHistoryNotice,
   } = useWorkspaceEditor({
     showStylePanel: () => setActivePanel('style'),
     closeProfileMenu: () => setIsProfileMenuOpen(false),
@@ -290,6 +290,12 @@ const App: React.FC = () => {
         workspaceId={workspaceData.workspace.id}
         menuId={workspaceData.menu.id}
         splitCategoryAcrossPages={workspaceData.workspace.settings.splitCategoryAcrossPages}
+        saveStatus={saveStatus}
+        actorId={session.user.id}
+        expectedWrite={workspaceData.menu.revisionWriteVersion}
+        onFlush={forceSaveCurrentMenu}
+        onRestored={reloadCurrentMenu}
+        onCopyCreated={refreshMenuList}
         onClose={() => setIsRevisionHistoryOpen(false)}
         onRestore={(revision) => {
           setProducts(revision.products);
@@ -315,9 +321,12 @@ const App: React.FC = () => {
         </React.Suspense></AppRecovery>
       )}
 
+      {historyNotice && !loadError && !isPublishOpen && <div role="status" aria-label="Estado do histórico" className="absolute top-20 right-4 z-40 flex max-w-sm items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 shadow-lg"><span>{historyNotice}</span><button type="button" aria-label="Fechar aviso do histórico" onClick={()=>setHistoryNotice(null)}><X size={15}/></button></div>}
+
       {loadError && !isPublishOpen && (
         <div className="absolute top-20 right-4 z-40 flex max-w-md items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-lg">
           <span className="min-w-0 flex-1">{loadError}</span>
+          {loadError.startsWith('Conflito:') && <div className="flex shrink-0 flex-wrap gap-1"><button disabled={isMenuActionLoading} onClick={()=>void resolveWriteConflict('server')} className="rounded-lg border px-2 py-1 text-xs">Carregar salvo</button><button disabled={isMenuActionLoading} onClick={()=>void resolveWriteConflict('local')} className="rounded-lg border px-2 py-1 text-xs">Usar minhas alterações</button></div>}
           <button type="button" onClick={() => setLoadError(null)} className="-mr-1 -mt-1 rounded-lg p-1 text-red-500 hover:bg-red-100 hover:text-red-700" title="Fechar mensagem" aria-label="Fechar mensagem">
             <X size={16} />
           </button>

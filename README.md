@@ -83,3 +83,7 @@ Se for aplicar manualmente no painel do Supabase, rode o arquivo SQL inteiro no 
 ## Observação
 
 A chave do Gemini continua no frontend por decisão de produto. Isso funciona, mas é menos seguro do que mover a chamada para backend/edge function.
+
+## Histórico de revisões v1.2
+
+Consulte o [guia de ativação, operação e portabilidade](docs/revisions/README.md) e o [relatório de validação](docs/revisions/validation.md).

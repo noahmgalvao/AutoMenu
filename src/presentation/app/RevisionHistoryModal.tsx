@@ -1,11 +1,12 @@
+import { PersistentRevisionHistory } from './PersistentRevisionHistory';
 import { lockModalScrolling } from '../common/modalScroll';
 import React from 'react';
-import { ArrowLeft, Eye, History, Loader2, RotateCcw, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { ArrowLeft, Eye, History, Loader2, RotateCcw, X } from 'lucide-react';
 import type { MenuVersion } from '../../domain/workspace/model';
 import type { MenuStyle, Product, SortOption } from '../../domain/menu/model';
 import { useAppServices } from './AppServicesProvider';
 import { getErrorMessage } from '../../application/errorMessages';
-import { MenuPreview } from '../menu/canvas/MenuPreview';
+import { ReadOnlyCanvas } from './RevisionReadOnlyCanvas';
 
 type RevisionState = { products: Product[]; style: MenuStyle; sortOption: SortOption };
 
@@ -16,9 +17,14 @@ interface RevisionHistoryModalProps {
   splitCategoryAcrossPages?: boolean;
   onClose: () => void;
   onRestore: (state: RevisionState) => void;
+  expectedWrite?: number;
+  saveStatus?: 'saved' | 'pending';
+  actorId?: string;
+  onFlush?: () => Promise<void|number>;
+  onRestored?: () => Promise<void>;
+  onCopyCreated?: () => Promise<void>;
 }
 
-const clampZoom = (value: number) => Math.min(1.5, Math.max(0.2, value));
 const getInitialScale = (isMobile: boolean) => isMobile ? 0.28 : 0.78;
 
 const getRevisionTitle = (revision: MenuVersion) => {
@@ -48,89 +54,8 @@ const getRevisionDayLabel = (createdAt: string) => {
   return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }).format(date);
 };
 
-const ReadOnlyCanvas: React.FC<{
-  preview: RevisionState;
-  scale: number;
-  setScale: React.Dispatch<React.SetStateAction<number>>;
-  splitCategoryAcrossPages?: boolean;
-}> = ({ preview, scale, setScale, splitCategoryAcrossPages }) => {
-  const viewportRef = React.useRef<HTMLDivElement>(null);
-  const pinchRef = React.useRef<{ distance: number; scale: number } | null>(null);
-  const [showZoom, setShowZoom] = React.useState(false);
-  const zoomTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const updateZoom = React.useCallback((delta: number) => {
-    setScale((current) => clampZoom(Number((current + delta).toFixed(2))));
-    setShowZoom(true);
-    if (zoomTimerRef.current) clearTimeout(zoomTimerRef.current);
-    zoomTimerRef.current = setTimeout(() => setShowZoom(false), 1000);
-  }, [setScale]);
-
-  React.useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    const onWheel = (event: WheelEvent) => {
-      if (!event.ctrlKey && !event.metaKey) return;
-      event.preventDefault();
-      updateZoom(event.deltaY * -0.0035);
-    };
-    viewport.addEventListener('wheel', onWheel, { passive: false });
-    return () => viewport.removeEventListener('wheel', onWheel);
-  }, [updateZoom]);
-
-  React.useEffect(() => () => {
-    if (zoomTimerRef.current) clearTimeout(zoomTimerRef.current);
-  }, []);
-
-  const touchDistance = (touches: React.TouchList) => Math.hypot(
-    touches[0].clientX - touches[1].clientX,
-    touches[0].clientY - touches[1].clientY,
-  );
-
-  return (
-    <div
-      ref={viewportRef}
-      className="relative h-full min-h-0 overflow-auto bg-slate-200 custom-scrollbar touch-pan-x touch-pan-y"
-      onTouchStart={(event) => {
-        if (event.touches.length === 2) pinchRef.current = { distance: touchDistance(event.touches), scale };
-      }}
-      onTouchMove={(event) => {
-        if (event.touches.length !== 2 || !pinchRef.current) return;
-        event.preventDefault();
-        const nextScale = clampZoom(pinchRef.current.scale * (touchDistance(event.touches) / pinchRef.current.distance));
-        setScale(nextScale);
-        setShowZoom(true);
-      }}
-      onTouchEnd={(event) => {
-        if (event.touches.length < 2) {
-          pinchRef.current = null;
-          if (zoomTimerRef.current) clearTimeout(zoomTimerRef.current);
-          zoomTimerRef.current = setTimeout(() => setShowZoom(false), 800);
-        }
-      }}
-      onTouchCancel={() => { pinchRef.current = null; }}
-    >
-      <div className={`sticky top-3 z-20 flex justify-end gap-2 pr-3 pointer-events-none ${showZoom ? '' : ''}`}>
-        <span className={`self-center rounded-full bg-slate-900/80 px-2.5 py-1 text-[11px] font-bold text-white transition-opacity ${showZoom ? 'opacity-100' : 'opacity-0'}`}>{Math.round(scale * 100)}%</span>
-        <button type="button" onClick={() => updateZoom(-0.1)} className="pointer-events-auto p-2.5 rounded-full bg-white text-slate-700 shadow-lg hover:bg-slate-50" aria-label="Diminuir zoom"><ZoomOut size={18} /></button>
-        <button type="button" onClick={() => updateZoom(0.1)} className="pointer-events-auto p-2.5 rounded-full bg-white text-slate-700 shadow-lg hover:bg-slate-50" aria-label="Aumentar zoom"><ZoomIn size={18} /></button>
-      </div>
-      <div className="w-fit min-w-full p-3 md:p-6 flex justify-center items-start">
-        <div className="w-fit origin-top-left" style={{ zoom: scale }}>
-          <MenuPreview
-            products={preview.products}
-            style={preview.style}
-            sortOption={preview.sortOption}
-            readOnly
-            splitCategoryAcrossPages={splitCategoryAcrossPages}
-          />
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export const RevisionHistoryModal: React.FC<RevisionHistoryModalProps> = ({
+const LegacyRevisionHistoryModal: React.FC<RevisionHistoryModalProps> = ({
   open,
   workspaceId,
   menuId,
@@ -246,4 +171,10 @@ export const RevisionHistoryModal: React.FC<RevisionHistoryModalProps> = ({
       </div>
     </div>
   );
+};
+
+export const RevisionHistoryModal: React.FC<RevisionHistoryModalProps> = props => {
+  const {revisions} = useAppServices();
+  if (!props.open) return null;
+  return revisions ? <PersistentRevisionHistory key={`${props.workspaceId}:${props.menuId}:${props.actorId||''}`} saveStatus={props.saveStatus} actorId={props.actorId} gateway={revisions} workspaceId={props.workspaceId} menuId={props.menuId} expectedWrite={props.expectedWrite||0} onClose={props.onClose} onFlush={props.onFlush|| (async()=>{})} onRestored={props.onRestored|| (async()=>{})} onCopyCreated={props.onCopyCreated|| (async()=>{})} splitCategoryAcrossPages={props.splitCategoryAcrossPages}/> : <LegacyRevisionHistoryModal {...props}/>;
 };

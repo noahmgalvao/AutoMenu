@@ -13,3 +13,6 @@ Thumbs.db
 
 test-results/
 playwright-report/
+
+supabase/.temp/
+supabase/functions/menu-revisions/bundle.js

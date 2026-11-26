@@ -1,0 +1,140 @@
+{
+  "source": "Isolated PostgreSQL/PGlite fixture; 100 metadata entries. No production measurements.",
+  "relations": [
+    {
+      "table": "workspace_members",
+      "indexBytes": 0,
+      "totalBytes": 16384
+    },
+    {
+      "table": "menus",
+      "indexBytes": 16384,
+      "totalBytes": 32768
+    },
+    {
+      "table": "users",
+      "indexBytes": 16384,
+      "totalBytes": 24576
+    },
+    {
+      "table": "assets",
+      "indexBytes": 16384,
+      "totalBytes": 24576
+    },
+    {
+      "table": "catalog_template_backgrounds",
+      "indexBytes": 0,
+      "totalBytes": 8192
+    },
+    {
+      "table": "objects",
+      "indexBytes": 8192,
+      "totalBytes": 16384
+    },
+    {
+      "table": "buckets",
+      "indexBytes": 16384,
+      "totalBytes": 32768
+    },
+    {
+      "table": "menu_versions",
+      "indexBytes": 32768,
+      "totalBytes": 49152
+    },
+    {
+      "table": "workspaces",
+      "indexBytes": 16384,
+      "totalBytes": 32768
+    },
+    {
+      "table": "revision_config",
+      "indexBytes": 16384,
+      "totalBytes": 32768
+    },
+    {
+      "table": "revision_blobs",
+      "indexBytes": 32768,
+      "totalBytes": 90112
+    },
+    {
+      "table": "revision_blob_locations",
+      "indexBytes": 8192,
+      "totalBytes": 16384
+    },
+    {
+      "table": "revision_states",
+      "indexBytes": 73728,
+      "totalBytes": 139264
+    },
+    {
+      "table": "menu_publications",
+      "indexBytes": 0,
+      "totalBytes": 8192
+    },
+    {
+      "table": "revision_asset_refs",
+      "indexBytes": 16384,
+      "totalBytes": 24576
+    },
+    {
+      "table": "revision_leases",
+      "indexBytes": 16384,
+      "totalBytes": 24576
+    },
+    {
+      "table": "revision_publication_events",
+      "indexBytes": 8192,
+      "totalBytes": 16384
+    },
+    {
+      "table": "revision_rate_windows",
+      "indexBytes": 8192,
+      "totalBytes": 16384
+    },
+    {
+      "table": "revision_jobs",
+      "indexBytes": 32768,
+      "totalBytes": 49152
+    },
+    {
+      "table": "revision_reservations",
+      "indexBytes": 16384,
+      "totalBytes": 24576
+    },
+    {
+      "table": "revision_operations",
+      "indexBytes": 16384,
+      "totalBytes": 24576
+    },
+    {
+      "table": "menu_revisions",
+      "indexBytes": 98304,
+      "totalBytes": 155648
+    },
+    {
+      "table": "revision_menu_state",
+      "indexBytes": 8192,
+      "totalBytes": 16384
+    },
+    {
+      "table": "revision_capacity_alerts",
+      "indexBytes": 16384,
+      "totalBytes": 24576
+    },
+    {
+      "table": "revision_telemetry",
+      "indexBytes": 8192,
+      "totalBytes": 16384
+    }
+  ],
+  "observedAt": "2026-11-26T17:53:25.237+00:00",
+  "databaseBytes": 9216123,
+  "unavailable": [
+    "physicalDiskIncludingWal",
+    "SupabaseStorage",
+    "organizationEgress",
+    "providerLimits",
+    "CPUquota",
+    "productionIndices"
+  ]
+}

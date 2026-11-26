@@ -8,7 +8,10 @@ import type { PublicationGateway } from './publishing/publicationGateway';
 import type { TemplateFavoritesGateway } from './templates/favoriteQueue';
 import type { WorkspaceGateway } from './workspace/workspaceGateway';
 
+import type { RevisionGateway } from './revisions/contracts';
+
 export interface AppServices {
+  revisions?: RevisionGateway;
   auth: AuthGateway;
   workspace: WorkspaceGateway;
   publications: PublicationGateway;

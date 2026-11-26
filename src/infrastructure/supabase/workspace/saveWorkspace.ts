@@ -1,3 +1,4 @@
+import { revisionOperationId } from '../../../application/revisions/operationId';
 import { categoryName, categoryInstanceSlug, storedCategoryKey } from '../../../domain/menu/categoryName';
 import type { Product, MenuStyle, SortOption } from '../../../domain/menu/model';
 import type { SaveWorkspaceResult, MenuVersion } from '../../../domain/workspace/model';
@@ -14,6 +15,8 @@ import {
 } from '../../../application/workspace/state';
 import { normalizeProductAssets, normalizeStyleAssets } from './assetReferences';
 import { syncWorkspaceTemplates } from './templates';
+import { historyV12Enabled, revisionRequest } from '../../browser/revisionGateway';
+import { mapMenuVersionRow } from './rowMapping';
 import { roundPrice } from '../../../domain/menu/price';
 import { resolveActiveMenu } from './menus';
 import { insertMenuVersionWithRetry } from './revisions';
@@ -112,6 +115,7 @@ export const saveWorkspaceState = async ({
   style,
   templates,
   sortOption,
+  expectedWrite, operationId,
   actionLabel = 'Alteração salva',
 }: {
   workspaceId: string;
@@ -122,6 +126,7 @@ export const saveWorkspaceState = async ({
   templates: MenuStyle[];
   sortOption: SortOption;
   actionLabel?: string;
+  expectedWrite?: number; operationId?: string;
 }): Promise<SaveWorkspaceResult> => {
   const supabase = getSupabaseClient();
   const normalizedProducts = await normalizeProductAssets(workspaceId, userId, assignCategoryIds(products));
@@ -137,6 +142,17 @@ export const saveWorkspaceState = async ({
     catalogProducts,
     categoryOrder,
   );
+
+  if (historyV12Enabled() && menuId) {
+    const renderSnapshot = createRenderSnapshot([...productsWithCategoryIds,...freeTextProducts], normalizedStyle, sortOption);
+    const editorState = createEditorState(normalizedStyle, normalizedProducts.filter(p => p.isFreeText), sortOption);
+    const result = await revisionRequest('save', {menuId, expectedWrite: expectedWrite ?? 0,
+      operationId: operationId || revisionOperationId(), snapshot: renderSnapshot, editor: editorState, actionLabel, catalog: {categories:categoryRows,products:productsWithCategoryIds.map((p,index)=>({id:p.id,workspace_id:workspaceId,category_id:p.categoryId,name:p.name,description:p.description,base_price:roundPrice(p.price),primary_asset_id:p.imageAssetId||null,sort_index:index,is_active:true}))}});
+    document.dispatchEvent(new CustomEvent('automenu:history-warning', {detail:{menuId:result.menu.id,warning:result.historyWarning}}));
+    await propagateSyncedProducts({workspaceId,sourceMenuId:menuId,sourceMenuName:result.menu.name,userId,sourceProducts:[...productsWithCategoryIds,...freeTextProducts]});
+    return {menu:mapMenuRow(result.menu),currentVersion:mapMenuVersionRow(result.version),
+      products:[...productsWithCategoryIds,...freeTextProducts],style:normalizedStyle,templates:normalizedTemplates,sortOption};
+  }
 
   if (categoryRows.length > 0) {
     const { error: upsertCategoryError } = await supabase

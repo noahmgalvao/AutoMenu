@@ -1,5 +1,8 @@
+import { revisionOperationId } from '../../application/revisions/operationId';
 import { useCallback, useEffect, useRef, useState, type SetStateAction } from 'react';
 import type { AuthSession } from '../../application/account/authGateway';
+import { classifyChange } from '../../domain/revisions/events';
+import type { Json } from '../../domain/revisions/model';
 import { getErrorMessage } from '../../application/errorMessages';
 import { createWorkspaceTemplate } from '../../application/templates/portableTemplateStyle';
 import { INITIAL_STYLE, PRESET_TEMPLATES } from '../../domain/menu/defaults';
@@ -19,7 +22,7 @@ import {
 } from '../../infrastructure/browser/workspaceCache';
 
 const SAVE_ERROR_MESSAGE = 'Não foi possível salvar as alterações. Entre em contato com o suporte.';
-const SAVE_DEBOUNCE_MS = 2000;
+const SAVE_DEBOUNCE_MS = 1000;
 
 function mergeDurableTemplates(current: MenuStyle[], saved: MenuStyle[] = []) {
   return [...new Map([...current, ...saved].map(template => [template.id, template])).values()];
@@ -36,7 +39,7 @@ interface WorkspaceEditorOptions {
 }
 
 export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCreateMenu }: WorkspaceEditorOptions) {
-  const { auth, workspace: workspaceGateway } = useAppServices();
+  const { auth, revisions, workspace: workspaceGateway } = useAppServices();
   const { getInitialSession, subscribeToAuth, sendPasswordReauthentication, signInWithEmail, signOutCurrentUser,
     signUpWithEmail, updatePasswordWithNonce, isConfigured } = auth;
   const { createWorkspaceMenu, deleteWorkspaceMenus, renameWorkspaceMenu, restoreWorkspaceMenus, updateAccountIdentity, saveWorkspaceTemplate,
@@ -47,6 +50,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [historyNotice,setHistoryNotice]=useState<string|null>(null);
   const [workspaceLoadFailure, setWorkspaceLoadFailure] = useState<{ userId: string; message: string } | null>(null);
 
   const [workspaceData, setWorkspaceData] = useState<LoadedWorkspaceData | null>(null);
@@ -59,6 +63,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
   const [isSettingsSaving, setIsSettingsSaving] = useState(false);
   const [isMenuActionLoading, setIsMenuActionLoading] = useState(false);
   const skipNextPersistRef = useRef(true);
+  const persistFirstDirtyRef = useRef<number | null>(null);
   const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestPersistPayloadRef = useRef<PersistPayload | null>(null);
   const lastSavedSignatureRef = useRef('');
@@ -68,6 +73,10 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
   const flushPendingSaveRef = useRef<() => void>(() => {});
   const workspaceLoadRequestRef = useRef(0);
   const activeMenuIdRef = useRef<string | null>(null);
+  useEffect(()=>{
+    const update=(event:Event)=>{const detail=(event as CustomEvent<{menuId:string;warning:string|null}>).detail;if(!detail||detail.menuId!==activeMenuIdRef.current)return;setHistoryNotice(detail.warning?'Cardápio salvo; histórico temporariamente indisponível. '+getErrorMessage(new Error(detail.warning),''):null);};
+    document.addEventListener('automenu:history-warning',update);return()=>document.removeEventListener('automenu:history-warning',update);
+  },[]);
   const menuCacheRef = useRef<Record<string, LoadedWorkspaceData>>({});
   const menuSavedSignatureCacheRef = useRef<Record<string, string>>({});
   const prefetchingMenuIdsRef = useRef<Set<string>>(new Set());
@@ -81,6 +90,15 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
 
   const setTemplates = useCallback((value: SetStateAction<MenuStyle[]>) => {
     setTemplatesRaw(value);
+  }, []);
+
+  const activeGesture = useRef(false);
+  useEffect(() => {
+    const start = () => { activeGesture.current = true; };
+    const stop = () => { activeGesture.current = false; };
+    document.addEventListener('pointerdown', start); document.addEventListener('pointerup', stop); document.addEventListener('pointercancel', stop);
+    document.addEventListener('compositionstart', start); document.addEventListener('compositionend', stop); window.addEventListener('blur', stop);
+    return () => { document.removeEventListener('pointerdown',start); document.removeEventListener('pointerup',stop); document.removeEventListener('pointercancel',stop); document.removeEventListener('compositionstart',start); document.removeEventListener('compositionend',stop); window.removeEventListener('blur',stop); };
   }, []);
 
   const persistNow = useCallback(async () => {
@@ -97,10 +115,17 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
       return;
     }
 
+    if (activeGesture.current) {
+      writeLocalPendingSnapshot(payload);
+      persistTimeoutRef.current = setTimeout(() => void persistNowRef.current(), SAVE_DEBOUNCE_MS);
+      return;
+    }
     isSavingRef.current = true;
 
     try {
       const result = await saveWorkspaceStateWithRetry(payload, saveWorkspaceState);
+      if (latestPersistPayloadRef.current?.menuId === result.menu.id) latestPersistPayloadRef.current.expectedWrite = result.menu.revisionWriteVersion;
+      if (revisions && activeMenuIdRef.current !== payload.menuId) void revisions.finalize(payload.menuId).catch(() => {});
       result.templates = mergeDurableTemplates(result.templates, durableTemplates.current.get(payload.workspaceId));
 
       setWorkspaceData((prev) => {
@@ -127,6 +152,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
         ? getPersistSignature(latestPersistPayloadRef.current)
         : '';
 
+      persistFirstDirtyRef.current = null;
       lastSavedSignatureRef.current = normalizedSignature;
       menuSavedSignatureCacheRef.current[result.menu.id] = normalizedSignature;
       const cachedMenuData = menuCacheRef.current[result.menu.id];
@@ -176,11 +202,11 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
       } else {
         queuedSaveRef.current = true;
       }
-    } catch {
-      writeLocalPendingSnapshot(payload);
+    } catch (error) {
+      writeLocalPendingSnapshot(latestPersistPayloadRef.current?.menuId === payload.menuId ? latestPersistPayloadRef.current : payload);
       const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
       if (!isOffline) {
-        setLoadError(SAVE_ERROR_MESSAGE);
+        setLoadError(getErrorMessage(error, SAVE_ERROR_MESSAGE));
       }
     } finally {
       isSavingRef.current = false;
@@ -208,7 +234,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     const pendingSnapshot = readLocalPendingSnapshot(data.workspace.id, data.menu.id);
     const pendingUpdatedAt = pendingSnapshot ? Date.parse(pendingSnapshot.updatedAt) : 0;
     const serverUpdatedAt = Date.parse(data.currentVersion.createdAt || '') || 0;
-    const shouldRestorePending = Boolean(pendingSnapshot && pendingUpdatedAt > serverUpdatedAt);
+    const shouldRestorePending = Boolean(pendingSnapshot && (revisions || pendingUpdatedAt > serverUpdatedAt));
     const snapshot = shouldRestorePending && pendingSnapshot
       ? normalizeWorkspaceClientState(pendingSnapshot)
       : data;
@@ -244,6 +270,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     writeLastActiveMenuId(data.profile.userId, data.menu.id);
     const hydratedData: LoadedWorkspaceData = {
       ...data,
+      menu: shouldRestorePending && pendingSnapshot?.expectedWrite !== undefined && revisions ? {...data.menu,revisionWriteVersion:pendingSnapshot.expectedWrite} : data.menu,
       products: restoredState.products,
       style: restoredState.style,
       templates: restoredState.templates,
@@ -261,7 +288,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     setTemplatesRaw(restoredState.templates);
     setSortOption({
       ...restoredState.sortOption,
-      field: restoredState.sortOption.field === 'price' ? 'price' : 'name',
+      field: revisions ? restoredState.sortOption.field : restoredState.sortOption.field === 'price' ? 'price' : 'name',
     });
     const scope = `${data.profile.userId}:${data.workspace.id}`;
     clearHistory(menuHistoryScope.current === scope);
@@ -470,6 +497,9 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
       templates,
       sortOption,
       actionLabel: pendingPersistActionLabelRef.current || undefined,
+      expectedWrite: workspaceData.menu.revisionWriteVersion,
+      operationId: latestPersistPayloadRef.current?.menuId === workspaceData.menu.id && getPersistSignature(latestPersistPayloadRef.current) === getPersistSignature({products,style,templates,sortOption})
+        ? latestPersistPayloadRef.current.operationId : revisionOperationId(),
     };
     latestPersistPayloadRef.current = payload;
     const signature = getPersistSignature(payload);
@@ -495,7 +525,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
 
     persistTimeoutRef.current = setTimeout(() => {
       void persistNowRef.current();
-    }, SAVE_DEBOUNCE_MS);
+    }, Math.max(0, Math.min(SAVE_DEBOUNCE_MS, 5000 - (Date.now() - (persistFirstDirtyRef.current ||= Date.now())))));
 
     return () => {
       if (persistTimeoutRef.current) {
@@ -509,7 +539,10 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     if (!payload || menuIdsBeingDeleted.current?.has(payload.menuId)) return;
 
     const signature = getPersistSignature(payload);
-    if (signature === lastSavedSignatureRef.current) return;
+    if (signature === lastSavedSignatureRef.current) {
+      if (revisions) void revisions.finalize(payload.menuId).catch(() => {});
+      return;
+    }
 
     if (persistTimeoutRef.current) {
       clearTimeout(persistTimeoutRef.current);
@@ -539,10 +572,16 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     writeLocalPendingSnapshot(payload);
 
     if (isSavingRef.current) return;
+    if (activeGesture.current) {
+      writeLocalPendingSnapshot(payload);
+      persistTimeoutRef.current = setTimeout(() => void persistNowRef.current(), SAVE_DEBOUNCE_MS);
+      return;
+    }
     isSavingRef.current = true;
 
     void saveWorkspaceStateWithRetry(payload, saveWorkspaceState)
       .then((result) => {
+        if (revisions) void revisions.finalize(payload.menuId).catch(() => {});
         const resultSignature = getPersistSignature({
           products: result.products,
           style: result.style,
@@ -588,10 +627,10 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
           setLoadError(null);
         }
       })
-      .catch(() => {
+      .catch((error) => {
         const latestPayload = latestPersistPayloadRef.current;
         if (latestPayload?.menuId === payload.menuId) {
-          setLoadError(SAVE_ERROR_MESSAGE);
+          setLoadError(getErrorMessage(error, SAVE_ERROR_MESSAGE));
         }
       })
       .finally(() => {
@@ -618,7 +657,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
       return Boolean(payload && getPersistSignature(payload) !== lastSavedSignatureRef.current);
     };
 
-    if (!getHasPendingChanges()) return;
+    if (!getHasPendingChanges()) return latestPersistPayloadRef.current?.expectedWrite;
 
     if (persistTimeoutRef.current) {
       clearTimeout(persistTimeoutRef.current);
@@ -642,6 +681,8 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
         persistTimeoutRef.current = null;
       }
     }
+    if (getHasPendingChanges()) throw new Error('Alterações ainda não salvas no servidor. Estado local preservado.');
+    return latestPersistPayloadRef.current?.expectedWrite;
   }, []);
 
   useEffect(() => {
@@ -743,6 +784,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     cancelWorkspaceRefresh();
     try {
       await forceSaveCurrentMenu();
+      if (revisions && workspaceData) await revisions.finalize(workspaceData.menu.id);
       await signOutCurrentUser();
       clearHistory();
       menuHistoryScope.current = undefined;
@@ -1049,11 +1091,79 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     }
   };
 
+  const editProtectionBusy = useRef(false);
+  const protectLogicalEdit = (nextProducts: Product[], nextStyle: MenuStyle, apply: () => void) => {
+    if (editProtectionBusy.current) return;
+    const priority = classifyChange({products,style} as unknown as Json, {products:nextProducts,style:nextStyle} as unknown as Json);
+    if (!workspaceGateway || !workspaceData || !revisions || priority < 2) { apply(); return; }
+    editProtectionBusy.current = true;
+    setIsMenuActionLoading(true);
+    void (async () => {
+      try { await forceSaveCurrentMenu(); await revisions.beforeOperation(workspaceData.menu.id); apply(); }
+      catch (error) { setLoadError(getErrorMessage(error, 'Alteração bloqueada: não foi possível preservar a versão anterior.')); }
+      finally { editProtectionBusy.current = false; setIsMenuActionLoading(false); }
+    })();
+  };
+  const guardedProducts = (value: SetStateAction<Product[]>) => {
+    if (!revisions) { setProducts(value); return; }
+    const next = typeof value === 'function' ? value(products) : value;
+    protectLogicalEdit(next, style, () => setProducts(value));
+  };
+  const guardedStyle = (value: SetStateAction<MenuStyle>) => {
+    if (!revisions) { setStyle(value); return; }
+    const next = typeof value === 'function' ? value(style) : value;
+    protectLogicalEdit(products, next, () => setStyle(value));
+  };
+  const guardedProductsAndStyle = (nextProducts: Product[], nextStyle: MenuStyle, actionLabel?: string) => {
+    protectLogicalEdit(nextProducts, nextStyle, () => setProductsAndStyle(nextProducts,nextStyle,actionLabel));
+  };
+
+  const reloadCurrentMenu = async () => {
+    if (!session || !workspaceData) return;
+    clearLocalPendingSnapshot(workspaceData.workspace.id, workspaceData.menu.id);
+    clearHistory();
+    delete menuCacheRef.current[workspaceData.menu.id];
+    await loadWorkspace(session.user.id, workspaceData.menu.id);
+  };
+
+  const refreshMenuList = async () => {
+    if (!workspaceData || !workspaceGateway.listWorkspaceMenus) return;
+    const menus = await workspaceGateway.listWorkspaceMenus(workspaceData.workspace.id);
+    setWorkspaceData(previous => previous ? {...previous,menus} : previous);
+  };
+
+  const resolveWriteConflict = async (choice: 'server' | 'local') => {
+    if (!workspaceData || !revisions || !session) return;
+    const message = choice === 'server'
+      ? 'Descartar as alterações pendentes neste dispositivo e carregar o estado salvo no servidor?'
+      : 'Usar as alterações deste dispositivo? O estado do servidor será preservado no histórico antes da substituição.';
+    if (!window.confirm(message)) return;
+    setIsMenuActionLoading(true);
+    try {
+      if (choice === 'server') await reloadCurrentMenu();
+      else {
+        const writeVersion = await revisions.currentWrite(workspaceData.menu.id);
+        const payload = latestPersistPayloadRef.current;
+        if (!payload) return;
+        payload.expectedWrite = writeVersion; payload.operationId = revisionOperationId(); payload.actionLabel = 'Resolução manual de conflito';
+        pendingPersistActionLabelRef.current = payload.actionLabel;
+        setWorkspaceData(previous => previous ? {...previous,menu:{...previous.menu,revisionWriteVersion:writeVersion}} : previous);
+        await forceSaveCurrentMenu();
+      }
+      setLoadError(null);
+    } catch(error) { setLoadError(getErrorMessage(error,'Não foi possível resolver o conflito. Alterações locais preservadas.')); }
+    finally { setIsMenuActionLoading(false); }
+  };
+
   return {
+    saveStatus: (getPersistSignature({products,style,templates,sortOption}) === lastSavedSignatureRef.current && !isWorkspaceLoading ? 'saved' : 'pending') as 'saved' | 'pending',
+    historyNotice,setHistoryNotice,
+    resolveWriteConflict, refreshMenuList,
+    reloadCurrentMenu,
     session, isAuthLoading, isAuthSubmitting, authError, loadError, setLoadError, isConfigured,
     workspaceLoadError: workspaceLoadFailure?.userId === authenticatedUserId ? workspaceLoadFailure?.message : null,
     workspaceData, products, style, templates, sortOption, setSortOption, isSettingsSaving, isMenuActionLoading,
-    setProducts, setStyle, setProductsAndStyle, setTemplates, undo, redo, canUndo: canUndo && !isMenuActionLoading, canRedo: canRedo && !isMenuActionLoading, handleProductEditChange,
+    setProducts: revisions ? guardedProducts : setProducts, setStyle: revisions ? guardedStyle : setStyle, setProductsAndStyle: revisions ? guardedProductsAndStyle : setProductsAndStyle, setTemplates, undo, redo, canUndo: canUndo && !isMenuActionLoading, canRedo: canRedo && !isMenuActionLoading, handleProductEditChange,
     handleSignIn, handleSignUp, handleSignOut, handleSaveSettings, handleSaveTemplate, handleRequestPasswordReset, handleUpdatePassword,
     onPublishTemplate: authenticatedUserId && catalogAdminId === authenticatedUserId ? handlePublishTemplate : undefined,
     handleSelectMenu, performCreateMenu, handleRenameMenu, handleDeleteMenus, forceSaveCurrentMenu,

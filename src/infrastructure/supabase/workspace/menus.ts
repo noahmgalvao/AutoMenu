@@ -1,3 +1,5 @@
+import { revisionOperationId } from '../../../application/revisions/operationId';
+import { historyV12Enabled, revisionRequest } from '../../browser/revisionGateway';
 import { getSupabaseClient } from '../client';
 import { mapMenuRow } from './rowMapping';
 import {
@@ -115,6 +117,7 @@ export const deleteWorkspaceMenus = async ({
   menuIds: string[];
 }) => {
   if (!menuIds.length) return;
+  if (historyV12Enabled()) for (const menuId of menuIds) await revisionRequest('before-operation',{menuId,operationId:revisionOperationId()});
   const supabase = getSupabaseClient();
   const { error } = await supabase
     .from('menus')

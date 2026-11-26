@@ -33,9 +33,12 @@ export interface SaveWorkspaceInput extends WorkspaceMenuContent {
   menuId?: string | null;
   templates: MenuStyle[];
   actionLabel?: string;
+  expectedWrite?: number;
+  operationId?: string;
 }
 
 export interface WorkspaceGateway {
+  listWorkspaceMenus?(workspaceId: string): Promise<Menu[]>;
   loadWorkspaceData(userId: string, menuId?: string | null): Promise<LoadedWorkspaceData>;
   loadWorkspaceMenuData(input: {
     userId: string; profile: Profile; workspace: Workspace; templates: MenuStyle[]; menuId: string;

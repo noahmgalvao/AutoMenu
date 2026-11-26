@@ -95,6 +95,7 @@ export interface CatalogProduct {
 }
 
 export interface Menu {
+  revisionWriteVersion?: number;
   id: string;
   workspaceId: string;
   name: string;

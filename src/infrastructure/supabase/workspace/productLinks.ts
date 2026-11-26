@@ -1,3 +1,5 @@
+import { revisionOperationId } from '../../../application/revisions/operationId';
+import { historyV12Enabled, revisionRequest } from '../../browser/revisionGateway';
 import { getSupabaseClient } from '../client';
 import { isMissingSchemaObjectError } from './schemaCompatibility';
 import type { Product } from '../../../domain/menu/model';
@@ -129,6 +131,10 @@ export const propagateSyncedProducts = async ({
       editorState.style,
       editorState.sortOption || DEFAULT_SORT_OPTION,
     );
+    if (historyV12Enabled()) {
+      await revisionRequest('save',{menuId:targetMenuRow.id,expectedWrite:Number(targetMenuRow.revision_write_version||0),operationId:revisionOperationId(),editor:nextEditorState,snapshot:nextSnapshot,actionLabel:`Produtos vinculados ao cardápio ${sourceMenuName}`});
+      return;
+    }
     const { versionId } = await insertMenuVersionWithRetry({
       menuId: targetMenuRow.id,
       userId,

@@ -23,6 +23,7 @@ export const mapWorkspaceRow = (row: any): Workspace => ({
 });
 
 export const mapMenuRow = (row: any): Menu => ({
+  revisionWriteVersion: Number(row.revision_write_version || 0),
   id: row.id,
   workspaceId: row.workspace_id,
   name: row.name,

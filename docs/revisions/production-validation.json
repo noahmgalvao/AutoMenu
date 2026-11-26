@@ -1,0 +1,51 @@
+{
+  "date": "2026-11-26",
+  "scope": "Isolated disposable fixture in the actual Supabase project; not a statistical benchmark",
+  "ok": true,
+  "checks": [
+    "http-migrate-200",
+    "http-page-200",
+    "original-protected",
+    "http-save-200",
+    "http-manual-200",
+    "manual-counter-1",
+    "http-manual-200",
+    "manual-idempotent",
+    "http-save-409",
+    "atomic-sql-cas-conflict",
+    "http-load-200",
+    "private-blob-roundtrip",
+    "http-restore-200",
+    "restore-current",
+    "http-page-200",
+    "restore-keeps-future",
+    "http-copy-200",
+    "independent-copy",
+    "copy-roundtrip",
+    "anon-rls-denied",
+    "owner-rls-visible",
+    "public-blob-denied",
+    "service-rpc-denied-to-user",
+    "cross-account-denied",
+    "svg-original-lossless-private"
+  ],
+  "times": {
+    "migrateMs": 2266.304002,
+    "saveMs": 409.8273140000001,
+    "manualMs": 1024.4675409999995,
+    "restoreMs": 520.8596450000005
+  },
+  "totalMs": 6787.120362,
+  "fixture": {
+    "logicalStates": 2,
+    "compressedBytes": 378,
+    "rawBytes": 450,
+    "blobCount": 2
+  },
+  "capacity": {
+    "observedAt": "2026-11-26T21:33:04.979384+00:00",
+    "storageBytes": 122306077,
+    "databaseBytes": 29912211,
+    "storageMissingSizes": 0
+  }
+}

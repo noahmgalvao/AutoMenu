@@ -1,3 +1,4 @@
+import { historyV12Enabled } from '../browser/revisionGateway';
 import type { Asset, AssetType } from '../../domain/workspace/model';
 import type { AssetUploadInput, DataUrlUploadInput } from '../../application/assets/assetUploads';
 import { getSupabaseClient } from './client';
@@ -65,7 +66,7 @@ export const resolveAssetUrl = async (asset: Asset) => {
 
 type AssetLocation = Pick<Asset, 'id' | 'bucket' | 'path' | 'sourceUrl'>;
 
-export const resolveAssetMap = async (assets: AssetLocation[]) => {
+export const resolveAssetMap = async (assets: AssetLocation[], ttlSeconds = 60 * 60 * 24 * 365) => {
   const resolved = new Map<string, string>();
   const assetsByBucket = new Map<string, AssetLocation[]>();
 
@@ -92,7 +93,7 @@ export const resolveAssetMap = async (assets: AssetLocation[]) => {
     await Promise.all(batches.map(async (batch) => {
       const { data, error } = await supabase.storage
         .from(bucket)
-        .createSignedUrls(batch.map((asset) => asset.path!), 60 * 60 * 24 * 365);
+        .createSignedUrls(batch.map((asset) => asset.path!), ttlSeconds);
 
       if (error) throw error;
       batch.forEach((asset, index) => resolved.set(asset.id, data?.[index]?.signedUrl || ''));
@@ -136,7 +137,7 @@ export const uploadPortablePublication = async ({
   return { bucket, path, url: existingUrl || await resolveStorageFileUrl(bucket, path, PUBLICATION_LINK_TTL_SECONDS) };
 };
 
-export const resolveAssetMapForIds = async (workspaceId: string, assetIds: string[]) => {
+export const resolveAssetMapForIds = async (workspaceId: string, assetIds: string[], ttlSeconds?: number) => {
   const uniqueAssetIds = Array.from(new Set(assetIds.filter(Boolean)));
   if (uniqueAssetIds.length === 0) return new Map<string, string>();
 
@@ -154,13 +155,13 @@ export const resolveAssetMapForIds = async (workspaceId: string, assetIds: strin
   const workspaceAssets = (data || []).map(mapAssetRow);
   const found = new Set(workspaceAssets.map(asset => asset.id));
   const missing = uniqueAssetIds.filter(id => !found.has(id));
-  if (!missing.length) return resolveAssetMap(workspaceAssets);
+  if (!missing.length) return resolveAssetMap(workspaceAssets,ttlSeconds);
 
   // Catalog backgrounds are explicitly shared, and may belong to a different workspace.
   const shared = await supabase.from('catalog_template_backgrounds').select('asset_id,bucket,path,source_url').in('asset_id', missing);
   return resolveAssetMap([...workspaceAssets, ...(shared.data || []).map(row => ({
     id: row.asset_id, bucket: row.bucket, path: row.path, sourceUrl: row.source_url,
-  }))]);
+  }))],ttlSeconds);
 };
 
 export const listAssetsForWorkspace = async (workspaceId: string) => {
@@ -188,15 +189,26 @@ export const uploadFileAsset = async ({
   metadata = {},
 }: AssetUploadInput) => {
   const supabase = getSupabaseClient();
-  const path = createStoragePath(workspaceId, assetType, assetId, file.name);
+  const checksum = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer())),byte=>byte.toString(16).padStart(2,'0')).join('');
+  const {data: identical, error: dedupError} = await supabase.from('assets').select('*').eq('workspace_id',workspaceId).eq('checksum',checksum).limit(1).maybeSingle();
+  if(dedupError) throw dedupError;
+  if(identical) {const asset=mapAssetRow(identical); return {asset,url:await resolveAssetUrl(asset)};}
+  const {data: previousAsset} = await supabase.from('assets').select('checksum').eq('id',assetId).maybeSingle();
+  if(previousAsset && previousAsset.checksum !== checksum) assetId = crypto.randomUUID();
+  const immutableDomain = historyV12Enabled();
+  if (immutableDomain) assetId = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(`${workspaceId}:${checksum}`))),byte=>byte.toString(16).padStart(2,'0')).join('');
+  const path = immutableDomain ? `${workspaceId}/revision-assets/${checksum}` : createStoragePath(workspaceId, assetType, assetId, file.name);
 
   const { error: uploadError } = await supabase.storage.from(bucket).upload(path, file, {
-    upsert: true,
+    upsert: false,
     contentType: file.type || 'application/octet-stream',
   });
 
   if (uploadError) {
-    throw uploadError;
+    if (!/already exists|duplicate/i.test(uploadError.message)) throw uploadError;
+    const {data:existingBytes,error:readError}=await supabase.storage.from(bucket).download(path); if(readError)throw readError;
+    const storedHash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await existingBytes.arrayBuffer())),byte=>byte.toString(16).padStart(2,'0')).join('');
+    if(storedHash!==checksum)throw new Error('Checksum do recurso existente divergente.');
   }
 
   const payload = {
@@ -208,8 +220,8 @@ export const uploadFileAsset = async ({
     asset_type: assetType,
     mime_type: file.type || 'application/octet-stream',
     size_bytes: file.size,
-    checksum: null,
-    metadata,
+    checksum,
+    metadata: {...metadata,immutable:true,...(immutableDomain ? {revision_asset:true} : {})},
     created_by: userId,
   };
 

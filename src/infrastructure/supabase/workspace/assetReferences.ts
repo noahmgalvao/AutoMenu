@@ -1,3 +1,4 @@
+import { canvasShapeUrl } from '../../../domain/menu/canvasShapes';
 import { isTextureToken } from '../../../domain/menu/textureTiles';
 import { storedCategoryKey } from '../../../domain/menu/categoryName';
 import type { MenuStyle, Product, AddedImage, CategoryImage } from '../../../domain/menu/model';
@@ -15,9 +16,25 @@ export const addAssetId = (assetIds: Set<string>, assetId?: string | null) => {
   if (assetId) assetIds.add(assetId);
 };
 
+const collectGenericAssets = (value: unknown, ids: Set<string>) => {
+  if (typeof value === 'string' && value.startsWith('asset://')) ids.add(value.slice(8));
+  else if (Array.isArray(value)) value.forEach(item => collectGenericAssets(item, ids));
+  else if (value && typeof value === 'object') Object.entries(value).forEach(([key,item]) => {
+    if (/assetId$/i.test(key) && typeof item === 'string' && item) ids.add(item);
+    else collectGenericAssets(item,ids);
+  });
+};
+const resolveGenericAssets = <T,>(value: T, urls: Map<string,string>): T => {
+  if (typeof value === 'string' && value.startsWith('asset://')) return (urls.get(value.slice(8)) || '') as T;
+  if (Array.isArray(value)) return value.map(item => resolveGenericAssets(item,urls)) as T;
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key,item]) => [key,resolveGenericAssets(item,urls)])) as T;
+  return value;
+};
+
 export const collectStyleAssetIds = (style?: Partial<MenuStyle> | null) => {
   const assetIds = new Set<string>();
   if (!isRecord(style)) return assetIds;
+  collectGenericAssets(style,assetIds);
 
   addAssetId(assetIds, style.backgroundAssetId);
   if (isRecord(style.menuBackgroundPhoto)) addAssetId(assetIds, style.menuBackgroundPhoto.assetId);
@@ -37,6 +54,7 @@ export const collectStyleAssetIds = (style?: Partial<MenuStyle> | null) => {
 
 export const collectProductAssetIds = (products?: Product[] | null) => {
   const assetIds = new Set<string>();
+  collectGenericAssets(products,assetIds);
   (Array.isArray(products) ? products : []).forEach((product) => addAssetId(assetIds, product.imageAssetId));
   return assetIds;
 };
@@ -56,8 +74,8 @@ export const collectTemplateAssetIds = (versions: TemplateVersion[]) => {
   return assetIds;
 };
 
-export const resolveWorkspaceAssetMap = (workspaceId: string, assetIds: Iterable<string>) =>
-  resolveAssetMapForIds(workspaceId, Array.from(assetIds));
+export const resolveWorkspaceAssetMap = (workspaceId: string, assetIds: Iterable<string>, ttlSeconds?: number) =>
+  resolveAssetMapForIds(workspaceId, Array.from(assetIds), ttlSeconds);
 
 const ensureAssetReference = async ({
   url,
@@ -251,7 +269,7 @@ export const normalizeStyleAssets = async (workspaceId: string, userId: string, 
 export const hydrateStyleAssets = (style: MenuStyle, assetUrlMap: Map<string, string>) => {
   const nextStyle = withStyleDefaults(style);
 
-  return {
+  return resolveGenericAssets({
     ...nextStyle,
     backgroundImage: nextStyle.backgroundAssetId ? assetUrlMap.get(nextStyle.backgroundAssetId) || nextStyle.backgroundImage || '' : nextStyle.backgroundImage || '',
     sourceImage: nextStyle.sourceAssetId ? assetUrlMap.get(nextStyle.sourceAssetId) || nextStyle.sourceImage || '' : nextStyle.sourceImage || '',
@@ -265,7 +283,7 @@ export const hydrateStyleAssets = (style: MenuStyle, assetUrlMap: Map<string, st
     })),
     addedImages: (nextStyle.addedImages || []).map((image) => ({
       ...image,
-      url: image.assetId ? assetUrlMap.get(image.assetId) || image.url : image.url,
+      url: image.shape ? canvasShapeUrl(image.shape) : image.assetId ? assetUrlMap.get(image.assetId) || image.url : image.url,
     })),
     categoryImages: Object.fromEntries(Object.entries(nextStyle.categoryImages || {}).map(([category, image]) => [
       category,
@@ -274,14 +292,14 @@ export const hydrateStyleAssets = (style: MenuStyle, assetUrlMap: Map<string, st
         url: image.assetId ? assetUrlMap.get(image.assetId) || image.url : image.url,
       },
     ])),
-  };
+  },assetUrlMap);
 };
 
 export const hydrateProductAssets = (products: Product[], assetUrlMap: Map<string, string>) =>
-  normalizePersistedProducts(products).map((product) => ({
+  normalizePersistedProducts(products).map((product) => resolveGenericAssets({
     ...product,
     image: product.imageAssetId ? assetUrlMap.get(product.imageAssetId) || product.image || '' : product.image || '',
-  }));
+  },assetUrlMap));
 
 export const resolveProductRowsForApp = (
   categoryRows: Category[],

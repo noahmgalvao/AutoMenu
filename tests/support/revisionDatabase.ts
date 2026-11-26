@@ -1,0 +1,31 @@
+import { readFile } from 'node:fs/promises';
+import { PGlite } from '@electric-sql/pglite';
+export const ACTOR = '00000000-0000-0000-0000-000000000001';
+export async function revisionDatabase() {
+    const db = new PGlite();
+    await db.exec(`create role authenticated;create role anon;create role service_role;
+ create schema auth;create table auth.users(id uuid primary key);insert into auth.users values('${ACTOR}');
+ create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+ create table public.workspaces(id text primary key);insert into public.workspaces values('w'),('other');
+ create table public.workspace_members(workspace_id text,user_id uuid);insert into public.workspace_members values('w','${ACTOR}');
+ create function public.is_workspace_member(w text) returns boolean language sql security definer stable as $$select exists(select 1 from public.workspace_members where workspace_id=w and user_id=auth.uid())$$;
+ create table public.menus(id text primary key,workspace_id text references public.workspaces(id) on delete cascade,name text,status text,current_draft_version_id text,published_version_id text);
+ create table public.menu_versions(id text primary key,menu_id text references public.menus(id) on delete cascade,version_number int,version_type text,editor_state jsonb,render_snapshot jsonb,created_by uuid,created_at timestamptz default now(),unique(menu_id,version_number));
+ create table public.menu_publications(id text,published_version_id text);
+ create table public.assets(id text primary key,workspace_id text references public.workspaces(id) on delete cascade,checksum text,metadata jsonb not null default '{}',created_at timestamptz not null default now(),bucket text,path text);create table public.catalog_template_backgrounds(asset_id text);
+ create schema storage;create table storage.objects(id text primary key,bucket_id text,name text,metadata jsonb);alter table storage.objects enable row level security;create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
+ insert into public.menus values('m','w','Cardápio','draft','v',null),('foreign','other','Outro','draft',null,null);
+ insert into public.menu_versions values('v','m',1,'draft','{}','{"products":[],"style":{}}','${ACTOR}',now());
+ alter table public.menu_versions add column action_label text default 'Cardápio criado';
+ alter table public.workspaces add column owner_user_id uuid default '${ACTOR}';
+ alter table public.menu_publications add column menu_id text,add column asset_ids text[] default '{}',add column snapshot jsonb default '{}';
+ `);
+    const sql = await readFile('supabase/migrations/20261126150000_revision_history_v12.sql', 'utf8');
+    await db.exec(sql);
+    await db.exec(sql);
+    const { readdir } = await import('node:fs/promises');
+    const conflictFile = (await readdir('supabase/migrations')).find(name => name.endsWith('_revision_history_conflict_response.sql'))!;
+    await db.exec(await readFile(`supabase/migrations/${conflictFile}`,'utf8'));
+    await db.exec('update public.revision_config set enabled=true');
+    return db;
+}

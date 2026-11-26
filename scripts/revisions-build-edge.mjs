@@ -1,0 +1,2 @@
+import { build } from 'esbuild';
+await build({entryPoints:[process.argv.includes('--validation')?'scripts/revisions-edge-validation-entry.ts':'src/infrastructure/revisions/http.ts'],outfile:'supabase/functions/menu-revisions/bundle.js',bundle:true,format:'esm',platform:'node',target:'es2022',external:['node:*'],plugins:[{name:'deno-sdk',setup(b){b.onResolve({filter:/^@supabase\/supabase-js$/},()=>({path:'npm:@supabase/supabase-js@2.103.0',external:true}));}}]});

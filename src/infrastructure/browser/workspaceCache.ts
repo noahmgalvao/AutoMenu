@@ -3,6 +3,8 @@ import type { LoadedWorkspaceData } from '../../domain/workspace/model';
 import { getPersistSignature, type PersistPayload } from '../../application/workspace/editorPersistence';
 
 interface LocalPendingSnapshot {
+  expectedWrite?: number;
+  operationId?: string;
   products: Product[];
   style: MenuStyle;
   templates: MenuStyle[];
@@ -115,6 +117,7 @@ export const writeLocalPendingSnapshot = (payload: PersistPayload) => {
   if (typeof window === 'undefined') return false;
 
   const snapshot: LocalPendingSnapshot = {
+    expectedWrite: payload.expectedWrite, operationId: payload.operationId,
     products: payload.products,
     style: payload.style,
     templates: payload.templates,
