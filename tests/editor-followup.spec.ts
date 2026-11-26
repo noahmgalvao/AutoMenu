@@ -332,3 +332,12 @@ test('the unused-item suggestion removes a zero-price placeholder only when appl
   await expect(page.locator('#product-container-1')).toHaveCount(0);
   await expect(page.locator('#product-container-2')).toHaveCount(1);
 });
+
+
+test('applying all suggestions keeps unused products removed', async ({ page }) => {
+  await page.goto(fixture + '?photos=list&zero-price&no-photos');
+  await page.getByRole('button', { name: 'Abrir dicas do cardápio' }).click();
+  await page.getByRole('button', { name: 'Aplicar todas', exact: true }).click();
+  await expect(page.locator('#product-container-1')).toHaveCount(0);
+  await expect(page.locator('#product-container-2')).toHaveCount(1);
+});

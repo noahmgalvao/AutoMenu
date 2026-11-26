@@ -361,11 +361,14 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             : isDefaultCategoryName(categoryName(product.category)) || isDefaultProductName(product.name) || Number(product.price) === 0
                 || isDefaultProductDescription(product.description)));
     const showPlaceholderTip = placeholderProducts.length > 0 && !dismissedTips.has('placeholders');
-    const removePlaceholders = () => {
+    const cleanPlaceholderProducts = (current: Product[]) => {
         const removed = new Set(placeholderProducts.filter(product => product.isFreeText || isDefaultCategoryName(categoryName(product.category))
             || isDefaultProductName(product.name) || Number(product.price) === 0).map(product => product.id));
-        setProducts?.(current => current.filter(product => !removed.has(product.id))
-            .map(product => isDefaultProductDescription(product.description) ? { ...product, description: '' } : product));
+        return current.filter(product => !removed.has(product.id))
+            .map(product => isDefaultProductDescription(product.description) ? { ...product, description: '' } : product);
+    };
+    const removePlaceholders = () => {
+        setProducts?.(cleanPlaceholderProducts);
         dismissTip('placeholders');
     };
     const hasVisibleTips = allDismissed !== tipsSignature && (showPlaceholderTip || showSpacingTip || visibleFontTips.length > 0 || showMixedFontTip || showOverlapTip || showOffCanvasTip
@@ -1901,9 +1904,9 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     };
 
     const applyAllSuggestions = () => {
-        if (showPlaceholderTip) removePlaceholders();
+        if (showPlaceholderTip) dismissTip('placeholders');
         if (showSpacingTip) void resetExcessiveSpacing();
-        let nextProducts = products;
+        let nextProducts = showPlaceholderTip ? cleanPlaceholderProducts(products) : products;
         let nextStyle = style;
         const appliedFontScopes = new Set<WordFitScope>();
         for (const kind of kindsWithDifferences) {
@@ -2097,7 +2100,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                 <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
                                     <div>
                                         <p className="text-sm font-bold text-slate-800">Dicas do cardápio</p>
-                                        <p className="text-xs text-slate-500">{reviewAction ? 'Há sugestões opcionais pendentes no cardápio para melhorar a visualização. Descarte ou aplique-as.' : 'Ajustes opcionais detectados no layout.'}</p>
+                                        <p className="text-xs text-slate-500">{reviewAction ? hasVisibleTips ? 'Há sugestões opcionais pendentes no cardápio para melhorar a visualização. Descarte ou aplique-as.' : 'Sugestões aplicadas ou descartadas. Você pode publicar.' : 'Ajustes opcionais detectados no layout.'}</p>
                                     </div>
                                     <button type="button" onClick={() => setAllDismissed(tipsSignature)} className="shrink-0 rounded-lg px-2 py-2 text-xs font-semibold text-slate-600">Descartar todas</button>
                                     <button
