@@ -341,3 +341,31 @@ test('applying all suggestions keeps unused products removed', async ({ page }) 
   await expect(page.locator('#product-container-1')).toHaveCount(0);
   await expect(page.locator('#product-container-2')).toHaveCount(1);
 });
+
+test('tips keep a compact header and matching cards on a narrow phone', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 780 });
+  await page.goto(fixture + '?photos=list&default-fields&no-photos');
+  await page.getByRole('button', { name: 'Abrir dicas do cardápio' }).click();
+  const tips = page.locator('[data-canvas-tips-menu]');
+  const title = tips.getByRole('heading', { name: 'Dicas do cardápio', exact: true });
+  await expect(title).toHaveCSS('white-space', 'nowrap');
+  await expect(tips).toContainText('Há itens ou descrições padrão que ainda não foram utilizados. Aceita removê-los?');
+  await expect(tips).not.toContainText('Remover exclui');
+  const positions = await tips.evaluate(element => {
+    const box = element.getBoundingClientRect();
+    const heading = element.querySelector('h2')!.getBoundingClientRect();
+    const buttons = [...element.querySelectorAll('header button')].map(button => button.getBoundingClientRect());
+    return { fits: box.left >= 0 && box.right <= innerWidth, rows: buttons.every(button => button.top >= heading.bottom) };
+  });
+  expect(positions).toEqual({ fits: true, rows: true });
+  await page.screenshot({ path: '/tmp/automenu-tips-phone.png' });
+  await page.getByRole('button', { name: 'Abrir dicas do cardápio' }).click();
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('automenu:publication-suggestions', {
+    cancelable: true, detail: { resolve: () => {} },
+  })));
+  const dialog = page.getByRole('dialog', { name: 'Sugestões antes de publicar' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('status')).toHaveClass(/bg-red-50/);
+  expect(await dialog.getByRole('status').evaluate(element => element.clientWidth)).toBeGreaterThan(280);
+  await page.screenshot({ path: '/tmp/automenu-review-phone.png' });
+});

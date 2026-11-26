@@ -1,3 +1,4 @@
+import { MenuTip } from './designer/MenuTip';
 import { publicationSuggestionsEvent } from '../publishing/publicationSuggestions';
 import { isDefaultCategoryName, isDefaultProductName, isDefaultProductDescription, isDefaultFreeText } from '../../domain/menu/pristineItems';
 import { lockModalScrolling } from '../common/modalScroll';
@@ -238,8 +239,11 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         if (!anchor || !panel) return;
         const update = () => {
             const bounds = anchor.getBoundingClientRect();
-            panel.style.left = `${bounds.left}px`;
-            panel.style.top = `${bounds.bottom + 8}px`;
+            const left = Math.max(8, Math.min(bounds.left, window.innerWidth - panel.offsetWidth - 8));
+            const top = Math.max(8, Math.min(bounds.bottom + 8, window.innerHeight - Math.min(panel.offsetHeight, window.innerHeight - 16) - 8));
+            panel.style.left = `${left}px`;
+            panel.style.top = `${top}px`;
+            panel.style.maxHeight = `${window.innerHeight - top - 8}px`;
         };
         update();
         const observer = new ResizeObserver(update);
@@ -316,11 +320,11 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         if (!id) return setStyle(update);
         updateScopedFormatting(kind, id, previous => typeof update === 'function' ? update(previous) : update);
     };
-    const kindsWithDifferences = (['category', 'product'] as const).filter(kind => formattingGroups[kind].length > 1);
+    const kindsWithDifferences = (['category', 'product'] as const).filter(kind => formattingGroups[kind].length > 1 && !dismissedTips.has(`formatting:${kind}`));
     const columnSettings = [...new Set(formattingItems.category.map(category => getProductColumnCount(style, category)))];
     const [preferredProductColumns, setPreferredProductColumns] = useState<number>();
     const standardProductColumns = columnSettings.find(count => count === preferredProductColumns) ?? columnSettings[0];
-    const hasMixedProductColumns = columnSettings.length > 1;
+    const hasMixedProductColumns = columnSettings.length > 1 && !dismissedTips.has('product-columns');
     const canStandardizeProductColumns = () => hasMixedProductColumns
         && canApplyCanvasColumnCounts(style, style.categoryColumnCount || 1, standardProductColumns);
     const standardizationSource = (kind: FormattingKind) => {
@@ -683,6 +687,10 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
     useEffect(() => {
         const activeKeys = new Set(fontTips.map(tip => `font:${tip.scope}`));
+        for (const kind of ['category', 'product'] as const) {
+            if (formattingGroups[kind].length > 1) activeKeys.add(`formatting:${kind}`);
+        }
+        if (columnSettings.length > 1) activeKeys.add('product-columns');
         if (placeholderProducts.length) activeKeys.add('placeholders');
         if (excessiveSpacing.length) activeKeys.add('spacing');
         if (configuredCanvasFonts.length > 1) activeKeys.add('mixed-fonts');
@@ -2096,234 +2104,109 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                             }}>
                             <div role={reviewAction ? 'dialog' : undefined} aria-modal={reviewAction ? true : undefined}
                                 aria-label={reviewAction ? 'Sugestões antes de publicar' : undefined}
-                                ref={tipsPanelRef} data-canvas-tips-menu style={reviewAction ? { position: 'relative', left: 'auto', top: 'auto' } : undefined} className="fixed z-[120] w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl">
-                                <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
-                                    <div>
-                                        <p className="text-sm font-bold text-slate-800">Dicas do cardápio</p>
-                                        <p className="text-xs text-slate-500">{reviewAction ? hasVisibleTips ? 'Há sugestões opcionais pendentes no cardápio para melhorar a visualização. Descarte ou aplique-as.' : 'Sugestões aplicadas ou descartadas. Você pode publicar.' : 'Ajustes opcionais detectados no layout.'}</p>
+                                ref={tipsPanelRef} data-canvas-tips-menu style={reviewAction ? { position: 'relative', left: 'auto', top: 'auto' } : undefined} className="fixed z-[120] flex max-h-[calc(100dvh-1.5rem)] w-[min(24rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl">
+                                <header className="shrink-0 space-y-3 border-b border-slate-100 px-3 py-3">
+                                    <div className="space-y-0.5">
+                                        <h2 className="whitespace-nowrap text-sm font-bold text-slate-900">Dicas do cardápio</h2>
+                                        {!reviewAction && <p className="text-xs text-slate-500">Ajustes opcionais para o cardápio.</p>}
                                     </div>
-                                    <button type="button" onClick={() => setAllDismissed(tipsSignature)} className="shrink-0 rounded-lg px-2 py-2 text-xs font-semibold text-slate-600">Descartar todas</button>
-                                    <button
-                                        type="button"
-                                        onClick={applyAllSuggestions}
-                                        disabled={!hasVisibleTips}
-                                        className="flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-700"
-                                        title="Aplicar todas as sugestões"
-                                    >
-                                        <Check size={15} />
-                                        Aplicar todas
-                                    </button>
-                                </div>
-
-                                <div className={hasVisibleTips ? "max-h-[min(60vh,32rem)] space-y-4 overflow-y-auto p-4" : "hidden"}>
-                                    {hasVisibleTips && showPlaceholderTip && <section className="rounded-xl bg-amber-50 p-3 text-xs">
-                                        <p>Há itens ou descrições padrão que ainda não foram utilizados. Remover exclui textos livres e produtos com nome padrão, categoria padrão ou preço zero, e limpa descrições padrão.</p>
-                                        <div className="mt-2 flex gap-2">
-                                            <button type="button" onClick={removePlaceholders}>Remover itens não utilizados</button>
-                                            <button type="button" onClick={() => dismissTip('placeholders')}>Descartar dica</button>
-                                        </div>
-                                    </section>}
-                                    {hasVisibleTips && showSpacingTip && <section className="rounded-xl bg-indigo-50 p-3 text-xs text-slate-700">
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button type="button" onClick={() => setAllDismissed(tipsSignature)}
+                                            disabled={!hasVisibleTips}
+                                            className="inline-flex min-h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40">
+                                            <X size={14} /> Descartar todas
+                                        </button>
+                                        <button type="button" onClick={applyAllSuggestions} disabled={!hasVisibleTips}
+                                            title="Aplicar todas as sugestões"
+                                            className="inline-flex min-h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-emerald-600 px-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-40">
+                                            <Check size={14} /> Aplicar todas
+                                        </button>
+                                    </div>
+                                    {reviewAction && <p role="status" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs leading-relaxed text-red-800">
+                                        {hasVisibleTips ? 'Há sugestões opcionais pendentes para melhorar a visualização do cardápio. Descarte ou aplique-as.' : 'Sugestões aplicadas ou descartadas. Você pode publicar.'}
+                                    </p>}
+                                </header>
+                                <div className={hasVisibleTips ? "min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3" : "hidden"}>
+                                    {showPlaceholderTip && <MenuTip title="Itens não utilizados" apply={removePlaceholders}
+                                        dismiss={() => dismissTip('placeholders')} applyLabel="Remover itens não utilizados">
+                                        <p>Há itens ou descrições padrão que ainda não foram utilizados. Aceita removê-los?</p>
+                                    </MenuTip>}
+                                    {showSpacingTip && <MenuTip title="Espaçamentos" apply={() => void resetExcessiveSpacing()}
+                                        dismiss={() => dismissTip('spacing')} applyLabel="Usar espaçamentos do modelo">
                                         <p>Alguns espaçamentos estão acima de 35. Reduza-os para aproveitar melhor a página.</p>
-                                        <div className="mt-2 flex gap-2">
-                                            <button type="button" onClick={() => void resetExcessiveSpacing()}
-                                                className="rounded-lg bg-indigo-700 px-3 py-2 font-semibold text-white">Usar espaçamentos do modelo</button>
-                                            <button type="button" onClick={() => dismissTip('spacing')} className="rounded-lg bg-white px-3 py-2">Dispensar</button>
-                                        </div>
-                                    </section>}
-                                    {(kindsWithDifferences.length > 0 || hasMixedProductColumns) && <section className="space-y-2">
-                                        <h3 className="text-xs font-semibold text-slate-800">Sugestão para manter todos no padrão</h3>
-                                        {kindsWithDifferences.map(kind => (
-                                            <div key={kind} className="flex items-end gap-2 rounded-xl bg-indigo-50 p-3 text-xs">
-                                                <label className="min-w-0 flex-1 space-y-1 font-semibold text-slate-700">
-                                                    {formattingLabels[kind]}
-                                                    <select className="w-full rounded-lg border border-indigo-200 bg-white p-1.5"
-                                                        value={standardizationSource(kind)}
-                                                        onChange={event => setStandardization({ ...standardization, [kind]: event.target.value })}>
-                                                        {formattingGroups[kind].map(([id]) => <option key={id} value={id}>
-                                                            {kind === 'category' ? categoryName(id) : products.find(product => product.id === id)?.name || 'Produto sem nome'}
-                                                        </option>)}
-                                                    </select>
-                                                </label>
-                                                <button type="button" className="rounded-lg bg-indigo-700 px-2.5 py-1.5 font-semibold text-white"
-                                                    aria-label={`Padronizar ${formattingLabels[kind].toLowerCase()}`}
-                                                    onClick={() => {
-                                                        const source = standardizationSource(kind);
-                                                        if (source) setStyle(previous => standardizeItemFormatting(previous, kind, source));
-                                                    }}>
-                                                    Padronizar
-                                                </button>
-                                            </div>
-                                        ))}
-                                        {hasMixedProductColumns && <div className="flex items-end gap-2 rounded-xl bg-indigo-50 p-3 text-xs">
-                                            <label className="min-w-0 flex-1 space-y-1 font-semibold text-slate-700">
-                                                Colunas de produtos
-                                                <select className="w-full rounded-lg border border-indigo-200 bg-white p-1.5"
-                                                    value={standardProductColumns} onChange={event => setPreferredProductColumns(Number(event.target.value))}>
-                                                    {columnSettings.map(count => <option key={count} value={count}>{count}</option>)}
-                                                </select>
-                                            </label>
-                                            <button type="button" aria-label="Padronizar colunas de produtos" disabled={!canStandardizeProductColumns()}
-                                                className="rounded-lg bg-indigo-700 px-2.5 py-1.5 font-semibold text-white disabled:opacity-40"
-                                                onClick={() => {
-                                                    if (canStandardizeProductColumns()) setStyle(previous => ({
-                                                        ...previous, columnCount: standardProductColumns, categoryProductColumnCounts: undefined, pageBreaks: [], name: 'Custom',
-                                                    }));
-                                                }}>
-                                                Padronizar
-                                            </button>
-                                        </div>}
-                                    </section>}
-                                    {backgroundOverlapTips.length > 0 && <section>
-                                        <h3 className="mb-2 text-xs font-semibold text-slate-800">Textos sobrepostos no plano de fundo</h3>
-                                        <div className="space-y-2">
-                                            {backgroundOverlapTips.map(tip => <div key={tip.id} className="flex items-center justify-between gap-2 rounded-xl bg-indigo-50 p-3 text-xs">
-                                                <span className="min-w-0 break-words">{tip.label}{!tip.position && ' · Sem espaço livre em todas as páginas'}</span>
-                                                <button type="button" disabled={!tip.position}
-                                                    onClick={() => setStyle(current => resolveBackgroundOverlap(current, new Set([tip.id])))}
-                                                    className="shrink-0 rounded-lg border border-indigo-200 bg-white px-2.5 py-1.5 font-semibold text-indigo-800 disabled:opacity-40">
-                                                    Ajustar posição
-                                                </button>
-                                            </div>)}
-                                        </div>
-                                    </section>}
-                                    {contrastTips.length > 0 && <section>
-                                        <h3 className="mb-2 text-xs font-semibold text-slate-800">Textos com pouco contraste</h3>
-                                        <div className="space-y-2">
-                                            {contrastTips.map(tip => <div key={tip.key} className="space-y-2 rounded-xl bg-amber-50 p-3 text-xs text-slate-700">
-                                                <p className="break-words font-semibold">{tip.label}</p>
-                                                <div className="flex flex-wrap gap-2">
-                                                    <button type="button" onClick={() => applySingleContrastTip(tip, 'color')}
-                                                        className="rounded-lg bg-indigo-700 px-2.5 py-1.5 font-semibold text-white">
-                                                        {tip.color ? 'Ajustar cor do texto' : 'Ajustar com preenchimento'}
-                                                    </button>
-                                                    {tip.color && <button type="button" onClick={() => applySingleContrastTip(tip, 'fill')}
-                                                        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 font-semibold text-slate-700">
-                                                        Adicionar preenchimento
-                                                    </button>}
-                                                </div>
-                                            </div>)}
-                                        </div>
-                                    </section>}
-                                    {showMixedFontTip && (
-                                        <section>
-                                            <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Fontes diferentes</h3>
-                                            <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
-                                                <p className="min-w-0 flex-1 text-xs leading-relaxed text-slate-700">
-                                                    O cardápio usa {configuredCanvasFonts.length} fontes. Confirmar aplica <strong>{style.fontFamily}</strong> a todos os objetos.
-                                                </p>
-                                                <div className="flex shrink-0 gap-1">
-                                                    <button type="button" onClick={applyMixedFontSuggestion} className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700" title="Usar uma fonte em todo o cardápio" aria-label="Usar uma fonte em todo o cardápio"><Check size={16} /></button>
-                                                    <button type="button" onClick={() => dismissTip('mixed-fonts')} className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm transition hover:bg-slate-100 hover:text-slate-700" title="Remover esta dica" aria-label="Remover dica de fontes diferentes"><X size={16} /></button>
-                                                </div>
-                                            </div>
-                                        </section>
-                                    )}
-                                    {visibleFontTips.length > 0 && (
-                                        <section>
-                                            <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Fontes reduzidas</h3>
-                                            <div className="space-y-2">
-                                                {visibleFontTips.map(tip => (
-                                                    <div
-                                                        key={tip.scope}
-                                                        onMouseEnter={() => setHoveredFontScope(tip.scope)}
-                                                        onMouseLeave={() => setHoveredFontScope(null)}
-                                                        className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3"
-                                                    >
-                                                        <p className="min-w-0 flex-1 text-xs leading-relaxed text-slate-700">
-                                                            A classe <strong>{WORD_FIT_SCOPE_LABELS[tip.scope]}</strong> tem {tip.count} {tip.count === 1 ? 'texto reduzido' : 'textos reduzidos'}. Confirmar iguala a classe em <strong>{tip.safeFontSize}px</strong>, o maior tamanho que mantém cada palavra inteira.
-                                                        </p>
-                                                        <div className="flex shrink-0 gap-1">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => applyFontSuggestion(tip.scope)}
-                                                                className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700"
-                                                                title="Aplicar sugestão"
-                                                                aria-label={`Aplicar sugestão para ${WORD_FIT_SCOPE_LABELS[tip.scope]}`}
-                                                            >
-                                                                <Check size={16} />
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => dismissTip(`font:${tip.scope}`)}
-                                                                className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm transition hover:bg-slate-100 hover:text-slate-700"
-                                                                title="Remover esta dica"
-                                                                aria-label={`Remover dica para ${WORD_FIT_SCOPE_LABELS[tip.scope]}`}
-                                                            >
-                                                                <X size={16} />
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </section>
-                                    )}
-
-                                    {showOverlapTip && (
-                                        <section>
-                                            <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Elementos sobrepostos</h3>
-                                            <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
-                                                <p className="min-w-0 flex-1 text-xs leading-relaxed text-slate-700">
-                                                    {overlapIssueCount} {overlapIssueCount === 1 ? 'elemento está sobreposto' : 'elementos estão sobrepostos'} ({formatLayoutIssueBreakdown(layoutDiagnostics.overlappingCategoryIds.length, layoutDiagnostics.overlappingProductIds.length, layoutDiagnostics.overlappingFreeTextIds.length)}). Corrigir reorganiza somente os itens envolvidos.
-                                                </p>
-                                                <div className="flex shrink-0 gap-1">
-                                                    <button type="button" onClick={() => applyLayoutIssueSuggestion('overlap')} className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700" title="Corrigir sobreposições" aria-label="Corrigir sobreposições"><Check size={16} /></button>
-                                                    <button type="button" onClick={() => dismissTip('overlapping-elements')} className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm transition hover:bg-slate-100 hover:text-slate-700" title="Remover esta dica" aria-label="Remover dica de elementos sobrepostos"><X size={16} /></button>
-                                                </div>
-                                            </div>
-                                        </section>
-                                    )}
-
-                                    {showOffCanvasTip && (
-                                        <section>
-                                            <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Elementos fora da página</h3>
-                                            <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3">
-                                                <p className="min-w-0 flex-1 text-xs leading-relaxed text-slate-700">
-                                                    {offCanvasIssueCount} {offCanvasIssueCount === 1 ? 'elemento está oculto' : 'elementos estão ocultos'} fora da área visível ({formatLayoutIssueBreakdown(layoutDiagnostics.offCanvasCategoryIds.length, layoutDiagnostics.offCanvasProductIds.length, layoutDiagnostics.offCanvasFreeTextIds.length)}). Corrigir traz esses itens de volta ao fluxo da página.
-                                                </p>
-                                                <div className="flex shrink-0 gap-1">
-                                                    <button type="button" onClick={() => applyLayoutIssueSuggestion('offCanvas')} className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700" title="Trazer elementos para a página" aria-label="Trazer elementos para a página"><Check size={16} /></button>
-                                                    <button type="button" onClick={() => dismissTip('off-canvas-elements')} className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm transition hover:bg-slate-100 hover:text-slate-700" title="Remover esta dica" aria-label="Remover dica de elementos fora da página"><X size={16} /></button>
-                                                </div>
-                                            </div>
-                                        </section>
-                                    )}
-
-                                    {showPositionedCategoryTip && (
-                                        <section>
-                                            <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Espaços vazios no fluxo</h3>
-                                            <div className="flex items-start gap-3 rounded-xl border border-indigo-200 bg-indigo-50 p-3">
-                                                <p className="min-w-0 flex-1 text-xs leading-relaxed text-slate-700">
-                                                    Há categorias fora do fluxo normal ou iniciando outra coluna antes da hora. Confirmar mantém a ordem atual e preenche os espaços disponíveis primeiro.
-                                                </p>
-                                                <div className="flex shrink-0 gap-1">
-                                                    <button
-                                                        type="button"
-                                                        onClick={applyPositionedCategorySuggestion}
-                                                        className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700"
-                                                        title="Reposicionar categorias"
-                                                        aria-label="Reposicionar categorias"
-                                                    >
-                                                        <Check size={16} />
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => dismissTip('free-categories')}
-                                                        className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm transition hover:bg-slate-100 hover:text-slate-700"
-                                                        title="Remover esta dica"
-                                                        aria-label="Remover dica de categorias"
-                                                    >
-                                                        <X size={16} />
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </section>
-                                    )}
+                                    </MenuTip>}
+                                    {kindsWithDifferences.map(kind => <MenuTip key={kind} title={`Padronização de ${formattingLabels[kind].toLowerCase()}`}
+                                        apply={() => {
+                                            const source = standardizationSource(kind);
+                                            if (source) setStyle(previous => standardizeItemFormatting(previous, kind, source));
+                                        }} dismiss={() => dismissTip(`formatting:${kind}`)}
+                                        applyLabel={`Padronizar ${formattingLabels[kind].toLowerCase()}`}>
+                                        <label className="block space-y-1">
+                                            <span>{formattingLabels[kind]}</span>
+                                            <select className="min-h-8 w-full rounded-lg border border-indigo-200 bg-white px-2"
+                                                value={standardizationSource(kind)}
+                                                onChange={event => setStandardization({ ...standardization, [kind]: event.target.value })}>
+                                                {formattingGroups[kind].map(([id]) => <option key={id} value={id}>
+                                                    {kind === 'category' ? categoryName(id) : products.find(product => product.id === id)?.name || 'Produto sem nome'}
+                                                </option>)}
+                                            </select>
+                                        </label>
+                                    </MenuTip>)}
+                                    {hasMixedProductColumns && <MenuTip title="Colunas de produtos" disabled={!canStandardizeProductColumns()}
+                                        applyLabel="Padronizar colunas de produtos" dismiss={() => dismissTip('product-columns')}
+                                        apply={() => {
+                                            if (canStandardizeProductColumns()) setStyle(previous => ({
+                                                ...previous, columnCount: standardProductColumns, categoryProductColumnCounts: undefined, pageBreaks: [], name: 'Custom',
+                                            }));
+                                        }}>
+                                        <select aria-label="Colunas de produtos sugeridas" className="min-h-8 w-full rounded-lg border border-indigo-200 bg-white px-2"
+                                            value={standardProductColumns} onChange={event => setPreferredProductColumns(Number(event.target.value))}>
+                                            {columnSettings.map(count => <option key={count} value={count}>{count}</option>)}
+                                        </select>
+                                    </MenuTip>}
+                                    {backgroundOverlapTips.map(tip => <MenuTip key={tip.id} title="Textos sobrepostos no plano de fundo"
+                                        applyLabel="Ajustar posição" disabled={!tip.position}
+                                        apply={() => setStyle(current => resolveBackgroundOverlap(current, new Set([tip.id])))}
+                                        dismiss={() => setBackgroundOverlapTips(current => current.filter(item => item.id !== tip.id))}>
+                                        <p>{tip.label}{!tip.position && ' · Sem espaço livre em todas as páginas'}</p>
+                                    </MenuTip>)}
+                                    {contrastTips.map(tip => <MenuTip key={tip.key} title="Textos com pouco contraste"
+                                        applyLabel={tip.color ? 'Ajustar cor do texto' : 'Ajustar com preenchimento'}
+                                        apply={() => applySingleContrastTip(tip, 'color')}
+                                        dismiss={() => setContrastTips(current => current.filter(item => item.key !== tip.key))}>
+                                        <p>{tip.label}</p>
+                                        {tip.color && <button type="button" onClick={() => applySingleContrastTip(tip, 'fill')}
+                                            className="rounded-lg border border-indigo-200 bg-white px-2 py-1 font-semibold text-indigo-700">Adicionar preenchimento</button>}
+                                    </MenuTip>)}
+                                    {showMixedFontTip && <MenuTip title="Fontes diferentes" apply={applyMixedFontSuggestion}
+                                        applyLabel="Usar uma fonte em todo o cardápio" dismiss={() => dismissTip('mixed-fonts')}
+                                        dismissLabel="Remover dica de fontes diferentes">
+                                        <p>O cardápio usa {configuredCanvasFonts.length} fontes. Confirmar aplica <strong>{style.fontFamily}</strong> a todos os objetos.</p>
+                                    </MenuTip>}
+                                    {visibleFontTips.map(tip => <MenuTip key={tip.scope} title="Fontes reduzidas"
+                                        apply={() => applyFontSuggestion(tip.scope)} dismiss={() => dismissTip(`font:${tip.scope}`)}
+                                        applyLabel={`Aplicar sugestão para ${WORD_FIT_SCOPE_LABELS[tip.scope]}`}
+                                        dismissLabel={`Remover dica para ${WORD_FIT_SCOPE_LABELS[tip.scope]}`}
+                                        onHover={hovered => setHoveredFontScope(hovered ? tip.scope : null)}>
+                                        <p>A classe <strong>{WORD_FIT_SCOPE_LABELS[tip.scope]}</strong> tem {tip.count} {tip.count === 1 ? 'texto reduzido' : 'textos reduzidos'}. Confirmar iguala a classe em <strong>{tip.safeFontSize}px</strong>, o maior tamanho que mantém cada palavra inteira.</p>
+                                    </MenuTip>)}
+                                    {showOverlapTip && <MenuTip title="Elementos sobrepostos" apply={() => applyLayoutIssueSuggestion('overlap')}
+                                        applyLabel="Corrigir sobreposições" dismiss={() => dismissTip('overlapping-elements')} dismissLabel="Remover dica de elementos sobrepostos">
+                                        <p>{overlapIssueCount} {overlapIssueCount === 1 ? 'elemento está sobreposto' : 'elementos estão sobrepostos'} ({formatLayoutIssueBreakdown(layoutDiagnostics.overlappingCategoryIds.length, layoutDiagnostics.overlappingProductIds.length, layoutDiagnostics.overlappingFreeTextIds.length)}). Corrigir reorganiza somente os itens envolvidos.</p>
+                                    </MenuTip>}
+                                    {showOffCanvasTip && <MenuTip title="Elementos fora da página" apply={() => applyLayoutIssueSuggestion('offCanvas')}
+                                        applyLabel="Trazer elementos para a página" dismiss={() => dismissTip('off-canvas-elements')} dismissLabel="Remover dica de elementos fora da página">
+                                        <p>{offCanvasIssueCount} {offCanvasIssueCount === 1 ? 'elemento está oculto' : 'elementos estão ocultos'} fora da área visível ({formatLayoutIssueBreakdown(layoutDiagnostics.offCanvasCategoryIds.length, layoutDiagnostics.offCanvasProductIds.length, layoutDiagnostics.offCanvasFreeTextIds.length)}). Corrigir traz esses itens de volta ao fluxo da página.</p>
+                                    </MenuTip>}
+                                    {showPositionedCategoryTip && <MenuTip title="Espaços vazios no fluxo" apply={applyPositionedCategorySuggestion}
+                                        applyLabel="Reposicionar categorias" dismiss={() => dismissTip('free-categories')} dismissLabel="Remover dica de categorias">
+                                        <p>Há categorias fora do fluxo normal ou iniciando outra coluna antes da hora. Confirmar mantém a ordem atual e preenche os espaços disponíveis primeiro.</p>
+                                    </MenuTip>}
                                 </div>
-                                {reviewAction && <footer className="flex justify-between gap-3 border-t p-3">
-                                    <button type="button" onClick={() => finishReview(false)} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
+                                {reviewAction && <footer className="flex shrink-0 items-center justify-between gap-2 border-t border-slate-100 bg-white p-3">
+                                    <button type="button" onClick={() => finishReview(false)} className="min-h-10 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50">Cancelar</button>
                                     <button type="button" onClick={() => finishReview(true)}
-                                        className={`rounded-lg px-4 py-2 text-sm font-bold text-white ${hasVisibleTips ? 'bg-red-700' : 'bg-indigo-700'}`}>
+                                        className={`min-h-10 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-bold text-white ${hasVisibleTips ? 'bg-red-700' : 'bg-indigo-700'}`}>
                                         {hasVisibleTips ? 'Publicar mesmo assim' : 'Publicar'}
                                     </button>
                                 </footer>}
