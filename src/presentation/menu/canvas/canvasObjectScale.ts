@@ -56,6 +56,7 @@ export function captureCanvasObjectScale(style: MenuStyle, target: CanvasScaleTa
 
     return (factor: number): ScaleChange | undefined => {
         if (!Number.isFinite(factor)) return undefined;
+        factor = Math.max(0, factor);
         const limited = minimum <= maximum && factor !== 1 && (factor <= minimum || factor >= maximum);
         if (limited && !pastLimit) onLimit?.();
         pastLimit = limited;

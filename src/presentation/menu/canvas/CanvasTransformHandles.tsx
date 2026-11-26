@@ -46,8 +46,12 @@ function TransformHandle({ label, className, start, children, kind }: {
         const options = { signal: controller.signal };
         let frame = 0;
         let latest: PointerEvent | undefined;
+        let finished = false;
         const cleanup = (commit: boolean) => {
+            if (finished) return;
+            finished = true;
             controller.abort();
+            delete capture.dataset.canvasTransformActive;
             cancelAnimationFrame(frame);
             if (commit && latest && capture !== button) {
                 const ignoreClick = (event: Event) => event.stopPropagation();
@@ -62,33 +66,41 @@ function TransformHandle({ label, className, start, children, kind }: {
         };
         cleanupRef.current = () => cleanup(false);
         try {
+            capture.dataset.canvasTransformActive = String(pointer);
             capture.setPointerCapture(pointer);
         } catch {
             cleanup(false);
             return;
         }
-        capture.addEventListener('pointermove', event => {
+        window.addEventListener('pointermove', event => {
             if (event.pointerId !== pointer) return;
-            event.stopPropagation();
+            event.preventDefault();
+            event.stopImmediatePropagation();
             latest = event;
             if (frame) return;
             frame = requestAnimationFrame(() => {
                 frame = 0;
                 if (latest) gesture.preview(latest);
             });
-        }, options);
-        capture.addEventListener('pointerup', event => {
-            if (event.pointerId === pointer) { event.stopPropagation(); cleanup(true); }
-        }, options);
+        }, { ...options, capture: true, passive: false });
+        window.addEventListener('pointerup', event => {
+            if (event.pointerId !== pointer) return;
+            event.stopImmediatePropagation();
+            latest = event;
+            cleanup(true);
+        }, { ...options, capture: true });
         const cancel = (event: PointerEvent) => {
             if (event.pointerId === pointer) cleanup(false);
         };
-        capture.addEventListener('pointercancel', cancel, options);
-        capture.addEventListener('lostpointercapture', cancel, options);
+        window.addEventListener('pointercancel', cancel, { ...options, capture: true });
+        capture.addEventListener('lostpointercapture', event => {
+            if (event.target === capture) cancel(event);
+        }, options);
         window.addEventListener('blur', () => cleanup(false), options);
+        window.addEventListener('pagehide', () => cleanup(false), options);
     };
 
-    const targetSize = kind === 'scale' ? '38px' : '32px';
+    const targetSize = kind === 'scale' ? '48px' : '32px';
     return <button type="button" aria-label={label} title={label} data-canvas-transform-handle={kind}
         data-print-control="true" data-drag-ignore="true"
         className={`pointer-events-auto absolute left-1/2 z-[75] grid -translate-x-1/2 touch-none place-items-center rounded-full ${className}`}
@@ -108,14 +120,13 @@ export function CanvasScaleHandles({ target, start, edges = { top: true, bottom:
         <TransformHandle key={direction} kind="scale"
             label={direction === -1 ? 'Redimensionar pelo topo' : 'Redimensionar pela base'}
             className={`cursor-ns-resize ${direction === -1
-                ? 'top-0 -translate-y-full mt-[calc(5px*var(--canvas-handle-inverse,1))]'
-                : 'bottom-0 translate-y-full mb-[calc(5px*var(--canvas-handle-inverse,1))]'}`}
+                ? 'top-0 -translate-y-1/2'
+                : 'bottom-0 translate-y-1/2'}`}
             start={event => start(event, target, direction)}>
             <span className="pointer-events-none absolute rounded-full border-2 border-indigo-500 bg-white shadow-sm"
                 style={{
                     width: 'calc(18px * var(--canvas-handle-inverse, 1))',
                     height: 'calc(18px * var(--canvas-handle-inverse, 1))',
-                    [direction === -1 ? 'bottom' : 'top']: 'calc(-4px * var(--canvas-handle-inverse, 1))',
                 }} />
         </TransformHandle>
     ));

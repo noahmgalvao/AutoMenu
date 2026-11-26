@@ -402,3 +402,8 @@ body, body * {
 [data-pdf-preview-paper], [data-pdf-preview-paper] * {
   pointer-events: none !important;
 }
+
+
+[data-canvas-transform-active] [data-canvas-transform-handle] {
+  pointer-events: none;
+}

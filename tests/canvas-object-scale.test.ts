@@ -36,5 +36,22 @@ test('a product group continues growing after its description and photo reach th
     assert.equal(styleAt(0.8).elementStyles.productName?.fontSize, 16);
     assert.equal(styleAt(0.8).elementStyles.productDescription?.fontSize, 15);
     assert.equal(styleAt(0).imageScale, 0.5);
+    for (const factor of [0, -0.25, -1, -5]) {
+        assert.equal(styleAt(factor).elementStyles.productName?.fontSize, 15);
+        assert.equal(styleAt(factor).elementStyles.productPrice?.fontSize, 15);
+        assert.equal(styleAt(factor).elementStyles.productDescription?.fontSize, 15);
+        assert.equal(styleAt(factor).imageScale, 0.5);
+    }
     assert.equal(resize(1), undefined);
+});
+
+
+test('a free text remains at its minimum when scaling past the opposite handle', () => {
+    const template = PRESET_TEMPLATES[0];
+    const style = { ...template, minimumFontSize: 13, revisedMinimumFontSize: true as const };
+    const product: Product = { id: 'text', name: 'Aviso', category: 'ft_zone_text', price: 0,
+        description: '', isFreeText: true, styles: { fontSize: 32 } };
+    const resize = captureCanvasObjectScale(style, { type: 'freeText', id: product.id }, [product], 200);
+    assert.equal(resize(-1)?.products?.get(product.id)?.styles?.fontSize, 13);
+    assert.equal(resize(-3)?.products?.get(product.id)?.styles?.fontSize, 13);
 });

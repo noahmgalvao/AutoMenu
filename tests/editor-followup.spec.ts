@@ -256,22 +256,45 @@ test('removing a selected product selects its next visible product', async ({ pa
 });
 
 
-test('a scale gesture keeps the original base handle while crossing the top handle', async ({ page }) => {
-  await page.goto(fixture + '?photos=list&no-photos');
-  const product = page.locator('#product-container-1');
-  await product.getByRole('heading').click();
-  const base = product.getByRole('button', { name: 'Redimensionar pela base' });
-  const top = product.getByRole('button', { name: 'Redimensionar pelo topo' });
-  const box = (await base.boundingBox())!;
-  const upper = (await top.boundingBox())!;
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(upper.x + upper.width / 2, upper.y - 10, { steps: 8 });
-  await page.mouse.move(upper.x + upper.width / 2, upper.y - 35, { steps: 4 });
-  await page.mouse.up();
-  await expect(product).toBeVisible();
-  const name = product.locator('[data-word-fit-scope="productName"]');
-  const shrunk = await name.getAttribute('data-word-fit-base-size');
-  await page.mouse.move(upper.x, upper.y - 65);
-  expect(await name.getAttribute('data-word-fit-base-size')).toBe(shrunk);
-});
+for (const touch of [false, true]) {
+  test.describe(touch ? 'touch scaling' : 'mouse scaling', () => {
+    test.use({ hasTouch: touch, viewport: touch ? { width: 390, height: 844 } : { width: 1280, height: 900 } });
+    test('the base handle remains at the minimum after crossing the top and going farther', async ({ page }) => {
+      await page.goto(fixture + '?photos=list&no-photos');
+      const product = page.locator('#product-container-1');
+      if (touch) await product.getByRole('heading').tap();
+      else await product.getByRole('heading').click();
+      const base = product.getByRole('button', { name: 'Redimensionar pela base' });
+      const box = (await base.boundingBox())!;
+      const geometry = await product.evaluate(element => {
+        const page = element.closest<HTMLElement>('[data-menu-print-page]')!;
+        const scale = page.getBoundingClientRect().width / page.offsetWidth;
+        return { scale, height: (element as HTMLElement).offsetHeight };
+      });
+      const x = box.x + box.width / 2;
+      // Begin near the upper edge of the expanded hit area, above the visible circle.
+      const y = box.y + box.height * .25;
+      expect(box.height).toBeGreaterThanOrEqual(40);
+      const distance = (Math.max(120, geometry.height * 1.8) + 100) * geometry.scale;
+      const endY = y - distance;
+      const session = touch ? await page.context().newCDPSession(page) : undefined;
+      const move = async (nextY: number) => {
+        if (session) await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: nextY }] });
+        else await page.mouse.move(x, nextY, { steps: 8 });
+      };
+      if (session) await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+      else { await page.mouse.move(x, y); await page.mouse.down(); }
+      await expect(page.locator('[data-canvas-transform-active]')).toHaveCount(1);
+      const name = product.locator('[data-word-fit-scope="productName"]');
+      await move(endY);
+      await expect(name).toHaveAttribute('data-word-fit-base-size', '13');
+      await move(endY - 45);
+      await expect(name).toHaveAttribute('data-word-fit-base-size', '13');
+      if (session) await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      else await page.mouse.up();
+      await expect(page.locator('[data-canvas-transform-active]')).toHaveCount(0);
+      await expect(name).toHaveAttribute('data-word-fit-base-size', '13');
+      if (session) await session.detach();
+    });
+  });
+}

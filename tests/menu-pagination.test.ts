@@ -194,6 +194,9 @@ test('spacing and a saved empty cover yield to the first complete category', () 
     const scale = getMenuTypographyScale(layoutStyle, { A: products }, ['A']);
     assert.ok(scale < 1);
     assert.ok(getFittedMenuSpacing(layoutStyle, scale).contentSpacing!.headerToContent < 190 * scale);
+    for (const factor of [0, 0.25, 0.5, 1]) {
+        assert.equal(getFittedMenuSpacing(layoutStyle, factor).contentSpacing!.productNameToPrice, 4);
+    }
     const pages = calculatePagination(products, layoutStyle, { A: products }, ['A'], layoutStyle.categoryPlacements);
     assert.equal(pages[0].columns[0].chunks[0].category, 'A');
     assert.equal(pages[0].columns[0].chunks[0].items.length, 8);

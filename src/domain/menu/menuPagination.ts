@@ -191,7 +191,7 @@ export function getFittedMenuSpacing(style: MenuStyle, scale: number): MenuStyle
         contentSpacing: {
             headerToContent: reduce(spacing.headerToContent), categoryToProduct: reduce(spacing.categoryToProduct),
             productNameToDescription: reduce(spacing.productNameToDescription), betweenProducts: reduce(spacing.betweenProducts),
-            productToNextCategory: reduce(spacing.productToNextCategory), productNameToPrice: reduce(spacing.productNameToPrice),
+            productToNextCategory: reduce(spacing.productToNextCategory), productNameToPrice: spacing.productNameToPrice,
         },
         elementStyles: { ...style.elementStyles,
             menuTitle: { ...style.elementStyles.menuTitle,
