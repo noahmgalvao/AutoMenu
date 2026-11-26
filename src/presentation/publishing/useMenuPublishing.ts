@@ -1,3 +1,4 @@
+import { reviewPublicationSuggestions } from './publicationSuggestions';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AuthSession } from '../../application/account/authGateway';
 import { getErrorMessage } from '../../application/errorMessages';
@@ -121,7 +122,7 @@ export function useMenuPublishing({ session, workspaceData, products, style, sor
     if (current.failure) setState(previous => ({ ...previous, failure: undefined }));
   };
 
-  const publish = (): Promise<MenuPublication> => {
+  const publishNow = (): Promise<MenuPublication> => {
     if (!workspaceData || !menuId || !session) return Promise.reject(new Error('O cardápio ainda está carregando.'));
     const running = jobs.current.get(menuId);
     if (running) return running;
@@ -155,7 +156,15 @@ export function useMenuPublishing({ session, workspaceData, products, style, sor
     return task;
   };
 
+  const latestPublish = useRef(publishNow);
+  latestPublish.current = publishNow;
+  const publish = async (reviewed = false): Promise<MenuPublication> => {
+    if (!reviewed && !await reviewPublicationSuggestions()) throw new DOMException('Publicação cancelada', 'AbortError');
+    return latestPublish.current();
+  };
+
   const handleLinkAction = async (action: LinkAction) => {
+    if (!await reviewPublicationSuggestions()) return;
     if (!publicUrl || !publication || actionRef.current) return;
     actionRef.current = action;
     setBusyAction(action);

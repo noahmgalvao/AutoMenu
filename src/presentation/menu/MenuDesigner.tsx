@@ -1,3 +1,6 @@
+import { publicationSuggestionsEvent } from '../publishing/publicationSuggestions';
+import { isDefaultCategoryName, isDefaultProductName, isDefaultProductDescription, isDefaultFreeText } from '../../domain/menu/pristineItems';
+import { lockModalScrolling } from '../common/modalScroll';
 import { resolveMenuContentSpacing } from '../../domain/menu/styleRules';
 import { getCategoryFitRegression } from '../../domain/menu/menuPagination';
 import { getProductColumnCount } from '../../domain/menu/categoryColumns';
@@ -350,9 +353,49 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             ...spacing, ...Object.fromEntries(excessiveSpacing.map(key => [key, defaults[key as keyof typeof defaults]])),
         } };
     });
-    const hasVisibleTips = showSpacingTip || visibleFontTips.length > 0 || showMixedFontTip || showOverlapTip || showOffCanvasTip
-        || showPositionedCategoryTip || contrastTips.length > 0 || backgroundOverlapTips.length > 0 || kindsWithDifferences.length > 0 || hasMixedProductColumns;
+    const [reviewAction, setReviewAction] = useState<{ resolve: (proceed: boolean) => void } | null>(null);
+    const [allDismissed, setAllDismissed] = useState('');
+    const tipsSignature = JSON.stringify([products, style]);
+    const placeholderProducts = products.filter(product => !style.hiddenProductIds?.includes(product.id) && (
+        product.isFreeText ? isDefaultFreeText(product.name)
+            : isDefaultCategoryName(categoryName(product.category)) || isDefaultProductName(product.name) || Number(product.price) === 0
+                || isDefaultProductDescription(product.description)));
+    const showPlaceholderTip = placeholderProducts.length > 0 && !dismissedTips.has('placeholders');
+    const removePlaceholders = () => {
+        const removed = new Set(placeholderProducts.filter(product => product.isFreeText || isDefaultCategoryName(categoryName(product.category))
+            || isDefaultProductName(product.name) || Number(product.price) === 0).map(product => product.id));
+        setProducts?.(current => current.filter(product => !removed.has(product.id))
+            .map(product => isDefaultProductDescription(product.description) ? { ...product, description: '' } : product));
+        dismissTip('placeholders');
+    };
+    const hasVisibleTips = allDismissed !== tipsSignature && (showPlaceholderTip || showSpacingTip || visibleFontTips.length > 0 || showMixedFontTip || showOverlapTip || showOffCanvasTip
+        || showPositionedCategoryTip || contrastTips.length > 0 || backgroundOverlapTips.length > 0 || kindsWithDifferences.length > 0 || hasMixedProductColumns);
 
+    const reviewRef = useRef({ hasVisibleTips, resolve: reviewAction?.resolve });
+    reviewRef.current = { hasVisibleTips, resolve: reviewAction?.resolve };
+    useEffect(() => {
+        const request = (event: Event) => {
+            const review = event as CustomEvent<{ resolve: (proceed: boolean) => void }>;
+            if (!reviewRef.current.hasVisibleTips) return;
+            event.preventDefault();
+            if (reviewRef.current.resolve) { review.detail.resolve(false); return; }
+            setTipsOpen(false);
+            setReviewAction(review.detail);
+        };
+        window.addEventListener(publicationSuggestionsEvent, request);
+        return () => {
+            window.removeEventListener(publicationSuggestionsEvent, request);
+            reviewRef.current.resolve?.(false);
+        };
+    }, []);
+    useEffect(() => {
+        if (reviewAction) tipsPanelRef.current?.querySelector<HTMLElement>('button')?.focus();
+    }, [reviewAction]);
+    const finishReview = (proceed: boolean) => {
+        const action = reviewAction;
+        setReviewAction(null);
+        action?.resolve(proceed);
+    };
     useEffect(() => {
         const root = containerRef.current?.querySelector<HTMLElement>('[data-automenu-editor-canvas]');
         if (!root) return;
@@ -548,6 +591,19 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                     for (let secondIndex = firstIndex + 1; secondIndex < entries.length; secondIndex += 1) {
                         const second = entries[secondIndex];
                         if (first.element.contains(second.element) || second.element.contains(first.element)) continue;
+                        const visibleRects = (entry: LayoutElementEntry) =>
+                            Array.from(entry.element.querySelectorAll<HTMLElement>('[data-word-fit], [data-template-price], [data-template-image]'))
+                                .filter(node => node.getClientRects().length && !node.closest('[data-print-control]'))
+                                .flatMap(node => {
+                                    if (node.hasAttribute('data-template-image')) return [node.getBoundingClientRect()];
+                                    const range = document.createRange();
+                                    range.selectNodeContents(node);
+                                    return Array.from(range.getClientRects());
+                                });
+                        const realOverlap = visibleRects(first).some(a => visibleRects(second).some(b =>
+                            Math.min(a.right, b.right) - Math.max(a.left, b.left) > tolerance
+                            && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > tolerance));
+                        if (!realOverlap) continue;
                         const overlapWidth = Math.min(first.rect.right, second.rect.right) - Math.max(first.rect.left, second.rect.left);
                         const overlapHeight = Math.min(first.rect.bottom, second.rect.bottom) - Math.max(first.rect.top, second.rect.top);
                         if (overlapWidth <= tolerance || overlapHeight <= tolerance) continue;
@@ -624,6 +680,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
     useEffect(() => {
         const activeKeys = new Set(fontTips.map(tip => `font:${tip.scope}`));
+        if (placeholderProducts.length) activeKeys.add('placeholders');
         if (excessiveSpacing.length) activeKeys.add('spacing');
         if (configuredCanvasFonts.length > 1) activeKeys.add('mixed-fonts');
         if (positionedCategoryIds.length > 0) activeKeys.add('free-categories');
@@ -634,7 +691,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             const next = new Set(Array.from(current).filter(key => activeKeys.has(key)));
             return next.size === current.size ? current : next;
         });
-    }, [excessiveSpacing.join(), configuredCanvasFonts.length, fontTips, layoutDiagnostics.hasColumnGap, offCanvasIssueCount, overlapIssueCount, positionedCategorySignature]);
+    }, [placeholderProducts.length, excessiveSpacing.join(), configuredCanvasFonts.length, fontTips, layoutDiagnostics.hasColumnGap, offCanvasIssueCount, overlapIssueCount, positionedCategorySignature]);
 
     useEffect(() => {
         const root = containerRef.current;
@@ -1769,6 +1826,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     };
 
     const applyLayoutIssueSuggestion = (issue: 'overlap' | 'offCanvas') => {
+        dismissTip(issue === 'overlap' ? 'overlapping-elements' : 'off-canvas-elements');
         const categoryIds = issue === 'overlap'
             ? layoutDiagnostics.overlappingCategoryIds
             : layoutDiagnostics.offCanvasCategoryIds;
@@ -1843,6 +1901,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     };
 
     const applyAllSuggestions = () => {
+        if (showPlaceholderTip) removePlaceholders();
         if (showSpacingTip) void resetExcessiveSpacing();
         let nextProducts = products;
         let nextStyle = style;
@@ -2018,16 +2077,33 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                         </button>
                     )}
 
-                    {hasVisibleTips && tipsOpen && createPortal(
-                            <div ref={tipsPanelRef} data-canvas-tips-menu className="fixed z-[120] w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl">
+                    {((hasVisibleTips && tipsOpen) || reviewAction) && createPortal(
+                        <div ref={reviewAction ? lockModalScrolling : undefined}
+                            className={reviewAction ? 'fixed inset-0 z-[1400] flex items-center justify-center bg-slate-950/50 p-3' : undefined}
+                            onKeyDown={event => {
+                                if (!reviewAction) return;
+                                if (event.key === 'Escape') { event.stopPropagation(); finishReview(false); }
+                                if (event.key === 'Tab') {
+                                    const controls = Array.from(tipsPanelRef.current?.querySelectorAll<HTMLElement>('button, input, select, [tabindex="0"]') || [])
+                                        .filter(node => node.getClientRects().length && !node.hasAttribute('disabled'));
+                                    const first = controls[0], last = controls[controls.length - 1];
+                                    if (event.shiftKey && event.target === first) { event.preventDefault(); last?.focus(); }
+                                    if (!event.shiftKey && event.target === last) { event.preventDefault(); first?.focus(); }
+                                }
+                            }}>
+                            <div role={reviewAction ? 'dialog' : undefined} aria-modal={reviewAction ? true : undefined}
+                                aria-label={reviewAction ? 'Sugestões antes de publicar' : undefined}
+                                ref={tipsPanelRef} data-canvas-tips-menu style={reviewAction ? { position: 'relative', left: 'auto', top: 'auto' } : undefined} className="fixed z-[120] w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl">
                                 <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
                                     <div>
                                         <p className="text-sm font-bold text-slate-800">Dicas do cardápio</p>
-                                        <p className="text-xs text-slate-500">Ajustes opcionais detectados no layout.</p>
+                                        <p className="text-xs text-slate-500">{reviewAction ? 'Há sugestões opcionais pendentes no cardápio para melhorar a visualização. Descarte ou aplique-as.' : 'Ajustes opcionais detectados no layout.'}</p>
                                     </div>
+                                    <button type="button" onClick={() => setAllDismissed(tipsSignature)} className="shrink-0 rounded-lg px-2 py-2 text-xs font-semibold text-slate-600">Descartar todas</button>
                                     <button
                                         type="button"
                                         onClick={applyAllSuggestions}
+                                        disabled={!hasVisibleTips}
                                         className="flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-700"
                                         title="Aplicar todas as sugestões"
                                     >
@@ -2036,8 +2112,15 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                     </button>
                                 </div>
 
-                                <div className="max-h-[min(60vh,32rem)] space-y-4 overflow-y-auto p-4">
-                                    {showSpacingTip && <section className="rounded-xl bg-indigo-50 p-3 text-xs text-slate-700">
+                                <div className={hasVisibleTips ? "max-h-[min(60vh,32rem)] space-y-4 overflow-y-auto p-4" : "hidden"}>
+                                    {hasVisibleTips && showPlaceholderTip && <section className="rounded-xl bg-amber-50 p-3 text-xs">
+                                        <p>Há itens ou descrições padrão que ainda não foram utilizados. Remover exclui textos livres e produtos com nome padrão, categoria padrão ou preço zero, e limpa descrições padrão.</p>
+                                        <div className="mt-2 flex gap-2">
+                                            <button type="button" onClick={removePlaceholders}>Remover itens não utilizados</button>
+                                            <button type="button" onClick={() => dismissTip('placeholders')}>Descartar dica</button>
+                                        </div>
+                                    </section>}
+                                    {hasVisibleTips && showSpacingTip && <section className="rounded-xl bg-indigo-50 p-3 text-xs text-slate-700">
                                         <p>Alguns espaçamentos estão acima de 35. Reduza-os para aproveitar melhor a página.</p>
                                         <div className="mt-2 flex gap-2">
                                             <button type="button" onClick={() => void resetExcessiveSpacing()}
@@ -2234,7 +2317,15 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                         </section>
                                     )}
                                 </div>
-                            </div>,
+                                {reviewAction && <footer className="flex justify-between gap-3 border-t p-3">
+                                    <button type="button" onClick={() => finishReview(false)} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
+                                    <button type="button" onClick={() => finishReview(true)}
+                                        className={`rounded-lg px-4 py-2 text-sm font-bold text-white ${hasVisibleTips ? 'bg-red-700' : 'bg-indigo-700'}`}>
+                                        {hasVisibleTips ? 'Publicar mesmo assim' : 'Publicar'}
+                                    </button>
+                                </footer>}
+                            </div>
+                        </div>,
                             document.body,
                     )}
                 </div>

@@ -298,3 +298,37 @@ for (const touch of [false, true]) {
     });
   });
 }
+
+
+test('publication suggestions cancel, persist and resume after discarding all', async ({ page }) => {
+  await page.goto(fixture + '?photos=list&default-fields&no-photos');
+  const request = () => page.evaluate(() => {
+    (window as any).reviewResult = 'pending';
+    window.dispatchEvent(new CustomEvent('automenu:publication-suggestions', {
+      cancelable: true, detail: { resolve: (value: boolean) => { (window as any).reviewResult = value; } },
+    }));
+  });
+  await expect(page.getByRole('button', { name: 'Abrir dicas do cardápio' })).toBeVisible();
+  await request();
+  const dialog = page.getByRole('dialog', { name: 'Sugestões antes de publicar' });
+  await expect(dialog).toContainText('Há sugestões opcionais pendentes');
+  await expect(dialog.getByRole('button', { name: 'Remover itens não utilizados' })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).reviewResult)).toBe(false);
+  await request();
+  await expect(dialog.getByRole('button', { name: 'Publicar mesmo assim' })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Descartar todas' }).click();
+  await dialog.getByRole('button', { name: 'Publicar', exact: true }).click();
+  expect(await page.evaluate(() => (window as any).reviewResult)).toBe(true);
+  await expect(dialog).toHaveCount(0);
+});
+
+test('the unused-item suggestion removes a zero-price placeholder only when applied', async ({ page }) => {
+  await page.goto(fixture + '?photos=list&zero-price&no-photos');
+  await page.getByRole('button', { name: 'Abrir dicas do cardápio' }).click();
+  await expect(page.locator('#product-container-1')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Remover itens não utilizados' }).click();
+  await expect(page.locator('#product-container-1')).toHaveCount(0);
+  await expect(page.locator('#product-container-2')).toHaveCount(1);
+});

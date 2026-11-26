@@ -1,3 +1,4 @@
+import { reviewPublicationSuggestions } from './publicationSuggestions';
 import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { Download, Send, Share2, X } from 'lucide-react';
 import { getErrorMessage } from '../../application/errorMessages';
@@ -81,14 +82,20 @@ export function PublishModal({ publishing, pageCount, selectedPages, restoreFocu
     setImageFormat('PNG');
     setPageChoice(allPages);
   };
-  const useFile = async (action: FileAction) => {
+  const latestFileAction = useRef<(action: FileAction, reviewed?: boolean) => Promise<void>>(async () => {});
+  const useFile = async (action: FileAction, reviewed = false) => {
     if (runningRef.current || !indexes.length || (alsoPublish && publishing.isPublishing)) return;
+    if (!reviewed) {
+      if (!await reviewPublicationSuggestions()) return;
+      return latestFileAction.current(action, true);
+    }
+    if (runningRef.current) return;
     runningRef.current = true;
     setFileAction(action);
     setExportError(undefined);
     if (alsoPublish && (!publication || publication.portableSnapshotUrl || publishing.pending
       || publishing.availability === 'offline' || publishing.publicationError)) {
-      void publishing.publish().catch(() => undefined);
+      void publishing.publish(true).catch(() => undefined);
     }
     let preparing = true;
     try {
@@ -118,6 +125,7 @@ export function PublishModal({ publishing, pageCount, selectedPages, restoreFocu
     }
   };
 
+  latestFileAction.current = useFile;
   if (!open) return null;
   const pageSizes = tab !== 'Link virtual' ? fileExportRef.current?.pageSizes() ?? [] : [];
   const disableFileActions = Boolean(fileAction) || !indexes.length || (alsoPublish && publishing.isPublishing);

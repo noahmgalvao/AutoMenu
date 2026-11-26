@@ -1,3 +1,4 @@
+import { reviewPublicationSuggestions } from './publicationSuggestions';
 import { useEffect, useId, useState, type ReactNode } from 'react';
 import { ArrowUpRight, Check, Copy, Download, Loader2, QrCode, RefreshCw, Share2 } from 'lucide-react';
 import { createQrCodeBlob } from '../../infrastructure/browser/shareFiles';
@@ -105,7 +106,7 @@ export function VirtualLinkSection({ publishing }: { publishing: MenuPublishing 
       <ActionButton icon={<Share2 size={15} />} label="Compartilhar" disabled={!publicUrl || !!busyAction}
         result={buttonResults['share-link']} loading={busyAction === 'share-link'} onClick={() => void handleLinkAction('share-link')} />
       <ActionButton icon={<QrCode size={15} />} label="QR Code" disabled={!publicUrl} expanded={qrOpen}
-        onClick={() => { if (qrOpen) setQrPreview(undefined); setQrOpen(!qrOpen); }} />
+        onClick={() => { void (async () => { if (!qrOpen && !await reviewPublicationSuggestions()) return; if (qrOpen) setQrPreview(undefined); setQrOpen(!qrOpen); })(); }} />
     </div>
     {qrOpen && publicUrl && <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5" aria-label="QR Code do cardápio">
       {qrPreview?.link === publicUrl && <img src={qrPreview.image} alt="QR Code do cardápio"
