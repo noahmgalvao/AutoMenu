@@ -79,7 +79,11 @@ export function useMenuPageMeasurements(rootRef: RefObject<HTMLElement | null>, 
             frame = requestAnimationFrame(measure);
         });
         wordChanges.observe(root, { subtree: true, attributes: true, attributeFilter: ['data-word-fit-size', 'data-word-fit-base-size', 'data-price-width-scale', 'data-price-base-size'] });
-        measure();
+        // Let the committed layout settle before feeding measurements back into
+        // pagination. A photo-heavy category can need several fitting passes;
+        // synchronous layout-effect updates would recursively exhaust React's
+        // update limit before the browser gets a chance to paint.
+        frame = requestAnimationFrame(measure);
         return () => {
             observer.disconnect();
             wordChanges.disconnect();

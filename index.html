@@ -4,42 +4,93 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>AutoMenu AI</title>
-  <script type="importmap">
-{
-  "imports": {
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
-    "recharts": "https://aistudiocdn.com/recharts@^3.5.1",
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
-    "react-dom": "https://aistudiocdn.com/react-dom@^19.2.0",
-    "@dnd-kit/core": "https://esm.sh/@dnd-kit/core@6.0.8?external=react,react-dom",
-    "@dnd-kit/sortable": "https://esm.sh/@dnd-kit/sortable@7.0.2?external=react,react-dom",
-    "@dnd-kit/utilities": "https://esm.sh/@dnd-kit/utilities@3.2.1?external=react,react-dom",
-    "@imgly/background-removal": "https://esm.sh/@imgly/background-removal@1.5.5",
-    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.2",
-    "vite": "https://aistudiocdn.com/vite@^7.2.7",
-    "vite-plugin-static-copy": "https://aistudiocdn.com/vite-plugin-static-copy@^3.1.4"
-  }
-}
-</script>
+    <link data-automenu-fonts rel="stylesheet" media="print" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;family=Playfair+Display:wght@400;700&amp;family=Lato:wght@400;700&amp;family=Montserrat:wght@400;700&amp;display=swap" onload="this.media='all';window.dispatchEvent(new Event('automenu:fonts-ready'))" onerror="this.dataset.failed='true';window.dispatchEvent(new Event('automenu:fonts-ready'))" />
+
 </head>
   <body>
-    <div id="root">
-      <main style="min-height:90vh;display:grid;place-content:center;text-align:center;font:16px system-ui;color:#334155">
-        <p id="startup-status" role="status">Carregando AutoMenu…</p>
-        <button id="startup-retry" type="button" hidden>Recarregar</button>
-      </main>
-    </div>
+    <style>
+      html,body{margin:0;min-height:100%;background:#f8fafc;font-family:Inter,system-ui,sans-serif;color:#334155}
+      .automenu-loading{min-height:100dvh;display:grid;place-content:center;justify-items:center;gap:14px;padding:24px;box-sizing:border-box;text-align:center}
+      .automenu-loading-dot{width:24px;height:24px;border:3px solid #e0e7ff;border-top-color:#4f46e5;border-radius:50%;animation:automenu-spin .8s linear infinite}
+      .automenu-loading p{margin:0;font-size:14px;line-height:1.5;max-width:300px}
+      .automenu-loading button{border:0;border-radius:10px;min-height:40px;padding:10px 20px;background:#4f46e5;color:#fff;font:600 14px system-ui;cursor:pointer}
+      #resume-loading{position:fixed;inset:0;z-index:20000;background:#f8fafc;display:none}
+      @keyframes automenu-spin{to{transform:rotate(360deg)}}
+    </style>
+    <div id="root"><main class="automenu-loading" id="startup-shell">
+      <span class="automenu-loading-dot" aria-hidden="true"></span><p id="startup-status" role="status">Carregando...</p>
+      <button id="startup-retry" type="button" hidden>Tentar novamente</button>
+    </main></div>
+    <div id="resume-loading" class="automenu-loading" role="status"><span class="automenu-loading-dot" aria-hidden="true"></span><p>Carregando...</p></div>
     <script>
-      document.getElementById('startup-retry').addEventListener('click', () => location.reload());
-      setTimeout(() => {
-        const status = document.getElementById('startup-status');
-        if (!status) return;
-        status.textContent = 'O AutoMenu está demorando para carregar.';
-        document.getElementById('startup-retry').hidden = false;
-      }, 10000);
+      (() => {
+        const key = 'automenu:automatic-reload';
+        const cooldown = 90000;
+        const timestamp = value => { const parsed = Number(value); return Number.isFinite(parsed) && parsed > 0 && parsed <= Date.now() + cooldown ? parsed : 0; };
+        let last = 0, live = false, hiddenAt = 0, pending = '', reloading = false;
+        const parameter = '__automenu_reload';
+        try { last = timestamp(sessionStorage.getItem(key)); } catch (_) {}
+        last = Math.max(last, timestamp(new URL(location.href).searchParams.get(parameter)));
+        const overlay = () => document.getElementById('resume-loading');
+        const begin = () => { const element = overlay(); if (element) element.style.display = 'grid'; };
+        const ready = () => {
+          live = true;
+          clearTimeout(startupTimer);
+          const element = overlay(); if (element) element.style.display = 'none';
+          document.documentElement.dataset.automenuLive = 'true';
+          try {
+            // Keep a URL guard only when persistent storage is unavailable.
+            if (sessionStorage.getItem(key) || Date.now() - last >= cooldown) {
+              const url = new URL(location.href); url.searchParams.delete(parameter); history.replaceState(history.state, '', url);
+            }
+          } catch (_) {}
+        };
+        const reload = (reason, force = false) => {
+          if (reloading) return true;
+          if (!navigator.onLine) { pending = reason; return false; }
+          if (!force && Date.now() - last < cooldown) return false;
+          last = Date.now();
+          try { sessionStorage.setItem(key, String(last)); } catch (_) {}
+          reloading = true; begin();
+          window.dispatchEvent(new Event('automenu:before-reload'));
+          const url = new URL(location.href); url.searchParams.set(parameter, String(last));
+          location.replace(url.href);
+          return true;
+        };
+        window.__automenuRecovery = { reload, ready, begin, get reloading() { return reloading; } };
+        const startupTimer = setTimeout(() => {
+          if (live) return;
+          if (!reload('startup')) {
+            const status = document.getElementById('startup-status');
+            if (status) status.textContent = navigator.onLine ? 'Não foi possível abrir o AutoMenu. Tente novamente.' : 'Sem conexão. Vamos tentar novamente quando a internet voltar.';
+            const button = document.getElementById('startup-retry'); if (button) button.hidden = false;
+          }
+        }, 12000);
+        document.getElementById('startup-retry').addEventListener('click', () => reload('manual', true));
+        window.addEventListener('error', event => {
+          const target = event.target;
+          if (target instanceof HTMLScriptElement && target.type === 'module' || target instanceof HTMLLinkElement && target.rel === 'stylesheet' && new URL(target.href).origin === location.origin) reload('assets');
+        }, true);
+        window.addEventListener('online', () => {
+          if (pending || !live) { const reason = pending || 'online'; pending = ''; reload(reason); }
+        });
+        window.addEventListener('pageshow', event => {
+          if (event.persisted) { reloading = false; if (!reload('restored-page')) { document.dispatchEvent(new Event('resume')); ready(); } }
+        });
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); begin(); return; }
+          if (hiddenAt && Date.now() - hiddenAt >= 30000 && reload('resume')) return;
+          document.dispatchEvent(new Event('resume')); if (live) ready();
+        });
+        window.addEventListener('pagehide', begin);
+        // Retire old app workers so they cannot serve an HTML/CSS/bundle mixture.
+        if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(async registrations => {
+          const owned = registrations.filter(registration => new URL(registration.scope).origin === location.origin && new URL(registration.scope).pathname === '/');
+          if (!owned.length) return;
+          await Promise.all(owned.map(registration => registration.unregister()));
+          if (navigator.serviceWorker.controller) reload('old-worker');
+        }).catch(() => {});
+      })();
     </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>

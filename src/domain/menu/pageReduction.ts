@@ -19,7 +19,7 @@ export function getPageReductionColumnOptions(style: MenuStyle): PageReductionCo
     const categoryCounts = landscape ? [2, 3, 4] : [2];
     if (baseCategories > categoryCounts[categoryCounts.length - 1]) categoryCounts.push(baseCategories);
     const pairs = categoryCounts.flatMap(categories => [1, 2].map(products => ({ categories, products })));
-    for (let products = 3; products <= getMenuColumnLimit(style); products++) {
+    for (let products = 3; landscape && products <= getMenuColumnLimit(style); products++) {
         for (const categories of categoryCounts) pairs.push({ categories, products });
     }
     const seen = new Set<string>();

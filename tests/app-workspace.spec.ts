@@ -605,7 +605,7 @@ test('an existing session shows loading until the workspace has loaded', async (
     await route.fallback();
   });
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await expect(page.getByText('Carregando ambiente...')).toBeVisible();
+  await expect(page.locator('#root').getByText('Carregando...', {exact:true})).toBeVisible();
   await expect(page.getByText('Falha ao carregar o ambiente')).toHaveCount(0);
   loadProfile();
   await expect(page.getByRole('button', { name: 'Meu perfil' })).toBeVisible();
@@ -631,7 +631,7 @@ test('a cached workspace keeps profile actions and menu switching available duri
   await page.getByRole('dialog', { name: 'Configurações' }).getByRole('button', { name: 'Fechar', exact: true }).click();
   await profile.click();
   await page.getByRole('button', { name: 'Reserva', exact: true }).click();
-  const activeMenuName = page.locator('nav span.truncate').first();
+  const activeMenuName = page.locator('nav [data-menu-name]').first();
   await expect(activeMenuName).toHaveText('Reserva');
   const staleResponse = page.waitForResponse(response => response.url().includes('/rest/v1/menu_versions?'));
   finishRefresh();
@@ -644,7 +644,7 @@ test('a cached workspace keeps profile actions and menu switching available duri
 test('menu selection deletes only the checked menus in a single request and moves off a deleted active menu', async ({ page }) => {
   const { deletionBatches } = await openWorkspace(page, ['Menu ativo', 'Menu intermediário', 'Menu restante']);
   const profile = page.getByRole('button', { name: 'Meu perfil' });
-  const activeMenuName = page.locator('nav span.truncate').first();
+  const activeMenuName = page.locator('nav [data-menu-name]').first();
   await profile.click();
   const bulkDelete = page.getByRole('button', { name: 'Excluir cardápios selecionados' });
   await expect(bulkDelete).toHaveCount(0);
@@ -676,7 +676,7 @@ test('menu selection deletes only the checked menus in a single request and move
 test('menu rename and deletion support undo and redo', async ({ page }) => {
   await openWorkspace(page, ['Menu ativo', 'Reserva']);
   const profile = page.getByRole('button', { name: 'Meu perfil' });
-  const activeName = page.locator('nav span.truncate').first();
+  const activeName = page.locator('nav [data-menu-name]').first();
   await profile.click();
   await page.getByTitle('Renomear', { exact: true }).first().click();
   await page.locator('input:focus').fill('Menu atualizado');
@@ -1024,13 +1024,29 @@ test('saving a workspace model is durable, retries the same ID and reappears aft
   }
 });
 
-test('a blocked startup bundle leaves a visible reload action', async ({ page }) => {
+test('a stalled startup bundle reloads automatically and opens the working app', async ({ page }) => {
   await page.clock.install();
-  await page.route('**/src/main.tsx', route => route.abort());
+  let attempts=0;
+  await page.route('**/src/main.tsx', route => ++attempts === 1
+    ? route.fulfill({contentType:'text/javascript',body:'/* delayed startup */'}) : route.fallback());
   await page.goto('/');
-  await expect(page.getByText('Carregando AutoMenu…')).toBeVisible();
-  await page.clock.fastForward(10000);
-  await expect(page.getByRole('button', { name: 'Recarregar' })).toBeVisible();
+  await expect(page.locator('#root').getByText('Carregando...', {exact:true}).first()).toBeVisible();
+  await page.clock.fastForward(12001);
+  await expect(page.getByPlaceholder('email@empresa.com')).toBeVisible();
+  expect(attempts).toBe(2);
+  await expect(page.getByText('O AutoMenu está demorando para carregar.')).toHaveCount(0);
+});
+
+test('a persistent startup failure stops repeated reloads and keeps a styled recovery', async ({ page }) => {
+  await page.clock.install();let attempts=0;
+  await page.route('**/src/main.tsx', route => { attempts++;return route.fulfill({contentType:'text/javascript',body:'/* unavailable */'}); });
+  await page.goto('/');await page.clock.fastForward(12001);
+  await expect.poll(()=>attempts).toBe(2);
+  await expect(page.locator('#startup-status')).toBeVisible();
+  await page.clock.fastForward(12001);
+  const retry=page.getByRole('button',{name:'Tentar novamente',exact:true});
+  await expect(retry).toBeVisible();await expect(retry).toHaveCSS('border-radius','10px');
+  await page.clock.fastForward(60000);expect(attempts).toBe(2);
 });
 
 test('returning to the editor checks whether the persisted session still exists', async ({ page }) => {
@@ -1057,4 +1073,80 @@ test('switching between mobile designers preserves the expanded sheet', async ({
   await page.getByRole('button', { name: 'Visual', exact: true }).last().click();
   await expect(visual.getByRole('button', { name: 'Voltar à visualização parcial' })).toBeVisible();
   await expect.poll(async () => (await visual.boundingBox())!.y).toBeCloseTo(top, 0);
+});
+
+async function installNewerMenu(page: Page, menuId: string, name: string) {
+  const versionId='40000000-0000-4000-8000-000000000004';
+  const timestamp='2026-11-27T09:00:00Z';
+  await page.route('**/rest/v1/menus?*',route=>route.request().method()==='GET'
+    ? route.fulfill({json:[{id:menuId,workspace_id:'20000000-0000-4000-8000-000000000002',name:'Menu de teste',status:'draft',current_draft_version_id:versionId,revision_write_version:2,updated_at:timestamp,created_at:timestamp}]}) : route.fallback());
+  const style={...PRESET_TEMPLATES[0],menuTitle:'Cardápio atualizado'};
+  await page.route('**/rest/v1/menu_versions?*',route=>route.request().method()==='GET'
+    ? route.fulfill({json:[{id:versionId,menu_id:menuId,version_number:2,version_type:'draft',created_at:timestamp,
+      editor_state:{style,sortOption:{field:'name',direction:'asc'},freeTextProducts:[]},
+      render_snapshot:{products:[{id:'suco',category:'Bebidas',name,price:15,description:'Feito na hora.'}],style,sortOption:{field:'name',direction:'asc'}}}]}) : route.fallback());
+}
+
+test('another device version is loaded on resume without a conflict prompt',async({page})=>{
+  const {menuId}=await openWorkspace(page);
+  await installNewerMenu(page,menuId,'Versão de outro dispositivo');
+  await page.evaluate(()=>document.dispatchEvent(new Event('resume')));
+  await expect(page.locator('[data-automenu-editor-canvas] #product-name-suco')).toHaveText('Versão de outro dispositivo');
+  await expect(page.getByRole('button',{name:'Carregar salvo'})).toHaveCount(0);
+  await expect(page.getByText(/Conflito: o cardápio/)).toHaveCount(0);
+});
+
+test('a concurrent save automatically accepts the latest server state without overwriting it',async({page})=>{
+  const {menuId}=await openWorkspace(page);let writes=0;
+  await installNewerMenu(page,menuId,'Última versão salva');
+  await page.route('**/rest/v1/menus?*',route=>{
+    if(route.request().method()!=='PATCH') return route.fallback();
+    writes++;return route.fulfill({status:409,json:{code:'40001',message:'write conflict'}});
+  });
+  const product=page.locator('[data-automenu-editor-canvas] #product-container-suco');
+  await product.getByRole('heading').click();await shortcutsFor(product).getByTitle('Editar produto',{exact:true}).click();
+  const title=product.getByRole('heading');await title.fill('Minha alteração');await title.press('Enter');
+  await expect(page.locator('[data-automenu-editor-canvas] #product-name-suco')).toHaveText('Última versão salva',{timeout:15000});
+  await page.waitForTimeout(1200);expect(writes).toBe(1);
+  await expect(page.getByRole('button',{name:'Usar minhas alterações'})).toHaveCount(0);
+});
+
+test('restoring a browser snapshot automatically reloads the live editor',async({page})=>{
+  await openWorkspace(page);let loads=0;page.on('domcontentloaded',()=>loads++);
+  await page.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})));
+  await expect.poll(()=>loads).toBe(1);
+  await expect(page.getByRole('button',{name:'Meu perfil'})).toBeVisible();
+  await expect(page.locator('#resume-loading')).not.toBeVisible();
+});
+
+test('the app opens with its local styling even when external fonts are still pending',async({page})=>{
+  let release!:()=>void;const gate=new Promise<void>(resolve=>release=resolve);
+  await page.route('https://fonts.googleapis.com/**',async route=>{await gate;await route.fulfill({body:'',contentType:'text/css'}).catch(()=>{});});
+  await page.goto('/',{waitUntil:'domcontentloaded'});
+  await expect(page.getByPlaceholder('email@empresa.com')).toBeVisible();
+  expect(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--automenu-ui-ready').trim())).toBe('1');
+  await expect(page.locator('#resume-loading')).not.toBeVisible();release();
+});
+
+test('return after a long suspension reloads once and keeps the signed-in workspace',async({page})=>{
+  await openWorkspace(page);await page.clock.install();let loads=0;page.on('domcontentloaded',()=>loads++);
+  await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});document.dispatchEvent(new Event('visibilitychange'));});
+  await page.clock.fastForward(31000);
+  await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});document.dispatchEvent(new Event('visibilitychange'));});
+  await expect.poll(()=>loads).toBe(1);
+  await expect(page.getByRole('button',{name:'Meu perfil'})).toBeVisible();
+});
+
+test('a stalled initial workspace load reloads automatically instead of leaving a permanent loading screen',async({page})=>{
+  await openWorkspace(page);await page.clock.install();
+  await page.addInitScript(()=>{for(const key of Object.keys(localStorage))if(key.startsWith('automenu_workspace_view_'))localStorage.removeItem(key);});
+  let release!:()=>void;const gate=new Promise<void>(resolve=>release=resolve);let requests=0;
+  await page.route('**/rest/v1/profiles?*',async route=>{if(++requests===1)await gate;await route.fallback().catch(()=>{});});
+  let loads=0;page.on('domcontentloaded',()=>loads++);
+  await page.reload({waitUntil:'domcontentloaded'});
+  await expect.poll(()=>requests).toBe(1);
+  await page.clock.runFor(100);
+  await page.clock.fastForward(12001);
+  await expect.poll(()=>loads).toBe(2);
+  release();await expect(page.getByRole('button',{name:'Meu perfil'})).toBeVisible();
 });

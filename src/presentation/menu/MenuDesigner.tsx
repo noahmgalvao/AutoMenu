@@ -167,15 +167,24 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const reduction = usePageReduction(products, style, sortOption, pageCount);
     const [reviewReductionAfterTips, setReviewReductionAfterTips] = useState(false);
     const [reductionPreview, setReductionPreview] = useState<MeasuredReduction[] | null>(null);
+    const applyReduction = (option: MeasuredReduction) => {
+        if (setProductsAndStyle) setProductsAndStyle(option.products, option.style, 'Reduzir páginas');
+        else { setProducts?.(option.products); setStyle(option.style); }
+        setReductionPreview(null);
+    };
+    const chooseReduction = (options: MeasuredReduction[]) => {
+        if (options.length === 1) applyReduction(options[0]);
+        else if (options.length > 1) setReductionPreview(options);
+    };
     useEffect(() => {
         if (!reviewReductionAfterTips) return;
         if (pageCount <= 1) { setReviewReductionAfterTips(false); return; }
         if (!reduction.ready) return;
-        if (reduction.options.length) setReductionPreview(reduction.options);
+        if (reduction.options.length) chooseReduction(reduction.options);
         setReviewReductionAfterTips(false);
     }, [reviewReductionAfterTips, pageCount, reduction.ready, reduction.options]);
     // A document edit invalidates a proposal; never apply a preview from an older source.
-    useEffect(() => { setReductionPreview(null); }, [products, style, sortOption, pageCount]);
+    useEffect(() => { setReductionPreview(null); }, [products, style, sortOption, pageCount, reduction.fontRevision]);
     const [contrastTips, setContrastTips] = useState<ContrastTip[]>([]);
     const [backgroundOverlapTips, setBackgroundOverlapTips] = useState<OverlapTip[]>([]);
     const [fontTips, setFontTips] = useState<FontTip[]>([]);
@@ -2098,11 +2107,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
                 {reduction.measurement}
                 {reductionPreview && <PageReductionPreview options={reductionPreview} sortOption={sortOption}
-                    cancel={() => setReductionPreview(null)} apply={option => {
-                        if (setProductsAndStyle) setProductsAndStyle(option.products, option.style, 'Reduzir páginas');
-                        else { setProducts?.(option.products); setStyle(option.style); }
-                        setReductionPreview(null);
-                    }} />}
+                    cancel={() => setReductionPreview(null)} apply={applyReduction} />}
                 <FloatingTipsButton key={currentMenuId || workspaceId} anchorRef={tipsAnchorRef} tipKeys={tipKeys} open={tipsOpen}
                     onToggle={() => setTipsOpen(current => !current)} onDragStart={() => setTipsOpen(false)} />
                 <>
@@ -2147,8 +2152,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                 <div className={hasVisibleTips ? "min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3" : "hidden"}>
                                     {showReductionTip && <div className="rounded-xl border-2 border-indigo-300 bg-indigo-50 p-3" data-page-reduction-tip>
                                         <MenuTip prominent title={`Caber em ${reduction.options[0].pageCount} ${reduction.options[0].pageCount === 1 ? 'página' : 'páginas'}`}
-                                            applyLabel="Ver opções para reduzir páginas" apply={() => setReductionPreview(reduction.options)} dismiss={() => dismissTip('page-reduction')}>
-                                            <p>É possível usar menos páginas. Deseja conferir as opções?</p>
+                                            applyLabel={reduction.options.length === 1 ? "Reduzir páginas" : "Ver opções para reduzir páginas"} apply={() => chooseReduction(reduction.options)} dismiss={() => dismissTip('page-reduction')}>
+                                            <p>É possível usar menos páginas. {reduction.options.length === 1 ? 'Deseja ajustar?' : 'Deseja conferir as opções?'}</p>
                                         </MenuTip>
                                     </div>}
                                     {showPlaceholderTip && <MenuTip title="Itens não utilizados" apply={removePlaceholders}

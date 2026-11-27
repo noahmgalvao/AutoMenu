@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import type { MenuStyle, Product, SortOption } from '../../../domain/menu/model';
 import { buildPageReductionCandidates, selectPageReduction, selectPageReductionAlternative, type MeasuredReduction, type PageReductionCandidate } from '../../../domain/menu/pageReduction';
 import { resolveMinimumFontSize } from '../../../domain/menu/styleRules';
-import { canApplyCanvasColumnCounts, measurePriceWidth } from '../canvas/textFit';
+import { measurePriceWidth } from '../canvas/textFit';
 import { MenuPreview } from '../canvas/MenuPreview';
 
 /** Read-only, isolated measurement uses exactly the editor renderer, including its real font fitting. */
@@ -16,6 +16,11 @@ function ReductionProbe({ candidate, sortOption, complete }: { candidate: PageRe
         const sample = () => {
             if (disposed || !root.current) return;
             const pages = Array.from(root.current.querySelectorAll<HTMLElement>('[data-menu-print-page]'));
+            const images = Array.from(root.current.querySelectorAll<HTMLImageElement>('img'));
+            // A cached fallback aspect ratio is not the final layout. Wait for photos,
+            // then for the real renderer to settle before counting pages.
+            const fontsPending = Array.from(document.querySelectorAll<HTMLLinkElement>('[data-automenu-fonts]')).some(link => link.media !== 'all' && link.dataset.failed !== 'true');
+            const ready = !fontsPending && document.fonts.status === 'loaded' && images.every(image => image.complete);
             let valid = pages.length > 0;
             const signature: unknown[] = [pages.length];
             for (const page of pages) {
@@ -29,6 +34,7 @@ function ReductionProbe({ candidate, sortOption, complete }: { candidate: PageRe
                     if (rect.bottom > bottom + .5 || rect.right > paper.right + .5) valid = false;
                 }
                 for (const text of page.querySelectorAll<HTMLElement>('[data-word-fit], [data-price-base-size]')) {
+                    if (text.closest('[data-canvas-background-layer]')) continue;
                     signature.push(getComputedStyle(text).fontSize, text.dataset.wordOverflow, text.closest('[data-price-wrap]') !== null);
                     if (text.dataset.wordOverflow === 'true') valid = false;
                     if (text.hasAttribute('data-price-base-size')) {
@@ -38,13 +44,14 @@ function ReductionProbe({ candidate, sortOption, complete }: { candidate: PageRe
                 }
             }
             const next = JSON.stringify(signature);
-            stable = next === previous ? stable + 1 : 0;
+            stable = ready && next === previous ? stable + 1 : 0;
             previous = next;
-            if (stable >= 3 && performance.now() - started >= 240) { complete(valid ? pages.length : Infinity); return; }
+            if (stable >= 5 && performance.now() - started >= 360) { complete(valid ? pages.length : Infinity); return; }
             // An unstable proposal is never shown as a successful fit.
-            if (performance.now() - started > 2800) { complete(Infinity); return; }
+            if (performance.now() - started > 10000) { complete(Infinity); return; }
             timer = setTimeout(sample, 60);
         };
+        for (const image of root.current?.querySelectorAll<HTMLImageElement>('img') || []) image.loading = 'eager';
         void document.fonts.ready.then(() => { if (!disposed) timer = setTimeout(sample, 60); });
         return () => { disposed = true; clearTimeout(timer); };
     }, [candidate, complete]);
@@ -57,8 +64,16 @@ function ReductionProbe({ candidate, sortOption, complete }: { candidate: PageRe
 const NO_OPTIONS: MeasuredReduction[] = [];
 
 export function usePageReduction(products: Product[], style: MenuStyle, sortOption: SortOption, pageCount: number) {
+    const [fontRevision, setFontRevision] = useState(0);
+    useEffect(() => {
+        const changed = () => setFontRevision(value => value + 1);
+        document.fonts.addEventListener('loading', changed);
+        document.fonts.addEventListener('loadingdone', changed);
+        window.addEventListener('automenu:fonts-ready', changed);
+        return () => { document.fonts.removeEventListener('loading', changed); document.fonts.removeEventListener('loadingdone', changed); window.removeEventListener('automenu:fonts-ready', changed); };
+    }, []);
     const [probe, setProbe] = useState<{ id: number; candidate: PageReductionCandidate; complete: (count: number) => void } | null>(null);
-    const [result, setResult] = useState<{ products: Product[]; style: MenuStyle; sortOption: SortOption; pageCount: number; options: MeasuredReduction[] }>();
+    const [result, setResult] = useState<{ products: Product[]; style: MenuStyle; sortOption: SortOption; pageCount: number; fontRevision: number; options: MeasuredReduction[] }>();
     const sequence = useRef(0);
     useEffect(() => {
         if (pageCount <= 1) { setProbe(null); return; }
@@ -67,10 +82,6 @@ export function usePageReduction(products: Product[], style: MenuStyle, sortOpti
         const timer = setTimeout(() => {
             const measure = (candidate: PageReductionCandidate): Promise<number> => {
                 signal.throwIfAborted();
-                // Reuse the editor's column guard before rendering; individual category
-                // counts must be checked separately rather than replaced by a global count.
-                if (!canApplyCanvasColumnCounts(style, candidate.style.categoryColumnCount || 1,
-                    undefined, undefined, candidate.style)) return Promise.resolve(Infinity);
                 return new Promise<number>((resolve, reject) => {
                     const id = ++sequence.current;
                     const abort = () => reject(new DOMException('Cancelled', 'AbortError'));
@@ -90,15 +101,15 @@ export function usePageReduction(products: Product[], style: MenuStyle, sortOpti
                         if (second) options.push(second);
                     }
                     signal.throwIfAborted();
-                    setResult({ products, style, sortOption, pageCount, options });
+                    setResult({ products, style, sortOption, pageCount, fontRevision, options });
                 } catch (error) {
-                    if (!signal.aborted) { console.warn('Page reduction preview failed', error instanceof Error ? error.message : 'unknown'); setResult({ products, style, sortOption, pageCount, options: [] }); }
+                    if (!signal.aborted) { console.warn('Page reduction preview failed', error instanceof Error ? error.message : 'unknown'); setResult({ products, style, sortOption, pageCount, fontRevision, options: [] }); }
                 } finally { if (!signal.aborted) setProbe(null); }
             })();
         }, 650);
         return () => { clearTimeout(timer); controller.abort(); };
-    }, [products, style, sortOption, pageCount]);
-    const options = result?.products === products && result.style === style && result.sortOption === sortOption && result.pageCount === pageCount && pageCount > 1 ? result.options : NO_OPTIONS;
-    const ready = result?.products === products && result.style === style && result.sortOption === sortOption && result.pageCount === pageCount;
-    return { options, ready, measurement: probe && createPortal(<ReductionProbe key={probe.id} candidate={probe.candidate} sortOption={sortOption} complete={probe.complete} />, document.body) };
+    }, [products, style, sortOption, pageCount, fontRevision]);
+    const options = result?.products === products && result.style === style && result.sortOption === sortOption && result.pageCount === pageCount && result.fontRevision === fontRevision && pageCount > 1 ? result.options : NO_OPTIONS;
+    const ready = result?.products === products && result.style === style && result.sortOption === sortOption && result.pageCount === pageCount && result.fontRevision === fontRevision;
+    return { options, ready, fontRevision, measurement: probe && createPortal(<ReductionProbe key={probe.id} candidate={probe.candidate} sortOption={sortOption} complete={probe.complete} />, document.body) };
 }

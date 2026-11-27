@@ -135,6 +135,7 @@ export const writeLocalPendingSnapshot = (payload: PersistPayload) => {
 
 export const clearLocalPendingSnapshot = (workspaceId: string, menuId: string) => {
   if (typeof window !== 'undefined') {
-    window.localStorage.removeItem(getPendingStorageKey(workspaceId, menuId));
+    try { window.localStorage.removeItem(getPendingStorageKey(workspaceId, menuId)); }
+    catch { /* Storage restrictions do not block loading the latest server state. */ }
   }
 };

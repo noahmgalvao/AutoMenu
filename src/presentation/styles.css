@@ -1,5 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;700&family=Lato:wght@400;700&family=Montserrat:wght@400;700&display=swap');
 @import "tailwindcss";
+
+:root { --automenu-ui-ready: 1; }
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;

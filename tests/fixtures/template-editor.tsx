@@ -116,7 +116,7 @@ function Fixture() {
       image: photoMode === 'background' ? 'background' : 'top',
     },
     ...(params.has('border-stress') ? {
-      design: undefined, columnCount: 5, categoryColumnCount: 1, showImages: !params.has('no-photos'), imageScale: .5, fontFamily: 'Inter', productCardShape: 'soft',
+      design: undefined, columnCount: params.has('calibration') ? 1 : 5, categoryColumnCount: 1, showImages: !params.has('no-photos'), imageScale: .5, fontFamily: 'Inter', productCardShape: 'soft',
       pageSetup: { ...initial.pageSetup!, orientation: 'landscape' },
       borders: { product: { color: '#e2e8f0', sides: ['top','right','bottom','left'], length: 100, offset: 8, radius: 13, pattern: 'solid', thickness: 12 } },
       margins: { top: 42, left: 61, right: 65, bottom: 105, columnGap: 32 },

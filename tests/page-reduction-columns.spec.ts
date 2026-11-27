@@ -34,9 +34,11 @@ for(const landscape of [false,true]) {
         await page.getByRole('button',{name:'Abrir dicas do cardápio'}).click();
         const tip=page.locator('[data-page-reduction-tip]');
         await expect(tip).toBeVisible({timeout:60000});
-        await tip.getByRole('button',{name:'Ver opções para reduzir páginas'}).click();
-        const dialog=page.getByRole('dialog',{name:'Prévia para reduzir páginas'});
-        const options=await dialog.getByRole('tab').count();
+        const action=tip.getByRole('button',{name:/Ver opções para reduzir páginas|^Reduzir páginas$/});
+        const hasOptions=await action.getAttribute('aria-label')==='Ver opções para reduzir páginas';
+        await action.click();
+        const dialog=hasOptions ? page.getByRole('dialog',{name:'Prévia para reduzir páginas'}) : page.locator('[data-automenu-editor-canvas]');
+        const options=hasOptions ? await dialog.getByRole('tab').count() : 0;
         for(let index=0;index<Math.max(1,options);index++) {
             if(options) await dialog.getByRole('tab').nth(index).click();
             const value=await counts(dialog);expect(value.categories).toBeGreaterThanOrEqual(3);
@@ -49,14 +51,30 @@ for(const landscape of [false,true]) {
 }
 
 
-test('landscape page reduction omits the alternative when additional columns fail the text limits',async({page})=>{
-    await page.goto(fixture+'?reduce-pages=48&landscape&editable');
+test('one measured option is applied without opening a preview',async({page})=>{
+    await page.goto(fixture+'?reduce-pages=48&editable&reduce-lanes=2&reduce-cols=2');
     await page.getByRole('button',{name:'Abrir dicas do cardápio'}).click();
     const tip=page.locator('[data-page-reduction-tip]');
     await expect(tip).toBeVisible({timeout:60000});
-    await tip.getByRole('button',{name:'Ver opções para reduzir páginas'}).click();
+    await tip.getByRole('button',{name:'Reduzir páginas',exact:true}).click();
+    await expect(page.getByRole('dialog',{name:'Prévia para reduzir páginas'})).toHaveCount(0);
+    await expect(page.locator('[data-automenu-editor-canvas] [data-menu-print-page]')).toHaveCount(1);
+});
+
+for(const width of [1280,393]) test(`landscape photos fit the offered page count after applying at ${width}px`,async({page})=>{
+  await page.setViewportSize({width,height:900});
+  await page.goto(fixture+'?photos=cards&border-stress&border-catalog&calibration');
+  const papers=page.locator('[data-automenu-editor-canvas] [data-menu-print-page]');
+  await expect.poll(()=>papers.count()).toBeGreaterThan(1);
+  await page.getByRole('button',{name:'Abrir dicas do cardápio'}).click();
+  const tip=page.locator('[data-page-reduction-tip]');await expect(tip).toContainText('Caber em 1 página',{timeout:60000});
+  const action=tip.getByRole('button',{name:/Ver opções para reduzir páginas|^Reduzir páginas$/});
+  const hasOptions=await action.getAttribute('aria-label')==='Ver opções para reduzir páginas';
+  await action.click();
+  if(hasOptions){
     const dialog=page.getByRole('dialog',{name:'Prévia para reduzir páginas'});
-    await expect(dialog).toBeVisible();
-    await expect(dialog.getByRole('tab')).toHaveCount(0);
-    await expect(dialog.locator('[data-word-overflow="true"]')).toHaveCount(0);
+    await expect(dialog.locator('[data-menu-print-page]')).toHaveCount(1);
+    await dialog.getByRole('button',{name:'Aplicar esta opção'}).click();
+  }
+  await expect(papers).toHaveCount(1);await page.waitForTimeout(1000);await expect(papers).toHaveCount(1);
 });

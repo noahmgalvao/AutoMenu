@@ -1,3 +1,5 @@
+import { canRestorePendingWorkspace, isRemoteMenuNewer } from '../../application/workspace/latestWorkspace';
+import { requestAppReload, isAppReloading } from '../../infrastructure/browser/appLifecycle';
 import { revisionOperationId } from '../../application/revisions/operationId';
 import { useCallback, useEffect, useRef, useState, type SetStateAction } from 'react';
 import type { AuthSession } from '../../application/account/authGateway';
@@ -73,6 +75,12 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
   const flushPendingSaveRef = useRef<() => void>(() => {});
   const workspaceLoadRequestRef = useRef(0);
   const activeMenuIdRef = useRef<string | null>(null);
+  const currentWorkspaceRef = useRef(workspaceData); currentWorkspaceRef.current = workspaceData;
+  const currentSessionRef = useRef(session); currentSessionRef.current = session;
+  const acceptLatestRef = useRef<(menuId: string) => Promise<void>>(async () => {});
+  const acceptingLatestRef = useRef<{ key: string; promise: Promise<void> } | null>(null);
+  const hydrationRevision = useRef(0);
+
   useEffect(()=>{
     const update=(event:Event)=>{const detail=(event as CustomEvent<{menuId:string;warning:string|null}>).detail;if(!detail||detail.menuId!==activeMenuIdRef.current)return;setHistoryNotice(detail.warning?'Cardápio salvo; histórico temporariamente indisponível. '+getErrorMessage(new Error(detail.warning),''):null);};
     document.addEventListener('automenu:history-warning',update);return()=>document.removeEventListener('automenu:history-warning',update);
@@ -110,6 +118,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
       return;
     }
 
+    if (acceptingLatestRef.current) return;
     if (isSavingRef.current) {
       queuedSaveRef.current = true;
       return;
@@ -204,10 +213,12 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
       }
     } catch (error) {
       writeLocalPendingSnapshot(latestPersistPayloadRef.current?.menuId === payload.menuId ? latestPersistPayloadRef.current : payload);
-      const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
-      if (!isOffline) {
-        setLoadError(getErrorMessage(error, SAVE_ERROR_MESSAGE));
-      }
+      const message = getErrorMessage(error, SAVE_ERROR_MESSAGE);
+      if (message.startsWith('Conflito:')) {
+        queuedSaveRef.current = false;
+        try { await acceptLatestRef.current(payload.menuId); }
+        catch (refreshError) { setLoadError(getErrorMessage(refreshError, 'Não foi possível atualizar o cardápio. Tentaremos novamente ao reconectar.')); }
+      } else if (typeof navigator === 'undefined' || navigator.onLine) setLoadError(message);
     } finally {
       isSavingRef.current = false;
 
@@ -230,11 +241,11 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     persistNowRef.current = persistNow;
   }, [persistNow]);
 
-  const hydrateWorkspaceState = useCallback((data: LoadedWorkspaceData, options: { preserveSavedSignature?: boolean; knownSavedSignature?: string } = {}) => {
+  const hydrateWorkspaceState = useCallback((data: LoadedWorkspaceData, options: { preserveSavedSignature?: boolean; knownSavedSignature?: string; preferServer?: boolean } = {}) => {
+    hydrationRevision.current++;
     const pendingSnapshot = readLocalPendingSnapshot(data.workspace.id, data.menu.id);
-    const pendingUpdatedAt = pendingSnapshot ? Date.parse(pendingSnapshot.updatedAt) : 0;
-    const serverUpdatedAt = Date.parse(data.currentVersion.createdAt || '') || 0;
-    const shouldRestorePending = Boolean(pendingSnapshot && (revisions || pendingUpdatedAt > serverUpdatedAt));
+    const shouldRestorePending = !options.preferServer && canRestorePendingWorkspace(pendingSnapshot, data.menu, data.currentVersion.createdAt || '');
+    if (pendingSnapshot && !shouldRestorePending) clearLocalPendingSnapshot(data.workspace.id, data.menu.id);
     const snapshot = shouldRestorePending && pendingSnapshot
       ? normalizeWorkspaceClientState(pendingSnapshot)
       : data;
@@ -295,6 +306,69 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     menuHistoryScope.current = scope;
   }, [clearHistory]);
 
+  const acceptLatestMenu = useCallback((menuId: string): Promise<void> => {
+    const current = currentWorkspaceRef.current, currentSession = currentSessionRef.current;
+    if (!current || !currentSession || activeMenuIdRef.current !== menuId) return Promise.resolve();
+    const key = `${currentSession.user.id}:${menuId}`;
+    if (acceptingLatestRef.current?.key === key) return acceptingLatestRef.current.promise;
+    const promise = (async () => {
+      const data = await loadWorkspaceMenuData({ userId: currentSession.user.id, profile: current.profile,
+        workspace: current.workspace, templates: current.templates, menuId });
+      if (activeMenuIdRef.current !== menuId || currentSessionRef.current?.user.id !== currentSession.user.id) return;
+      const active = currentWorkspaceRef.current;
+      if (active?.menu.revisionWriteVersion !== undefined && data.menu.revisionWriteVersion !== undefined
+          && data.menu.id === menuId && data.menu.revisionWriteVersion < active.menu.revisionWriteVersion) return;
+      if (persistTimeoutRef.current) clearTimeout(persistTimeoutRef.current);
+      queuedSaveRef.current = false;
+      latestPersistPayloadRef.current = null;
+      pendingPersistActionLabelRef.current = null;
+      clearLocalPendingSnapshot(current.workspace.id, menuId);
+      hydrateWorkspaceState(data, { preferServer: true });
+      setLoadError(null); setWorkspaceLoadFailure(null);
+    })();
+    acceptingLatestRef.current = { key, promise };
+    void promise.finally(() => { if (acceptingLatestRef.current?.promise === promise) acceptingLatestRef.current = null; }).catch(() => {});
+    return promise;
+  }, [hydrateWorkspaceState, loadWorkspaceMenuData]);
+  acceptLatestRef.current = acceptLatestMenu;
+
+  useEffect(() => {
+    if (!loadError?.startsWith('Conflito:') || !workspaceData) return;
+    setLoadError(null);
+    void acceptLatestRef.current(workspaceData.menu.id).catch(() => setLoadError('Não foi possível atualizar o cardápio. Tentaremos novamente ao reconectar.'));
+  }, [loadError, workspaceData]);
+
+  useEffect(() => {
+    if (!workspaceGateway.listWorkspaceMenus) return;
+    let disposed = false, pending = false;
+    let controller: AbortController | undefined;
+    const check = async () => {
+      const current = currentWorkspaceRef.current;
+      if (disposed || pending || !current || !currentSessionRef.current || isSavingRef.current
+          || acceptingLatestRef.current || document.visibilityState === 'hidden' || !navigator.onLine) return;
+      pending = true;
+      controller = new AbortController();
+      const deadline = setTimeout(() => controller?.abort(), 10000);
+      try {
+        const menus = await workspaceGateway.listWorkspaceMenus!(current.workspace.id, controller.signal, current.menu.id);
+        if (disposed || activeMenuIdRef.current !== current.menu.id || isSavingRef.current) return;
+        const remote = menus.find(menu => menu.id === current.menu.id);
+        if (remote && isRemoteMenuNewer(remote, currentWorkspaceRef.current?.menu || current.menu)) await acceptLatestRef.current(current.menu.id);
+      } catch { /* Offline and suspended requests are retried on the next visible check. */ }
+      finally { clearTimeout(deadline); pending = false; }
+    };
+    const resume = () => { if (document.visibilityState === 'hidden') controller?.abort(); else void check(); };
+    const timer = window.setInterval(resume, 30000);
+    document.addEventListener('resume', resume);
+    document.addEventListener('visibilitychange', resume);
+    window.addEventListener('online', resume);
+    window.addEventListener('focus', resume);
+    window.addEventListener('storage', resume);
+    return () => { disposed = true; controller?.abort(); clearInterval(timer); document.removeEventListener('resume', resume);
+      document.removeEventListener('visibilitychange', resume); window.removeEventListener('online', resume);
+      window.removeEventListener('focus', resume); window.removeEventListener('storage', resume); };
+  }, [workspaceGateway.listWorkspaceMenus]);
+
   const loadWorkspace = useCallback(async (userId: string, menuId?: string | null) => {
     const requestId = ++workspaceLoadRequestRef.current;
     const baselineMenuId = activeMenuIdRef.current;
@@ -315,6 +389,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
         && baselineSignature
         && latestCachedData
         && getPersistSignature(latestCachedData) !== baselineSignature
+        && !isRemoteMenuNewer(data.menu, latestCachedData.menu)
       ) {
         return;
       }
@@ -362,10 +437,11 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
         inFlight = false;
         revision++;
         setIsAuthLoading(false);
-        setLoadError('A conexão demorou para responder. Verifique a internet e tente novamente.');
+        if (!requestAppReload('session-timeout')) setLoadError('A conexão demorou para responder. Tentaremos novamente ao reconectar.');
       }, 12000);
       void getInitialSession().then(current => {
         if (!mounted || request !== revision) return;
+        if (!current && currentSessionRef.current && requestAppReload('session-expired')) return;
         setSession(current);
         if (current) setLoadError(null);
       }).catch(error => {
@@ -405,6 +481,17 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
   }, [getInitialSession, isConfigured, subscribeToAuth]);
 
   const authenticatedUserId = session?.user.id || null;
+
+  useEffect(() => {
+    if (!authenticatedUserId || !isWorkspaceLoading || workspaceData) return;
+    const timer = window.setTimeout(() => {
+      if (requestAppReload('workspace-timeout')) return;
+      const message = navigator.onLine ? 'A conexão demorou para responder. Tente novamente.' : 'Sem conexão. Verifique a internet e tente novamente.';
+      setWorkspaceLoadFailure({ userId: authenticatedUserId, message });
+      setLoadError(message);
+    }, 12000);
+    return () => clearTimeout(timer);
+  }, [authenticatedUserId, isWorkspaceLoading, workspaceData]);
 
   useEffect(() => {
     if (!authenticatedUserId) return;
@@ -691,6 +778,7 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
       if (!payload || getPersistSignature(payload) === lastSavedSignatureRef.current) return;
 
       flushPendingSaveRef.current();
+      if (isAppReloading()) return;
       event.preventDefault();
       event.returnValue = '';
     };
@@ -699,10 +787,12 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
       if (document.visibilityState === 'hidden') flushPendingSaveRef.current();
     };
     const saveOnPageHide = () => flushPendingSaveRef.current();
+    window.addEventListener('automenu:before-reload', saveOnPageHide);
     window.addEventListener('beforeunload', handleBeforeUnload);
     window.addEventListener('pagehide', saveOnPageHide);
     document.addEventListener('visibilitychange', saveWhenHidden);
     return () => {
+      window.removeEventListener('automenu:before-reload', saveOnPageHide);
       window.removeEventListener('beforeunload', handleBeforeUnload);
       window.removeEventListener('pagehide', saveOnPageHide);
       document.removeEventListener('visibilitychange', saveWhenHidden);
@@ -1097,9 +1187,16 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     const priority = classifyChange({products,style} as unknown as Json, {products:nextProducts,style:nextStyle} as unknown as Json);
     if (!workspaceGateway || !workspaceData || !revisions || priority < 2) { apply(); return; }
     editProtectionBusy.current = true;
+    const sourceRevision = hydrationRevision.current;
+    const sourceMenuId = workspaceData.menu.id;
     setIsMenuActionLoading(true);
     void (async () => {
-      try { await forceSaveCurrentMenu(); await revisions.beforeOperation(workspaceData.menu.id); apply(); }
+      try {
+        await forceSaveCurrentMenu();
+        if (hydrationRevision.current !== sourceRevision || activeMenuIdRef.current !== sourceMenuId) return;
+        await revisions.beforeOperation(sourceMenuId);
+        if (hydrationRevision.current === sourceRevision && activeMenuIdRef.current === sourceMenuId) apply();
+      }
       catch (error) { setLoadError(getErrorMessage(error, 'Alteração bloqueada: não foi possível preservar a versão anterior.')); }
       finally { editProtectionBusy.current = false; setIsMenuActionLoading(false); }
     })();
@@ -1132,33 +1229,11 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     setWorkspaceData(previous => previous ? {...previous,menus} : previous);
   };
 
-  const resolveWriteConflict = async (choice: 'server' | 'local') => {
-    if (!workspaceData || !revisions || !session) return;
-    const message = choice === 'server'
-      ? 'Descartar as alterações pendentes neste dispositivo e carregar o estado salvo no servidor?'
-      : 'Usar as alterações deste dispositivo? O estado do servidor será preservado no histórico antes da substituição.';
-    if (!window.confirm(message)) return;
-    setIsMenuActionLoading(true);
-    try {
-      if (choice === 'server') await reloadCurrentMenu();
-      else {
-        const writeVersion = await revisions.currentWrite(workspaceData.menu.id);
-        const payload = latestPersistPayloadRef.current;
-        if (!payload) return;
-        payload.expectedWrite = writeVersion; payload.operationId = revisionOperationId(); payload.actionLabel = 'Resolução manual de conflito';
-        pendingPersistActionLabelRef.current = payload.actionLabel;
-        setWorkspaceData(previous => previous ? {...previous,menu:{...previous.menu,revisionWriteVersion:writeVersion}} : previous);
-        await forceSaveCurrentMenu();
-      }
-      setLoadError(null);
-    } catch(error) { setLoadError(getErrorMessage(error,'Não foi possível resolver o conflito. Alterações locais preservadas.')); }
-    finally { setIsMenuActionLoading(false); }
-  };
 
   return {
     saveStatus: (getPersistSignature({products,style,templates,sortOption}) === lastSavedSignatureRef.current && !isWorkspaceLoading ? 'saved' : 'pending') as 'saved' | 'pending',
     historyNotice,setHistoryNotice,
-    resolveWriteConflict, refreshMenuList,
+    refreshMenuList,
     reloadCurrentMenu,
     session, isAuthLoading, isAuthSubmitting, authError, loadError, setLoadError, isConfigured,
     workspaceLoadError: workspaceLoadFailure?.userId === authenticatedUserId ? workspaceLoadFailure?.message : null,

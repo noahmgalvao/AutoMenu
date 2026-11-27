@@ -29,7 +29,7 @@ test('page reduction follows the requested order without changing artwork, curre
     assert.equal(fonts.products[2].styles?.fontSize, 30);
     const end = candidates[candidates.length - 1]!;
     assert.equal(end.style.margins?.bottom, PAGE_REDUCTION_MARGIN_FLOOR);
-    assert.equal(end.style.columnCount, 3);
+    assert.equal(end.style.columnCount, 2);
     assert.equal(end.style.categoryColumnCount, 2);
     assert.equal(JSON.stringify({ style, products }), before);
     assert.equal(buildPageReductionCandidates(products, style, {categories: 2, products: 2})[0].style.columnCount, 2);
@@ -124,4 +124,12 @@ test('product column fallbacks can keep increasing when the smaller prescribed p
     const exhausted = await selectPageReductionAlternative(products,style,{...candidates[0],style:{...style,categoryColumnCount:4,columnCount:5},pageCount:1},4,
       async()=>{throw new Error('No larger columns should be attempted');},new AbortController().signal);
     assert.equal(exhausted,null);
+});
+
+
+test('portrait proposals stop at two category and two product columns, preserving existing higher settings',()=>{
+  assert.deepEqual(getPageReductionColumnOptions(INITIAL_STYLE),[{categories:2,products:1},{categories:2,products:2}]);
+  const existing={...INITIAL_STYLE,columnCount:3 as const,categoryColumnCount:3 as const};
+  assert.ok(buildPageReductionCandidates(products,existing).every(c=>c.style.columnCount>=3 && c.style.categoryColumnCount!>=3));
+  assert.ok(!getPageReductionColumnOptions(existing).some(c=>c.products>3 || c.categories>3));
 });

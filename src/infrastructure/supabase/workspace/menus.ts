@@ -66,14 +66,12 @@ export const ensurePrimaryMenu = async (workspaceId: string) => {
   return mapMenuRow(createdMenu);
 };
 
-export const listWorkspaceMenus = async (workspaceId: string) => {
+export const listWorkspaceMenus = async (workspaceId: string, signal?: AbortSignal, menuId?: string) => {
   const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from('menus')
-    .select('*')
-    .eq('workspace_id', workspaceId)
-    .neq('status', 'archived')
-    .order('created_at', { ascending: true });
+  let query = supabase.from('menus').select('*').eq('workspace_id', workspaceId)
+    .neq('status', 'archived').order('created_at', { ascending: true });
+  if (menuId) query = query.eq('id', menuId);
+  const { data, error } = await (signal ? query.abortSignal(signal) : query);
 
   if (error) {
     throw error;
