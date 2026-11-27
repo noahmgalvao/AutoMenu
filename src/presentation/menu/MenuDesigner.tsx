@@ -2184,6 +2184,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                                 ...previous, columnCount: standardProductColumns, categoryProductColumnCounts: undefined, pageBreaks: [], name: 'Custom',
                                             }));
                                         }}>
+                                        <p>Há categorias com quantidades diferentes de colunas de produtos. Deseja padronizar?</p>
                                         <select aria-label="Colunas de produtos sugeridas" className="min-h-8 w-full rounded-lg border border-indigo-200 bg-white px-2"
                                             value={standardProductColumns} onChange={event => setPreferredProductColumns(Number(event.target.value))}>
                                             {columnSettings.map(count => <option key={count} value={count}>{count}</option>)}
