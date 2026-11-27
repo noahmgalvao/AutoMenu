@@ -21,7 +21,7 @@ const FREE_TEXT_VERTICAL_PADDING_PX = 16;
 const PRODUCT_CARD_IMAGE_HEIGHT_PX = 168;
 
 export type PageItem =
-    | { type: 'main-header'; title?: boolean; subtitle?: boolean }
+    | { type: 'main-header'; pageIndex?: number; title?: boolean; subtitle?: boolean }
     | { type: 'category-header'; data: string; category: string }
     | { type: 'product-item'; data: Product; category: string }
     | { type: 'free-text-row'; data: Product[]; category: string }
@@ -172,7 +172,7 @@ const getCategoryColumnWidth = (
 const getPageHeader = (style: MenuStyle, index: number, legacyCopy = false): Extract<PageItem, { type: 'main-header' }> | null => {
     const title = headingIsOnPage(style, 'menuTitle', index, legacyCopy);
     const subtitle = headingIsOnPage(style, 'menuSubtitle', index, legacyCopy);
-    return title || subtitle ? { type: 'main-header', title, subtitle } : null;
+    return title || subtitle ? { type: 'main-header', title, subtitle, pageIndex: index } : null;
 };
 
 export function getFittedMenuSpacing(style: MenuStyle, scale: number): MenuStyle {
@@ -228,8 +228,11 @@ const getMainHeaderHeight = (style: MenuStyle, header: PageItem | null, measured
     if (header?.type !== 'main-header') return 0;
     const title = header.title ?? true;
     const subtitle = header.subtitle ?? Boolean(style.menuSubtitle?.trim());
+    const pageIndex = header.pageIndex ?? 0;
+    const overrides = style.headingStyleOverrides?.[pageIndex];
+    if (overrides) style = {...style, elementStyles: {...style.elementStyles, menuTitle: {...style.elementStyles.menuTitle,...overrides.menuTitle}, menuSubtitle: {...style.elementStyles.menuSubtitle,...overrides.menuSubtitle}}};
     const legacyMetric = title && subtitle === Boolean(style.menuSubtitle?.trim()) ? measuredHeights?.get('main-header') : undefined;
-    const measured = measuredHeights?.get(headingMeasurementKey(title, subtitle)) ?? legacyMetric;
+    const measured = measuredHeights?.get(headingMeasurementKey(title, subtitle) + (overrides ? `:page:${pageIndex}` : '')) ?? (overrides ? undefined : legacyMetric);
     if (measured !== undefined) return measured;
     const spacing = resolveMenuContentSpacing(style);
     const titleSize = getLayoutFontSize(scale, style, 'menuTitle', style.elementStyles?.menuTitle?.fontSize, 48);

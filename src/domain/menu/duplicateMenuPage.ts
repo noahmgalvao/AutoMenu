@@ -75,6 +75,8 @@ export function duplicateMenuPage(page: PageLayout, pageIndex: number, products:
         ...style,
         name: 'Custom',
         headingPages,
+        headingStyleOverrides: {...Object.fromEntries(Object.entries(style.headingStyleOverrides||{}).map(([p,value])=>[Number(p)>=index?Number(p)+1:p,value])), ...(style.headingStyleOverrides?.[pageIndex] ? {[index]:structuredClone(style.headingStyleOverrides[pageIndex])} : {})},
+        pageBackgroundColors: {...Object.fromEntries(Object.entries(style.pageBackgroundColors||{}).map(([p,value])=>[Number(p)>=index?Number(p)+1:p,value])), ...(style.pageBackgroundColors?.[pageIndex] ? {[index]:style.pageBackgroundColors[pageIndex]} : {})},
         blankPages: [
             ...(style.blankPages || []).map(slot => slot.index >= index ? { ...slot, index: slot.index + 1 } : slot),
             { id: duplicateId, index, fixedPosition: true, copiedLayout },

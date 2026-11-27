@@ -320,6 +320,8 @@ export interface MenuStyle {
   showPageNumbers?: boolean;
   margins?: MenuMargins;
   contentSpacing?: MenuContentSpacing;
+  pageBackgroundColors?: Record<number,string>;
+  headingStyleOverrides?: Record<number, Partial<Record<'menuTitle'|'menuSubtitle', ElementStyle>>>;
   itemFormattingOverrides?: ItemFormattingOverrides;
   elementColorOverrides?: Partial<Record<'menuTitle' | 'menuSubtitle' | 'pageNumber' | 'category' | 'productName' | 'productPrice' | 'productDescription', boolean>>;
   elementStyles: {

@@ -1152,6 +1152,8 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
 
                 return {
                     ...prev, hiddenProductIds: Array.from(currentHidden), pageBreaks: newPageBreaks, blankPages,
+                    headingStyleOverrides: Object.fromEntries(Object.entries(prev.headingStyleOverrides||{}).filter(([p])=>!removedPages.has(Number(p))).map(([p,value])=>[Number(p)-pageIndexesToDelete.filter(index=>index<Number(p)).length,value])),
+                    pageBackgroundColors: Object.fromEntries(Object.entries(prev.pageBackgroundColors||{}).filter(([p])=>!removedPages.has(Number(p))).map(([p,value])=>[Number(p)-pageIndexesToDelete.filter(index=>index<Number(p)).length,value])),
                     headingPages: remapHeadingPages(prev, page => removedPages.has(page) ? undefined
                         : page - pageIndexesToDelete.filter(index => index < page).length),
                     addedImages: prev.addedImages?.filter(image => image.repeatAsBackground || !removedPages.has(image.pageIndex)).map(shift),

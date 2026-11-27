@@ -21,6 +21,7 @@ function withoutLocalFonts(overrides: MenuStyle['itemFormattingOverrides']) {
 export const applyFontToMenuStyle = (style: MenuStyle, fontFamily: string): MenuStyle => ({
   ...style,
   fontFamily,
+  headingStyleOverrides: style.headingStyleOverrides && Object.fromEntries(Object.entries(style.headingStyleOverrides).map(([page, fields]) => [page, Object.fromEntries(Object.entries(fields).map(([field, value]) => [field, {...value, fontFamily}]))])),
   itemFormattingOverrides: withoutLocalFonts(style.itemFormattingOverrides),
   elementStyles: Object.fromEntries(
     Object.entries(style.elementStyles).map(([key, value]) => [key, { ...(value || {}), fontFamily }]),
@@ -48,6 +49,7 @@ export const getConfiguredCanvasFonts = (style: MenuStyle, products: Product[]) 
       }
     }
   }
+  Object.values(style.headingStyleOverrides || {}).forEach(fields => Object.values(fields).forEach(value => { if (value?.fontFamily) fonts.add(value.fontFamily); }));
   products.forEach((product) => {
     if (product.isFreeText && product.styles?.fontFamily) fonts.add(product.styles.fontFamily);
   });

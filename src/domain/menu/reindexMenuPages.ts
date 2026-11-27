@@ -50,7 +50,7 @@ export function reindexMenuPages(style: MenuStyle, pages: PageLayout[], order: n
     });
 
     return {
-        ...style, name: 'Custom', blankPages, categoryPlacements,
+        ...style, pageBackgroundColors: Object.fromEntries(Object.entries(style.pageBackgroundColors || {}).map(([index, value]) => [mapIndex(Number(index)), value])), headingStyleOverrides: Object.fromEntries(Object.entries(style.headingStyleOverrides || {}).map(([index, value]) => [mapIndex(Number(index)), value])), name: 'Custom', blankPages, categoryPlacements,
         headingPages: Object.fromEntries(menuHeadingFields.map(field => [field, style.headingPages?.[field] === 'all'
             ? 'all' : pages.flatMap((page, index) =>
                 headingIsOnPage(style, field, index, page.headerCopy) ? [mapIndex(index)] : [])])),

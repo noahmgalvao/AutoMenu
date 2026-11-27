@@ -211,7 +211,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
         fontFamily: style.productPhotoRatio ? templateFontStack(style, style.fontFamily)
             : style.fontFamily + (style.design ? ', Georgia, serif' : ''),
         ...getTemplateColors(style),
-        backgroundColor: isImportedMenu && !backgroundPhoto ? 'transparent' : 'var(--template-paper)',
+        backgroundColor: style.pageBackgroundColors?.[pageIndex] || (isImportedMenu && !backgroundPhoto ? 'transparent' : 'var(--template-paper)'),
         color: 'var(--template-ink)',
         backgroundImage: backgroundPhoto ? 'none' : (!isImportedMenu || texture.tiled) && backgroundSource ? `url("${backgroundSource}")` : style.design ? decorativeBackground[style.design.background] : 'none',
         backgroundSize: texture.tiled ? 'auto' : 'cover',

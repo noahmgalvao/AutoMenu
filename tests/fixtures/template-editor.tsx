@@ -50,7 +50,7 @@ function Fixture() {
       ...(params.has('reduce-override') ? {categoryProductColumnCounts:{'Seção 1':3}} : {}),
       contentSpacing: { headerToContent: 45, categoryToProduct: 35, betweenProducts: 30, productNameToDescription: 15, productToNextCategory: 40, productNameToPrice: 8 },
       elementStyles: { ...initial.elementStyles, category: { fontSize: 28 }, productName: { fontSize: 24 }, productDescription: { fontSize: 20 }, productPrice: { fontSize: 24 } },
-    } : params.has('neutral') ? { ...INITIAL_STYLE, menuTitle: initial.menuTitle, menuSubtitle: initial.menuSubtitle } : batchLayers ? {
+    } : params.has('neutral') ? { ...INITIAL_STYLE, menuTitle: initial.menuTitle, menuSubtitle: params.has('empty-subtitle') ? '' : initial.menuSubtitle } : batchLayers ? {
       ...initial,
       addedImages: [
         ...batchShapes.map(shape => ({

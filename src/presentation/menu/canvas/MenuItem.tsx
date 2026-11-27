@@ -411,8 +411,8 @@ export const MenuItem: React.FC<MenuItemProps> = ({
     };
     
     if (item.type === 'main-header') {
-        const titleStyle = style.elementStyles?.menuTitle || {};
-        const subStyle = style.elementStyles?.menuSubtitle || {};
+        const titleStyle = {...style.elementStyles?.menuTitle, ...style.headingStyleOverrides?.[pageIndex]?.menuTitle};
+        const subStyle = {...style.elementStyles?.menuSubtitle, ...style.headingStyleOverrides?.[pageIndex]?.menuSubtitle};
         const hasTitle = item.title ?? true;
         const hasSubtitle = item.subtitle ?? Boolean(style.menuSubtitle?.trim());
         const titleId = headingElementId('menuTitle', pageIndex);
@@ -441,7 +441,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
             const fontSize = clampFontSize(style, field, fieldStyle.fontSize, title ? 48 : 18);
             return (
                 <div data-menu-heading-frame={title ? 'title' : 'subtitle'}
-                    className={draft ? 'absolute inset-x-0 top-full z-10 min-w-0' : 'relative min-w-0'}
+                    className={draft ? 'relative z-10 min-w-0' : 'relative min-w-0'}
                     style={{ marginBottom: draft ? 0 : hasSubtitle && title ? fieldStyle.marginBottom ?? 10 : contentSpacing.headerToContent }}
                 >
                     <AutoFitText
@@ -516,7 +516,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
 
         return (
             <header data-block-id="main-header" data-pagination-item="main-header"
-                data-heading-measurement={headingMeasurementKey(hasTitle, hasSubtitle)}
+                data-heading-measurement={headingMeasurementKey(hasTitle, hasSubtitle) + (style.headingStyleOverrides?.[pageIndex] ? `:page:${pageIndex}` : '')}
                 data-heading-draft={showSubtitleDraft || undefined}
                 data-template-header data-header-page={pageIndex} data-menu-border-surface="header" data-custom-border={getBorderOverride(style, 'header')}
                 className={`relative flow-root shrink-0 text-center pointer-events-auto ${selected ? 'ring-2 ring-indigo-500 bg-indigo-50/10' : ''}`}

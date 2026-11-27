@@ -112,7 +112,7 @@ export const INITIAL_STYLE: MenuStyle = {
   minimumFontSize: DEFAULT_MINIMUM_FONT_SIZE, fontSizeLimits: DEFAULT_FONT_SIZE_LIMITS, revisedFontSizeDefaults: true,
   splitCategoryAcrossPages: false, productsCanChangeCategory: false,
   elementStyles: {
-    menuTitle: { fontSize: 44, fontWeight: '700', color: '#111827', textAlign: 'center', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 },
+    menuTitle: { fontSize: 44, fontWeight: '700', color: '#3730a3', textAlign: 'center', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 },
     menuSubtitle: { fontSize: 16, fontWeight: '500', color: '#4b5563', textAlign: 'center', marginBottom: 28 },
     category: { fontSize: 22, fontWeight: '700', textAlign: 'left', color: '#3730a3', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 14 },
     productName: { fontSize: 18, fontWeight: '700', textAlign: 'left', color: '#111827' },

@@ -1,4 +1,5 @@
 import { useRenderedTextControls } from './useRenderedTextControls';
+import { HoldStepButton } from '../../common/HoldStepButton';
 import { TextOutlinePicker } from './TextOutlinePicker';
 
 import { ColorPicker } from './ColorPicker';
@@ -9,6 +10,7 @@ import { FontSelect } from './SearchableSelects';
 import { FontSizeInput } from './FontSizeInput';
 
 interface StyleControlsProps {
+  mixedFontSize?: boolean; onFontStep?: (delta:number)=>void | boolean; hideColor?: boolean;
   label: string;
   value: ElementStyle;
   onChange: (newStyle: ElementStyle) => void | boolean;
@@ -21,7 +23,7 @@ interface StyleControlsProps {
 }
 
 export const StyleControls: React.FC<StyleControlsProps> = ({ 
-  label, 
+  label, mixedFontSize, onFontStep, hideColor,
   value, 
   onChange,
   disabled = false,
@@ -46,17 +48,17 @@ export const StyleControls: React.FC<StyleControlsProps> = ({
                         onChange={(font) => onChange({...value, fontFamily: font})}
                     />
                 </div>
-                <FontSizeInput showStepButtons
+                {mixedFontSize ? <div className="flex items-center gap-1"><HoldStepButton label="Diminuir tamanho da fonte" onStep={() => onFontStep?.(-1) !== false} className="rounded border border-slate-200 bg-white p-2">−</HoldStepButton><HoldStepButton label="Aumentar tamanho da fonte" onStep={() => onFontStep?.(1) !== false} className="rounded border border-slate-200 bg-white p-2">+</HoldStepButton></div> : <FontSizeInput showStepButtons
                     value={rendered.size}
                     onChange={(fontSize) => rendered.canSetSize(fontSize) && onChange({...value, fontSize})}
                     max={maxFontSize}
                     min={minFontSize}
-                />
+                />}
             </div>
 
             {/* Cor e alinhamento */}
             <div className="flex flex-wrap items-center gap-1.5">
-                <ColorPicker value={value.color} onChange={color => onChange({ ...value, color })} />
+                {!hideColor && <ColorPicker value={value.color} onChange={color => onChange({ ...value, color })} />}
                 <TextOutlinePicker value={value.textOutline} onChange={textOutline => onChange({ ...value, textOutline })} />
 
                 <div className="flex bg-white rounded border border-slate-200">

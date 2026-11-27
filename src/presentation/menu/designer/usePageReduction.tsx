@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { MenuStyle, Product, SortOption } from '../../../domain/menu/model';
 import { buildPageReductionCandidates, selectPageReduction, selectPageReductionAlternative, type MeasuredReduction, type PageReductionCandidate } from '../../../domain/menu/pageReduction';
@@ -52,7 +52,7 @@ function ReductionProbe({ candidate, sortOption, complete }: { candidate: PageRe
             timer = setTimeout(sample, 60);
         };
         for (const image of root.current?.querySelectorAll<HTMLImageElement>('img') || []) image.loading = 'eager';
-        void document.fonts.ready.then(() => { if (!disposed) timer = setTimeout(sample, 60); });
+        timer = setTimeout(sample, 60);
         return () => { disposed = true; clearTimeout(timer); };
     }, [candidate, complete]);
     return <div ref={root} data-page-reduction-probe aria-hidden="true" inert
@@ -64,6 +64,11 @@ function ReductionProbe({ candidate, sortOption, complete }: { candidate: PageRe
 const NO_OPTIONS: MeasuredReduction[] = [];
 
 export function usePageReduction(products: Product[], style: MenuStyle, sortOption: SortOption, pageCount: number) {
+    // Editor renders may recreate equal objects. Only actual document changes
+    // invalidate an expensive measured result, never opening or scrolling a panel.
+    const sourceKey = JSON.stringify([products, style, sortOption]);
+    const source = useMemo(() => ({ products, style, sortOption }), [sourceKey]);
+    products = source.products; style = source.style; sortOption = source.sortOption;
     const [fontRevision, setFontRevision] = useState(0);
     useEffect(() => {
         const changed = () => setFontRevision(value => value + 1);
@@ -109,7 +114,7 @@ export function usePageReduction(products: Product[], style: MenuStyle, sortOpti
         }, 650);
         return () => { clearTimeout(timer); controller.abort(); };
     }, [products, style, sortOption, pageCount, fontRevision]);
-    const options = result?.products === products && result.style === style && result.sortOption === sortOption && result.pageCount === pageCount && result.fontRevision === fontRevision && pageCount > 1 ? result.options : NO_OPTIONS;
-    const ready = result?.products === products && result.style === style && result.sortOption === sortOption && result.pageCount === pageCount && result.fontRevision === fontRevision;
+    const options = result?.products === products && result.style === style && result.sortOption === sortOption && result.fontRevision === fontRevision && pageCount > 1 ? result.options : NO_OPTIONS;
+    const ready = pageCount === 1 || result?.products === products && result.style === style && result.sortOption === sortOption && result.fontRevision === fontRevision;
     return { options, ready, fontRevision, measurement: probe && createPortal(<ReductionProbe key={probe.id} candidate={probe.candidate} sortOption={sortOption} complete={probe.complete} />, document.body) };
 }

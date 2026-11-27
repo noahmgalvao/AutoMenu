@@ -162,9 +162,18 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         setShapePickerRequest({ id });
     };
     const [tipsOpen, setTipsOpen] = useState(false);
-    const [pageCount, setPageCount] = useState(1);
+    const [pageCount, setPageCount] = useState(0);
     const pageCountChanged = useCallback((count: number) => { setPageCount(count); onExportablePagesChange?.(count); }, [onExportablePagesChange]);
     const reduction = usePageReduction(products, style, sortOption, pageCount);
+    const [tipsRequested, setTipsRequested] = useState(false);
+    useEffect(() => {
+        if (tipsRequested && reduction.ready) { setTipsRequested(false); setTipsOpen(true); }
+    }, [tipsRequested, reduction.ready]);
+    const toggleTips = () => {
+        if (tipsOpen || tipsRequested) { setTipsOpen(false); setTipsRequested(false); }
+        else if (reduction.ready) setTipsOpen(true);
+        else setTipsRequested(true);
+    };
     const [reviewReductionAfterTips, setReviewReductionAfterTips] = useState(false);
     const [reductionPreview, setReductionPreview] = useState<MeasuredReduction[] | null>(null);
     const applyReduction = (option: MeasuredReduction) => {
@@ -2109,7 +2118,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 {reductionPreview && <PageReductionPreview options={reductionPreview} sortOption={sortOption}
                     cancel={() => setReductionPreview(null)} apply={applyReduction} />}
                 <FloatingTipsButton key={currentMenuId || workspaceId} anchorRef={tipsAnchorRef} tipKeys={tipKeys} open={tipsOpen}
-                    onToggle={() => setTipsOpen(current => !current)} onDragStart={() => setTipsOpen(false)} />
+                    pending={tipsRequested} onToggle={toggleTips} onDragStart={() => { setTipsOpen(false); setTipsRequested(false); }} />
                 <>
                     {(tipsOpen || reviewAction) && createPortal(
                         <div ref={reviewAction ? lockModalScrolling : undefined}
@@ -2346,6 +2355,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
             {/* 2. SIDEBAR EDITOR */}
             <MenuSidebar
+                commitText={(nextProducts,nextStyle) => { if (setProductsAndStyle) setProductsAndStyle(nextProducts,nextStyle,'Formatar textos'); else {setProducts?.(nextProducts);setStyle(nextStyle);} }}
                 isOpen={isOpen || false}
                 onClose={onClose}
                 publishControl={publishControl}

@@ -33,6 +33,7 @@ import {
 
 // --- ELEMENTS SECTION ---
 interface ElementsSectionProps {
+  batchControls?: React.ReactNode;
   selection: { type: 'product' | 'category' | 'freeText' | 'addedImage' | 'page' | 'menuTitle' | 'menuSubtitle' | null, id: string | null };
   formattingScope: { value: FormattingScope; group?: number; change: (scope: FormattingScope) => void } | null;
   itemStyle: (kind: FormattingKind) => MenuStyle;
@@ -62,7 +63,7 @@ interface ElementsSectionProps {
 }
 
 export const ElementsSection: React.FC<ElementsSectionProps> = ({
-  selection,
+  selection, batchControls,
   selectedFreeText,
   selectedAddedImage,
   selectedAddedImageIds,
@@ -119,7 +120,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
         <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
             <Type size={14} /> Elementos
         </h3>
-        {formattingScope ? (
+        {(!selection.type || selection.type === "page") ? null : formattingScope ? (
             <label className="relative flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-1 text-[10px] font-bold text-indigo-700 focus-within:ring-2 focus-within:ring-indigo-500">
                 <span aria-hidden="true">Editando: {scopeLabel}</span>
                 <ChevronDown size={12} aria-hidden="true" />
@@ -136,7 +137,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
         </div>
 
         {/* DYNAMIC EDIT CONTROLS */}
-        {selection.type === 'menuTitle' ? (
+        {(!selection.type || selection.type === 'page') ? batchControls : selection.type === 'menuTitle' ? (
             <div className="animate-fade-in border-l-2 border-indigo-500 pl-2">
                 <StyleControls
                     label="Estilo do título"
@@ -734,11 +735,12 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle, s
 
 // --- STYLE SECTION ---
 interface StyleSectionProps {
+  hideFont?: boolean;
   style: MenuStyle;
   setStyle: React.Dispatch<React.SetStateAction<MenuStyle>>;
 }
 
-export const StyleSection: React.FC<StyleSectionProps> = ({ style, setStyle }) => {
+export const StyleSection: React.FC<StyleSectionProps> = ({ style, setStyle, hideFont }) => {
   const selectedTextureUrl = normalizeTextureUrl(style.backgroundImage);
   const isMiniFoodSelected = isMiniFoodTexture(selectedTextureUrl);
   const updatePrimaryColor = (color: string) => {
@@ -796,10 +798,10 @@ export const StyleSection: React.FC<StyleSectionProps> = ({ style, setStyle }) =
   return (
   <section className="space-y-3">
     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2"> <Palette size={14} /> Cores e fonte </h3>
-    <div className="space-y-1">
+    {!hideFont && <div className="space-y-1">
         <label className="text-[10px] uppercase font-bold text-slate-400">Fonte principal</label>
         <FontSelect value={style.fontFamily} onChange={(font) => setStyle(prev => ({ ...prev, fontFamily: font, name: 'Custom' }))} />
-    </div>
+    </div>}
     <div className="flex gap-3 pt-1">
         <div className="space-y-1 flex-1">
             <label className="text-[10px] uppercase font-bold text-slate-400">Principal</label>

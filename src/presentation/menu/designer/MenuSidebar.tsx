@@ -1,3 +1,4 @@
+import { BatchTextControls } from './BatchTextControls';
 import { PublishButton, type PublishButtonProps } from '../../publishing/PublishButton';
 import type { FormattingKind, FormattingScope } from '../../../domain/menu/itemFormatting';
 import { SaveTemplateDialog } from './MenuDesignDialog';
@@ -14,12 +15,12 @@ import {
   ElementsSection, 
   PageSection,
   LayoutSection, 
-  StyleSection, 
   SortingSection
 } from './SidebarSections';
 import { resolveFontSizeLimits, resolveMinimumFontSize } from '../../../domain/menu/styleRules';
 
 interface MenuSidebarProps {
+    commitText: (products:Product[],style:MenuStyle)=>void;
     isOpen: boolean;
     onClose?: () => void;
     onSaveTemplate?: (name: string, description: string, id: string, publish: boolean) => Promise<void>;
@@ -65,7 +66,7 @@ interface MenuSidebarProps {
 }
 
 export const MenuSidebar: React.FC<MenuSidebarProps> = ({
-    isOpen, onClose, publishControl, handleResetDesign, restoreRuleDefaults, onRulesLayoutEditingChange,
+    commitText, isOpen, onClose, publishControl, handleResetDesign, restoreRuleDefaults, onRulesLayoutEditingChange,
     style, setStyle, templates, applyTemplate, onSaveTemplate, onPublishTemplate, sortOption, setSortOption, products, currentUserId,
     selection, setSelection, selectedFreeText, selectedAddedImage, selectedAddedImageIds,
     formattingScope, itemStyle, setSidebarFormatting,
@@ -129,7 +130,8 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
 
         <div data-designer-scroll-container className="overflow-y-auto overflow-x-hidden overscroll-y-contain p-4 space-y-6 custom-scrollbar flex-grow pb-24 md:pb-10 min-w-0">
           
-          <ElementsSection 
+          <ElementsSection
+            batchControls={<BatchTextControls style={style} products={products} page={Number(selection.id || 0)} commit={commitText} />}
             selection={selection}
             setSelection={setSelection}
             selectedFreeText={selectedFreeText}
@@ -187,10 +189,7 @@ export const MenuSidebar: React.FC<MenuSidebarProps> = ({
 
           <hr className="border-slate-100" />
 
-          <StyleSection 
-            style={style}
-            setStyle={setStyle}
-          />
+
 
           <hr className="border-slate-100" />
 
