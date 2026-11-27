@@ -285,6 +285,7 @@ export const ProductDesigner: React.FC<ProductDesignerProps> = ({
                 <div
                     className="p-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center flex-shrink-0 min-w-0 touch-none cursor-grab active:cursor-grabbing"
                     {...dragHandlers}
+                    onPointerDown={event => { setMenuOpenId(null); dragHandlers.onPointerDown(event); }}
                 >
                     <h2 className="font-bold text-slate-800 flex items-center gap-2 text-sm pointer-events-none min-w-0 truncate">
                         <ShoppingCart size={16} /> Produtos

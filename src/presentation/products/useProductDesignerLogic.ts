@@ -210,11 +210,11 @@ export const useProductDesignerLogic = ({
                 metadata: { product_id: targetId }
             });
             const image = { image: url, imageAssetId: asset.id };
+            setStyle(prev => prev.showImages ? prev : { ...prev, showImages: true, name: 'Custom' });
             if (session && !session.closed && !session.savedIds.has(targetId)) {
                 updateExistingEdit(targetId, previous => ({ ...previous, ...image }));
             } else if (session?.closed?.cancelledId !== targetId) {
                 setProducts(prev => prev.map(p => p.id === targetId ? { ...p, ...image } : p));
-                setStyle(prev => prev.showImages ? prev : { ...prev, showImages: true, name: 'Custom' });
             }
             await preloadImage(url);
         } catch (err) {

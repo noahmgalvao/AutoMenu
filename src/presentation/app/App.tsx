@@ -1,3 +1,4 @@
+import { DesignerSheetExpansionContext } from '../common/useBottomSheetDrag';
 import { withMenuRuleFallback } from '../../application/workspace/state';
 import { DesignerTapButton } from '../common/DesignerTapButton';
 import { MenuMultiSelectionProvider } from '../menu/interactions/MenuMultiSelection';
@@ -57,6 +58,7 @@ function PublishedLinkNotice({ button, onDismiss }: {
 
 const App: React.FC = () => {
   const [isRulesLayoutEditing, setRulesLayoutEditing] = useState(false);
+  const [designerExpanded, setDesignerExpanded] = useState(false);
   const [activePanel, setActivePanel] = useState<'product' | 'style' | null>('style');
   const [hasOpenedProductDesigner, setHasOpenedProductDesigner] = useState(false);
   const [isCreateMenuOpen, setIsCreateMenuOpen] = useState(false);
@@ -201,6 +203,7 @@ const App: React.FC = () => {
   }
 
   return (
+    <DesignerSheetExpansionContext.Provider value={{expanded:designerExpanded,setExpanded:setDesignerExpanded}}>
     <MenuMultiSelectionProvider>
     <div className="h-screen bg-slate-50 flex flex-col font-sans text-slate-900 overflow-hidden relative"
       style={{ '--automenu-max-sheet-height': 'calc(100dvh - 4rem)' } as React.CSSProperties}>
@@ -439,6 +442,7 @@ const App: React.FC = () => {
       </div>
     </div>
     </MenuMultiSelectionProvider>
+    </DesignerSheetExpansionContext.Provider>
   );
 };
 

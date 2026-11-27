@@ -40,7 +40,7 @@ function placeControls(
         const show = !hoverOnly || hovered || lingering;
         if (!show && node.style.visibility !== 'hidden') node.style.visibility = 'hidden';
         return show;
-    }).sort((first, second) => Number(first.hoverOnly) - Number(second.hoverOnly) || priority[first.kind] - priority[second.kind]);
+    }).sort((first, second) => Number(first.hoverOnly) - Number(second.hoverOnly) || priority[first.kind] - priority[second.kind] || first.node.id.localeCompare(second.node.id));
     if (!active.length) return;
     const pageRect = page.getBoundingClientRect();
     const scale = pageRect.width / page.offsetWidth;
@@ -136,8 +136,9 @@ function placeControls(
                 if (isClear(candidate) && handles.every(box => !controlBoxesOverlap(candidate, box))) placement = candidate;
             }
         } else if (kind !== 'page') {
+            if (previousBox && isClear(previousBox)) placement = previousBox;
             const candidate = getObjectControlBox(target, kind, direction, width, height);
-            if (isClear(candidate)) placement = candidate;
+            if (!placement && isClear(candidate)) placement = candidate;
         }
 
         if (!placement) {
@@ -153,8 +154,8 @@ function placeControls(
         const parent = onScreen && host ? host : (node.offsetParent as HTMLElement | null) || zoomLayer || anchor;
         const parentRect = parent.getBoundingClientRect();
         const controlScale = onScreen ? 1 : scale;
-        const leftStyle = `${Math.round(placement.left - parentRect.left) / controlScale - parent.clientLeft}px`;
-        const topStyle = `${Math.round(placement.top - parentRect.top) / controlScale - parent.clientTop}px`;
+        const leftStyle = `${Math.round((placement.left - parentRect.left) * 64 / controlScale) / 64 - parent.clientLeft}px`;
+        const topStyle = `${Math.round((placement.top - parentRect.top) * 64 / controlScale) / 64 - parent.clientTop}px`;
         if (node.style.left !== leftStyle) node.style.left = leftStyle;
         if (node.style.top !== topStyle) node.style.top = topStyle;
         const transform = onScreen ? '' : `scale(${1 / scale})`;

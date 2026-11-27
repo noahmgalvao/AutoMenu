@@ -266,6 +266,7 @@ export function applyGroupedWordFit(root: HTMLElement, heightScale: number, typi
     const size = `${getFittedFontSize(base, minimum, scale, typical)}px`;
     if (element.style.getPropertyValue('--automenu-fitted-font-size') !== size) {
       element.style.setProperty('--automenu-fitted-font-size', size);
+      element.dataset.fittedFontSize = size;
     }
   }
 }

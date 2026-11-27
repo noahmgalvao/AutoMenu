@@ -544,6 +544,8 @@ test('profile help works by tap on mobile and customized settings inherit the pr
 
 test('file generation survives publication failure and publication survives export failure', async ({ page }) => {
   await openWorkspace(page);
+  await page.getByRole('button', { name: 'Abrir dicas do cardápio' }).click();
+  await page.getByRole('button', { name: 'Descartar todas', exact: true }).click();
   let row: Record<string, unknown> | null = null;
   let failPublication = true;
   await page.route(/\/rest\/v1\/menu_publications(?:\?|$)/, async route => {
@@ -1040,4 +1042,19 @@ test('returning to the editor checks whether the persisted session still exists'
     document.dispatchEvent(new Event('resume'));
   });
   await expect(page.getByPlaceholder('email@empresa.com')).toBeVisible();
+});
+
+test('switching between mobile designers preserves the expanded sheet', async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 852 });
+  await openWorkspace(page);
+  const visual = page.locator('#designer-sheet-visual');
+  const products = page.locator('#designer-sheet-products');
+  await visual.getByRole('button', { name: 'Expandir painel', exact: true }).click();
+  const top = (await visual.boundingBox())!.y;
+  await page.getByRole('button', { name: 'Produtos', exact: true }).last().click();
+  await expect(products.getByRole('button', { name: 'Voltar à visualização parcial' })).toBeVisible();
+  await expect.poll(async () => (await products.boundingBox())!.y).toBeCloseTo(top, 0);
+  await page.getByRole('button', { name: 'Visual', exact: true }).last().click();
+  await expect(visual.getByRole('button', { name: 'Voltar à visualização parcial' })).toBeVisible();
+  await expect.poll(async () => (await visual.boundingBox())!.y).toBeCloseTo(top, 0);
 });

@@ -11,7 +11,7 @@ test.beforeEach(async ({ page }) => {
 test('image actions reflect each photo group and adding enables it with the shared photo size', async ({ page }) => {
   await page.route('**/tests/asset-upload', route => route.fulfill({ json: { asset: { id: 'test-photo' }, url: '/tests/category-size.png' } }));
   await page.route('**/tests/category-size.png', route => route.fulfill({ contentType: 'image/png', body: photo }));
-  await page.goto(fixture + '?photos=list&image-upload&hide-photos&no-photos&different-categories');
+  await page.goto(fixture + '?general-rules&photos=list&image-upload&hide-photos&no-photos&different-categories');
   const menu = page.locator('[data-canvas-object-menu]');
   const add = menu.getByRole('button', { name: 'Adicionar imagem', exact: true });
   const disable = menu.getByRole('button', { name: 'Desabilitar imagens' });
@@ -27,12 +27,19 @@ test('image actions reflect each photo group and adding enables it with the shar
   const categoryPhoto = page.locator('#category-image-Entradas');
   const productPhoto = page.locator('#product-image-1');
 
+  await expect(page.getByTitle(/imagens de (produtos|categorias)/)).toHaveCount(0);
   for (const [target, image] of [[category, categoryPhoto], [product, productPhoto]]) {
     await open(target);
     await expect(add).toBeVisible();
     await expect(disable.or(enable)).toHaveCount(0);
     await upload();
     await expect(image.locator('img')).toBeVisible();
+    if (target === category) {
+      await expect(page.getByTitle('Ocultar imagens de categorias', {exact:true})).toBeVisible();
+      await expect(page.getByTitle(/imagens de produtos/)).toHaveCount(0);
+    } else {
+      await expect(page.getByTitle('Ocultar imagens de produtos',{exact:true})).toBeVisible();
+    }
     await open(target);
     await disable.click();
     await expect(image).toHaveCount(0);

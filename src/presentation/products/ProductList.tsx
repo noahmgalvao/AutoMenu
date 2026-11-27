@@ -62,7 +62,7 @@ function ProductOptionsMenu({ anchor, floating, children }: {
   const menu = <div ref={ref} data-product-designer-options-menu="true"
     style={floating ? { visibility: 'hidden' } : undefined}
     className={`flex w-44 flex-col rounded-lg border border-slate-100 bg-white py-1 shadow-xl ${floating
-      ? 'fixed z-[110] overflow-y-auto overscroll-contain'
+      ? 'fixed z-[150] overflow-y-auto overscroll-contain'
       : 'absolute right-0 top-8 z-[140] animate-in fade-in zoom-in-95'}`}
     onClick={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()}>
     {children}

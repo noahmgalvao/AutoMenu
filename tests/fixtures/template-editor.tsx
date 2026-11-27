@@ -41,7 +41,12 @@ function Fixture() {
   const heightFit = params.has('height-fit');
   const batchLayers = params.has('batch-layers');
   const [history, setHistory] = useState<MenuStyle[]>(() => !photoMode ? [
-    params.has('neutral') ? { ...INITIAL_STYLE, menuTitle: initial.menuTitle, menuSubtitle: initial.menuSubtitle } : batchLayers ? {
+    params.has('reduce-pages') ? { ...initial,
+      ...(params.has('keep-art-page') ? { addedImages: [{ id: 'retained-art', url: canvasShapeUrl(lowContrastShape), shape: lowContrastShape, x: 50, y: 50, width: 80, pageIndex: 1 }] } : {}),
+      design: undefined, showImages: false, columnCount: 1, categoryColumnCount: 1,
+      contentSpacing: { headerToContent: 45, categoryToProduct: 35, betweenProducts: 30, productNameToDescription: 15, productToNextCategory: 40, productNameToPrice: 8 },
+      elementStyles: { ...initial.elementStyles, category: { fontSize: 28 }, productName: { fontSize: 24 }, productDescription: { fontSize: 20 }, productPrice: { fontSize: 24 } },
+    } : params.has('neutral') ? { ...INITIAL_STYLE, menuTitle: initial.menuTitle, menuSubtitle: initial.menuSubtitle } : batchLayers ? {
       ...initial,
       addedImages: [
         ...batchShapes.map(shape => ({
@@ -71,6 +76,7 @@ function Fixture() {
   ] : [{
     ...initial, showImages: !splitCategory && !priceFlow && !params.has('hide-photos'),
     showCategoryImages: params.has('hide-photos') ? false : initial.showCategoryImages,
+    ...(params.has('tip-fonts') ? { elementStyles: { ...initial.elementStyles, category: { fontSize: 45 }, productName: { fontSize: 50 } } } : {}),
     ...(heightFit ? {
       freeTextBackgrounds: { 'fit-background': { x: 40, y: 40, width: 220, pageIndex: 0 } },
       elementStyles: {
@@ -105,7 +111,9 @@ function Fixture() {
       image: photoMode === 'background' ? 'background' : 'top',
     },
   }]);
-  const [items, setItems] = useState(() => splitCategory ? [
+  const [items, setItems] = useState(() => params.has('reduce-pages') ? Array.from({ length: Number(params.get('reduce-pages')) || 24 }, (_, index) => ({
+    id: `reduce-${index}`, category: `Seção ${Math.floor(index / 4) + 1}`, name: 'Prato da casa', price: 25, description: 'Acompanhamento da estação',
+  })) : splitCategory ? [
     { id: 'a1', category: 'A', name: 'A1', price: 12, description: '', customMarginTop: 350 },
     ...[1, 2, 3].map(index => ({ id: `b${index}`, category: 'B', name: `B${index}`, price: 12, description: '', customMarginTop: 190 })),
     { id: 'c1', category: 'C', name: 'C1', price: 12, description: '', customMarginTop: 130 },
@@ -125,10 +133,10 @@ function Fixture() {
     description: 'Descrição', price: 6.5,
   })) : !photoMode ? products : (params.has('single-product') ? products.slice(0, 1) : products).map(product => ({
     ...product,
-    name: defaultFields ? 'Novo item' : params.has('long-name') && product.id === '1' ? 'Burratacomtomatemarinado'.repeat(4) : product.name,
+    name: params.has('tip-fonts') ? 'Acompanhamentos' : defaultFields ? 'Novo item' : params.has('long-name') && product.id === '1' ? 'Burratacomtomatemarinado'.repeat(4) : product.name,
     description: defaultFields ? 'Descrição' : params.has('photo-description') ? 'Pão de fermentação natural e tomates da estação. '.repeat(14).trim() : product.description,
     price: params.has('zero-price') && product.id === '1' ? 0 : product.price,
-    category: defaultFields ? 'Nova categoria 12' : (params.has('keep-categories') || params.has('different-categories') && product.id === '3') ? product.category : 'Entradas',
+    category: params.has('tip-fonts') ? 'Especialidades' : defaultFields ? 'Nova categoria 12' : (params.has('keep-categories') || params.has('different-categories') && product.id === '3') ? product.category : 'Entradas',
     image: params.has('no-photos') ? undefined : samplePhoto,
   })));
   const [future, setFuture] = useState<MenuStyle[]>([]);
@@ -154,7 +162,7 @@ function Fixture() {
       futureActions.current = [];
       setFuture([]);
       setHistory((current) => [...current, typeof patch === 'function' ? patch(current[current.length - 1]) : patch]);
-    }} products={items} setProducts={photoMode || params.has('background-text') || params.has('editable') ? setItems : undefined} sortOption={sortOption} setSortOption={setSortOption}
+    }} products={items} setProducts={photoMode || params.has('reduce-pages') || params.has('background-text') || params.has('editable') ? setItems : undefined} sortOption={sortOption} setSortOption={setSortOption}
       templates={[...PRESET_TEMPLATES, imported]} workspaceId="test-workspace" currentUserId="test-user"
       onProductEditChange={handleEditChange}
       undo={() => {

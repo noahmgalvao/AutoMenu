@@ -1,3 +1,4 @@
+import { applyResponsivePrices } from './useResponsivePrices';
 import { applyGroupedWordFit } from './textFit';
 import { useCallback, useMemo, useState, useLayoutEffect, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import { getPaginationHeightKey, getPaginationChunkHeightKey, type PageLayout } from '../../../domain/menu/menuPagination';
@@ -19,6 +20,10 @@ export function useMenuPageMeasurements(rootRef: RefObject<HTMLElement | null>, 
         const measure = () => {
             if (root.style.getPropertyValue(livePhotoScaleVariable('product')) || root.style.getPropertyValue(livePhotoScaleVariable('category'))) return;
             applyGroupedWordFit(root, typographyScale, typicalFontSize);
+            // Font fitting and price placement must describe the same frame. Measuring the
+            // previous price layout after a font reset permanently over-shrinks this source.
+            const minimum = Math.max(13, ...Array.from(root.querySelectorAll<HTMLElement>('[data-word-fit-minimum]'), element => Number(element.dataset.wordFitMinimum) || 13));
+            applyResponsivePrices(root, minimum);
             const next = new Map<string, number>();
             for (const header of headers) {
                 if (header.offsetWidth && header.dataset.headingMeasurement) {

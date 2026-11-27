@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
+import { createContext, useContext, useCallback, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
 
 const PARTIAL_HEIGHT = '45dvh';
 const EXPANDED_HEIGHT = '100dvh';
@@ -13,7 +13,11 @@ interface SheetDrag {
     frame: number;
 }
 
+export const DesignerSheetExpansionContext = createContext<{expanded:boolean;setExpanded:(value:boolean)=>void}|null>(null);
+
 export function useBottomSheetDrag(isOpen: boolean, onClose?: () => void) {
+    const shared = useContext(DesignerSheetExpansionContext);
+    const sharedRef = useRef(shared); sharedRef.current = shared;
     const [height, setHeight] = useState(PARTIAL_HEIGHT);
     const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
     const sheetRef = useRef<HTMLDivElement>(null);
@@ -30,8 +34,9 @@ export function useBottomSheetDrag(isOpen: boolean, onClose?: () => void) {
     useLayoutEffect(() => {
         const sheet = sheetRef.current;
         if (!sheet || !isMobile || !isOpen) return;
-        sheet.style.height = PARTIAL_HEIGHT;
-        setHeight(PARTIAL_HEIGHT);
+        const next = sharedRef.current?.expanded ? EXPANDED_HEIGHT : PARTIAL_HEIGHT;
+        sheet.style.height = next;
+        setHeight(next);
         return () => {
             const drag = dragRef.current;
             if (drag) cancelAnimationFrame(drag.frame);
@@ -41,7 +46,7 @@ export function useBottomSheetDrag(isOpen: boolean, onClose?: () => void) {
             sheet.style.removeProperty('transform');
             if (!window.matchMedia('(max-width: 767px)').matches) sheet.style.removeProperty('height');
         };
-    }, [isMobile, isOpen]);
+    }, [isMobile, isOpen, shared?.expanded]);
 
     useLayoutEffect(() => {
         if (!isMobile || !isOpen) return;
@@ -66,6 +71,7 @@ export function useBottomSheetDrag(isOpen: boolean, onClose?: () => void) {
         sheet.style.removeProperty('transform');
         sheet.style.removeProperty('transition');
         setHeight(next);
+        sharedRef.current?.setExpanded(next === EXPANDED_HEIGHT);
 
         if (Math.abs(offset) > 1 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
             animationRef.current = sheet.animate([

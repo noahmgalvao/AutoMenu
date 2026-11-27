@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react';
 import { Check, X } from 'lucide-react';
 
-export function MenuTip({ title, children, apply, dismiss, applyLabel, dismissLabel, disabled, onHover }: {
+export function MenuTip({ title, children, apply, dismiss, applyLabel, dismissLabel, disabled, onHover, prominent }: {
   title: string;
+  prominent?: boolean;
   children: ReactNode;
   apply: () => void;
   dismiss: () => void;
@@ -12,7 +13,7 @@ export function MenuTip({ title, children, apply, dismiss, applyLabel, dismissLa
   onHover?: (hovered: boolean) => void;
 }) {
   return <section className="space-y-1.5" onMouseEnter={() => onHover?.(true)} onMouseLeave={() => onHover?.(false)}>
-    <h3 className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{title}</h3>
+    <h3 className={prominent ? "text-sm font-bold text-indigo-900" : "text-[10px] font-bold uppercase tracking-wide text-slate-500"}>{title}</h3>
     <div className="flex items-start gap-2.5 rounded-xl border border-indigo-100 bg-indigo-50/70 p-3">
       <div className="min-w-0 flex-1 space-y-2 text-xs leading-relaxed text-slate-700">{children}</div>
       <div className="flex shrink-0 gap-1">

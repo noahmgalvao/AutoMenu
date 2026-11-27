@@ -1,3 +1,7 @@
+import { usePageReduction } from './designer/usePageReduction';
+import { PageReductionPreview } from './designer/PageReductionPreview';
+import type { MeasuredReduction } from '../../domain/menu/pageReduction';
+import { FloatingTipsButton } from './designer/FloatingTipsButton';
 import { MenuTip } from './designer/MenuTip';
 import { publicationSuggestionsEvent } from '../publishing/publicationSuggestions';
 import { isDefaultCategoryName, isDefaultProductName, isDefaultProductDescription, isDefaultFreeText } from '../../domain/menu/pristineItems';
@@ -137,20 +141,10 @@ const WORD_FIT_SCOPE_LABELS: Record<WordFitScope, string> = {
     menuTitle: 'títulos principais',
     menuSubtitle: 'subtítulos',
     category: 'categorias',
-    productName: 'nomes dos produtos',
+    productName: 'produtos',
     productPrice: 'preços',
     productDescription: 'descrições dos produtos',
     freeText: 'textos livres',
-};
-
-const formatLayoutIssueBreakdown = (categories: number, products: number, freeTexts: number) => {
-    const parts = [
-        categories > 0 ? `${categories} ${categories === 1 ? 'categoria' : 'categorias'}` : null,
-        products > 0 ? `${products} ${products === 1 ? 'produto' : 'produtos'}` : null,
-        freeTexts > 0 ? `${freeTexts} ${freeTexts === 1 ? 'texto livre' : 'textos livres'}` : null,
-    ].filter(Boolean) as string[];
-    if (parts.length <= 1) return parts[0] || '';
-    return `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`;
 };
 
 const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, setProducts, setProductsAndStyle, templates = [], sortOption, setSortOption, undo, redo, onProductEditChange, canUndo, canRedo, isOpen = true, isProductDesignerOpen = false, onRulesLayoutEditingChange, publishControl, fileExportRef, exportTitle, onExportablePagesChange, onSelectedPagesChange, onClose, onOpenVisual, onCanvasScroll, workspaceId, currentUserId, currentMenuId, onSaveTemplate, onPublishTemplate, splitCategoryAcrossPages: legacySplit = false, productsCanChangeCategory: legacyDrag = false }) => {
@@ -168,6 +162,20 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         setShapePickerRequest({ id });
     };
     const [tipsOpen, setTipsOpen] = useState(false);
+    const [pageCount, setPageCount] = useState(1);
+    const pageCountChanged = useCallback((count: number) => { setPageCount(count); onExportablePagesChange?.(count); }, [onExportablePagesChange]);
+    const reduction = usePageReduction(products, style, sortOption, pageCount);
+    const [reviewReductionAfterTips, setReviewReductionAfterTips] = useState(false);
+    const [reductionPreview, setReductionPreview] = useState<MeasuredReduction[] | null>(null);
+    useEffect(() => {
+        if (!reviewReductionAfterTips) return;
+        if (pageCount <= 1) { setReviewReductionAfterTips(false); return; }
+        if (!reduction.ready) return;
+        if (reduction.options.length) setReductionPreview(reduction.options);
+        setReviewReductionAfterTips(false);
+    }, [reviewReductionAfterTips, pageCount, reduction.ready, reduction.options]);
+    // A document edit invalidates a proposal; never apply a preview from an older source.
+    useEffect(() => { setReductionPreview(null); }, [products, style, sortOption, pageCount]);
     const [contrastTips, setContrastTips] = useState<ContrastTip[]>([]);
     const [backgroundOverlapTips, setBackgroundOverlapTips] = useState<OverlapTip[]>([]);
     const [fontTips, setFontTips] = useState<FontTip[]>([]);
@@ -224,6 +232,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         if (!tipsOpen) return;
         const closeTipsOutside = (event: PointerEvent) => {
             const target = event.target as Node | null;
+            if (target instanceof Element && target.closest('[data-page-reduction-dialog]')) return;
             if (target && (tipsAnchorRef.current?.contains(target) || tipsPanelRef.current?.contains(target))) return;
             setTipsOpen(false);
             setHoveredFontScope(null);
@@ -375,8 +384,18 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         setProducts?.(cleanPlaceholderProducts);
         dismissTip('placeholders');
     };
-    const hasVisibleTips = allDismissed !== tipsSignature && (showPlaceholderTip || showSpacingTip || visibleFontTips.length > 0 || showMixedFontTip || showOverlapTip || showOffCanvasTip
+    const showReductionTip = reduction.options.length > 0 && !dismissedTips.has('page-reduction');
+    const hasVisibleTips = allDismissed !== tipsSignature && (showReductionTip || showPlaceholderTip || showSpacingTip || visibleFontTips.length > 0 || showMixedFontTip || showOverlapTip || showOffCanvasTip
         || showPositionedCategoryTip || contrastTips.length > 0 || backgroundOverlapTips.length > 0 || kindsWithDifferences.length > 0 || hasMixedProductColumns);
+
+    const tipKeys = allDismissed === tipsSignature ? [] : [
+        showReductionTip && 'page-reduction', showPlaceholderTip && 'placeholders', showSpacingTip && 'spacing',
+        visibleFontTips.length > 0 && `sizes:${visibleFontTips.map(tip => tip.scope).sort().join(',')}`,
+        showMixedFontTip && 'fonts', showOverlapTip && 'overlap', showOffCanvasTip && 'off-page',
+        showPositionedCategoryTip && 'position', contrastTips.length > 0 && `contrast:${contrastTips.map(t => t.key).sort().join(',')}`,
+        backgroundOverlapTips.length > 0 && `background:${backgroundOverlapTips.map(t => t.id).sort().join(',')}`,
+        kindsWithDifferences.length > 0 && `appearance:${kindsWithDifferences.join(',')}`, hasMixedProductColumns && 'columns',
+    ].filter((key): key is string => Boolean(key));
 
     const reviewRef = useRef({ hasVisibleTips, resolve: reviewAction?.resolve });
     reviewRef.current = { hasVisibleTips, resolve: reviewAction?.resolve };
@@ -687,6 +706,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
 
     useEffect(() => {
         const activeKeys = new Set(fontTips.map(tip => `font:${tip.scope}`));
+        if (reduction.options.length) activeKeys.add('page-reduction');
         for (const kind of ['category', 'product'] as const) {
             if (formattingGroups[kind].length > 1) activeKeys.add(`formatting:${kind}`);
         }
@@ -702,7 +722,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             const next = new Set(Array.from(current).filter(key => activeKeys.has(key)));
             return next.size === current.size ? current : next;
         });
-    }, [placeholderProducts.length, excessiveSpacing.join(), configuredCanvasFonts.length, fontTips, layoutDiagnostics.hasColumnGap, offCanvasIssueCount, overlapIssueCount, positionedCategorySignature]);
+    }, [reduction.options, placeholderProducts.length, excessiveSpacing.join(), configuredCanvasFonts.length, fontTips, layoutDiagnostics.hasColumnGap, offCanvasIssueCount, overlapIssueCount, positionedCategorySignature]);
 
     useEffect(() => {
         const root = containerRef.current;
@@ -1777,45 +1797,50 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         if (key.startsWith('font:')) setHoveredFontScope(null);
     };
 
-    const applyFontSuggestion = (scope: WordFitScope) => {
-        const root = containerRef.current;
-        if (!root) return;
-        const elements = Array.from(root.querySelectorAll<HTMLElement>('[data-word-fit="true"]'))
-            .filter(element => (
-                element.dataset.wordFitScope === scope
-                && element.dataset.wordOverflow !== 'true'
-                && element.isConnected
-                && element.getClientRects().length > 0
-            ));
-        if (elements.length === 0) return;
+    const applyFontSuggestions = (scopes: WordFitScope[]) => {
+        let nextStyle = style;
+        let nextProducts = products;
+        for (const scope of scopes) {
+            const root = containerRef.current;
+            if (!root) return;
+            const elements = Array.from(root.querySelectorAll<HTMLElement>('[data-word-fit="true"]'))
+                .filter(element => (
+                    element.dataset.wordFitScope === scope
+                    && element.dataset.wordOverflow !== 'true'
+                    && element.isConnected
+                    && element.getClientRects().length > 0
+                ));
+            if (elements.length === 0) continue;
 
-        const maximumFontSize = Math.max(...elements.map(element => Number(element.dataset.wordFitBaseSize) || 10));
-        const minimumFontSize = Math.max(...elements.map(element => Number(element.dataset.wordFitMinimum) || 10));
-        const safeFontSize = getLargestSafeFontSizeForElements(elements, maximumFontSize, minimumFontSize);
+            const maximumFontSize = Math.max(...elements.map(element => Number(element.dataset.wordFitBaseSize) || 10));
+            const minimumFontSize = Math.max(...elements.map(element => Number(element.dataset.wordFitMinimum) || 10));
+            const safeFontSize = getLargestSafeFontSizeForElements(elements, maximumFontSize, minimumFontSize);
 
-        if (scope === 'freeText') {
-            setProducts?.(current => current.map(product => (
-                product.isFreeText
-                    ? { ...product, styles: { ...(product.styles || {}), fontSize: safeFontSize } }
-                    : product
-            )));
-        } else {
-            const elementType = scope as keyof MenuStyle['elementStyles'];
-            setStyle(current => ({
-                ...current,
-                elementStyles: {
-                    ...current.elementStyles,
-                    [elementType]: {
-                        ...(current.elementStyles[elementType] || {}),
-                        fontSize: safeFontSize,
+            if (scope === 'freeText') {
+                nextProducts = nextProducts.map(product => (
+                    product.isFreeText
+                        ? { ...product, styles: { ...(product.styles || {}), fontSize: safeFontSize } }
+                        : product
+                ));
+            } else {
+                const elementType = scope as keyof MenuStyle['elementStyles'];
+                nextStyle = ((current: MenuStyle) => ({
+                    ...current,
+                    elementStyles: {
+                        ...current.elementStyles,
+                        [elementType]: {
+                            ...(current.elementStyles[elementType] || {}),
+                            fontSize: safeFontSize,
+                        },
                     },
-                },
-                pageBreaks: [],
-                name: 'Custom',
-            }));
+                    pageBreaks: [],
+                    name: 'Custom',
+                }))(nextStyle);
+            }
         }
-
-        setFontTips(current => current.filter(tip => tip.scope !== scope));
+        if (setProductsAndStyle) setProductsAndStyle(nextProducts, nextStyle, 'Padronizar tamanhos dos textos');
+        else { setProducts?.(nextProducts); setStyle(nextStyle); }
+        setFontTips(current => current.filter(tip => !scopes.includes(tip.scope)));
         setHoveredFontScope(null);
     };
 
@@ -1901,19 +1926,16 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         return changed ? { ...current, name: 'Custom', freeTextBackgrounds: positions } : current;
     };
 
-    const applySingleContrastTip = (tip: ContrastTip, choice: 'color' | 'fill') => {
-        const next = applyContrastTip(style, products, tip, choice);
-        if (setProductsAndStyle && next.products !== products) setProductsAndStyle(next.products, next.style, 'Contraste ajustado');
-        else {
-            if (next.products !== products) setProducts?.(next.products);
-            if (next.style !== style) setStyle(next.style);
-        }
-        setContrastTips(current => current.filter(item => item.key !== tip.key));
+    const applyContrastSuggestions = (choice: 'color' | 'fill') => {
+        const next = contrastTips.reduce((value, tip) => applyContrastTip(value.style, value.products, tip, choice), { style, products });
+        if (setProductsAndStyle) setProductsAndStyle(next.products, next.style, 'Melhorar leitura');
+        else { setProducts?.(next.products); setStyle(next.style); }
+        setContrastTips([]);
     };
 
     const applyAllSuggestions = () => {
         if (showPlaceholderTip) dismissTip('placeholders');
-        if (showSpacingTip) void resetExcessiveSpacing();
+        const spacingUpdate = showSpacingTip ? resetExcessiveSpacing() : Promise.resolve();
         let nextProducts = showPlaceholderTip ? cleanPlaceholderProducts(products) : products;
         let nextStyle = style;
         const appliedFontScopes = new Set<WordFitScope>();
@@ -2033,6 +2055,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         setLayoutDiagnostics(EMPTY_LAYOUT_DIAGNOSTICS);
         setHoveredFontScope(null);
         setTipsOpen(false);
+        if (showReductionTip) void spacingUpdate.then(() => setReviewReductionAfterTips(true));
     };
 
     const menuPalette = React.useMemo(() => getMenuPalette(style, products.map(product => product.styles?.color)), [style, products]);
@@ -2073,22 +2096,17 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                     onHoldChange={updateZoomButtonActivity}
                 />
 
-                <div ref={tipsAnchorRef} className="absolute left-4 top-20 z-[80] flex items-start">
-                    {hasVisibleTips && (
-                        <button
-                            type="button"
-                            onClick={() => setTipsOpen(current => !current)}
-                            className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-600 text-base font-bold leading-none text-white shadow-md transition hover:bg-indigo-700"
-                            data-fixed-canvas-tip
-                            title="Dicas do cardápio"
-                            aria-label="Abrir dicas do cardápio"
-                            aria-expanded={tipsOpen}
-                        >
-                            <span aria-hidden="true">?</span>
-                        </button>
-                    )}
-
-                    {((hasVisibleTips && tipsOpen) || reviewAction) && createPortal(
+                {reduction.measurement}
+                {reductionPreview && <PageReductionPreview options={reductionPreview} sortOption={sortOption}
+                    cancel={() => setReductionPreview(null)} apply={option => {
+                        if (setProductsAndStyle) setProductsAndStyle(option.products, option.style, 'Reduzir páginas');
+                        else { setProducts?.(option.products); setStyle(option.style); }
+                        setReductionPreview(null);
+                    }} />}
+                <FloatingTipsButton key={currentMenuId || workspaceId} anchorRef={tipsAnchorRef} tipKeys={tipKeys} open={tipsOpen}
+                    onToggle={() => setTipsOpen(current => !current)} onDragStart={() => setTipsOpen(false)} />
+                <>
+                    {(tipsOpen || reviewAction) && createPortal(
                         <div ref={reviewAction ? lockModalScrolling : undefined}
                             className={reviewAction ? 'fixed inset-0 z-[1400] flex items-center justify-center bg-slate-950/50 p-3' : undefined}
                             onKeyDown={event => {
@@ -2108,7 +2126,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                 <header className="shrink-0 space-y-3 border-b border-slate-100 px-3 py-3">
                                     <div className="space-y-0.5">
                                         <h2 className="whitespace-nowrap text-sm font-bold text-slate-900">Dicas do cardápio</h2>
-                                        {!reviewAction && <p className="text-xs text-slate-500">Ajustes opcionais para o cardápio.</p>}
+                                        {!reviewAction && <p className="text-xs text-slate-500">{hasVisibleTips ? 'Ajustes opcionais para o cardápio.' : 'Nenhuma dica pendente no momento.'}</p>}
                                     </div>
                                     <div className="grid grid-cols-2 gap-2">
                                         <button type="button" onClick={() => setAllDismissed(tipsSignature)}
@@ -2127,31 +2145,38 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                     </p>}
                                 </header>
                                 <div className={hasVisibleTips ? "min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3" : "hidden"}>
+                                    {showReductionTip && <div className="rounded-xl border-2 border-indigo-300 bg-indigo-50 p-3" data-page-reduction-tip>
+                                        <MenuTip prominent title={`Caber em ${reduction.options[0].pageCount} ${reduction.options[0].pageCount === 1 ? 'página' : 'páginas'}`}
+                                            applyLabel="Ver opções para reduzir páginas" apply={() => setReductionPreview(reduction.options)} dismiss={() => dismissTip('page-reduction')}>
+                                            <p>É possível usar menos páginas. Deseja conferir as opções?</p>
+                                        </MenuTip>
+                                    </div>}
                                     {showPlaceholderTip && <MenuTip title="Itens não utilizados" apply={removePlaceholders}
                                         dismiss={() => dismissTip('placeholders')} applyLabel="Remover itens não utilizados">
-                                        <p>Há itens ou descrições padrão que ainda não foram utilizados. Aceita removê-los?</p>
+                                        <p>Há itens ou descrições padrão que ainda não foram utilizados. Deseja removê-los?</p>
                                     </MenuTip>}
                                     {showSpacingTip && <MenuTip title="Espaçamentos" apply={() => void resetExcessiveSpacing()}
                                         dismiss={() => dismissTip('spacing')} applyLabel="Usar espaçamentos do modelo">
-                                        <p>Alguns espaçamentos estão acima de 35. Reduza-os para aproveitar melhor a página.</p>
+                                        <p>Há espaços grandes entre os itens do cardápio. Deseja ajustar?</p>
                                     </MenuTip>}
-                                    {kindsWithDifferences.map(kind => <MenuTip key={kind} title={`Padronização de ${formattingLabels[kind].toLowerCase()}`}
-                                        apply={() => {
+                                    {kindsWithDifferences.length > 0 && <MenuTip title="Aparência dos itens"
+                                        apply={() => setStyle(current => kindsWithDifferences.reduce((next, kind) => {
                                             const source = standardizationSource(kind);
-                                            if (source) setStyle(previous => standardizeItemFormatting(previous, kind, source));
-                                        }} dismiss={() => dismissTip(`formatting:${kind}`)}
-                                        applyLabel={`Padronizar ${formattingLabels[kind].toLowerCase()}`}>
-                                        <label className="block space-y-1">
-                                            <span>{formattingLabels[kind]}</span>
+                                            return source ? standardizeItemFormatting(next, kind, source) : next;
+                                        }, current))}
+                                        dismiss={() => kindsWithDifferences.forEach(kind => dismissTip(`formatting:${kind}`))}
+                                        applyLabel="Padronizar aparência dos itens">
+                                        <p>Há produtos ou categorias com aparências diferentes. Deseja padronizar?</p>
+                                        {kindsWithDifferences.map(kind => <label key={kind} className="block space-y-1">
+                                            <span>{formattingLabels[kind]} · usar como exemplo</span>
                                             <select className="min-h-8 w-full rounded-lg border border-indigo-200 bg-white px-2"
-                                                value={standardizationSource(kind)}
-                                                onChange={event => setStandardization({ ...standardization, [kind]: event.target.value })}>
+                                                value={standardizationSource(kind)} onChange={event => setStandardization({ ...standardization, [kind]: event.target.value })}>
                                                 {formattingGroups[kind].map(([id]) => <option key={id} value={id}>
                                                     {kind === 'category' ? categoryName(id) : products.find(product => product.id === id)?.name || 'Produto sem nome'}
                                                 </option>)}
                                             </select>
-                                        </label>
-                                    </MenuTip>)}
+                                        </label>)}
+                                    </MenuTip>}
                                     {hasMixedProductColumns && <MenuTip title="Colunas de produtos" disabled={!canStandardizeProductColumns()}
                                         applyLabel="Padronizar colunas de produtos" dismiss={() => dismissTip('product-columns')}
                                         apply={() => {
@@ -2164,43 +2189,40 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                             {columnSettings.map(count => <option key={count} value={count}>{count}</option>)}
                                         </select>
                                     </MenuTip>}
-                                    {backgroundOverlapTips.map(tip => <MenuTip key={tip.id} title="Textos sobrepostos no plano de fundo"
-                                        applyLabel="Ajustar posição" disabled={!tip.position}
-                                        apply={() => setStyle(current => resolveBackgroundOverlap(current, new Set([tip.id])))}
-                                        dismiss={() => setBackgroundOverlapTips(current => current.filter(item => item.id !== tip.id))}>
-                                        <p>{tip.label}{!tip.position && ' · Sem espaço livre em todas as páginas'}</p>
-                                    </MenuTip>)}
-                                    {contrastTips.map(tip => <MenuTip key={tip.key} title="Textos com pouco contraste"
-                                        applyLabel={tip.color ? 'Ajustar cor do texto' : 'Ajustar com preenchimento'}
-                                        apply={() => applySingleContrastTip(tip, 'color')}
-                                        dismiss={() => setContrastTips(current => current.filter(item => item.key !== tip.key))}>
-                                        <p>{tip.label}</p>
-                                        {tip.color && <button type="button" onClick={() => applySingleContrastTip(tip, 'fill')}
-                                            className="rounded-lg border border-indigo-200 bg-white px-2 py-1 font-semibold text-indigo-700">Adicionar preenchimento</button>}
-                                    </MenuTip>)}
+                                    {backgroundOverlapTips.length > 0 && <MenuTip title="Textos sobrepostos no fundo"
+                                        applyLabel="Organizar textos do fundo" disabled={backgroundOverlapTips.every(tip => !tip.position)}
+                                        apply={() => setStyle(current => resolveBackgroundOverlap(current, new Set(backgroundOverlapTips.map(tip => tip.id))))}
+                                        dismiss={() => setBackgroundOverlapTips([])}>
+                                        <p>Há textos sobrepostos no fundo do cardápio. Deseja organizar?</p>
+                                    </MenuTip>}
+                                    {contrastTips.length > 0 && <MenuTip title="Leitura dos textos" applyLabel="Melhorar leitura dos textos"
+                                        apply={() => applyContrastSuggestions('color')} dismiss={() => setContrastTips([])}>
+                                        <p>Há textos difíceis de ler sobre o fundo. Deseja melhorar a leitura?</p>
+                                        <button type="button" onClick={() => applyContrastSuggestions('fill')}
+                                            className="rounded-lg border border-indigo-200 bg-white px-2 py-1 font-semibold text-indigo-700">Adicionar preenchimento</button>
+                                    </MenuTip>}
                                     {showMixedFontTip && <MenuTip title="Fontes diferentes" apply={applyMixedFontSuggestion}
                                         applyLabel="Usar uma fonte em todo o cardápio" dismiss={() => dismissTip('mixed-fonts')}
                                         dismissLabel="Remover dica de fontes diferentes">
-                                        <p>O cardápio usa {configuredCanvasFonts.length} fontes. Confirmar aplica <strong>{style.fontFamily}</strong> a todos os objetos.</p>
+                                        <p>O cardápio possui fontes diferentes. Deseja padronizar?</p>
                                     </MenuTip>}
-                                    {visibleFontTips.map(tip => <MenuTip key={tip.scope} title="Fontes reduzidas"
-                                        apply={() => applyFontSuggestion(tip.scope)} dismiss={() => dismissTip(`font:${tip.scope}`)}
-                                        applyLabel={`Aplicar sugestão para ${WORD_FIT_SCOPE_LABELS[tip.scope]}`}
-                                        dismissLabel={`Remover dica para ${WORD_FIT_SCOPE_LABELS[tip.scope]}`}
-                                        onHover={hovered => setHoveredFontScope(hovered ? tip.scope : null)}>
-                                        <p>A classe <strong>{WORD_FIT_SCOPE_LABELS[tip.scope]}</strong> tem {tip.count} {tip.count === 1 ? 'texto reduzido' : 'textos reduzidos'}. Confirmar iguala a classe em <strong>{tip.safeFontSize}px</strong>, o maior tamanho que mantém cada palavra inteira.</p>
-                                    </MenuTip>)}
+                                    {visibleFontTips.length > 0 && <MenuTip title="Tamanhos dos textos"
+                                        apply={() => applyFontSuggestions(visibleFontTips.map(tip => tip.scope))}
+                                        dismiss={() => visibleFontTips.forEach(tip => dismissTip(`font:${tip.scope}`))}
+                                        applyLabel="Padronizar tamanhos dos textos">
+                                        <p>O cardápio possui textos de mesmos tipos com tamanhos de fontes diferentes. Deseja padronizar?</p>
+                                    </MenuTip>}
                                     {showOverlapTip && <MenuTip title="Elementos sobrepostos" apply={() => applyLayoutIssueSuggestion('overlap')}
                                         applyLabel="Corrigir sobreposições" dismiss={() => dismissTip('overlapping-elements')} dismissLabel="Remover dica de elementos sobrepostos">
-                                        <p>{overlapIssueCount} {overlapIssueCount === 1 ? 'elemento está sobreposto' : 'elementos estão sobrepostos'} ({formatLayoutIssueBreakdown(layoutDiagnostics.overlappingCategoryIds.length, layoutDiagnostics.overlappingProductIds.length, layoutDiagnostics.overlappingFreeTextIds.length)}). Corrigir reorganiza somente os itens envolvidos.</p>
+                                        <p>Há itens sobrepostos no cardápio. Deseja organizar?</p>
                                     </MenuTip>}
                                     {showOffCanvasTip && <MenuTip title="Elementos fora da página" apply={() => applyLayoutIssueSuggestion('offCanvas')}
                                         applyLabel="Trazer elementos para a página" dismiss={() => dismissTip('off-canvas-elements')} dismissLabel="Remover dica de elementos fora da página">
-                                        <p>{offCanvasIssueCount} {offCanvasIssueCount === 1 ? 'elemento está oculto' : 'elementos estão ocultos'} fora da área visível ({formatLayoutIssueBreakdown(layoutDiagnostics.offCanvasCategoryIds.length, layoutDiagnostics.offCanvasProductIds.length, layoutDiagnostics.offCanvasFreeTextIds.length)}). Corrigir traz esses itens de volta ao fluxo da página.</p>
+                                        <p>Há itens fora da página. Deseja reposicioná-los?</p>
                                     </MenuTip>}
-                                    {showPositionedCategoryTip && <MenuTip title="Espaços vazios no fluxo" apply={applyPositionedCategorySuggestion}
+                                    {showPositionedCategoryTip && <MenuTip title="Espaços vazios" apply={applyPositionedCategorySuggestion}
                                         applyLabel="Reposicionar categorias" dismiss={() => dismissTip('free-categories')} dismissLabel="Remover dica de categorias">
-                                        <p>Há categorias fora do fluxo normal ou iniciando outra coluna antes da hora. Confirmar mantém a ordem atual e preenche os espaços disponíveis primeiro.</p>
+                                        <p>Há espaços que podem ser melhor aproveitados. Deseja organizar as categorias?</p>
                                     </MenuTip>}
                                 </div>
                                 {reviewAction && <footer className="flex shrink-0 items-center justify-between gap-2 border-t border-slate-100 bg-white p-3">
@@ -2214,7 +2236,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                         </div>,
                             document.body,
                     )}
-                </div>
+                </>
 
                 {/* Undo/Redo Controls - Dynamic Positioning for Bottom Sheet */}
                 <div data-canvas-control-obstacle className={`fixed right-4 z-[70] flex gap-2 transition-all duration-300 md:absolute md:z-10 ${(isOpen || isProductDesignerOpen) ? 'bottom-[calc(var(--automenu-bottom-sheet-height,45vh)+1rem)] md:bottom-24' : 'bottom-[5.25rem] md:bottom-24'}`}>
@@ -2307,7 +2329,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                     onUploadProductImage={handleProductImageUpload}
                                     onProductEditStart={handleCanvasProductEditStart}
                                     onProductEditEnd={handleCanvasProductEditEnd}
-                                    onPageCountChange={onExportablePagesChange}
+                                    onPageCountChange={pageCountChanged}
                                 />
                             </div>
                         </div>

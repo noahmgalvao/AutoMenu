@@ -94,20 +94,21 @@ test('content layers move together while a free text keeps its own layer', async
   await expect(product).toHaveAttribute('data-canvas-layer', '2');
 });
 
-test('contrast tips fix a shared text color or fill across all matching texts', async ({ page }) => {
-  await page.goto(fixture + '?low-contrast');
-  await page.getByRole('button', { name: 'Abrir dicas do cardápio' }).click();
-  const contrast = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Textos com pouco contraste' }) });
-  const rows = contrast.locator('.rounded-xl');
-  await rows.filter({ hasText: 'Título' }).filter({ hasNotText: 'Subtítulo' }).getByRole('button', { name: 'Ajustar cor do texto' }).click();
-  await expect(page.locator('#menu-title-text')).not.toHaveCSS('color', 'rgb(238, 238, 238)');
-  await rows.filter({ hasText: 'Nomes dos produtos' }).getByRole('button', { name: 'Adicionar preenchimento' }).click();
-  for (const name of await page.locator('[data-word-fit-scope="productName"]').all()) {
-    await expect(name).toHaveCSS('background-color', 'rgb(0, 0, 0)');
+test('contrast tips group matching texts and retain both color and fill choices', async ({ page }) => {
+  for (const choice of ['Melhorar leitura dos textos', 'Adicionar preenchimento']) {
+    await page.goto(fixture + '?low-contrast');
+    await page.getByRole('button', { name: 'Abrir dicas do cardápio' }).click();
+    const tip = page.locator('[data-canvas-tips-menu] section').filter({ has: page.getByRole('heading', { name: 'Leitura dos textos', exact: true }) });
+    await expect(tip).toHaveCount(1);
+    await tip.getByRole('button', { name: choice, exact: true }).click();
+    if (choice === 'Melhorar leitura dos textos') {
+      await expect(page.locator('#menu-title-text')).not.toHaveCSS('color', 'rgb(238, 238, 238)');
+    } else {
+      for (const name of await page.locator('[data-word-fit-scope="productName"]').all())
+        await expect(name).toHaveCSS('background-color', 'rgb(0, 0, 0)');
+      await expect(page.locator('[data-added-image-id="shape-contrast"] [data-shape-text]')).toHaveCSS('background-color', 'rgb(0, 0, 0)');
+    }
   }
-  await rows.filter({ hasText: 'Rótulo claro' }).getByRole('button', { name: 'Adicionar preenchimento' }).click();
-  const shapeText = page.locator('[data-added-image-id="shape-contrast"] [data-shape-text]');
-  await expect(shapeText).toHaveCSS('background-color', 'rgb(0, 0, 0)');
 });
 
 test('background text moves in all copies and its overlap tip clears the collision', async ({ page }) => {
@@ -129,8 +130,8 @@ test('background text moves in all copies and its overlap tip clears the collisi
   await drag(page, { x: original.x + 8, y: original.y + 8 }, { x: range.x + 8, y: range.y + 8 }, 8);
   await expect.poll(async () => Math.abs((await text.boundingBox())!.y - titleBox.y)).toBeLessThan(30);
   await page.getByRole('button', { name: 'Abrir dicas do cardápio' }).click();
-  const section = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Textos sobrepostos no plano de fundo' }) });
-  await section.getByRole('button', { name: 'Ajustar posição' }).click();
+  const section = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Textos sobrepostos no fundo' }) });
+  await section.getByRole('button', { name: 'Organizar textos do fundo' }).click();
   await expect(section).toHaveCount(0);
   await expect(copies).toHaveCount(2);
   const positions = await copies.evaluateAll(nodes => nodes.map(node => node.parentElement!.style.top));
@@ -349,7 +350,7 @@ test('tips keep a compact header and matching cards on a narrow phone', async ({
   const tips = page.locator('[data-canvas-tips-menu]');
   const title = tips.getByRole('heading', { name: 'Dicas do cardápio', exact: true });
   await expect(title).toHaveCSS('white-space', 'nowrap');
-  await expect(tips).toContainText('Há itens ou descrições padrão que ainda não foram utilizados. Aceita removê-los?');
+  await expect(tips).toContainText('Há itens ou descrições padrão que ainda não foram utilizados. Deseja removê-los?');
   await expect(tips).not.toContainText('Remover exclui');
   const positions = await tips.evaluate(element => {
     const box = element.getBoundingClientRect();

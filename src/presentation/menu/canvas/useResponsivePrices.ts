@@ -29,7 +29,7 @@ function measurePriceRow(row: HTMLElement, minimum: number) {
     const titleGroup = title.parentElement;
     const marker = titleGroup?.querySelector<HTMLElement>('[data-menu-marker]');
     const markerWidth = marker && titleGroup ? marker.offsetWidth + px(getComputedStyle(titleGroup).columnGap) : 0;
-    const nameWidth = measureRenderedText(title.innerText, px(titleCss.fontSize), titleCss) + markerWidth;
+    const nameWidth = Math.ceil(measureRenderedText(title.textContent || '', px(titleCss.fontSize), titleCss) + markerWidth) + 1;
     const rowGap = px(getComputedStyle(row).columnGap);
     const dividerGap = row.hasAttribute('data-product-leader') ? rowGap : 0;
     const inlineWidth = row.clientWidth - nameWidth - rowGap - dividerGap;
@@ -40,7 +40,7 @@ function measurePriceRow(row: HTMLElement, minimum: number) {
     const spacingShare = Math.min(1, Math.max(0, px(rowCss.getPropertyValue('--product-price-control'))
         / Math.max(1, px(rowCss.getPropertyValue('--product-price-reference')))));
     return { row, price, titleGroup, nameWidth, priceWidth, nameAlignment, gap, spacingShare,
-        widthScale: String(low / base), wrapped: priceWidth > inlineWidth + .5 };
+        widthScale: String(low / base), wrapped: priceWidth > inlineWidth + (row.hasAttribute('data-price-wrap') ? -1 : .5) };
 }
 
 function measureWrappedPriceSpace(row: HTMLElement, slot: HTMLElement | null) {
@@ -56,6 +56,43 @@ function measureWrappedPriceSpace(row: HTMLElement, slot: HTMLElement | null) {
         left: Math.max(0, (bounds.left - container.left) / scale - px(padding.paddingLeft)),
         right: Math.max(0, (container.right - bounds.right) / scale - px(padding.paddingRight)),
     };
+}
+
+export function applyResponsivePrices(root: HTMLElement, minimum: number) {
+    const metrics = Array.from(root.querySelectorAll<HTMLElement>('[data-product-text-row]'), row => {
+        const metric = measurePriceRow(row, minimum);
+        if (!metric && !row.querySelector('[data-template-price]')) row.removeAttribute('data-price-wrap');
+        return metric;
+    }).filter(metric => metric !== null);
+
+    for (const { row, price, widthScale, wrapped } of metrics) {
+        if (price.dataset.priceWidthScale !== widthScale) price.dataset.priceWidthScale = widthScale;
+        row.toggleAttribute('data-price-wrap', wrapped);
+    }
+    for (const { row, price, titleGroup, nameWidth, priceWidth, nameAlignment, gap, spacingShare, wrapped } of metrics) {
+        const slot = price.closest<HTMLElement>('[data-product-price-slot]');
+        if (!slot || !titleGroup) continue;
+        const alignment = nameAlignment === 'right' ? 'right' : slot.dataset.priceAlignment || 'right';
+        const spare = Math.max(0, row.clientWidth - nameWidth - priceWidth - gap);
+        const leading = nameAlignment === 'right' ? spare : nameAlignment === 'center' ? spare / 2 : 0;
+        const maximumGap = Math.max(gap, row.clientWidth - leading - nameWidth - priceWidth);
+        const far = gap + (maximumGap - gap) * spacingShare;
+        const distance = alignment === 'left' ? gap : alignment === 'center' ? (gap + far) / 2 : far;
+        titleGroup.style.setProperty('--automenu-title-width', `${Math.min(nameWidth, row.clientWidth)}px`);
+        titleGroup.style.setProperty('--automenu-title-leading', `${wrapped ? 0 : leading}px`);
+        slot.style.setProperty('--automenu-price-offset', `${Math.max(0, distance - gap)}px`);
+        const { left, right } = wrapped ? measureWrappedPriceSpace(row, slot) : { left: 0, right: 0 };
+        const wrappedAlignment = nameAlignment === 'center' && alignment === 'left' ? 'center' : alignment;
+        slot.style.justifyContent = wrapped ? wrappedAlignment === 'left' ? 'flex-start'
+            : wrappedAlignment === 'center' ? 'center' : 'flex-end' : 'flex-start';
+        const wrappedWidth = row.clientWidth + left + right;
+        const inset = nameAlignment === 'center' && alignment === 'center'
+            ? Math.max(0, (wrappedWidth - priceWidth) / 2)
+            : alignment === 'left' && nameAlignment !== 'center' ? Math.min(gap, Math.max(0, wrappedWidth - priceWidth)) : 0;
+        slot.style.paddingInlineStart = wrapped ? `${inset}px` : '';
+        slot.style.setProperty('--automenu-price-left', `${left}px`);
+        slot.style.setProperty('--automenu-price-right', `${right}px`);
+    }
 }
 
 export function useResponsivePrices(rootRef: RefObject<HTMLElement | null>, style: MenuStyle) {
@@ -82,44 +119,8 @@ export function useResponsivePrices(rootRef: RefObject<HTMLElement | null>, styl
                 resize.unobserve(row);
                 observed.delete(row);
             }
-            const metrics = Array.from(rows, row => {
-                if (!observed.has(row)) {
-                    resize.observe(row);
-                    observed.add(row);
-                }
-                const metric = measurePriceRow(row, minimum);
-                if (!metric && !row.querySelector('[data-template-price]')) row.removeAttribute('data-price-wrap');
-                return metric;
-            }).filter(metric => metric !== null);
-
-            for (const { row, price, widthScale, wrapped } of metrics) {
-                if (price.dataset.priceWidthScale !== widthScale) price.dataset.priceWidthScale = widthScale;
-                row.toggleAttribute('data-price-wrap', wrapped);
-            }
-            for (const { row, price, titleGroup, nameWidth, priceWidth, nameAlignment, gap, spacingShare, wrapped } of metrics) {
-                const slot = price.closest<HTMLElement>('[data-product-price-slot]');
-                if (!slot || !titleGroup) continue;
-                const alignment = nameAlignment === 'right' ? 'right' : slot.dataset.priceAlignment || 'right';
-                const spare = Math.max(0, row.clientWidth - nameWidth - priceWidth - gap);
-                const leading = nameAlignment === 'right' ? spare : nameAlignment === 'center' ? spare / 2 : 0;
-                const maximumGap = Math.max(gap, row.clientWidth - leading - nameWidth - priceWidth);
-                const far = gap + (maximumGap - gap) * spacingShare;
-                const distance = alignment === 'left' ? gap : alignment === 'center' ? (gap + far) / 2 : far;
-                titleGroup.style.setProperty('--automenu-title-width', `${Math.min(nameWidth, row.clientWidth)}px`);
-                titleGroup.style.setProperty('--automenu-title-leading', `${wrapped ? 0 : leading}px`);
-                slot.style.setProperty('--automenu-price-offset', `${Math.max(0, distance - gap)}px`);
-                const { left, right } = wrapped ? measureWrappedPriceSpace(row, slot) : { left: 0, right: 0 };
-                const wrappedAlignment = nameAlignment === 'center' && alignment === 'left' ? 'center' : alignment;
-                slot.style.justifyContent = wrapped ? wrappedAlignment === 'left' ? 'flex-start'
-                    : wrappedAlignment === 'center' ? 'center' : 'flex-end' : 'flex-start';
-                const wrappedWidth = row.clientWidth + left + right;
-                const inset = nameAlignment === 'center' && alignment === 'center'
-                    ? Math.max(0, (wrappedWidth - priceWidth) / 2)
-                    : alignment === 'left' && nameAlignment !== 'center' ? Math.min(gap, Math.max(0, wrappedWidth - priceWidth)) : 0;
-                slot.style.paddingInlineStart = wrapped ? `${inset}px` : '';
-                slot.style.setProperty('--automenu-price-left', `${left}px`);
-                slot.style.setProperty('--automenu-price-right', `${right}px`);
-            }
+            for (const row of rows) if (!observed.has(row)) { resize.observe(row); observed.add(row); }
+            applyResponsivePrices(root, minimum);
         };
         const schedule = () => { if (!frame) frame = requestAnimationFrame(measure); };
         const resize = new ResizeObserver(entries => {
@@ -134,7 +135,7 @@ export function useResponsivePrices(rootRef: RefObject<HTMLElement | null>, styl
         const mutations = new MutationObserver(records => { if (hasMenuContentMutation(records)) schedule(); });
         mutations.observe(root, {
             subtree: true, childList: true, characterData: true,
-            attributes: true, attributeFilter: ['data-word-fit-size', 'data-price-base-size'],
+            attributes: true, attributeFilter: ['data-word-fit-size', 'data-price-base-size', 'data-fitted-font-size'],
         });
         document.fonts?.addEventListener('loadingdone', schedule);
         refresh.current = schedule;

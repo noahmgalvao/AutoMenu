@@ -543,6 +543,8 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle, s
   const [help, setHelp] = React.useState<{ type: 'products' | 'categories'; anchor: HTMLButtonElement }>();
   const closeHelp = React.useCallback(() => setHelp(undefined), []);
   const helpId = React.useId();
+  const hasProductImages = products.some(product => !product.isFreeText && Boolean(product.image || product.imageAssetId));
+  const hasCategoryImages = Object.values(style.categoryImages || {}).some(image => Boolean(image.url || image.assetId));
   const categoryCount = style.categoryColumnCount || 1;
   const productCount = getProductColumnCount(style, selectedCategory);
   const choices = columnCounts.slice(0, getMenuColumnLimit(style));
@@ -681,11 +683,11 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle, s
           </div>
         ))}
     </div>
-    <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+    {(hasProductImages || hasCategoryImages) && <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
         <div className="flex items-center gap-2 px-1 text-xs font-bold uppercase text-slate-500">
             <ImageIcon size={14} className="text-indigo-500" /> Imagens
         </div>
-        {style.showImages && (
+        {hasProductImages && style.showImages && (
             <label className="flex items-center justify-between gap-2 px-1 text-xs font-medium text-slate-600">
                 Moldura das fotos dos produtos
                 <select value={resolveProductImageFrame(style)} className="h-8 rounded border border-slate-200 bg-white px-1.5"
@@ -700,7 +702,7 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle, s
         {([
           { label: 'Produtos', visible: style.showImages, toggleField: 'showImages' as const, scaleField: 'imageScale' as const, scale: style.imageScale || 1 },
           { label: 'Categorias', visible: style.showCategoryImages !== false, toggleField: 'showCategoryImages' as const, scaleField: 'categoryImageScale' as const, scale: style.categoryImageScale || 1 },
-        ]).map((control) => (
+        ]).filter(control => control.toggleField === 'showImages' ? hasProductImages : hasCategoryImages).map((control) => (
           <div key={control.label} className={`rounded-lg border bg-white p-2 transition-opacity ${control.visible ? 'border-slate-200' : 'border-slate-100 opacity-65'}`}>
             <div className="mb-2 flex items-center justify-between gap-2">
               <span className="text-xs font-semibold text-slate-700">{control.label}</span>
@@ -725,7 +727,7 @@ export const LayoutSection: React.FC<LayoutSectionProps> = ({ style, setStyle, s
             </div>
           </div>
         ))}
-    </div>
+    </div>}
   </section>
   );
 };
