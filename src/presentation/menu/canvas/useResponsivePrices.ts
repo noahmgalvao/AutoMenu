@@ -5,6 +5,9 @@ import { resolveMinimumFontSize } from '../../../domain/menu/styleRules';
 import { measurePriceWidth, measureRenderedText } from './textFit';
 
 const px = (value: string) => parseFloat(value) || 0;
+const setProperty = (element: HTMLElement, property: string, value: string) => {
+    if (element.style.getPropertyValue(property) !== value) element.style.setProperty(property, value);
+};
 
 function measurePriceRow(row: HTMLElement, minimum: number) {
     const title = row.querySelector<HTMLElement>('[data-divider-title]');
@@ -78,20 +81,20 @@ export function applyResponsivePrices(root: HTMLElement, minimum: number) {
         const maximumGap = Math.max(gap, row.clientWidth - leading - nameWidth - priceWidth);
         const far = gap + (maximumGap - gap) * spacingShare;
         const distance = alignment === 'left' ? gap : alignment === 'center' ? (gap + far) / 2 : far;
-        titleGroup.style.setProperty('--automenu-title-width', `${Math.min(nameWidth, row.clientWidth)}px`);
-        titleGroup.style.setProperty('--automenu-title-leading', `${wrapped ? 0 : leading}px`);
-        slot.style.setProperty('--automenu-price-offset', `${Math.max(0, distance - gap)}px`);
+        setProperty(titleGroup, '--automenu-title-width', `${Math.min(nameWidth, row.clientWidth)}px`);
+        setProperty(titleGroup, '--automenu-title-leading', `${wrapped ? 0 : leading}px`);
+        setProperty(slot, '--automenu-price-offset', `${Math.max(0, distance - gap)}px`);
         const { left, right } = wrapped ? measureWrappedPriceSpace(row, slot) : { left: 0, right: 0 };
         const wrappedAlignment = nameAlignment === 'center' && alignment === 'left' ? 'center' : alignment;
-        slot.style.justifyContent = wrapped ? wrappedAlignment === 'left' ? 'flex-start'
-            : wrappedAlignment === 'center' ? 'center' : 'flex-end' : 'flex-start';
+        setProperty(slot, 'justify-content', wrapped ? wrappedAlignment === 'left' ? 'flex-start'
+            : wrappedAlignment === 'center' ? 'center' : 'flex-end' : 'flex-start');
         const wrappedWidth = row.clientWidth + left + right;
         const inset = nameAlignment === 'center' && alignment === 'center'
             ? Math.max(0, (wrappedWidth - priceWidth) / 2)
             : alignment === 'left' && nameAlignment !== 'center' ? Math.min(gap, Math.max(0, wrappedWidth - priceWidth)) : 0;
-        slot.style.paddingInlineStart = wrapped ? `${inset}px` : '';
-        slot.style.setProperty('--automenu-price-left', `${left}px`);
-        slot.style.setProperty('--automenu-price-right', `${right}px`);
+        setProperty(slot, 'padding-inline-start', wrapped ? `${inset}px` : '');
+        setProperty(slot, '--automenu-price-left', `${left}px`);
+        setProperty(slot, '--automenu-price-right', `${right}px`);
     }
 }
 

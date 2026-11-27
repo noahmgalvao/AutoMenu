@@ -10,6 +10,7 @@ const gap = 2;
 function measureText(page: HTMLElement): TextBounds[] {
     const range = document.createRange();
     return Array.from(page.querySelectorAll(textSelector)).flatMap((element) => {
+        if (element.closest('[data-print-control], [data-menu-border]')) return [];
         const css = getComputedStyle(element);
         if (css.visibility === 'hidden' || Number(css.opacity) === 0) return [];
         if (element.matches('[data-subtitle-placeholder]:empty, img[data-menu-marker]') && element.getBoundingClientRect().height > 0) {
@@ -26,8 +27,11 @@ function measureGeometry(surface: HTMLElement, page: HTMLElement, entries: TextB
     const box = surface.getBoundingClientRect();
     const pageBox = page.getBoundingClientRect();
     const scale = pageBox.width / Number(page.dataset.menuPageWidthPx) || 1;
-    const width = Math.round(box.width / scale * 100) / 100;
-    const height = Math.round(box.height / scale * 100) / 100;
+    // Fractional zoom/scroll arithmetic must not switch a safe side or radius
+    // back and forth at an integer boundary. Keep the renderer's 1/64px precision.
+    const logical = (value: number) => Math.round(value / scale * 64) / 64;
+    const width = logical(box.width);
+    const height = logical(box.height);
     const isCard = surface.hasAttribute('data-product-card-surface');
     const enclosesSurface = isCard || surface.dataset.menuBorderSurface === 'productImage';
     const maxOutset = Math.min(64, Math.max(4, Math.round(Math.min(width, height) / 2)));
@@ -54,7 +58,7 @@ function measureGeometry(surface: HTMLElement, page: HTMLElement, entries: TextB
     }
     const getSpace = (side: MenuBorderSide, crossStart: 'left' | 'top', crossEnd: 'right' | 'bottom',
         nearEdge: MenuBorderSide, farEdge: MenuBorderSide, direction: 1 | -1): SideSpace => {
-        const distance = (edge: number) => (edge - box[side]) * direction / scale;
+        const distance = (edge: number) => logical((edge - box[side]) * direction);
         const inner = ownText.length ? Math.max(...ownText.map((own) => distance(own[side]))) + gap
             : -Math.min(12, Math.min(width, height) / 8);
         let outer = Math.min(maxOutset, distance(clip[side]));
@@ -69,10 +73,10 @@ function measureGeometry(surface: HTMLElement, page: HTMLElement, entries: TextB
         return { inner: enclosesSurface ? Math.min(-12, Math.floor(outer) - 12) : Math.ceil(inner), outer: Math.floor(outer) };
     };
     const textBounds = ownText.map((rect) => ({
-        top: (rect.top - box.top) / scale,
-        right: (rect.right - box.left) / scale,
-        bottom: (rect.bottom - box.top) / scale,
-        left: (rect.left - box.left) / scale,
+        top: logical(rect.top - box.top),
+        right: logical(rect.right - box.left),
+        bottom: logical(rect.bottom - box.top),
+        left: logical(rect.left - box.left),
     }));
     return { width, height, enclosesSurface, cardShape: surface.dataset.productCardShape, textBounds, space: {
         top: getSpace('top', 'left', 'right', 'bottom', 'top', -1),
@@ -96,6 +100,7 @@ function watchPage(page: HTMLElement): PageMeasurements {
     const surfaces: PageMeasurements['surfaces'] = new Map();
     let frame = 0;
     const observed = new Set<Element>();
+    const delivered = new WeakMap<GeometryListener, string>();
     const measure = () => {
         frame = 0;
         const targets = new Set<Element>([page, ...surfaces.keys(), ...page.querySelectorAll(textSelector)]);
@@ -106,13 +111,25 @@ function watchPage(page: HTMLElement): PageMeasurements {
         const entries = measureText(page);
         for (const [surface, listeners] of surfaces) {
             const geometry = measureGeometry(surface, page, entries);
-            listeners.forEach((listener) => listener(geometry));
+            const signature = JSON.stringify(geometry);
+            listeners.forEach(listener => {
+                if (delivered.get(listener) === signature) return;
+                delivered.set(listener, signature);
+                listener(geometry);
+            });
         }
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(measure); };
     const resize = new ResizeObserver(schedule);
     const mutation = new MutationObserver((records) => {
-        if (records.some(({ target }) => !(target instanceof Element && target.matches('[data-menu-border]')))) schedule();
+        // Border strokes are output of this observer, never layout input. Adding,
+        // removing or repainting them must not start another measurement/paint cycle.
+        const isPaint = (node: Node) => node instanceof Element && Boolean(node.closest('[data-menu-border], [data-print-control]'));
+        if (records.some(record => {
+            if (isPaint(record.target)) return false;
+            if (record.type !== 'childList') return true;
+            return [...record.addedNodes, ...record.removedNodes].some(node => !isPaint(node));
+        })) schedule();
     });
     mutation.observe(page, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['style', 'class'] });
     return { surfaces, schedule, dispose: () => {

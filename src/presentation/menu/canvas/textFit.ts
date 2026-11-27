@@ -211,7 +211,7 @@ export const canApplyCanvasColumnCounts = (
     const product = element.closest<HTMLElement>('[id^="product-container-"]');
     const isProduct = Boolean(product && scope !== 'freeText');
     const currentProductCount = getProductColumnCount(style, category);
-    const nextProductCount = isProduct ? nextProductColumnCount ?? currentProductCount : currentProductCount;
+    const nextProductCount = isProduct ? nextProductColumnCount ?? getProductColumnCount(targetStyle, category) : currentProductCount;
     if (nextCategoryColumnCount === currentCategoryCount && nextProductCount <= currentProductCount) return true;
 
     const currentWidth = getElementAvailableWidth(element);
@@ -221,7 +221,7 @@ export const canApplyCanvasColumnCounts = (
     // Preserve the space used by offsets, borders, images, dividers and prices in the rendered card.
     const chunkInset = Math.max(0, currentLaneWidth - (chunk?.clientWidth || currentLaneWidth));
     const nextChunkWidth = nextLaneWidth - chunkInset;
-    const nextStyle = { ...style, categoryColumnCount: nextCategoryColumnCount, columnCount: nextProductCount } as MenuStyle;
+    const nextStyle = { ...targetStyle, categoryColumnCount: nextCategoryColumnCount, columnCount: nextProductCount } as MenuStyle;
     const candidateWidth = isProduct
       ? (nextChunkWidth - getProductGridGap(nextStyle) * (nextProductCount - 1)) / nextProductCount
       : nextChunkWidth;

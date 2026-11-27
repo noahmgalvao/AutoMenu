@@ -37,7 +37,7 @@ export function PageReductionPreview({ options, sortOption, apply, cancel }: {
             {options.length > 1 && <div role="tablist" aria-label="Opções de ajuste" className="flex shrink-0 gap-2 px-3 py-2">
                 {options.map((option, i) => <button type="button" key={i} role="tab" aria-selected={index === i} onClick={() => setIndex(i)}
                     className={`flex-1 rounded-lg border px-3 py-2 text-xs font-semibold ${index === i ? 'border-indigo-500 bg-indigo-50 text-indigo-800' : 'border-slate-200 text-slate-600'}`}>
-                    Opção {i + 1}<span className="mt-0.5 block text-[11px] font-normal">{i === 0 ? 'Ajustes graduais' : 'Priorizar duas colunas'}</span>
+                    Opção {i + 1}<span className="mt-0.5 block text-[11px] font-normal">{i === 0 ? 'Ajustes graduais' : 'Priorizar mais colunas'}</span>
                     <span className="sr-only">{option.pageCount} páginas</span>
                 </button>)}
             </div>}

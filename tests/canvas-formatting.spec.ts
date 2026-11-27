@@ -593,7 +593,7 @@ for (const mobile of [false, true]) {
 }
 
 test('the card contour stays complete with a photo frame and adjustable border values', async ({ page }) => {
-  await page.goto('/tests/fixtures/template-editor.html?photos=cards&card=bordered');
+  await page.goto('/tests/fixtures/template-editor.html?general-rules&photos=cards&card=bordered');
   await page.getByRole('combobox', { name: 'Formato dos cartões' }).selectOption('arch');
   const frame = page.getByRole('combobox', { name: 'Moldura das fotos dos produtos' });
   await frame.selectOption('circle');

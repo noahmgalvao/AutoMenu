@@ -6,7 +6,7 @@ import MenuDesigner from '../../src/presentation/menu/MenuDesigner';
 import { ProductDesigner } from '../../src/presentation/products/ProductDesigner';
 import { MenuPreview } from '../../src/presentation/menu/canvas/MenuPreview';
 import legacyCatalogSeed from '../../supabase/migrations/20261116120000_template_catalog.sql?raw';
-import { INITIAL_STYLE } from '../../src/domain/menu/defaults';
+import { INITIAL_STYLE, INITIAL_PRODUCTS } from '../../src/domain/menu/defaults';
 import { PRESET_TEMPLATES } from '../../src/domain/templates/templateCatalog';
 import { canvasShapeUrl, createCanvasShape } from '../../src/domain/menu/canvasShapes';
 import type { MenuStyle, Product, SortOption } from '../../src/domain/menu/model';
@@ -43,7 +43,11 @@ function Fixture() {
   const [history, setHistory] = useState<MenuStyle[]>(() => !photoMode ? [
     params.has('reduce-pages') ? { ...initial,
       ...(params.has('keep-art-page') ? { addedImages: [{ id: 'retained-art', url: canvasShapeUrl(lowContrastShape), shape: lowContrastShape, x: 50, y: 50, width: 80, pageIndex: 1 }] } : {}),
-      design: undefined, showImages: false, columnCount: 1, categoryColumnCount: 1,
+      design: undefined, showImages: false,
+      pageSetup: params.has('landscape') ? { ...initial.pageSetup!, orientation: 'landscape' } : initial.pageSetup,
+      columnCount: (Number(params.get('reduce-cols')) || 1) as MenuStyle['columnCount'],
+      categoryColumnCount: (Number(params.get('reduce-lanes')) || 1) as MenuStyle['columnCount'],
+      ...(params.has('reduce-override') ? {categoryProductColumnCounts:{'Seção 1':3}} : {}),
       contentSpacing: { headerToContent: 45, categoryToProduct: 35, betweenProducts: 30, productNameToDescription: 15, productToNextCategory: 40, productNameToPrice: 8 },
       elementStyles: { ...initial.elementStyles, category: { fontSize: 28 }, productName: { fontSize: 24 }, productDescription: { fontSize: 20 }, productPrice: { fontSize: 24 } },
     } : params.has('neutral') ? { ...INITIAL_STYLE, menuTitle: initial.menuTitle, menuSubtitle: initial.menuSubtitle } : batchLayers ? {
@@ -77,6 +81,7 @@ function Fixture() {
     ...initial, showImages: !splitCategory && !priceFlow && !params.has('hide-photos'),
     showCategoryImages: params.has('hide-photos') ? false : initial.showCategoryImages,
     ...(params.has('tip-fonts') ? { elementStyles: { ...initial.elementStyles, category: { fontSize: 45 }, productName: { fontSize: 50 } } } : {}),
+    ...(params.has('contours') ? { borders: Object.fromEntries(['header','category','categoryGroup','product','price'].map(scope=>[scope,{ sides:['top','right','bottom','left'],color:'#ff0000',thickness:3,radius:12,length:100,offset:8,pattern:'solid' }])) } : {}),
     ...(heightFit ? {
       freeTextBackgrounds: { 'fit-background': { x: 40, y: 40, width: 220, pageIndex: 0 } },
       elementStyles: {
@@ -110,9 +115,19 @@ function Fixture() {
       card: (params.get('card') as TemplateDesign['card']) || 'flat',
       image: photoMode === 'background' ? 'background' : 'top',
     },
+    ...(params.has('border-stress') ? {
+      design: undefined, columnCount: 5, categoryColumnCount: 1, showImages: !params.has('no-photos'), imageScale: .5, fontFamily: 'Inter', productCardShape: 'soft',
+      pageSetup: { ...initial.pageSetup!, orientation: 'landscape' },
+      borders: { product: { color: '#e2e8f0', sides: ['top','right','bottom','left'], length: 100, offset: 8, radius: 13, pattern: 'solid', thickness: 12 } },
+      margins: { top: 42, left: 61, right: 65, bottom: 105, columnGap: 32 },
+      contentSpacing: { betweenProducts: 18, headerToContent: 35, categoryToProduct: 34, productNameToPrice: 10, productToNextCategory: 34, productNameToDescription: 4 },
+      elementStyles: { ...initial.elementStyles, category: { fontSize: 50, letterSpacing: 1, textTransform: 'uppercase' },
+        productName: { fontSize: 32.1, italic: true, underline: true, fontWeight: '700' },
+        productPrice: { fontSize: 36.1, fontWeight: '700', textAlign: 'right' }, productDescription: { fontSize: 13.8, lineHeight: 1.45 } },
+    } : {}),
   }]);
   const [items, setItems] = useState(() => params.has('reduce-pages') ? Array.from({ length: Number(params.get('reduce-pages')) || 24 }, (_, index) => ({
-    id: `reduce-${index}`, category: `Seção ${Math.floor(index / 4) + 1}`, name: 'Prato da casa', price: 25, description: 'Acompanhamento da estação',
+    id: `reduce-${index}`, category: `Seção ${Math.floor(index / 4) + 1}`, name: 'Prato da casa', price: 25, description: params.has('short-lines') ? 'Da casa' : 'Acompanhamento da estação',
   })) : splitCategory ? [
     { id: 'a1', category: 'A', name: 'A1', price: 12, description: '', customMarginTop: 350 },
     ...[1, 2, 3].map(index => ({ id: `b${index}`, category: 'B', name: `B${index}`, price: 12, description: '', customMarginTop: 190 })),
@@ -125,7 +140,8 @@ function Fixture() {
       freeTextWidth: 350, styles: { fontSize: 34 } },
     { id: 'fit-background', isFreeText: true, category: 'ft_zone_fit', name: 'Fundo', description: '', price: 0,
       freeTextWidth: 220, styles: { fontSize: 34 } },
-  ] : params.has('background-text') ? [...products, {
+  ] : params.has('border-catalog') ? INITIAL_PRODUCTS.filter(p=>['Saladas','Sobremesas','Pizzas'].includes(p.category)).map(p=>({...p,image:samplePhoto}))
+    : params.has('background-text') ? [...products, {
     id: 'background-text', category: 'ft_zone_background-text', name: 'Texto de fundo',
     description: '', price: 0, isFreeText: true, freeTextWidth: 160,
   }] : params.has('dense-list') ? Array.from({ length: 22 }, (_, i) => ({

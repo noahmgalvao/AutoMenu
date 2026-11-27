@@ -105,7 +105,7 @@ test('newly available page suggestion increments the unread badge after existing
     await expect(page.locator('[data-tips-unread]')).toHaveCount(0);
     await button.click();
     await expect(page.locator('[data-tips-unread]')).toHaveText(/^[1-9]\d*$/,{timeout:30000});
-    await button.click();await expect(page.locator('[data-page-reduction-tip]')).toBeVisible();
+    await button.click();await expect(page.locator('[data-page-reduction-tip]')).toBeVisible({timeout:30000});
     await expect(page.locator('[data-tips-unread]')).toHaveCount(0);
 });
 

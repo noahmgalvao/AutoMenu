@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { MenuStyle, Product, SortOption } from '../../../domain/menu/model';
-import { buildPageReductionCandidates, selectPageReduction, type MeasuredReduction, type PageReductionCandidate } from '../../../domain/menu/pageReduction';
+import { buildPageReductionCandidates, selectPageReduction, selectPageReductionAlternative, type MeasuredReduction, type PageReductionCandidate } from '../../../domain/menu/pageReduction';
+import { resolveMinimumFontSize } from '../../../domain/menu/styleRules';
+import { canApplyCanvasColumnCounts, measurePriceWidth } from '../canvas/textFit';
 import { MenuPreview } from '../canvas/MenuPreview';
 
 /** Read-only, isolated measurement uses exactly the editor renderer, including its real font fitting. */
@@ -29,6 +31,10 @@ function ReductionProbe({ candidate, sortOption, complete }: { candidate: PageRe
                 for (const text of page.querySelectorAll<HTMLElement>('[data-word-fit], [data-price-base-size]')) {
                     signature.push(getComputedStyle(text).fontSize, text.dataset.wordOverflow, text.closest('[data-price-wrap]') !== null);
                     if (text.dataset.wordOverflow === 'true') valid = false;
+                    if (text.hasAttribute('data-price-base-size')) {
+                        const row = text.closest<HTMLElement>('[data-product-text-row]');
+                        if (row && measurePriceWidth(text, resolveMinimumFontSize(candidate.style)) > row.clientWidth + .5) valid = false;
+                    }
                 }
             }
             const next = JSON.stringify(signature);
@@ -59,23 +65,29 @@ export function usePageReduction(products: Product[], style: MenuStyle, sortOpti
         const controller = new AbortController();
         const { signal } = controller;
         const timer = setTimeout(() => {
-            const measure = (candidate: PageReductionCandidate) => new Promise<number>((resolve, reject) => {
+            const measure = (candidate: PageReductionCandidate): Promise<number> => {
                 signal.throwIfAborted();
-                const id = ++sequence.current;
-                const abort = () => reject(new DOMException('Cancelled', 'AbortError'));
-                signal.addEventListener('abort', abort, { once: true });
-                setProbe({ id, candidate, complete: count => {
-                    signal.removeEventListener('abort', abort);
-                    if (!signal.aborted) resolve(count);
-                } });
-            });
+                // Reuse the editor's column guard before rendering; individual category
+                // counts must be checked separately rather than replaced by a global count.
+                if (!canApplyCanvasColumnCounts(style, candidate.style.categoryColumnCount || 1,
+                    undefined, undefined, candidate.style)) return Promise.resolve(Infinity);
+                return new Promise<number>((resolve, reject) => {
+                    const id = ++sequence.current;
+                    const abort = () => reject(new DOMException('Cancelled', 'AbortError'));
+                    signal.addEventListener('abort', abort, { once: true });
+                    setProbe({ id, candidate, complete: count => {
+                        signal.removeEventListener('abort', abort);
+                        if (!signal.aborted) resolve(count);
+                    } });
+                });
+            };
             void (async () => {
                 try {
                     const first = await selectPageReduction(buildPageReductionCandidates(products, style), pageCount, measure, signal);
                     const options = first ? [first] : [];
-                    if (first && !((first.style.categoryColumnCount || 1) >= 2 && first.style.columnCount >= 2)) {
-                        const second = await selectPageReduction(buildPageReductionCandidates(products, style, true), pageCount, measure, signal, first.pageCount);
-                        if (second && second.pageCount === first.pageCount) options.push(second);
+                    if (first) {
+                        const second = await selectPageReductionAlternative(products, style, first, pageCount, measure, signal);
+                        if (second) options.push(second);
                     }
                     signal.throwIfAborted();
                     setResult({ products, style, sortOption, pageCount, options });
