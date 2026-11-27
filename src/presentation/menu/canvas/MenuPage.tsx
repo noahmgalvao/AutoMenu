@@ -15,7 +15,7 @@ import { Crop, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CopyCheck, Mor
 import { Resizable } from 're-resizable';
 import { MenuItem } from './MenuItem';
 import { CanvasActionGroup, CanvasFlowActions, canvasActionButtonClass } from './CanvasControls';
-import type { PageLayout, CategoryChunkLayout, PageItem } from '../../../domain/menu/menuPagination';
+import { getPaginationBottomInset, type PageLayout, type CategoryChunkLayout, type PageItem } from '../../../domain/menu/menuPagination';
 import { CATEGORY_CHUNK_GAP_PX, FREE_TEXT_PREFIX, getCategoryChunkGap } from '../../../domain/menu/flow';
 import { selectionLayerClasses } from './selectionLayers';
 import { getDirectionLabel, type FlowDirection } from './flowControls';
@@ -644,10 +644,10 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 })}
 
                 <div
-                    className="relative h-full flex flex-col pointer-events-none"
+                    data-menu-content="true" className="relative h-full flex flex-col pointer-events-none"
                     style={{
                         paddingTop: `${margins.top}px`,
-                        paddingBottom: `${margins.bottom}px`,
+                        paddingBottom: `${getPaginationBottomInset(style)}px`,
                         paddingLeft: `${margins.left}px`,
                         paddingRight: `${margins.right}px`,
                     }}

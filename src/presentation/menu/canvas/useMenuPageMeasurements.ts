@@ -1,10 +1,12 @@
 import { applyGroupedWordFit } from './textFit';
-import { useLayoutEffect, type Dispatch, type RefObject, type SetStateAction } from 'react';
-import { getPaginationHeightKey, type PageLayout } from '../../../domain/menu/menuPagination';
+import { useCallback, useMemo, useState, useLayoutEffect, type Dispatch, type RefObject, type SetStateAction } from 'react';
+import { getPaginationHeightKey, getPaginationChunkHeightKey, type PageLayout } from '../../../domain/menu/menuPagination';
+import { getMenuTypographyScale, getMeasuredMenuTypographyScale } from '../../../domain/menu/menuPagination';
+import type { MenuStyle, Product } from '../../../domain/menu/model';
 import { livePhotoScaleVariable } from './photoSizing';
 
 export function useMenuPageMeasurements(rootRef: RefObject<HTMLElement | null>, pages: PageLayout[], columnCount: number,
-    setMeasuredHeights: Dispatch<SetStateAction<ReadonlyMap<string, number>>>, typographyScale: number, typicalFontSize: number, visiblePage?: number) {
+    setMeasuredHeights: Dispatch<SetStateAction<ReadonlyMap<string, number>>>, typographyScale: number, typicalFontSize: number, visiblePage?: number, onMeasure?: (heights: ReadonlyMap<string, number>) => void) {
     useLayoutEffect(() => {
         const root = rootRef.current;
         if (!root) return;
@@ -12,6 +14,7 @@ export function useMenuPageMeasurements(rootRef: RefObject<HTMLElement | null>, 
         const items = Array.from(root.querySelectorAll<HTMLElement>(
             '[data-pagination-chunk-content] > [data-pagination-item], [data-pagination-chunk-content] > [data-pagination-grid]'
         ));
+        const chunks = Array.from(root.querySelectorAll<HTMLElement>('[data-category-chunk]'));
         let frame = 0;
         const measure = () => {
             if (root.style.getPropertyValue(livePhotoScaleVariable('product')) || root.style.getPropertyValue(livePhotoScaleVariable('category'))) return;
@@ -47,6 +50,13 @@ export function useMenuPageMeasurements(rootRef: RefObject<HTMLElement | null>, 
                     next.set(key, height + gap);
                 });
             }
+            for (const chunk of chunks) {
+                const column = chunk.closest<HTMLElement>('[data-drag-column-container="category"]');
+                if (!column?.offsetWidth || !chunk.dataset.categoryChunk) continue;
+                next.set(getPaginationChunkHeightKey(chunk.dataset.categoryChunk, parseFloat(getComputedStyle(column).width)),
+                    parseFloat(getComputedStyle(chunk).height));
+            }
+            onMeasure?.(next);
             setMeasuredHeights((current) => {
                 const changes = [...next].filter(([key, height]) => Number.isFinite(height) && Math.abs((current.get(key) ?? -1) - height) >= 0.25);
                 return changes.length ? new Map([...current, ...changes]) : current;
@@ -58,6 +68,7 @@ export function useMenuPageMeasurements(rootRef: RefObject<HTMLElement | null>, 
         });
         headers.forEach(header => observer.observe(header));
         items.forEach((item) => observer.observe(item));
+        chunks.forEach(chunk => observer.observe(chunk));
         const wordChanges = new MutationObserver(() => {
             cancelAnimationFrame(frame);
             frame = requestAnimationFrame(measure);
@@ -69,5 +80,19 @@ export function useMenuPageMeasurements(rootRef: RefObject<HTMLElement | null>, 
             wordChanges.disconnect();
             cancelAnimationFrame(frame);
         };
-    }, [rootRef, pages, columnCount, typographyScale, typicalFontSize, visiblePage, setMeasuredHeights]);
+    }, [rootRef, pages, columnCount, typographyScale, typicalFontSize, visiblePage, setMeasuredHeights, onMeasure]);
+}
+
+/** Render corrections last only for this source document. Reverting an edit restores its original scale. */
+export function useMenuTypographyFit(style: MenuStyle, products: Product[], groups: Record<string, Product[]>, order: string[]) {
+    const estimatedScale = useMemo(() => getMenuTypographyScale(style, groups, order), [style, groups, order]);
+    const [fit, setFit] = useState<{ style: MenuStyle; products: Product[]; scale: number }>();
+    const typographyScale = fit?.style === style && fit.products === products ? Math.min(estimatedScale, fit.scale) : estimatedScale;
+    const fitMeasuredContent = useCallback((heights: ReadonlyMap<string, number>) => {
+        const scale = getMeasuredMenuTypographyScale(style, groups, order, typographyScale, heights);
+        if (scale >= typographyScale) return;
+        setFit(current => current?.style === style && current.products === products && current.scale <= scale
+            ? current : { style, products, scale });
+    }, [style, products, groups, order, typographyScale]);
+    return { typographyScale, fitMeasuredContent };
 }

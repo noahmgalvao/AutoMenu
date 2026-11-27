@@ -1,11 +1,11 @@
-import { useMenuPageMeasurements } from '../canvas/useMenuPageMeasurements';
+import { useMenuPageMeasurements, useMenuTypographyFit } from '../canvas/useMenuPageMeasurements';
 import { Heart } from 'lucide-react';
 import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { INITIAL_PRODUCTS, NO_TEMPLATE_ID } from '../../../domain/menu/defaults';
 import type { MenuStyle, Product, SortOption } from '../../../domain/menu/model';
 import { useMenuData } from '../interactions/useMenuData';
 import { applyTemplateToCurrentStyle } from '../../../application/templates/templateApplication';
-import { calculatePagination, finalizeMenuPages, getMenuTypographyScale, getFittedMenuSpacing, getFittedMenuProducts, getTypicalMenuFontSize } from '../../../domain/menu/menuPagination';
+import { calculatePagination, finalizeMenuPages, getFittedMenuSpacing, getFittedMenuProducts, getTypicalMenuFontSize } from '../../../domain/menu/menuPagination';
 import { resolveMenuPageDimensions } from '../../../domain/menu/pageSetup';
 import { MenuPage } from '../canvas/MenuPage';
 import { DynamicFontLoader } from '../canvas/MenuPreview';
@@ -61,8 +61,8 @@ export const TemplatePreviewSurface = memo(function TemplatePreviewSurface({
   }, [current, template, sample]);
   const { groupedProductsBase, sortedCategoriesBase } = useMenuData({ products: content, style, sortOption });
   const [measuredHeights, setMeasuredHeights] = useState<ReadonlyMap<string, number>>(() => new Map());
-  const typographyScale = useMemo(() => getMenuTypographyScale(style, groupedProductsBase, sortedCategoriesBase),
-    [style, groupedProductsBase, sortedCategoriesBase]);
+  const { typographyScale, fitMeasuredContent } = useMenuTypographyFit(style, content, groupedProductsBase, sortedCategoriesBase);
+  useLayoutEffect(() => setMeasuredHeights(new Map()), [style, content, typographyScale]);
   const pages = useMemo(() => {
     const placements = { ...style.categoryPositions, ...style.categoryPlacements };
     const calculated = calculatePagination(
@@ -77,7 +77,7 @@ export const TemplatePreviewSurface = memo(function TemplatePreviewSurface({
   const [scale, setScale] = useState(0);
   const lastPage = Math.max(0, pages.length - 1);
   const visibleIndex = Math.min(pageIndex, lastPage);
-  useMenuPageMeasurements(stage, pages, style.columnCount, setMeasuredHeights, typographyScale, getTypicalMenuFontSize(style), scale > 0 ? visibleIndex : undefined);
+  useMenuPageMeasurements(stage, pages, style.columnCount, setMeasuredHeights, typographyScale, getTypicalMenuFontSize(style), scale > 0 ? visibleIndex : undefined, fitMeasuredContent);
   useLayoutEffect(() => {
     if (pageIndex !== visibleIndex) onPageChange(visibleIndex);
   }, [onPageChange, pageIndex, visibleIndex]);

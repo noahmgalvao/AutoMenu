@@ -519,7 +519,7 @@ export const MenuItem: React.FC<MenuItemProps> = ({
                 data-heading-measurement={headingMeasurementKey(hasTitle, hasSubtitle)}
                 data-heading-draft={showSubtitleDraft || undefined}
                 data-template-header data-header-page={pageIndex} data-menu-border-surface="header" data-custom-border={getBorderOverride(style, 'header')}
-                className={`relative flow-root text-center pointer-events-auto ${selected ? 'ring-2 ring-indigo-500 bg-indigo-50/10' : ''}`}
+                className={`relative flow-root shrink-0 text-center pointer-events-auto ${selected ? 'ring-2 ring-indigo-500 bg-indigo-50/10' : ''}`}
                 style={{ zIndex: showSubtitleDraft ? 65 : 20, background: getSurfaceFill(style, 'header'), borderRadius: style.borders?.header?.radius }}>
                 <BorderDecoration style={style} scope="header" />
                 {heroImage && <img src={heroImage} data-template-hero-image alt="" draggable={false} onError={event => { event.currentTarget.hidden = true; }} />}

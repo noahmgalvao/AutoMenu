@@ -79,6 +79,9 @@ export const getPaginationItemKey = (item: PageItem) => {
 };
 
 export const getPaginationHeightKey = (itemKey: string, width: number) => `${itemKey}:${Math.round(width)}`;
+export const getPaginationChunkHeightKey = (category: string, width: number) =>
+    getPaginationHeightKey(JSON.stringify(['category-chunk', category]), width);
+
 
 interface MutablePage extends PageLayout {
     _columnHeights: number[];
@@ -573,15 +576,25 @@ const buildCategoryItems = (style: MenuStyle, category: string, products: Produc
     ];
 };
 
+function getCategoryChunkHeight(style: MenuStyle, category: string, items: PageItem[], column: number,
+    calculate: (item: PageItem) => number, measuredHeights?: PaginationOptions['measuredHeights']) {
+    const measured = measuredHeights?.get(getPaginationChunkHeightKey(category, getCategoryColumnWidth(style, undefined, column)));
+    if (measured !== undefined) return measured;
+    const format = getItemFormattingStyle(style, 'category', category);
+    const padded = format.fills?.categoryGroup && format.fills.categoryGroup !== 'transparent'
+        || format.borders?.categoryGroup?.sides.length;
+    return items.reduce((sum, item) => sum + calculate(item), 0) + (padded ? 12 : 0);
+}
+
 function getCategoryOverflows(
     style: MenuStyle, groups: Record<string, Product[]>, order: string[], scale: number,
+    measuredHeights?: PaginationOptions['measuredHeights'], onOverflow?: (available: number, required: number) => void,
 ) {
     style = getFittedMenuSpacing(style, scale);
     const columns = style.categoryColumnCount || 1;
     const pageHeight = getPaginationContentHeight(style);
-    const emptyHeight = getEmptyColumnHeight(style, pageHeight, { typographyScale: scale });
     const calculators = Array.from({ length: columns }, (_, column) =>
-        createPageItemHeightCalculator(style, columns, column, undefined, scale));
+        createPageItemHeightCalculator(style, columns, column, measuredHeights, scale));
     const hidden = getHiddenProductIds(style);
     const placements = getSavedCategoryPlacements(style);
     const overflows = new Map<string, number>();
@@ -596,12 +609,18 @@ function getCategoryOverflows(
         const placement = position ?? placements?.[category];
         const page = placement?.pageIndex ?? 0;
         const startsUnderHeading = first || page === 0 && style.headingPages?.menuTitle === 'all';
-        const height = startsUnderHeading ? pageHeight - getMainHeaderHeight(style, getPageHeader(style, 0), undefined, scale) : emptyHeight;
-        const overflow = position?.pageX !== undefined
-            ? items.reduce((sum, item) => sum + calculators[Math.max(0, Math.min(columns - 1, position.columnIndex))](item), 0)
-                - (resolveMenuPageDimensions(style).heightPx - getPaginationBottomInset(style) - position.y)
-            : Math.min(...calculators.map(calculate => items.reduce((sum, item) => sum + calculate(item), 0))) - height;
-        if (overflow > FIT_TOLERANCE_PX) overflows.set(category, overflow);
+        const height = startsUnderHeading ? pageHeight - getMainHeaderHeight(style, getPageHeader(style, 0), measuredHeights, scale) : getEmptyColumnHeight(style, pageHeight, { typographyScale: scale, measuredHeights });
+        const heights = calculators.map((calculate, column) => getCategoryChunkHeight(style, category, items, column, calculate, measuredHeights));
+        const rendered = heights.filter((_, column) => measuredHeights?.has(getPaginationChunkHeightKey(category, getCategoryColumnWidth(style, columns, column))));
+        const required = position?.pageX !== undefined ? heights[Math.max(0, Math.min(columns - 1, position.columnIndex))]
+            : rendered.length ? Math.max(...rendered) : Math.min(...heights);
+        const available = position?.pageX !== undefined
+            ? resolveMenuPageDimensions(style).heightPx - getPaginationBottomInset(style) - position.y : height;
+        const overflow = required - available;
+        if (overflow > FIT_TOLERANCE_PX) {
+            overflows.set(category, overflow);
+            onOverflow?.(available, required);
+        }
         first = false;
     }
     return overflows;
@@ -620,6 +639,16 @@ export function getMenuTypographyScale(style: MenuStyle, groups: Record<string, 
         else high = middle;
     }
     return low;
+}
+
+/** Correct the estimated scale using actual rendered geometry, without changing the user's base sizes. */
+export function getMeasuredMenuTypographyScale(style: MenuStyle, groups: Record<string, Product[]>, order: string[],
+    scale: number, measuredHeights: ReadonlyMap<string, number>) {
+    let ratio = 1;
+    getCategoryOverflows(style, groups, order, scale, measuredHeights, (available, required) => {
+        ratio = Math.min(ratio, Math.max(0, available) / Math.max(1, required));
+    });
+    return ratio < 1 ? Math.max(0, Math.min(scale - 1 / 1024, scale * ratio - 1 / 1024)) : scale;
 }
 
 export function getCategoryFitRegression(
@@ -831,7 +860,7 @@ const buildLockedPagination = (
         }
 
         const items = buildCategoryItems(style, category, visibleProducts);
-        const heights = calculators.map(calculate => items.reduce((sum, item) => sum + calculate(item), 0));
+        const heights = calculators.map((calculate, column) => getCategoryChunkHeight(style, category, items, column, calculate, options.measuredHeights));
         let currentPlacement = placement;
 
         if (freePosition?.pageX !== undefined) {
@@ -1176,7 +1205,7 @@ export const calculatePagination = (
             startNextPage();
         }
 
-        const heights = calculators.map(calculate => items.reduce((sum, item) => sum + calculate(item), 0));
+        const heights = calculators.map((calculate, column) => getCategoryChunkHeight(style, category, items, column, calculate, options.measuredHeights));
         for (;;) {
             const fittingColumn = findCategoryColumn(currentPage.columns, currentColumnIndex,
                 category === firstCategory && pages.length === 0 ? getColumnLimit(currentPage) : emptyColumnHeight, heights,

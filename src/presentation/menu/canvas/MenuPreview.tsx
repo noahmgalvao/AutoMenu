@@ -2,7 +2,7 @@ import { getProductColumnCount } from '../../../domain/menu/categoryColumns';
 import { lockModalScrolling } from '../../common/modalScroll';
 import { setElementFormatting, type FormattingKind } from '../../../domain/menu/itemFormatting';
 import { reindexMenuPages } from '../../../domain/menu/reindexMenuPages';
-import { useMenuPageMeasurements } from './useMenuPageMeasurements';
+import { useMenuPageMeasurements, useMenuTypographyFit } from './useMenuPageMeasurements';
 import { captureCanvasObjectScale } from './canvasObjectScale';
 import { getCanvasDragScale, type CanvasScaleTarget } from './CanvasTransformHandles';
 import { headingElementId, headingIsOnPage, headingPageIndex, headingSelectionId, menuHeadingFields, remapHeadingPages, type MenuHeadingField } from '../../../domain/menu/menuHeadings';
@@ -17,7 +17,7 @@ import React, { useMemo, useEffect, useRef, useCallback, useState } from 'react'
 import { createPortal, flushSync } from 'react-dom';
 import type { CategoryPosition, ElementStyle, Product, MenuStyle, SortOption } from '../../../domain/menu/model';
 import { Crop, AlertTriangle, BringToFront, Copy, CopyCheck, CopyPlus, Edit3, EyeOff, Wallpaper, FlipHorizontal2, FlipVertical2, Images, Layers, Paintbrush, Clipboard, Plus, Scissors, SendToBack, Trash2 } from 'lucide-react';
-import { calculatePagination, finalizeMenuPages, getCategoryFitRegression, getMenuTypographyScale, getFittedMenuSpacing, getFittedMenuProducts, getTypicalMenuFontSize, getSavedCategoryPlacements, reflowPositionsForMenuHeadings } from '../../../domain/menu/menuPagination';
+import { calculatePagination, finalizeMenuPages, getCategoryFitRegression, getFittedMenuSpacing, getFittedMenuProducts, getTypicalMenuFontSize, getSavedCategoryPlacements, reflowPositionsForMenuHeadings } from '../../../domain/menu/menuPagination';
 import { FREE_TEXT_PREFIX, SAFETY_BUFFER } from '../../../domain/menu/flow';
 import { isPristineNewCategory, isPristineNewProduct } from '../../../domain/menu/pristineItems';
 import { useMenuInteractions } from '../interactions/useMenuInteractions';
@@ -819,8 +819,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
             }),
         ]));
     }, [handlers.groupedProducts, scalePreview]);
-    const typographyScale = useMemo(() => getMenuTypographyScale(layoutStyle, layoutGroups, handlers.sortedCategories),
-        [layoutStyle, layoutGroups, handlers.sortedCategories]);
+    const { typographyScale, fitMeasuredContent } = useMenuTypographyFit(layoutStyle, unfitLayoutProducts, layoutGroups, handlers.sortedCategories);
     const fittedLayoutStyle = useMemo(() => getFittedMenuSpacing(layoutStyle, typographyScale), [layoutStyle, typographyScale]);
     const layoutProducts = useMemo(() => getFittedMenuProducts(unfitLayoutProducts, typographyScale), [unfitLayoutProducts, typographyScale]);
     const measurementConfig = useRef({ style: layoutStyle, products: unfitLayoutProducts, scale: typographyScale });
@@ -858,7 +857,7 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         ? { ...canvasStyle, categoryPositions: handlers.liveCategoryPositions } : canvasStyle, layoutProducts),
     [basePages, canvasStyle, handlers.liveCategoryPositions, layoutProducts]);
 
-    useMenuPageMeasurements(previewRootRef, pages, style.columnCount, setMeasuredHeights, typographyScale, getTypicalMenuFontSize(style));
+    useMenuPageMeasurements(previewRootRef, pages, style.columnCount, setMeasuredHeights, typographyScale, getTypicalMenuFontSize(style), undefined, fitMeasuredContent);
 
     useEffect(() => {
         onPageCountChange?.(pages.length);

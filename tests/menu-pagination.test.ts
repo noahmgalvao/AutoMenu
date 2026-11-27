@@ -6,6 +6,8 @@ import {
   getPaginationBottomInset,
   getCategoryFitRegression,
   getMenuTypographyScale,
+  getMeasuredMenuTypographyScale,
+  getPaginationChunkHeightKey,
   getFittedMenuSpacing,
   getPaginationHeightKey,
   getPaginationItemKey,
@@ -200,4 +202,28 @@ test('spacing and a saved empty cover yield to the first complete category', () 
     const pages = calculatePagination(products, layoutStyle, { A: products }, ['A'], layoutStyle.categoryPlacements);
     assert.equal(pages[0].columns[0].chunks[0].category, 'A');
     assert.equal(pages[0].columns[0].chunks[0].items.length, 8);
+});
+
+test('real category heights refine fitting against bottom margins without changing base typography', () => {
+ const config:MenuStyle={...style,categoryColumnCount:1,columnCount:3};
+ const entry=product('A'),groups={A:[entry]};
+ const width=dimensions.widthPx-margins.left-margins.right;
+ const measured=new Map([['main-header',100],[getPaginationChunkHeightKey('A',width),availableHeight]]);
+ const before=JSON.stringify(config);
+ const scale=getMeasuredMenuTypographyScale(config,groups,['A'],1,measured);
+ assert.ok(scale>0&&scale<1);
+ assert.ok(getMeasuredMenuTypographyScale({...config,margins:{...margins,bottom:margins.bottom+100}},groups,['A'],1,measured)<scale);
+ assert.equal(getMeasuredMenuTypographyScale(config,groups,['A'],1,new Map([['main-header',100],[getPaginationChunkHeightKey('A',width),100]])),1);
+ assert.equal(JSON.stringify(config),before);
+});
+
+test('pagination uses measured complete category height including container padding', () => {
+ const config:MenuStyle={...style,categoryColumnCount:1,columnCount:1};
+ const entry=product('A'),width=dimensions.widthPx-margins.left-margins.right;
+ const height=300;
+ const measuredHeights=new Map([['main-header',100],[getPaginationChunkHeightKey('A',width),height]]);
+ for(const placements of [null,{A:{pageIndex:0,columnIndex:0}}]) {
+ const pages=calculatePagination([entry],config,{A:[entry]},['A'],placements,{measuredHeights,typographyScale:1});
+ assert.equal(pages[0].columns[0].chunks[0].estimatedHeight,height);
+ }
 });
