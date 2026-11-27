@@ -101,12 +101,13 @@ export function buildPageReductionCandidates(products: Product[], style: MenuSty
         for (const key of textFields) elementStyles[key] = { ...elementStyles[key],
             fontSize: size(elementStyles[key]?.fontSize ?? INITIAL_STYLE.elementStyles[key]?.fontSize ?? 18) };
         const overrides = beforeFonts.style.itemFormattingOverrides;
+        const headingStyleOverrides = beforeFonts.style.headingStyleOverrides && Object.fromEntries(Object.entries(beforeFonts.style.headingStyleOverrides).map(([page, fields]) => [page, Object.fromEntries(Object.entries(fields).map(([field, value]) => [field, {...value, ...(value?.fontSize ? {fontSize:size(value.fontSize)} : {})}]))]));
         const scaledOverrides = overrides && Object.fromEntries(Object.entries(overrides).map(([kind, items]) => [kind,
             Object.fromEntries(Object.entries(items).map(([id, item]) => [id, { ...item,
                 elementStyles: item.elementStyles && Object.fromEntries(Object.entries(item.elementStyles).map(([key, value]) => [key,
                     value?.fontSize ? { ...value, fontSize: size(value.fontSize) } : value])),
             }]))]));
-        current = { style: { ...beforeFonts.style, elementStyles, itemFormattingOverrides: scaledOverrides },
+        current = { style: { ...beforeFonts.style, elementStyles, headingStyleOverrides, itemFormattingOverrides: scaledOverrides },
             products: beforeFonts.products.map(product => product.isFreeText && !backgroundIds.has(product.id)
                 ? { ...product, styles: { ...product.styles, fontSize: size(product.styles?.fontSize ?? 18) } } : product),
         };
@@ -167,12 +168,15 @@ export async function selectPageReduction(candidates: PageReductionCandidate[], 
 
 export async function selectPageReductionAlternative(products: Product[], style: MenuStyle, first: MeasuredReduction,
     currentPages: number, measure: (candidate: PageReductionCandidate) => Promise<number>, signal: AbortSignal) {
-    for (const columns of getPageReductionColumnOptions(style)) {
+    const columnsToTry = style.pageSetup?.orientation === 'landscape' ? getPageReductionColumnOptions(style) : [{categories:2,products:2}];
+    for (const columns of columnsToTry) {
         signal.throwIfAborted();
-        if (!hasMoreReductionColumns(applyReductionColumns(style, columns), first.style)) continue;
+        const proposed = applyReductionColumns(style, columns);
+        const denser = hasMoreReductionColumns(proposed, first.style);
+        if (!denser && (first.pageCount <= 1 || columnSignature(proposed) !== columnSignature(first.style))) continue;
         const second = await selectPageReduction(buildPageReductionCandidates(products, style, columns), currentPages,
-            measure, signal, first.pageCount);
-        if (second && second.pageCount === first.pageCount) return second;
+            measure, signal);
+        if (second && (second.pageCount < first.pageCount || denser && second.pageCount === first.pageCount)) return second;
     }
     return null;
 }

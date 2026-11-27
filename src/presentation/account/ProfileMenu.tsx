@@ -45,7 +45,10 @@ export const ProfileMenu: React.FC<ProfileMenuProps> = ({
   const [menusToDelete, setMenusToDelete] = useState<Menu[]>([]);
   const [multiSelect, setMultiSelect] = useState(false);
   const [selectedMenuIds, setSelectedMenuIds] = useState<Set<string>>(() => new Set());
-  const selectedMenus = menus.filter(menu => selectedMenuIds.has(menu.id));
+  const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const visibleMenus = menus.filter(menu => !removingIds.has(menu.id));
+  const selectedMenus = visibleMenus.filter(menu => selectedMenuIds.has(menu.id));
   const deletingMultiple = menusToDelete.length > 1;
 
   useEffect(() => {
@@ -75,12 +78,13 @@ export const ProfileMenu: React.FC<ProfileMenuProps> = ({
   });
 
   const confirmDeletion = async () => {
-    const deleted = await onDeleteMenus(menusToDelete.map(menu => menu.id));
-    setMenusToDelete([]);
-    if (deleted) {
-      setSelectedMenuIds(new Set());
-      setMultiSelect(false);
-    }
+    const ids = menusToDelete.map(menu => menu.id);
+    setRemovingIds(new Set(ids)); setMenusToDelete([]);
+    setSelectedMenuIds(new Set()); setMultiSelect(false); setDeleteError(null);
+    try {
+      if (!await onDeleteMenus(ids)) setDeleteError('Não foi possível excluir os cardápios. Eles foram mantidos.');
+    } catch { setDeleteError('Não foi possível excluir os cardápios. Eles foram mantidos.'); }
+    finally { setRemovingIds(new Set()); }
   };
 
   const startEditing = (menu: Menu) => {
@@ -144,7 +148,7 @@ export const ProfileMenu: React.FC<ProfileMenuProps> = ({
           </div>
 
           <div className="max-h-80 overflow-y-auto px-2 py-2">
-            <div className="flex items-center justify-between gap-1 px-2 pb-1">
+            <div className="sticky top-0 z-10 -mt-2 flex items-center justify-between gap-1 border-b border-slate-100 bg-white px-2 py-2">
               <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Meus cardápios</span>
               <div className="flex items-center gap-1">
                 <button type="button" aria-pressed={multiSelect} aria-label="Seleção múltipla de cardápios" title="Seleção múltipla"
@@ -165,8 +169,9 @@ export const ProfileMenu: React.FC<ProfileMenuProps> = ({
               </div>
             </div>
 
+            {deleteError && <p role="alert" className="p-2 text-xs text-red-700">{deleteError}</p>}
             <div className="space-y-1">
-              {menus.map((menu) => {
+              {visibleMenus.map((menu) => {
                 const isActive = menu.id === activeMenuId;
                 const isEditing = editingMenuId === menu.id;
 

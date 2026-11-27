@@ -664,7 +664,7 @@ test('menu selection deletes only the checked menus in a single request and move
   expect(deletionBatches).toEqual([['30000000-0000-4000-8000-000000000003', '30000000-0000-4000-8000-000000000004']]);
 
   if (await profile.getAttribute('aria-expanded') !== 'true') await profile.click();
-  await expect(page.getByRole('button', { name: 'Menu restante' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Menu restante' }).last()).toBeVisible();
   await expect(page.getByRole('button', { name: 'Menu intermediário' })).toHaveCount(0);
   await page.getByTitle('Excluir cardápio', { exact: true }).click();
   dialog = page.getByRole('alertdialog', { name: 'Excluir cardápio?' });
@@ -1149,4 +1149,21 @@ test('a stalled initial workspace load reloads automatically instead of leaving 
   await page.clock.fastForward(12001);
   await expect.poll(()=>loads).toBe(2);
   release();await expect(page.getByRole('button',{name:'Meu perfil'})).toBeVisible();
+});
+for(const failed of [false,true])test(`eleven menu removals update immediately and ${failed?'roll back on failure':'complete in one archive request'}`,async({page})=>{
+ const names=Array.from({length:12},(_,i)=>`Menu rápido ${i}`);await openWorkspace(page,names);
+ let release!:()=>void;const gate=new Promise<void>(r=>release=r);let writes=0;
+ await page.route('**/rest/v1/menus?*',async route=>{
+  if(route.request().method()!=='PATCH'||route.request().postDataJSON()?.status!=='archived')return route.fallback();
+  writes++;await gate;
+  return failed?route.fulfill({status:403,json:{message:'forbidden'}}):route.fallback();
+ });
+ await page.getByRole('button',{name:'Meu perfil'}).click();await page.getByRole('button',{name:'Seleção múltipla de cardápios'}).click();
+ for(const name of names.slice(1))await page.getByRole('checkbox',{name,exact:true}).check();
+ const trash=page.getByRole('button',{name:'Excluir cardápios selecionados'});await expect(trash).toBeInViewport();
+ await trash.click();await page.getByRole('alertdialog').getByRole('button',{name:'Excluir',exact:true}).click();
+ await expect(page.getByRole('alertdialog')).toHaveCount(0);await expect(page.getByRole('button',{name:names[1],exact:true})).toHaveCount(0);
+ await expect.poll(()=>writes).toBe(1);release();
+ if(failed){await expect(page.getByRole('button',{name:names[1],exact:true})).toBeVisible();await expect(page.getByText('Não foi possível excluir os cardápios. Eles foram mantidos.')).toBeVisible();}
+ else await expect(page.getByRole('button',{name:'Novo cardápio',exact:true}).first()).toBeEnabled();
 });

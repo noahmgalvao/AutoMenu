@@ -120,7 +120,7 @@ export const ElementsSection: React.FC<ElementsSectionProps> = ({
         <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
             <Type size={14} /> Elementos
         </h3>
-        {(!selection.type || selection.type === "page") ? null : formattingScope ? (
+        {(!selection.type || selection.type === "page") ? <span data-element-scope-slot /> : formattingScope ? (
             <label className="relative flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-1 text-[10px] font-bold text-indigo-700 focus-within:ring-2 focus-within:ring-indigo-500">
                 <span aria-hidden="true">Editando: {scopeLabel}</span>
                 <ChevronDown size={12} aria-hidden="true" />
@@ -797,7 +797,7 @@ export const StyleSection: React.FC<StyleSectionProps> = ({ style, setStyle, hid
 
   return (
   <section className="space-y-3">
-    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2"> <Palette size={14} /> Cores e fonte </h3>
+    {!hideFont && <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2"> <Palette size={14} /> Cores e fonte </h3>}
     {!hideFont && <div className="space-y-1">
         <label className="text-[10px] uppercase font-bold text-slate-400">Fonte principal</label>
         <FontSelect value={style.fontFamily} onChange={(font) => setStyle(prev => ({ ...prev, fontFamily: font, name: 'Custom' }))} />

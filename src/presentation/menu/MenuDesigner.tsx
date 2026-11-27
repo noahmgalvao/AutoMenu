@@ -1,3 +1,4 @@
+import { Loader2 } from 'lucide-react';
 import { usePageReduction } from './designer/usePageReduction';
 import { PageReductionPreview } from './designer/PageReductionPreview';
 import type { MeasuredReduction } from '../../domain/menu/pageReduction';
@@ -165,15 +166,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     const [pageCount, setPageCount] = useState(0);
     const pageCountChanged = useCallback((count: number) => { setPageCount(count); onExportablePagesChange?.(count); }, [onExportablePagesChange]);
     const reduction = usePageReduction(products, style, sortOption, pageCount);
-    const [tipsRequested, setTipsRequested] = useState(false);
-    useEffect(() => {
-        if (tipsRequested && reduction.ready) { setTipsRequested(false); setTipsOpen(true); }
-    }, [tipsRequested, reduction.ready]);
-    const toggleTips = () => {
-        if (tipsOpen || tipsRequested) { setTipsOpen(false); setTipsRequested(false); }
-        else if (reduction.ready) setTipsOpen(true);
-        else setTipsRequested(true);
-    };
+    const toggleTips = () => setTipsOpen(current => !current);
     const [reviewReductionAfterTips, setReviewReductionAfterTips] = useState(false);
     const [reductionPreview, setReductionPreview] = useState<MeasuredReduction[] | null>(null);
     const applyReduction = (option: MeasuredReduction) => {
@@ -757,9 +750,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     }, [hoveredFontScope, fontTips]);
 
     useEffect(() => {
-        if (hasVisibleTips) return;
-        setTipsOpen(false);
-        setHoveredFontScope(null);
+        if (!hasVisibleTips) setHoveredFontScope(null);
     }, [hasVisibleTips]);
 
     React.useLayoutEffect(() => {
@@ -2118,7 +2109,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                 {reductionPreview && <PageReductionPreview options={reductionPreview} sortOption={sortOption}
                     cancel={() => setReductionPreview(null)} apply={applyReduction} />}
                 <FloatingTipsButton key={currentMenuId || workspaceId} anchorRef={tipsAnchorRef} tipKeys={tipKeys} open={tipsOpen}
-                    pending={tipsRequested} onToggle={toggleTips} onDragStart={() => { setTipsOpen(false); setTipsRequested(false); }} />
+                    onToggle={toggleTips} onDragStart={() => setTipsOpen(false)} />
                 <>
                     {(tipsOpen || reviewAction) && createPortal(
                         <div ref={reviewAction ? lockModalScrolling : undefined}
@@ -2140,7 +2131,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                 <header className="shrink-0 space-y-3 border-b border-slate-100 px-3 py-3">
                                     <div className="space-y-0.5">
                                         <h2 className="whitespace-nowrap text-sm font-bold text-slate-900">Dicas do cardápio</h2>
-                                        {!reviewAction && <p className="text-xs text-slate-500">{hasVisibleTips ? 'Ajustes opcionais para o cardápio.' : 'Nenhuma dica pendente no momento.'}</p>}
+                                        {!reviewAction && <p className="text-xs text-slate-500">{hasVisibleTips ? 'Ajustes opcionais para o cardápio.' : reduction.ready ? 'Nenhuma dica pendente no momento.' : 'Verificando ajustes para o cardápio…'}</p>}
                                     </div>
                                     <div className="grid grid-cols-2 gap-2">
                                         <button type="button" onClick={() => setAllDismissed(tipsSignature)}
@@ -2158,7 +2149,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                         {hasVisibleTips ? 'Há sugestões opcionais pendentes para melhorar a visualização do cardápio. Descarte ou aplique-as.' : 'Sugestões aplicadas ou descartadas. Você pode publicar.'}
                                     </p>}
                                 </header>
-                                <div className={hasVisibleTips ? "min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3" : "hidden"}>
+                                <div className={hasVisibleTips || !reduction.ready ? "min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3" : "hidden"}>
+                                    {!reduction.ready && <div role="status" className="flex items-center gap-2 rounded-xl bg-slate-50 p-3 text-xs text-slate-500"><Loader2 size={16} className="animate-spin" /> Verificando se é possível usar menos páginas…</div>}
                                     {showReductionTip && <div className="rounded-xl border-2 border-indigo-300 bg-indigo-50 p-3" data-page-reduction-tip>
                                         <MenuTip prominent title={`Caber em ${reduction.options[0].pageCount} ${reduction.options[0].pageCount === 1 ? 'página' : 'páginas'}`}
                                             applyLabel={reduction.options.length === 1 ? "Reduzir páginas" : "Ver opções para reduzir páginas"} apply={() => chooseReduction(reduction.options)} dismiss={() => dismissTip('page-reduction')}>

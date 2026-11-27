@@ -133,3 +133,20 @@ test('portrait proposals stop at two category and two product columns, preservin
   assert.ok(buildPageReductionCandidates(products,existing).every(c=>c.style.columnCount>=3 && c.style.categoryColumnCount!>=3));
   assert.ok(!getPageReductionColumnOptions(existing).some(c=>c.products>3 || c.categories>3));
 });
+test('portrait alternative starts with exactly 2 by 2 and searches for one page even if the first result only fits two',async()=>{
+ const first={...buildPageReductionCandidates(products,INITIAL_STYLE)[0],pageCount:2};
+ const reads:number[]=[];
+ const second=await selectPageReductionAlternative(products,INITIAL_STYLE,first,3,async candidate=>{
+  assert.equal(candidate.style.categoryColumnCount,2);assert.equal(candidate.style.columnCount,2);
+  reads.push(candidate.style.elementStyles.productName.fontSize||0);
+  return candidate.stage==='fonts'||candidate.stage==='margins'?1:2;
+ },new AbortController().signal);
+ assert.equal(second?.pageCount,1);assert.ok(reads.length>1);
+});
+test('a two-page result with 2 by 2 columns is rechecked with columns first to find a possible single page',async()=>{
+ const first={...buildPageReductionCandidates(products,INITIAL_STYLE,{categories:2,products:2})[0],pageCount:2};
+ const second=await selectPageReductionAlternative(products,INITIAL_STYLE,first,3,async c=>c.stage==='fonts'?1:2,new AbortController().signal);
+ assert.equal(second?.pageCount,1);
+ const duplicate=await selectPageReductionAlternative(products,INITIAL_STYLE,first,3,async()=>2,new AbortController().signal);
+ assert.equal(duplicate,null);
+});

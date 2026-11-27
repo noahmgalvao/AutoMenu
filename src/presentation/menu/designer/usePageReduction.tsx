@@ -103,7 +103,8 @@ export function usePageReduction(products: Product[], style: MenuStyle, sortOpti
                     const options = first ? [first] : [];
                     if (first) {
                         const second = await selectPageReductionAlternative(products, style, first, pageCount, measure, signal);
-                        if (second) options.push(second);
+                        if (second && second.pageCount < first.pageCount) options.splice(0, options.length, second);
+                        else if (second) options.push(second);
                     }
                     signal.throwIfAborted();
                     setResult({ products, style, sortOption, pageCount, fontRevision, options });

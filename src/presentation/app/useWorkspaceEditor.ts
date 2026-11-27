@@ -1096,7 +1096,14 @@ export function useWorkspaceEditor({ showStylePanel, closeProfileMenu, closeCrea
     menuOperation.current = true;
     setIsMenuActionLoading(true);
     setLoadError(null);
-    if (deletingActiveMenu) await forceSaveCurrentMenu();
+    if (deletingActiveMenu) {
+      try { await forceSaveCurrentMenu(); }
+      catch (error) {
+        menuOperation.current = false; setIsMenuActionLoading(false);
+        setLoadError(getErrorMessage(error, 'Não foi possível preservar as alterações antes de excluir.'));
+        return false;
+      }
+    }
     const pendingActivePayload = deletingActiveMenu ? latestPersistPayloadRef.current : null;
     menuIdsBeingDeleted.current = ids;
 

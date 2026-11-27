@@ -1,5 +1,9 @@
 import {measureWordFitElement, triggerLimitFeedback} from '../canvas/textFit';
 import {applyFontToMenuStyle} from '../../../domain/menu/fontPropagation';
+import {createPortal} from 'react-dom';
+import {HoldStepButton} from '../../common/HoldStepButton';
+import {FontSizeInput} from './FontSizeInput';
+import {EditingScopePicker} from './EditingScopePicker';
 import {useEffect,useState} from 'react';
 import type {ElementStyle,MenuStyle,Product} from '../../../domain/menu/model';
 import {getItemFormattingStyle,updateItemFormatting} from '../../../domain/menu/itemFormatting';
@@ -11,6 +15,8 @@ type Target={elementId:string;base:number;field:Field;id:string;page:number;valu
 export function BatchTextControls({style,products,page,commit}:{style:MenuStyle;products:Product[];page:number;commit:(products:Product[],style:MenuStyle)=>void}) {
  const [scope,setScope]=useState<'all'|'page'|'types'>('all');
  const [types,setTypes]=useState<Field[]>([]);
+ const [slot,setSlot]=useState<Element|null>(null);
+ useEffect(()=>{setSlot(document.querySelector('[data-element-scope-slot]'));},[]);
  const [targets,setTargets]=useState<Target[]>([]);
  useEffect(()=>{
   let frame=0;
@@ -65,13 +71,16 @@ export function BatchTextControls({style,products,page,commit}:{style:MenuStyle;
   commit(items,{...next,name:'Custom'});
  };
  return <div className="space-y-3" data-batch-text-controls>
-  <details className="relative" data-edit-scope><summary className="ml-auto w-fit cursor-pointer rounded-full bg-indigo-100 px-3 py-1 text-xs font-bold text-indigo-700">Editando: {scope==='all'?'Todos':scope==='page'?'Página atual':types.map(t=>labels[t]).join(', ')||'Seleção'}</summary>
-   <div className="absolute right-0 z-30 mt-1 w-52 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
-    {(['all','page'] as const).map(s=><button type="button" key={s} className="block w-full rounded-lg p-2 text-left text-sm hover:bg-indigo-50" onClick={e=>{setScope(s);setTypes([]);e.currentTarget.closest('details')?.removeAttribute('open');}}>{s==='all'?'Todos':'Página atual'}</button>)}
-    <div className="my-1 border-t border-slate-100"/>{available.map(field=><label key={field} className="flex items-center gap-2 rounded-lg p-2 text-sm hover:bg-slate-50"><input type="checkbox" checked={scope==='types'&&types.includes(field)} onChange={()=>{setScope('types');setTypes(old=>scope!=='types'?[field]:old.includes(field)?old.filter(f=>f!==field):[...old,field]);}}/>{labels[field]}</label>)}
-   </div>
-  </details>
-  <StyleControls label="Tamanho da fonte" value={value} onChange={change} minFontSize={13} disabled={!selected.length} mixedFontSize={!equalSize} onFontStep={delta=>change({},delta)} hideColor={scope!=='types'} />
+  {slot && createPortal(<EditingScopePicker label={scope==='all'?'Todos':scope==='page'?'Página atual':types.length>1?'Múltiplos':labels[types[0]]||'Seleção'} scope={scope} selected={types} available={available.map(id=>({id,label:labels[id]}))} choose={next=>{setScope(next);setTypes([]);}} toggle={id=>{
+   const field=id as Field;const next=scope==='types'?(types.includes(field)?types.filter(t=>t!==field):[...types,field]):[field];
+   if(available.every(type=>next.includes(type))){setScope('all');setTypes([]);}else{setScope('types');setTypes(next);}
+  }}/>,slot)}
+  <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+   <HoldStepButton label="Diminuir tamanho da fonte" onStep={()=>change({},-1)!==false} className="grid size-8 shrink-0 place-items-center rounded border border-slate-200 bg-white text-slate-600">−</HoldStepButton>
+   {equalSize?<FontSizeInput label="Tamanho da fonte" value={selected[0].size} min={13} onChange={fontSize=>change({...value,fontSize})} className="w-20 text-center"/>:<span className="text-xs font-semibold text-slate-600">Tamanho da fonte</span>}
+   <HoldStepButton label="Aumentar tamanho da fonte" onStep={()=>change({},1)!==false} className="grid size-8 shrink-0 place-items-center rounded border border-slate-200 bg-white text-slate-600">+</HoldStepButton>
+  </div>
+  <StyleControls hideHeading hideSize label="Elementos" value={value} onChange={change} minFontSize={13} disabled={!selected.length} mixedFontSize={!equalSize} onFontStep={delta=>change({},delta)} hideColor={scope!=='types'} />
   {scope!=='types'&&<StyleSection style={style} setStyle={update=>{const next=typeof update==='function'?update(style):update; if(scope==='all')commit(products,next);else if(next.backgroundColor!==style.backgroundColor)commit(products,{...style,pageBackgroundColors:{...style.pageBackgroundColors,[page]:next.backgroundColor}});else change({},undefined,Object.fromEntries(Object.entries(next.elementStyles).map(([field,value])=>[field,{color:value?.color}])));}} hideFont />}
  </div>;
 }

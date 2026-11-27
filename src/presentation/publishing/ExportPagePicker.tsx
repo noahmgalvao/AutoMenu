@@ -56,7 +56,7 @@ export function ExportPagePicker({ format, choice, pageCount, selectedPages, onC
   </div>;
 }
 
-function PageOption({ label, checked, disabled, onClick }: {
+export function PageOption({ label, checked, disabled, onClick }: {
   label: string; checked: boolean; disabled?: boolean; onClick: () => void;
 }) {
   return <button type="button" aria-pressed={checked} disabled={disabled} onClick={onClick}

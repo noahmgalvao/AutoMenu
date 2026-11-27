@@ -10,6 +10,7 @@ import { FontSelect } from './SearchableSelects';
 import { FontSizeInput } from './FontSizeInput';
 
 interface StyleControlsProps {
+  hideHeading?: boolean; hideSize?: boolean;
   mixedFontSize?: boolean; onFontStep?: (delta:number)=>void | boolean; hideColor?: boolean;
   label: string;
   value: ElementStyle;
@@ -23,7 +24,7 @@ interface StyleControlsProps {
 }
 
 export const StyleControls: React.FC<StyleControlsProps> = ({ 
-  label, mixedFontSize, onFontStep, hideColor,
+  label, hideHeading, hideSize, mixedFontSize, onFontStep, hideColor,
   value, 
   onChange,
   disabled = false,
@@ -36,7 +37,7 @@ export const StyleControls: React.FC<StyleControlsProps> = ({
     const rendered = useRenderedTextControls(fontSelector, value.fontSize);
     return (
         <div className={`space-y-2 p-3 bg-slate-50 rounded-lg border border-slate-100 ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
-            {header ?? <label className="text-xs font-bold text-slate-500 uppercase">{label}</label>}
+            {!hideHeading && (header ?? <label className="text-xs font-bold text-slate-500 uppercase">{label}</label>)}
             
             {/* Fonte e tamanho */}
             <div className="flex gap-2">
@@ -48,7 +49,7 @@ export const StyleControls: React.FC<StyleControlsProps> = ({
                         onChange={(font) => onChange({...value, fontFamily: font})}
                     />
                 </div>
-                {mixedFontSize ? <div className="flex items-center gap-1"><HoldStepButton label="Diminuir tamanho da fonte" onStep={() => onFontStep?.(-1) !== false} className="rounded border border-slate-200 bg-white p-2">−</HoldStepButton><HoldStepButton label="Aumentar tamanho da fonte" onStep={() => onFontStep?.(1) !== false} className="rounded border border-slate-200 bg-white p-2">+</HoldStepButton></div> : <FontSizeInput showStepButtons
+                {hideSize ? null : mixedFontSize ? <div className="flex items-center gap-1"><HoldStepButton label="Diminuir tamanho da fonte" onStep={() => onFontStep?.(-1) !== false} className="rounded border border-slate-200 bg-white p-2">−</HoldStepButton><HoldStepButton label="Aumentar tamanho da fonte" onStep={() => onFontStep?.(1) !== false} className="rounded border border-slate-200 bg-white p-2">+</HoldStepButton></div> : <FontSizeInput showStepButtons
                     value={rendered.size}
                     onChange={(fontSize) => rendered.canSetSize(fontSize) && onChange({...value, fontSize})}
                     max={maxFontSize}
