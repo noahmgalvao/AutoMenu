@@ -14,7 +14,7 @@ import { useCanvasFileExports, type CanvasFileExports } from './designer/useCanv
 import { formattingLabels, getFormattingGroups, getFormattingItems, getItemFormattingStyle, setElementFormatting, standardizeItemFormatting, updateItemFormatting, type FormattingKind, type FormattingScope } from '../../domain/menu/itemFormatting';
 import { MenuFontContext } from './designer/SearchableSelects';
 import { hasMenuContentMutation } from './canvas/menuContentMutations';
-import { applyContrastTip, scanBackgroundTextOverlap, scanTextContrast, type ContrastTip, type OverlapTip } from './canvas/canvasTextTips';
+import { applyContrastTips, scanBackgroundTextOverlap, scanTextContrast, type ContrastTip, type OverlapTip } from './canvas/canvasTextTips';
 import { categoryName } from '../../domain/menu/categoryName';
 import { applyTemplateToCurrentStyle } from '../../application/templates/templateApplication';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
@@ -1936,7 +1936,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     };
 
     const applyContrastSuggestions = (choice: 'color' | 'fill') => {
-        const next = contrastTips.reduce((value, tip) => applyContrastTip(value.style, value.products, tip, choice), { style, products });
+        const next = applyContrastTips(style, products, contrastTips, choice);
         if (setProductsAndStyle) setProductsAndStyle(next.products, next.style, 'Melhorar leitura');
         else { setProducts?.(next.products); setStyle(next.style); }
         setContrastTips([]);
@@ -2046,11 +2046,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         }
 
         nextStyle = resolveBackgroundOverlap(nextStyle, new Set(backgroundOverlapTips.map(tip => tip.id)));
-        for (const tip of contrastTips) {
-            const next = applyContrastTip(nextStyle, nextProducts, tip, 'color');
-            nextStyle = next.style;
-            nextProducts = next.products;
-        }
+        const contrasted = applyContrastTips(nextStyle, nextProducts, contrastTips, 'color');
+        nextStyle = contrasted.style; nextProducts = contrasted.products;
         setContrastTips([]);
         if (nextProducts !== products || nextStyle !== style) {
             if (setProductsAndStyle) {
@@ -2203,10 +2200,13 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                         <p>Há textos sobrepostos no fundo do cardápio. Deseja organizar?</p>
                                     </MenuTip>}
                                     {contrastTips.length > 0 && <MenuTip title="Leitura dos textos" applyLabel="Melhorar leitura dos textos"
-                                        apply={() => applyContrastSuggestions('color')} dismiss={() => setContrastTips([])}>
-                                        <p>Há textos difíceis de ler sobre o fundo. Deseja melhorar a leitura?</p>
-                                        <button type="button" onClick={() => applyContrastSuggestions('fill')}
-                                            className="rounded-lg border border-indigo-200 bg-white px-2 py-1 font-semibold text-indigo-700">Adicionar preenchimento</button>
+                                        apply={() => applyContrastSuggestions('color')} dismiss={() => setContrastTips([])}
+                                        choices={[
+                                            {label:'Alterar cores',apply:()=>applyContrastSuggestions('color'),disabled:contrastTips.some(tip=>tip.color===null)},
+                                            {label:'Adicionar preenchimento',apply:()=>applyContrastSuggestions('fill')},
+                                        ]}>
+                                        <p>Há textos difíceis de ler sobre o fundo. Deseja melhorar todos de uma vez?</p>
+                                        {contrastTips.some(tip=>tip.color===null) && <p>Neste fundo, o preenchimento oferece melhor leitura.</p>}
                                     </MenuTip>}
                                     {showMixedFontTip && <MenuTip title="Fontes diferentes" apply={applyMixedFontSuggestion}
                                         applyLabel="Usar uma fonte em todo o cardápio" dismiss={() => dismissTip('mixed-fonts')}

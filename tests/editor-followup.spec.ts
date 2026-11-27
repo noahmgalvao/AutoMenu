@@ -95,19 +95,22 @@ test('content layers move together while a free text keeps its own layer', async
 });
 
 test('contrast tips group matching texts and retain both color and fill choices', async ({ page }) => {
-  for (const choice of ['Melhorar leitura dos textos', 'Adicionar preenchimento']) {
+  for (const choice of ['Alterar cores', 'Adicionar preenchimento']) {
     await page.goto(fixture + '?low-contrast');
     await page.getByRole('button', { name: 'Abrir dicas do cardápio' }).click();
     const tip = page.locator('[data-canvas-tips-menu] section').filter({ has: page.getByRole('heading', { name: 'Leitura dos textos', exact: true }) });
     await expect(tip).toHaveCount(1);
     await tip.getByRole('button', { name: choice, exact: true }).click();
-    if (choice === 'Melhorar leitura dos textos') {
+    if (choice === 'Alterar cores') {
       await expect(page.locator('#menu-title-text')).not.toHaveCSS('color', 'rgb(238, 238, 238)');
+      for(const text of await page.locator('[data-automenu-editor-canvas] [data-word-fit-scope="category"], [data-automenu-editor-canvas] [data-word-fit-scope="productName"], [data-automenu-editor-canvas] [data-word-fit-scope="productDescription"], [data-automenu-editor-canvas] [data-template-price]').all())await expect(text).not.toHaveCSS('color','rgb(238, 238, 238)');
     } else {
-      for (const name of await page.locator('[data-word-fit-scope="productName"]').all())
-        await expect(name).toHaveCSS('background-color', 'rgb(0, 0, 0)');
-      await expect(page.locator('[data-added-image-id="shape-contrast"] [data-shape-text]')).toHaveCSS('background-color', 'rgb(0, 0, 0)');
+      for (const group of await page.locator('[data-automenu-editor-canvas] [data-category-group-paint]').all()) await expect(group).toHaveCSS('background-color','rgb(0, 0, 0)');
+      await expect(page.locator('[data-automenu-editor-canvas] [data-category-group-paint]')).toHaveCount(3);
+      await expect(page.locator('[data-automenu-editor-canvas] [data-word-fit-scope="productName"]').first()).toHaveCSS('background-color','rgba(0, 0, 0, 0)');
     }
+    await page.waitForTimeout(1200);
+    await expect(page.getByRole('heading',{name:'Leitura dos textos',exact:true})).toHaveCount(0);
   }
 });
 
