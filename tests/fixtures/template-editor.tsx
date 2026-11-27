@@ -41,7 +41,7 @@ function Fixture() {
   const heightFit = params.has('height-fit');
   const batchLayers = params.has('batch-layers');
   const [history, setHistory] = useState<MenuStyle[]>(() => !photoMode ? [
-    params.has('reduce-pages') ? { ...initial,
+    params.has('pagination-jitter') ? { ...INITIAL_STYLE, menuSubtitle:'', categoryColumnCount:2, headingPages:{menuTitle:[0,1]}, pageBreaks:['Entradas'], margins:{top:20,left:20,right:20,bottom:50,columnGap:32}, contentSpacing:{headerToContent:5,categoryToProduct:5,betweenProducts:5,productToNextCategory:5,productNameToDescription:4,productNameToPrice:4}, elementStyles:{...INITIAL_STYLE.elementStyles,menuTitle:{fontSize:38},category:{fontSize:13},productName:{fontSize:13},productDescription:{fontSize:13},productPrice:{fontSize:13}} } as MenuStyle : params.has('reduce-pages') ? { ...initial,
       ...(params.has('keep-art-page') ? { addedImages: [{ id: 'retained-art', url: canvasShapeUrl(lowContrastShape), shape: lowContrastShape, x: 50, y: 50, width: 80, pageIndex: 1 }] } : {}),
       design: undefined, showImages: false,
       pageSetup: params.has('landscape') ? { ...initial.pageSetup!, orientation: 'landscape' } : initial.pageSetup,
@@ -140,7 +140,7 @@ function Fixture() {
       freeTextWidth: 350, styles: { fontSize: 34 } },
     { id: 'fit-background', isFreeText: true, category: 'ft_zone_fit', name: 'Fundo', description: '', price: 0,
       freeTextWidth: 220, styles: { fontSize: 34 } },
-  ] : params.has('classic-catalog') ? INITIAL_PRODUCTS : params.has('border-catalog') ? INITIAL_PRODUCTS.filter(p=>['Saladas','Sobremesas','Pizzas'].includes(p.category)).map(p=>({...p,image:samplePhoto}))
+  ] : params.has('pagination-jitter') ? products.map((p,i)=>({...p,category:['Abertura','Entradas','Pratos'][i],description:''})) : params.has('classic-catalog') ? INITIAL_PRODUCTS : params.has('border-catalog') ? INITIAL_PRODUCTS.filter(p=>['Saladas','Sobremesas','Pizzas'].includes(p.category)).map(p=>({...p,image:samplePhoto}))
     : params.has('background-text') ? [...products, {
     id: 'background-text', category: 'ft_zone_background-text', name: 'Texto de fundo',
     description: '', price: 0, isFreeText: true, freeTextWidth: 160,

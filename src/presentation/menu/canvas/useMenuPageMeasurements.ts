@@ -1,3 +1,4 @@
+import { mergePaginationMeasurements } from '../../../domain/menu/paginationMeasurements';
 import { applyResponsivePrices } from './useResponsivePrices';
 import { applyGroupedWordFit } from './textFit';
 import { useCallback, useMemo, useState, useLayoutEffect, type Dispatch, type RefObject, type SetStateAction } from 'react';
@@ -7,7 +8,28 @@ import type { MenuStyle, Product } from '../../../domain/menu/model';
 import { livePhotoScaleVariable } from './photoSizing';
 
 export function useMenuPageMeasurements(rootRef: RefObject<HTMLElement | null>, pages: PageLayout[], columnCount: number,
-    setMeasuredHeights: Dispatch<SetStateAction<ReadonlyMap<string, number>>>, typographyScale: number, typicalFontSize: number, visiblePage?: number, onMeasure?: (heights: ReadonlyMap<string, number>) => void) {
+    setMeasuredHeights: Dispatch<SetStateAction<ReadonlyMap<string, number>>>, typographyScale: number, typicalFontSize: number, visiblePage?: number, onMeasure?: (heights: ReadonlyMap<string, number>) => void, source?: unknown) {
+    useLayoutEffect(() => {
+        const root = rootRef.current;
+        if (!root) return;
+        const dimensions = new Map<string, string>();
+        const imageKey = (image: HTMLImageElement) => `${image.naturalWidth}:${image.naturalHeight}`;
+        root.querySelectorAll<HTMLImageElement>('img').forEach(image => {
+            if (image.complete && image.naturalWidth) dimensions.set(image.currentSrc || image.src, imageKey(image));
+        });
+        const reset = () => setMeasuredHeights(new Map());
+        const loaded = (event: Event) => {
+            const image = event.target;
+            if (!(image instanceof HTMLImageElement) || !image.naturalWidth) return;
+            const url = image.currentSrc || image.src, size = imageKey(image);
+            if (dimensions.get(url) === size) return;
+            dimensions.set(url, size);
+            reset();
+        };
+        root.addEventListener('load', loaded, true);
+        document.fonts.addEventListener('loadingdone', reset);
+        return () => { root.removeEventListener('load', loaded, true); document.fonts.removeEventListener('loadingdone', reset); };
+    }, [rootRef, setMeasuredHeights, source]);
     useLayoutEffect(() => {
         const root = rootRef.current;
         if (!root) return;
@@ -17,6 +39,7 @@ export function useMenuPageMeasurements(rootRef: RefObject<HTMLElement | null>, 
         ));
         const chunks = Array.from(root.querySelectorAll<HTMLElement>('[data-category-chunk]'));
         let frame = 0;
+        let previousSample: ReadonlyMap<string, number> | undefined;
         const measure = () => {
             if (root.style.getPropertyValue(livePhotoScaleVariable('product')) || root.style.getPropertyValue(livePhotoScaleVariable('category'))) return;
             applyGroupedWordFit(root, typographyScale, typicalFontSize);
@@ -61,11 +84,14 @@ export function useMenuPageMeasurements(rootRef: RefObject<HTMLElement | null>, 
                 next.set(getPaginationChunkHeightKey(chunk.dataset.categoryChunk, parseFloat(getComputedStyle(column).width)),
                     parseFloat(getComputedStyle(chunk).height));
             }
+            // Reparented text can still be applying its word/price fit. Do not
+            // retain a transient oversized frame as the safe bound for this edit.
+            const settled = previousSample?.size === next.size && [...next].every(([key, height]) =>
+                Math.abs(height - (previousSample!.get(key) ?? Infinity)) < .25);
+            previousSample = next;
+            if (!settled) { cancelAnimationFrame(frame); frame = requestAnimationFrame(measure); return; }
             onMeasure?.(next);
-            setMeasuredHeights((current) => {
-                const changes = [...next].filter(([key, height]) => Number.isFinite(height) && Math.abs((current.get(key) ?? -1) - height) >= 0.25);
-                return changes.length ? new Map([...current, ...changes]) : current;
-            });
+            setMeasuredHeights(current => mergePaginationMeasurements(current, next));
         };
         const observer = new ResizeObserver(() => {
             cancelAnimationFrame(frame);

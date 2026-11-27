@@ -857,7 +857,8 @@ export const MenuPreview: React.FC<MenuPreviewProps> = (props) => {
         ? { ...canvasStyle, categoryPositions: handlers.liveCategoryPositions } : canvasStyle, layoutProducts),
     [basePages, canvasStyle, handlers.liveCategoryPositions, layoutProducts]);
 
-    useMenuPageMeasurements(previewRootRef, pages, style.columnCount, setMeasuredHeights, typographyScale, getTypicalMenuFontSize(style), undefined, fitMeasuredContent);
+    const measurementSource = useMemo(() => ({ style: layoutStyle, products: unfitLayoutProducts }), [layoutStyle, unfitLayoutProducts]);
+    useMenuPageMeasurements(previewRootRef, pages, style.columnCount, setMeasuredHeights, typographyScale, getTypicalMenuFontSize(style), undefined, fitMeasuredContent, measurementSource);
 
     useEffect(() => {
         onPageCountChange?.(pages.length);
