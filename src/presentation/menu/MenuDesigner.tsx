@@ -188,6 +188,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     // A document edit invalidates a proposal; never apply a preview from an older source.
     useEffect(() => { setReductionPreview(null); }, [products, style, sortOption, pageCount, reduction.fontRevision]);
     const [contrastTips, setContrastTips] = useState<ContrastTip[]>([]);
+    const contrastScan = useRef<AbortController | null>(null);
     const [backgroundOverlapTips, setBackgroundOverlapTips] = useState<OverlapTip[]>([]);
     const [fontTips, setFontTips] = useState<FontTip[]>([]);
     const [pendingFontPropagation, setPendingFontPropagation] = useState<FontPropagationRequest | null>(null);
@@ -444,6 +445,8 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
             timer = window.setTimeout(() => {
                 const run = new AbortController();
                 detection = run;
+                contrastScan.current?.abort();
+                contrastScan.current = run;
                 setBackgroundOverlapTips(scanBackgroundTextOverlap(root, style));
                 void scanTextContrast(root, style, run.signal).then(tips => {
                     if (!run.signal.aborted) setContrastTips(tips);
@@ -1936,6 +1939,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
     };
 
     const applyContrastSuggestions = (choice: 'color' | 'fill') => {
+        contrastScan.current?.abort();
         const next = applyContrastTips(style, products, contrastTips, choice);
         if (setProductsAndStyle) setProductsAndStyle(next.products, next.style, 'Melhorar leitura');
         else { setProducts?.(next.products); setStyle(next.style); }
@@ -2046,6 +2050,7 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
         }
 
         nextStyle = resolveBackgroundOverlap(nextStyle, new Set(backgroundOverlapTips.map(tip => tip.id)));
+        contrastScan.current?.abort();
         const contrasted = applyContrastTips(nextStyle, nextProducts, contrastTips, 'color');
         nextStyle = contrasted.style; nextProducts = contrasted.products;
         setContrastTips([]);
@@ -2202,11 +2207,10 @@ const MenuDesigner: React.FC<MenuDesignerProps> = ({ products, style, setStyle, 
                                     {contrastTips.length > 0 && <MenuTip title="Leitura dos textos" applyLabel="Melhorar leitura dos textos"
                                         apply={() => applyContrastSuggestions('color')} dismiss={() => setContrastTips([])}
                                         choices={[
-                                            {label:'Alterar cores',apply:()=>applyContrastSuggestions('color'),disabled:contrastTips.some(tip=>tip.color===null)},
+                                            ...(!contrastTips.some(tip=>tip.color===null) ? [{label:'Alterar cores',apply:()=>applyContrastSuggestions('color')}] : []),
                                             {label:'Adicionar preenchimento',apply:()=>applyContrastSuggestions('fill')},
                                         ]}>
-                                        <p>Há textos difíceis de ler sobre o fundo. Deseja melhorar todos de uma vez?</p>
-                                        {contrastTips.some(tip=>tip.color===null) && <p>Neste fundo, o preenchimento oferece melhor leitura.</p>}
+                                        <p>Há textos difíceis de ler sobre o fundo. Deseja resolver?</p>
                                     </MenuTip>}
                                     {showMixedFontTip && <MenuTip title="Fontes diferentes" apply={applyMixedFontSuggestion}
                                         applyLabel="Usar uma fonte em todo o cardápio" dismiss={() => dismissTip('mixed-fonts')}

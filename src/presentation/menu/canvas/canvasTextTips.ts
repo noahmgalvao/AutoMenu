@@ -349,13 +349,15 @@ export async function scanTextContrast(root: HTMLElement, style: MenuStyle, sign
         const id = kind === 'categoryGroup' ? entry.category! : kind === 'header' ? 'header' : entry.id;
         const key = `${kind}:${id}`;
         const surface = surfaces.get(key) || {key,kind,id,fill:'#ffffff',texts:[]};
-        surface.texts.push({scope:entry.scope,id:entry.id,pageIndex:entry.pageIndex,category:entry.category,color:entry.color,opacity:entry.opacity,minimum:entry.minimum});
+        // Filling a group adds its native border/padding and can trigger automatic
+        // font fitting. Keep the correction readable at small sizes as well.
+        surface.texts.push({scope:entry.scope,id:entry.id,pageIndex:entry.pageIndex,category:entry.category,color:entry.color,opacity:entry.opacity,minimum:Math.max(4.5,entry.minimum)});
         surfaces.set(key,surface);
     }
     for (const surface of surfaces.values()) surface.fill = chooseSurfaceFill(surface.texts);
     return [...groups].flatMap(([key, { entry, samples, failing }]): ContrastTip[] => {
         if (!failing.length) return [];
-        const color = suggestedContrastColor(failing[0], [...samples.values()]);
+        const color = suggestedContrastColor(failing[0], [...samples.values()].map(sample => ({...sample,minimum:Math.max(4.5,sample.minimum)})));
         const black = contrastRatio(entry.color, [0, 0, 0]);
         const white = contrastRatio(entry.color, [255, 255, 255]);
         const kind = entry.category && (entry.scope === 'category' || entry.scope.startsWith('product')) ? 'categoryGroup' : entry.scope === 'freeText' ? 'freeText' : entry.scope === 'shape' ? 'shape' : 'header';

@@ -6,7 +6,7 @@ import { expect, test, type Page } from '@playwright/test';
 import type { MenuStyle } from '../src/domain/menu/model';
 import { PRESET_TEMPLATES } from '../src/domain/templates/templateCatalog';
 
-async function openWorkspace(page: Page, names = ['Menu de teste'], styleOverrides: Partial<MenuStyle> = {}) {
+async function openWorkspace(page: Page, names = ['Menu de teste'], styleOverrides: Partial<MenuStyle> = {}, workspaceGate?: Promise<void>) {
   const userId = '10000000-0000-4000-8000-000000000001';
   const workspaceId = '20000000-0000-4000-8000-000000000002';
   const menuId = '30000000-0000-4000-8000-000000000003';
@@ -28,9 +28,10 @@ async function openWorkspace(page: Page, names = ['Menu de teste'], styleOverrid
     json: { access_token: token, refresh_token: 'local-test', expires_in: 3600, token_type: 'bearer', user },
   }));
   await page.route('**/auth/v1/user', route => route.fulfill({ json: user }));
-  await page.route('**/rest/v1/**', route => {
+  await page.route('**/rest/v1/**', async route => {
     const requestUrl = new URL(route.request().url());
     const table = requestUrl.pathname.split('/').pop();
+    if (table === 'profiles') await workspaceGate;
     if (table === 'menus' && route.request().method() === 'PATCH') {
       const editorPatch = route.request().postDataJSON();
       const ids = requestUrl.searchParams.get('id')?.match(/^in\.\((.+)\)$/)?.[1].split(',')
@@ -1035,6 +1036,36 @@ test('a stalled startup bundle reloads automatically and opens the working app',
   await expect(page.getByPlaceholder('email@empresa.com')).toBeVisible();
   expect(attempts).toBe(2);
   await expect(page.getByText('O AutoMenu está demorando para carregar.')).toHaveCount(0);
+});
+
+test('startup, authenticated loading and session recovery have the same loading screen', async ({page}) => {
+  let releaseBundle!: () => void;
+  let releaseWorkspace!: () => void;
+  const bundleGate = new Promise<void>(resolve => {releaseBundle = resolve;});
+  const workspaceGate = new Promise<void>(resolve => {releaseWorkspace = resolve;});
+  await page.route('**/src/main.tsx', async route => {await bundleGate;await route.fallback();});
+  const workspaceRequest = page.waitForRequest('**/rest/v1/profiles*');
+  const opening = openWorkspace(page, ['Menu de teste'], {}, workspaceGate);
+  const appearance = (selector:string) => page.locator(selector).evaluate(element => {
+    const css = getComputedStyle(element);
+    const dot = element.querySelector('.automenu-loading-dot')!;
+    const label = element.querySelector('p')!;
+    const bounds = (node:Element) => {const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
+    const dotCss=getComputedStyle(dot),r=dot.getBoundingClientRect();
+    return {background:css.backgroundColor,color:css.color,fontFamily:css.fontFamily,dot:{width:dotCss.width,height:dotCss.height,border:dotCss.borderTop,color:dotCss.borderColor,x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)},label:bounds(label),text:label.textContent};
+  });
+  await expect(page.locator('#startup-shell')).toBeVisible();
+  const startup = await appearance('#startup-shell');
+  releaseBundle();await workspaceRequest;
+  const normal = '#root > [data-automenu-loading]';
+  await expect(page.locator(normal)).toBeVisible();
+  expect(await appearance(normal)).toEqual(startup);
+  await page.evaluate(() => window.__automenuRecovery?.begin());
+  await expect(page.locator('#resume-loading')).toBeVisible();
+  expect(await appearance('#resume-loading')).toEqual(startup);
+  releaseWorkspace();await opening;
+  await page.evaluate(() => window.__automenuRecovery?.ready());
+  await expect(page.locator('#resume-loading')).not.toBeVisible();
 });
 
 test('a persistent startup failure stops repeated reloads and keeps a styled recovery', async ({ page }) => {

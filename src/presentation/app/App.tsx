@@ -14,7 +14,7 @@ import { PublishModal } from '../publishing/PublishModal';
 import { CreateMenuModal } from './CreateMenuModal';
 import { RevisionHistoryModal } from './RevisionHistoryModal';
 import { useMenuPublishing } from '../publishing/useMenuPublishing';
-import { AppRecovery, PanelLoading } from './AppRecovery';
+import { AppLoading, AppRecovery, PanelLoading } from './AppRecovery';
 import { useWorkspaceEditor } from './useWorkspaceEditor';
 const loadProductDesigner = () => import('../products/ProductDesigner').then((module) => ({
   default: module.ProductDesigner,
@@ -168,14 +168,7 @@ const App: React.FC = () => {
   }
 
   if (isAuthLoading || (session && !workspaceData && !workspaceLoadError)) {
-    return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center">
-        <div className="flex items-center gap-3 text-slate-700">
-          <Loader2 className="w-5 h-5 animate-spin" />
-          <span>Carregando...</span>
-        </div>
-      </div>
-    );
+    return <AppLoading />;
   }
 
   if (!session) {

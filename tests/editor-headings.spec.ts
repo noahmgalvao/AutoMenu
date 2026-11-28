@@ -258,6 +258,29 @@ test('the heading quick actions can remove the selected heading', async ({ page 
     await expect(page.locator('#menu-subtitle-text')).toHaveCount(0);
 });
 
+test('title and subtitle formatting expands and contracts without an inner scrollbar', async ({page}) => {
+    await page.setViewportSize({width:393,height:852});
+    await page.goto(fixture);
+    const toolbar=page.locator('[data-inline-format-toolbar]');
+    for(const field of ['title','subtitle']) {
+        const heading=page.locator(`[data-menu-heading="${field}"]`);
+        const point=await heading.evaluate(el=>{const range=document.createRange();range.selectNodeContents(el);const r=range.getClientRects()[0];return {x:r.x+r.width/2,y:r.y+r.height/2};});
+        await page.mouse.click(point.x,point.y);
+        if(await heading.getAttribute('contenteditable')!=='true')
+            await shortcutsFor(heading.locator('xpath=ancestor::header')).getByRole('button',{name:field==='title'?'Editar título':'Editar subtítulo'}).click();
+        await expect(toolbar).toBeVisible();
+        const height=await toolbar.evaluate(el=>el.getBoundingClientRect().height);
+        await toolbar.getByRole('button',{name:'Borda do título e subtítulo',exact:true}).click();
+        await expect(toolbar.locator('[data-border-panel]')).toBeVisible();
+        await expect.poll(()=>toolbar.evaluate(el=>el.getBoundingClientRect().height)).toBeGreaterThan(height);
+        await expect.poll(()=>toolbar.evaluate(el=>({scroll:el.scrollHeight>el.clientHeight+1,overflow:getComputedStyle(el).overflowY}))).toEqual({scroll:false,overflow:'visible'});
+        await toolbar.getByRole('button',{name:'Borda do título e subtítulo',exact:true}).click();
+        await expect(toolbar.locator('[data-border-panel]')).toHaveCount(0);
+        await expect.poll(()=>toolbar.evaluate(el=>el.getBoundingClientRect().height)).toBeLessThanOrEqual(height+1);
+        await heading.press('Escape');
+    }
+});
+
 test('adding a subtitle focuses an empty editor and only changes layout when text is saved', async ({ page }) => {
     await page.goto(fixture);
     const title = page.locator('#menu-title-text');

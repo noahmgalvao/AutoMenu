@@ -1,6 +1,13 @@
 import { requestAppReload } from '../../infrastructure/browser/appLifecycle';
 import { Component, type ReactNode } from 'react';
 
+export function AppLoading() {
+  return <main className="automenu-loading" data-automenu-loading>
+    <span className="automenu-loading-dot" aria-hidden="true" />
+    <p role="status">Carregando...</p>
+  </main>;
+}
+
 export function PanelLoading() {
   return <div role="status" className="fixed inset-x-0 bottom-16 z-[150] mx-auto w-fit rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-lg">
     Carregando painel…

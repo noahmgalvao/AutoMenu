@@ -61,9 +61,10 @@ function Fixture() {
       blankPages: [{ id: 'layers-page', index: 1, fixedPosition: true }],
     } : params.has('low-contrast') ? {
       ...initial, design: undefined, backgroundColor: '#ffffff', textColor: '#eeeeee', primaryColor: '#eeeeee',
+      ...(params.has('contrast-design') ? {layoutMode:'cards' as const,design:{...initial.design!,category:'filled' as const,card:'soft' as const,price:'pill' as const}} : {}),
       ...(params.has('contrast-photo') ? {menuBackgroundPhoto:{url:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1200"><defs><pattern id="p" width="40" height="40" patternUnits="userSpaceOnUse"><rect width="40" height="40" fill="white"/><rect width="20" height="40" fill="black"/></pattern></defs><rect width="800" height="1200" fill="url(#p)"/></svg>')}} : {}),
       ...(params.has('legacy-contrast') ? {textContrastFills:{menuTitle:'#000000',category:'#000000',productName:'#000000',productDescription:'#000000',productPrice:'#000000'}} : {}),
-      itemFormattingOverrides: {product:Object.fromEntries(products.map(p=>[p.id,{elementStyles:{productName:{color:'#eeeeee'},productDescription:{color:'#eeeeee'},productPrice:{color:'#eeeeee'}}}])),category:Object.fromEntries(products.map(p=>[p.category,{elementStyles:{category:{color:'#eeeeee'}}}]))},
+      itemFormattingOverrides: {product:Object.fromEntries(products.map(p=>[p.id,{elementStyles:{productName:{color:params.has('contrast-mixed')?'#222222':'#eeeeee'},productDescription:{color:params.has('contrast-mixed')?'#888888':'#eeeeee'},productPrice:{color:'#eeeeee'}}}])),category:Object.fromEntries(products.map(p=>[p.category,{elementStyles:{category:{color:'#eeeeee'}}}]))},
       addedImages: [{ id: 'shape-contrast', x: 155, y: 685, width: 180, pageIndex: 0,
         shape: lowContrastShape, url: canvasShapeUrl(lowContrastShape) }],
       elementStyles: { ...initial.elementStyles, menuTitle: { ...initial.elementStyles.menuTitle, color: '#eeeeee' },

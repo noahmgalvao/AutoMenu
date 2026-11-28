@@ -10,18 +10,18 @@
   <body>
     <style>
       html,body{margin:0;min-height:100%;background:#f8fafc;font-family:Inter,system-ui,sans-serif;color:#334155}
-      .automenu-loading{min-height:100dvh;display:grid;place-content:center;justify-items:center;gap:14px;padding:24px;box-sizing:border-box;text-align:center}
-      .automenu-loading-dot{width:24px;height:24px;border:3px solid #e0e7ff;border-top-color:#4f46e5;border-radius:50%;animation:automenu-spin .8s linear infinite}
+      .automenu-loading{width:100%;min-height:100dvh;display:grid;place-content:center;justify-items:center;gap:14px;padding:24px;box-sizing:border-box;text-align:center;background:#f8fafc;color:#334155;font-family:Inter,system-ui,sans-serif}
+      .automenu-loading-dot{box-sizing:border-box;display:block;width:24px;height:24px;border:3px solid #e0e7ff;border-top-color:#4f46e5;border-radius:50%;animation:automenu-spin .8s linear infinite}
       .automenu-loading p{margin:0;font-size:14px;line-height:1.5;max-width:300px}
       .automenu-loading button{border:0;border-radius:10px;min-height:40px;padding:10px 20px;background:#4f46e5;color:#fff;font:600 14px system-ui;cursor:pointer}
       #resume-loading{position:fixed;inset:0;z-index:20000;background:#f8fafc;display:none}
       @keyframes automenu-spin{to{transform:rotate(360deg)}}
     </style>
-    <div id="root"><main class="automenu-loading" id="startup-shell">
+    <div id="root"><main class="automenu-loading" data-automenu-loading id="startup-shell">
       <span class="automenu-loading-dot" aria-hidden="true"></span><p id="startup-status" role="status">Carregando...</p>
       <button id="startup-retry" type="button" hidden>Tentar novamente</button>
     </main></div>
-    <div id="resume-loading" class="automenu-loading" role="status"><span class="automenu-loading-dot" aria-hidden="true"></span><p>Carregando...</p></div>
+    <div id="resume-loading" class="automenu-loading" data-automenu-loading role="status"><span class="automenu-loading-dot" aria-hidden="true"></span><p>Carregando...</p></div>
     <script>
       (() => {
         const key = 'automenu:automatic-reload';

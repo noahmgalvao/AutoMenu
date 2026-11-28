@@ -89,6 +89,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
         const canvas = groupSurface?.closest<HTMLElement>('[data-automenu-editor-canvas]');
 
         const updatePosition = () => {
+            const isHeading = target.matches('[data-menu-heading]');
             const toolbarHeight = (contentRef.current?.offsetHeight || 76) + (compact ? 10 : 14);
             const preferredWidth = !hasTextControls ? 200 : hasHeader ? (compact ? 224 : 266) : isSizeColorOnly ? 199 : hasPriceAdjustment ? 364 : 344;
             const width = Math.min(preferredWidth, window.innerWidth - 16);
@@ -115,7 +116,7 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
             const availableAbove = top - 16;
             const availableBelow = window.innerHeight - bottom - 16;
 
-            if (borderSurface && Math.max(availableAbove, availableBelow) < toolbarHeight) {
+            if (!isHeading && borderSurface && Math.max(availableAbove, availableBelow) < toolbarHeight) {
                 const sideLeft = window.innerWidth - right - 16 >= width ? right + 8 : left - width - 8;
                 if (sideLeft >= 8 && sideLeft + width <= window.innerWidth - 8) {
                     setPosition({ left: sideLeft, top: Math.max(8, Math.min(top, window.innerHeight - toolbarHeight - 8)), width,
@@ -153,14 +154,15 @@ export const InlineStyleToolbar: React.FC<InlineStyleToolbarProps> = ({ targetEl
                     setPosition({ left: sideLeft, top: sideTop, width, maxHeight: window.innerHeight - 16 });
                     return;
                 }
-                if (availableAbove >= 48 && !coversObstacle(centeredLeft, aboveTop)) {
+                if (!isHeading && availableAbove >= 48 && !coversObstacle(centeredLeft, aboveTop)) {
                     setPosition({ left: centeredLeft, top: 8, width, maxHeight: availableAbove, overflowY: 'auto' });
                     return;
                 }
             }
             const toolbarTop = above ? aboveTop : belowTop;
-            setPosition({ left: centeredLeft, top: Math.max(8, toolbarTop), width, maxHeight: window.innerHeight - 16,
-                overflowY: toolbarHeight > window.innerHeight - 16 ? 'auto' : undefined });
+            setPosition({ left: centeredLeft, top: Math.max(8, toolbarTop), width,
+                maxHeight: isHeading ? undefined : window.innerHeight - 16,
+                overflowY: !isHeading && toolbarHeight > window.innerHeight - 16 ? 'auto' : undefined });
         };
 
         updatePosition();
